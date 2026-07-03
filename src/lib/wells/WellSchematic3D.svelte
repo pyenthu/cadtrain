@@ -1,0 +1,434 @@
+<script lang="ts">
+  /**
+   * WellSchematic3D — the ported SVTC well-diagram scene, adapted for cadtrain.
+   *
+   * Renders a WSON as an engineering half-section 3D schematic:
+   *   • open holes  → cutCylinder (translucent bore)
+   *   • casings     → cutTube (steel annulus, OD/ID)
+   *   • cement      → cutTube (beige speckled annulus in the OH↔casing gap)
+   *   • tubing      → cutTube (gold, from the completion string)
+   *   • perforations→ cutSphere markers at perf midpoints
+   *   • completions → parametric registry builder (Baker packer) with a plain
+   *                   cylinder FALLBACK for unknown tool_comp
+   * All geometry is BUILT in manifold-3d (watertight) then warped along the
+   * survey trajectory via the parallel-transport `warpGeometry`.
+   *
+   * SCALE PIPELINE (memory `well_schematic_3d_first`, CLAUDE.md): raw MD → DTX
+   * (depth-only emphasis of cluttered zones) → warp along the survey → ×zScale.
+   * `diaScale` is the OPTIONAL radial exaggeration (view dial), NOT baked into
+   * the model — depths stay true (metres), diameters true (inches) × diaScale.
+   *
+   * This is SCENE CONTENT — mount it inside a parent Threlte `<Canvas>` (as the
+   * /wells route does with WellScene). SSR is off for /wells so Three/Threlte
+   * evaluate client-side only; Manifold WASM is lazy-loaded in onMount.
+   *
+   * Ported from SVTC `src/lib/apps/wson/Wson3DScene.svelte` (dgeo curtain,
+   * annotations, perf-spurs and debug cutters intentionally dropped — not part
+   * of the well-schematic core).
+   */
+  import { T, useThrelte } from '@threlte/core';
+  import { OrbitControls, Edges } from '@threlte/extras';
+  import { onDestroy, onMount } from 'svelte';
+  import * as THREE from 'three';
+  import type { Wson } from './wson';
+  import { buildWellDirection, sampleCentreline, type WellDirection } from './threeD';
+  import {
+    initManifold, cutCylinder, cutTube, cutSphere, warpGeometry,
+  } from './threeD/manifoldCut';
+  import { getBuilder, buildCached } from './threeD/parametric';
+  import { autoNodes, lerpDTX, type DtxNode } from './dtx';
+
+  let {
+    wson,
+    diaScale = 6,
+    zScale = 1,
+    dtx = true,
+    cutaway = true,
+    cutAxis = 'x',
+    cutAzimuth = 0,
+    directional = true,
+    layers = { showOpenHole: true, showCasing: true, showCement: true, showCompletions: true, showPerforations: true },
+    onCameraMove,
+  }: {
+    wson: Wson;
+    /** Radial exaggeration (inches → scene units). Optional view dial. */
+    diaScale?: number;
+    /** Depth stretch applied AFTER DTX (SVTC's yScale). */
+    zScale?: number;
+    /** Apply DTX depth emphasis (expands cluttered intervals). */
+    dtx?: boolean;
+    cutaway?: boolean;
+    cutAxis?: 'x' | 'y' | 'z';
+    cutAzimuth?: number;
+    /** false → straight vertical (ignore the survey), mirrors the 2D toggle. */
+    directional?: boolean;
+    layers?: {
+      showOpenHole?: boolean; showCasing?: boolean; showCement?: boolean;
+      showCompletions?: boolean; showPerforations?: boolean;
+    };
+    onCameraMove?: (pos: { x: number; y: number; z: number }) => void;
+  } = $props();
+
+  const { camera } = useThrelte();
+
+  let manifoldReady = $state(false);
+  onMount(async () => {
+    try { await initManifold(); manifoldReady = true; }
+    catch (e) { console.error('[WellSchematic3D] manifold init failed', e); }
+  });
+
+  const cutActive = $derived(cutaway && manifoldReady);
+
+  const rawTd = $derived(wson?.meta?.td ?? 1000);
+
+  // ── DTX depth transform ────────────────────────────────────────────────────
+  // Emphasis nodes = cluttered zones (completion stack + perf intervals).
+  const dtxObj = $derived.by(() => {
+    if (!dtx) return null;
+    const nodes: DtxNode[] = [];
+    for (const c of wson?.completions ?? []) {
+      if (Number.isFinite(c.top as number) && Number.isFinite(c.bot as number)) {
+        nodes.push({ start: c.top as number, end: c.bot as number });
+      }
+    }
+    for (const p of wson?.perforations ?? []) nodes.push({ start: p.top, end: p.bot });
+    return autoNodes(nodes, rawTd);
+  });
+
+  /** raw MD → display depth (DTX then ×zScale). The one place scale is applied
+   *  so shells + the warped survey stay in the SAME display-depth space. */
+  const remap = $derived((md: number) => (dtxObj ? lerpDTX(dtxObj, md) : md) * zScale);
+  const td = $derived(remap(rawTd));
+
+  // Survey remapped through the same depth transform so getInterNode()'s
+  // sampling matches the shells built at remapped top/bot.
+  const remappedProfile = $derived.by(() => {
+    const prof = wson?.profile;
+    if (!Array.isArray(prof) || prof.length < 2) return null;
+    return prof.map((s) => ({ ...s, md: remap(s.md) }));
+  });
+
+  const wellDir: WellDirection = $derived(buildWellDirection(directional ? remappedProfile : null, td));
+
+  const profileFingerprint = $derived(JSON.stringify(wson?.profile ?? []) + '|' + td + '|' + zScale + '|' + dtx);
+  const geomKey = $derived(`${cutActive}|${cutAxis}|${diaScale}|${directional}|${cutAzimuth}|${profileFingerprint}`);
+
+  const centre = $derived(sampleCentreline(wellDir, 0, td, 20));
+
+  // Camera framing ≈ midpoint of the wellbore.
+  const cameraTarget = $derived(() => {
+    if (centre.length === 0) return new THREE.Vector3(0, 0, td / 2);
+    return centre[Math.floor(centre.length / 2)].clone();
+  });
+  const cameraDistance = $derived(() => {
+    if (centre.length === 0) return td * 1.5;
+    const b = new THREE.Box3().setFromPoints(centre);
+    const size = new THREE.Vector3(); b.getSize(size);
+    return Math.max(size.x, size.y, size.z, td * 0.5) * 1.6;
+  });
+
+  // ── Colors (0..1 rgb for the vertex-color cut pipeline) ────────────────────
+  function rgb(hex: string): number[] {
+    const n = parseInt(hex.replace('#', ''), 16);
+    return [((n >> 16) & 0xff) / 255, ((n >> 8) & 0xff) / 255, (n & 0xff) / 255];
+  }
+  const COL_OH = rgb('#e9d5ff'), COL_CH = rgb('#94a3b8'), COL_CEMENT = rgb('#d6c7a1');
+  const COL_TUBING = rgb('#eab308'), COL_PERF = rgb('#ef4444');
+  const STYLE_CEMENT_CUT = { cutColor: rgb('#b8a883'), cutVariance: 0.18 };
+
+  function safe<T>(fn: () => T): T | null {
+    try { return fn(); } catch (e) { console.warn('[WellSchematic3D] build failed', e); return null; }
+  }
+
+  // ── Non-cutaway solids (THREE geometry built straight along Z + warp) ──────
+  function solidTubeForRange(top: number, bot: number, radius: number) {
+    const len = bot - top;
+    if (!(len > 0) || !(radius > 0)) return null;
+    const heightSegs = Math.max(20, Math.ceil(len / 5));
+    const g = new THREE.CylinderGeometry(radius, radius, len, 48, heightSegs);
+    g.rotateX(Math.PI / 2);
+    g.translate(0, 0, (top + bot) / 2);
+    return warpGeometry(g, wellDir);
+  }
+  function shellForRange(top: number, bot: number, innerR: number, outerR: number) {
+    const len = bot - top;
+    if (!(len > 0) || !(outerR > innerR && innerR >= 0)) return null;
+    const shape = new THREE.Shape();
+    shape.absarc(0, 0, outerR, 0, Math.PI * 2, false);
+    const hole = new THREE.Path();
+    hole.absarc(0, 0, innerR, 0, Math.PI * 2, true);
+    shape.holes.push(hole);
+    const steps = Math.max(20, Math.ceil(len / 5));
+    const geo = new THREE.ExtrudeGeometry(shape, { steps, depth: len, bevelEnabled: false, curveSegments: 48 });
+    geo.translate(0, 0, top);
+    return warpGeometry(geo, wellDir);
+  }
+
+  function outerBitAtDepth(md: number): number | null {
+    const oh = (wson?.oh ?? []).find((o) => md >= remap(o.top) && md <= remap(o.bot));
+    return oh?.bitSize ?? null;
+  }
+  const EPS_IN = 0.02;
+
+  // ── Display geometry per layer ─────────────────────────────────────────────
+  const ohGeoms = $derived.by(() =>
+    (wson?.oh ?? []).map((oh) => {
+      const top = remap(oh.top), bot = remap(oh.bot), r = (oh.bitSize * diaScale) / 2;
+      const geom = cutActive
+        ? safe(() => cutCylinder(top, bot, r, cutAxis, COL_OH, {}, wellDir, cutAzimuth))
+        : solidTubeForRange(top, bot, r);
+      return { geom, label: `${oh.bitSize}" OH` };
+    }).filter((g) => g.geom));
+
+  const chGeoms = $derived.by(() =>
+    (wson?.ch ?? []).filter((c) => c.type !== 'tubing').map((ch) => {
+      const od = ch.od;
+      const id = (typeof ch.id === 'number' && ch.id > 0 && ch.id < od) ? ch.id : od * 0.92;
+      const top = remap(ch.top), bot = remap(ch.bot);
+      const innerR = (id * diaScale) / 2, outerR = (od * diaScale) / 2;
+      const geom = cutActive
+        ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_CH, {}, wellDir, cutAzimuth))
+        : shellForRange(top, bot, innerR, outerR);
+      return { geom, label: `${ch.od}" ${ch.grade ?? ''}` };
+    }).filter((g) => g.geom));
+
+  const cementGeoms = $derived.by(() =>
+    (wson?.cementing ?? []).map((cm) => {
+      const top = remap(cm.top), bot = remap(cm.bot);
+      const bit = outerBitAtDepth((top + bot) / 2);
+      const outer = (bit != null ? bit : cm.od * 1.15) - EPS_IN;
+      const inner = cm.od + EPS_IN;
+      if (outer <= inner) return { geom: null, label: '' };
+      const innerR = (inner * diaScale) / 2, outerR = (outer * diaScale) / 2;
+      const geom = cutActive
+        ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_CEMENT, STYLE_CEMENT_CUT, wellDir, cutAzimuth))
+        : shellForRange(top, bot, innerR, outerR);
+      return { geom, label: `Cement` };
+    }).filter((g) => g.geom));
+
+  // Tubing joints — a completion, rendered as a gold tube.
+  const tubingGeom = $derived.by(() => {
+    const tb = (wson?.completions ?? []).find((c) => /tubing/i.test(c.description ?? '') && /joints/i.test(c.description ?? ''));
+    if (!tb || tb.top == null || tb.bot == null) return null;
+    const od = tb.od ?? 2.875, id = od * 0.85;
+    const top = remap(tb.top), bot = remap(tb.bot);
+    const innerR = (id * diaScale) / 2, outerR = (od * diaScale) / 2;
+    return cutActive
+      ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_TUBING, {}, wellDir, cutAzimuth))
+      : shellForRange(top, bot, innerR, outerR);
+  });
+
+  // Perforation markers — spheres at perf midpoints (world-placed, not warped).
+  const perfMarkers = $derived.by(() =>
+    (wson?.perforations ?? []).map((p) => {
+      const midMd = remap((p.top + p.bot) / 2);
+      const node = wellDir.getInterNode(midMd);
+      if (!node) return null;
+      const radius = Math.max(4, ((diaScale * 8.5) / 2) * 0.4);
+      const position = new THREE.Vector3(node.pt[0], node.pt[1], node.pt[2]);
+      const geom = cutActive ? safe(() => cutSphere(position, radius, cutAxis, COL_PERF)) : null;
+      return { position, radius, geom, label: p.label ?? 'Perf' };
+    }).filter(Boolean) as Array<{ position: THREE.Vector3; radius: number; geom: THREE.BufferGeometry | null; label: string }>);
+
+  // ── Completion component markers (non-tubing-joints) ───────────────────────
+  const CATEGORY_COLOR: Record<string, string> = {
+    packer: '#f59e0b', hanger: '#64748b', nipple: '#ef4444',
+    mandrel: '#0ea5e9', mule: '#a78bfa', valve: '#dc2626',
+  };
+  function compColor(desc: string): string {
+    const d = desc.toLowerCase();
+    if (d.includes('packer')) return CATEGORY_COLOR.packer;
+    if (d.includes('hanger')) return CATEGORY_COLOR.hanger;
+    if (d.includes('nipple')) return CATEGORY_COLOR.nipple;
+    if (d.includes('mandrel')) return CATEGORY_COLOR.mandrel;
+    if (d.includes('mule')) return CATEGORY_COLOR.mule;
+    if (/scssv|trssv|trsssv/.test(d)) return CATEGORY_COLOR.valve;
+    return '#94a3b8';
+  }
+
+  const compMarkers = $derived.by(() =>
+    (wson?.completions ?? [])
+      .filter((c) => !/tubing joints/i.test(c.description ?? ''))
+      .map((c) => {
+        const top = remap(c.top ?? 0), bot = remap(c.bot ?? ((c.top ?? 0) + 1));
+        const node = wellDir.getInterNode((top + bot) / 2);
+        if (!node) return null;
+        const od = c.od ?? 4;
+        const minHeight = Math.max(2, td * 0.005);
+        return {
+          position: new THREE.Vector3(node.pt[0], node.pt[1], node.pt[2]),
+          radius: ((od * diaScale) / 2) * 1.1,
+          height: Math.max(minHeight, bot - top),
+          color: compColor(c.description ?? ''),
+          label: c.description ?? c.tool_comp,
+          toolComp: c.tool_comp ?? null,
+          top, bot, od, idIn: Math.max(1.5, od * 0.4),
+          params: (c.params ?? {}) as Record<string, number>,
+        };
+      })
+      .filter(Boolean) as any[]);
+
+  // Parametric builds populate this keyed cache asynchronously.
+  const parametricGeoms = $state<Record<string, { geom: THREE.BufferGeometry; bbox: THREE.Box3 }>>({});
+  const _inFlight = new Set<string>();
+  $effect(() => {
+    if (!manifoldReady) return;
+    for (const m of compMarkers) {
+      const tc = m.toolComp;
+      if (!tc) continue;
+      const builder = getBuilder(tc);
+      if (!builder) continue;
+      const length = Math.max(0.3, m.bot - m.top);
+      const key = `${tc}|${m.top}|${m.bot}|${m.od}|${m.idIn}`;
+      if (_inFlight.has(key) || Object.prototype.hasOwnProperty.call(parametricGeoms, key)) continue;
+      _inFlight.add(key);
+      const params = { od: m.od, id: m.idIn, length, slipRingCount: Number(m.params?.slipRingCount ?? 2) };
+      buildCached(builder, params).then((r) => {
+        parametricGeoms[key] = { geom: r.geometry, bbox: r.bbox };
+        _inFlight.delete(key);
+      }).catch((e) => { console.warn('[WellSchematic3D] parametric build failed', tc, e); _inFlight.delete(key); });
+    }
+  });
+
+  const displayCompMarkers = $derived.by(() =>
+    compMarkers.map((m) => {
+      const key = m.toolComp ? `${m.toolComp}|${m.top}|${m.bot}|${m.od}|${m.idIn}` : '';
+      const built = key ? parametricGeoms[key] : undefined;
+      if (built) return { ...m, parametricGeom: built.geom };
+      if (!cutActive) return { ...m, parametricGeom: null, geom: null };
+      const geom = safe(() => cutCylinder(m.top, m.bot, m.radius, cutAxis, rgb(m.color), {}, wellDir, cutAzimuth));
+      return { ...m, parametricGeom: null, geom };
+    }));
+
+  // Dispose base geoms on unmount.
+  onDestroy(() => {
+    [...ohGeoms, ...chGeoms, ...cementGeoms].forEach((g) => g.geom?.dispose?.());
+    tubingGeom?.dispose?.();
+  });
+</script>
+
+<!-- Lights -->
+<T.AmbientLight intensity={0.5} />
+<T.DirectionalLight position={[50, -100, 80]} intensity={0.7} />
+<T.DirectionalLight position={[-80, 100, -50]} intensity={0.35} />
+<T.DirectionalLight position={[50, 100, 80]} intensity={0.5} />
+<T.HemisphereLight args={['#87ceeb', '#3d2817', 0.3]} />
+
+<!-- Camera — industry convention: X/Y surface, Z depth (positive down),
+     up = [0,0,-1] so screen-up = surface. Offset in +X / -Y so a +X-normal
+     cutaway faces the viewer. -->
+<T.PerspectiveCamera
+  makeDefault
+  position={[cameraDistance() * 0.8, -cameraDistance(), cameraTarget().z - cameraDistance() * 0.3]}
+  fov={40}
+  near={1}
+  far={Math.max(10000, cameraDistance() * 20)}
+  up={[0, 0, -1]}
+  oncreate={(cam) => onCameraMove?.({ x: cam.position.x, y: cam.position.y, z: cam.position.z })}
+>
+  <OrbitControls target={[cameraTarget().x, cameraTarget().y, cameraTarget().z]} enableDamping />
+</T.PerspectiveCamera>
+
+<T.AxesHelper args={[100]} />
+
+{#key geomKey}
+  <!-- {#key} forces remount on cutaway/axis/scale change so <Edges> rebuilds
+       from the new CSG geometry (cadtrain pattern). -->
+
+  {#if layers.showOpenHole}
+    {#each ohGeoms as oh}
+      {#if oh.geom}
+        <T.Mesh geometry={oh.geom} renderOrder={0}>
+          <T.MeshStandardMaterial color={cutActive ? '#ffffff' : '#c084fc'} vertexColors={cutActive}
+            transparent opacity={0.25} depthWrite={false} side={THREE.DoubleSide} />
+          <Edges thresholdAngle={20} color="black" />
+        </T.Mesh>
+      {/if}
+    {/each}
+  {/if}
+
+  {#if layers.showCement}
+    {#each cementGeoms as cm}
+      {#if cm.geom}
+        <T.Mesh geometry={cm.geom} renderOrder={1}>
+          <T.MeshStandardMaterial color={cutActive ? '#ffffff' : '#d6c7a1'} vertexColors={cutActive}
+            roughness={0.9} metalness={0} side={THREE.DoubleSide} />
+          <Edges thresholdAngle={20} color="black" />
+        </T.Mesh>
+      {/if}
+    {/each}
+  {/if}
+
+  {#if layers.showCasing}
+    {#each chGeoms as ch}
+      {#if ch.geom}
+        <T.Mesh geometry={ch.geom} renderOrder={2}>
+          <T.MeshStandardMaterial color={cutActive ? '#ffffff' : '#94a3b8'} vertexColors={cutActive}
+            metalness={0.55} roughness={0.4} side={THREE.DoubleSide} />
+          <Edges thresholdAngle={20} color="black" />
+        </T.Mesh>
+      {/if}
+    {/each}
+  {/if}
+
+  {#if layers.showCompletions && tubingGeom}
+    <T.Mesh geometry={tubingGeom} renderOrder={3}>
+      <T.MeshStandardMaterial color={cutActive ? '#ffffff' : '#eab308'} vertexColors={cutActive}
+        metalness={0.7} roughness={0.3} side={THREE.DoubleSide} />
+      <Edges thresholdAngle={20} color="black" />
+    </T.Mesh>
+  {/if}
+
+  {#if layers.showPerforations}
+    {#each perfMarkers as m}
+      {#if m.geom}
+        <T.Mesh geometry={m.geom}>
+          <T.MeshStandardMaterial color="#ffffff" vertexColors emissive="#dc2626" emissiveIntensity={0.25} />
+          <Edges thresholdAngle={20} color="black" />
+        </T.Mesh>
+      {:else}
+        <T.Mesh position={[m.position.x, m.position.y, m.position.z]}>
+          <T.SphereGeometry args={[m.radius, 32, 24]} />
+          <T.MeshStandardMaterial color="#ef4444" emissive="#dc2626" emissiveIntensity={0.4} />
+        </T.Mesh>
+      {/if}
+    {/each}
+  {/if}
+
+  {#if layers.showCompletions}
+    {#each displayCompMarkers as m}
+      {#if m.parametricGeom}
+        <!-- Parametric solid: local frame (inches x/y, metres z). Lateral scale
+             lifts inches → scene units via diaScale. -->
+        <T.Mesh geometry={m.parametricGeom}
+                position={[m.position.x, m.position.y, m.position.z]}
+                scale={[diaScale, diaScale, 1]}>
+          <T.MeshStandardMaterial color={m.color} metalness={0.45} roughness={0.45} />
+          <Edges thresholdAngle={25} color="black" />
+        </T.Mesh>
+      {:else if m.geom}
+        <T.Mesh geometry={m.geom}>
+          <T.MeshStandardMaterial color="#ffffff" vertexColors metalness={0.4} roughness={0.5} />
+          <Edges thresholdAngle={20} color="black" />
+        </T.Mesh>
+      {:else}
+        <!-- Fallback cylinder (CylinderGeometry body axis = local Y → world Z
+             after the X rotation). -->
+        <T.Mesh position={[m.position.x, m.position.y, m.position.z]} rotation={[Math.PI / 2, 0, 0]}>
+          <T.CylinderGeometry args={[m.radius, m.radius, m.height, 32]} />
+          <T.MeshStandardMaterial color={m.color} metalness={0.4} roughness={0.5} />
+          <Edges thresholdAngle={20} color="black" />
+        </T.Mesh>
+      {/if}
+    {/each}
+  {/if}
+{/key}
+
+<!-- Depth ruler — thin red centreline (Line, not TubeGeometry, which throws
+     computeFrenetFrames on straight sections). -->
+{#if centre.length >= 2}
+  {@const lineGeom = new THREE.BufferGeometry().setFromPoints(centre)}
+  <T.Line geometry={lineGeom}>
+    <T.LineBasicMaterial color="#dc2626" transparent opacity={0.7} />
+  </T.Line>
+{/if}
