@@ -10,6 +10,9 @@ FROM oven/bun:1
 
 WORKDIR /app
 COPY --from=builder /app/build ./build
+# server.js wraps build/index.js to add app-wide COOP/COEP on static assets too
+# (the client-bake Web Worker must inherit cross-origin isolation). See server.js.
+COPY --from=builder /app/server.js ./
 COPY --from=builder /app/package.json ./
 COPY --from=builder /app/training_data/cache.jsonl ./training_data/cache.jsonl
 COPY --from=builder /app/training_data/authored_cache.jsonl ./training_data/authored_cache.jsonl

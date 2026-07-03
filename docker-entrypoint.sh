@@ -51,4 +51,8 @@ elif [ -n "$CACHE_VOLUME" ] && [ -d "$CACHE_VOLUME" ]; then
 fi
 
 echo "[entrypoint] Starting SvelteKit server on $HOST:$PORT"
-exec node build
+# server.js = adapter-node (build/index.js) + app-wide COOP/COEP on EVERY
+# response, including the static /_app/immutable assets that bypass
+# hooks.server.ts — required so the client-bake Web Worker inherits cross-origin
+# isolation (else the worker script is COEP-blocked). See server.js.
+exec node server.js
