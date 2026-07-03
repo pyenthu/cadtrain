@@ -16,7 +16,7 @@
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfDemo = 'sweep' }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfDemo = 'r_cyl' }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
     /** Spline DIAGNOSTIC overlays (TODO #24) — plotted splines' resolved curves +
      *  control points, drawn INSIDE the live-mesh group so they align with the
@@ -84,12 +84,10 @@
      *  GLB/BREP secondary canvases pass false so two mounted scenes can't
      *  ping-pong the shared scene.xScale/zScale (freeze fix, 2026-07-02). */
     autoScaleOwner?: boolean;
-    /** TF backend only: which client-side TrueForm demo geometry to render.
-     *  'box' = the original from-scratch primitive; 'sweep' = a helix tube
-     *  (tubeMesh — a real swept section along a 3D path); 'boolean' = a bored
-     *  pipe (booleanDifference of two cylinders). Default 'sweep' so the tab
-     *  shows curved parametric geometry, not just a box. */
-    tfDemo?: import('$lib/shared/trueform-client').TfDemoKind;
+    /** TF backend only: which client-side TrueForm demo to render — a name from
+     *  the `tf_examples/` registry (box · r_cyl · s_cyl · helix · bored_pipe ·
+     *  dp_pin · cone). Resolved via `getTfExample(name)`; unknown → r_cyl. */
+    tfDemo?: import('$lib/shared/tf_examples').TfExampleName;
   } = $props();
 
   let Scene = $state<any>(null);
@@ -451,8 +449,8 @@
     meshStatus = 'building'; brepReason = null; err = null;
     tfAc?.abort(); const ac = new AbortController(); tfAc = ac;
     try {
-      const [{ tfDemo: runTfDemo }, { tfMeshToGeo }] = await Promise.all([
-        import('$lib/shared/trueform-client'),
+      const [{ getTfExample }, { tfMeshToGeo }] = await Promise.all([
+        import('$lib/shared/tf_examples'),
         import('$lib/shared/trueform-adapter'),
       ]);
       if (ac.signal.aborted) return;
@@ -464,7 +462,12 @@
       // the same `cutVC` / `vertexColors` branch as the Manifold + BREP sections.
       // The Z-slider (scene.zFocus) pans the shared camera, so it applies here
       // too — no per-backend slider wiring needed.
-      const { data, stats, cutPlanes } = await runTfDemo(tfDemo, { cutaway: scene.showCutaway });
+      // Registry dispatch: resolve the demo name → its builder (fall back to
+      // r_cyl if an unknown name ever arrives). The example CONTENT lives in
+      // tf_examples/<name>.ts; this canvas just drives the kernel.
+      const ex = getTfExample(tfDemo) ?? getTfExample('r_cyl');
+      if (!ex) throw new Error(`unknown TF demo: ${tfDemo}`);
+      const { data, stats, cutPlanes } = await ex.build({ cutaway: scene.showCutaway });
       if (ac.signal.aborted) return;
       if (cutPlanes) {
         const cutVC = tfMeshToGeo(data, undefined, { planes: cutPlanes });

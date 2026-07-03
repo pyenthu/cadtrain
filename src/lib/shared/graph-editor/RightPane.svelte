@@ -16,6 +16,10 @@
   // ─────────────────────────────────────────────────────────────────────────
   import { onMount } from 'svelte';
   import type { Snippet } from 'svelte';
+  // TF-tab demo registry — the dropdown list + dispatch names (one file per demo
+  // in $lib/shared/tf_examples/). Static import is metadata only; no WASM loads
+  // until a builder's build() runs inside PrimitiveDualCanvas.
+  import { tfExamples } from '$lib/shared/tf_examples';
 
   type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'tf';
 
@@ -135,10 +139,11 @@
   let brepMeta = $state<{ cached: boolean; ms: number; tris: number; verts: number; supported: boolean; reason?: string } | null>(null);
   // TF tab — client-side TrueForm bake meta (drives the fresh/error badge).
   let tfMeta = $state<{ cached: boolean; ms: number; tris: number; verts: number; supported: boolean; reason?: string } | null>(null);
-  // Which client-side TrueForm demo geometry the TF tab renders. TrueForm has no
-  // revolve/loft/extrude — 'sweep' pipes a section along a helix (tubeMesh),
-  // 'boolean' bores a pipe (booleanDifference), 'box' is the original primitive.
-  let tfDemoKind = $state<'box' | 'sweep' | 'boolean' | 'r_cyl' | 's_cyl'>('r_cyl');
+  // Which client-side TrueForm demo the TF tab renders — a name from the
+  // tf_examples registry (box · r_cyl · s_cyl · helix · bored_pipe · dp_pin · cone).
+  // TrueForm has no revolve/loft/extrude, so these show what tf CAN build directly
+  // (primitives, tubeMesh sweeps, CSG) + the two revolved parts (lathe via tf.mesh).
+  let tfDemoKind = $state<string>('r_cyl');
   // Param name → current value (graph.params order ↔ bake.args / paramDefaults).
   let brepParamValues = $derived.by(() => {
     const vals = (bake?.args ?? paramDefaults) as number[];
@@ -501,22 +506,21 @@
     <!-- TF tab — TrueForm (Polydera) client-side exact-mesh kernel. Runs the
          WASM boolean/generator kernel on the MAIN THREAD (no worker) in the
          SHARED PrimitiveDualCanvas chrome (backend="tf"). The ~31MB WASM is
-         lazy-loaded only when this tab first opens. Commit 3 renders a
-         from-scratch TrueForm box (tfDemoBox). -->
+         lazy-loaded only when this tab first opens. The demo is chosen from the
+         tf_examples registry dropdown (default r_cyl). -->
     <div class="ge-glb-body" class:hidden={rightTab !== 'tf'}>
       {#if rightTab === 'tf'}
         {#if PrimitiveDualCanvas && bake && typeof bake === 'object' && bake.source}
-          <!-- Demo selector: TrueForm has no revolve/loft/extrude, so the TF tab
-               shows what tf CAN build directly — a swept helix tube (tubeMesh),
-               a bored-pipe boolean, or the original from-scratch box. -->
+          <!-- Demo selector: populated from the $lib/shared/tf_examples registry
+               (one file per demo). TrueForm has no revolve/loft/extrude, so these
+               show what tf CAN build directly — primitives, tubeMesh sweeps, CSG —
+               plus the revolved parts (dp_pin/cone) built via the tf.mesh lathe. -->
           <div class="ge-tf-demo-row">
             <span class="ge-tf-demo-label">tf demo</span>
             <select class="ge-tf-demo-select" bind:value={tfDemoKind} aria-label="TrueForm demo geometry">
-              <option value="r_cyl">r_cyl (revolve — capped solid)</option>
-              <option value="s_cyl">s_cyl (sweep — capped solid)</option>
-              <option value="sweep">sweep (helix tube — capped solid)</option>
-              <option value="boolean">boolean (bored pipe)</option>
-              <option value="box">box</option>
+              {#each tfExamples as ex (ex.name)}
+                <option value={ex.name}>{ex.label}</option>
+              {/each}
             </select>
           </div>
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""

@@ -117,20 +117,38 @@ batches OR whole meshes/forms — same function).
 - **`NDArray`** — WASM numeric arrays with numpy-ish ops (`take`, `booleanIndex`,
   `gt/lt/and`, `sum/min/max/mean/norm`, trig/`math`, `stack/concatenate/…`).
 
-## How cadtrain uses it (this worktree)
+## How cadtrain uses it — KERNEL DRIVER vs CONTENT REGISTRY
 
-`src/lib/shared/trueform-client.ts`:
-- `tfDemoBox(w,h,d)` — original from-scratch box.
-- `tfSweepDemo(opts)` — **sweep**: helix path → `tubeMesh` (coil/spring).
-- `tfSweepCylDemo(opts)` — **sweep**: straight vertical `tubeMesh` (= r_cyl the sweep way).
+The tf tab is split into two layers (TODO #41, 2026-07-03):
+
+**`src/lib/shared/trueform-client.ts` — the KERNEL DRIVER (no demo content):**
+- `ensureTf()` / `tfReady()` — lazy WASM load + init (main thread).
+- `tfMeshData(mesh)` — flat `{points, faces}` extraction.
 - `capOpenEnds(tf, mesh)` — close a `tubeMesh`'s open ends with centroid fans →
   a CLOSED, watertight solid (`buildCappedMesh` is the pure, testable core;
-  `positivelyOriented` fixes the winding outward). Both sweeps are capped by
-  default so they cross-section (cutaway) like the other solids.
-- `tfBooleanDemo(opts)` — **CSG**: `cylinderMesh − cylinderMesh` = bored pipe.
-- `tfAnalyze(tf, mesh)` — `{closed, manifold, euler, boundaryLoops, volume, …}`
-  via tf's own predicates = the watertightness verdict.
-- `tfDemo(kind)` — dispatch `'box' | 'sweep' | 'boolean'`.
+  `positivelyOriented` fixes the winding outward).
+- `buildOpenCurve(t, pts, n)` — a single open `Curves` path for `tubeMesh`.
+- `applyTfCutaway(t, mesh)` — the half-quadrant section cut (mirrors Manifold).
+- `tfResult(tf, t, solid, {cutaway, cuttable})` — cap-off point every example
+  calls: applies the cutaway when requested + `cuttable`, else returns the plain
+  solid, always with `tfAnalyze` (`{closed, manifold, euler, boundaryLoops,
+  volume, …}` = the watertightness verdict).
+- `tfAnalyze(tf, mesh)` — tf's own topology predicates → the verdict.
 
-`PrimitiveDualCanvas` (`backend="tf"`) takes a `tfDemo` prop; `RightPane`'s TF
-tab has a radio selector (sweep / boolean / box) and shows the verdict line.
+**`src/lib/shared/tf_examples/` — the CONTENT REGISTRY (one file per demo):**
+- Each `<name>.ts` exports a `TfExample` `{ name, label, cuttable, build(opts?) }`.
+- `index.ts` auto-globs them (`import.meta.glob(['./*.ts','!./index.ts',
+  '!./*.test.ts'])`) → `tfExamples: {name,label}[]` (dropdown list, deterministic
+  `ORDER`) + `getTfExample(name)` (dispatch). Add a demo = drop a file; it appears.
+- Demos: `box` · `r_cyl` (cylinderMesh revolve) · `s_cyl` (capped vertical tubeMesh
+  sweep) · `helix` (capped swept coil, formerly `sweep`) · `bored_pipe` (CSG
+  cylinder − cylinder, formerly `boolean`) · `dp_pin` + `cone` (revolved parts).
+- `revolve.ts` — a REUSABLE lathe (tf has no native revolve): `buildRevolveMesh`
+  (PURE, unit-tested) revolves a CLOSED half-section `[r,z][]` 360° into a
+  watertight mesh; `tfRevolveProfile(t, profile, segments)` wraps it with `tf.mesh`
+  + `positivelyOriented`. Axis points (r≈0) collapse to one shared vertex so a
+  cone/apex closes cleanly; a bored profile (min r>0) → genus-1 hollow solid.
+
+`PrimitiveDualCanvas` (`backend="tf"`) takes a `tfDemo` name prop and dispatches
+via `getTfExample(name).build({cutaway})`; `RightPane`'s TF tab populates its
+dropdown from `tfExamples` and shows the verdict line.
