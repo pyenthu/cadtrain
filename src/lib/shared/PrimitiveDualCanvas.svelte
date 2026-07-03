@@ -776,7 +776,7 @@
   {#if err}<div class="pd-err">{err}</div>{/if}
   <!-- BREP: no OCCT-buildable solid for this part (revolve / extrude / loft / CSG only).
        TF: reuses the same centred-message chrome for its "no path" / error text. -->
-  {#if (isBrep || isTf) && brepReason}<div class="pd-brep-reason">{brepReason}</div>{/if}
+  {#if (isBrep || isTf) && brepReason}<div class="pd-brep-reason" class:pd-reason-bottom={isTf}>{brepReason}</div>{/if}
   <!-- Part stats at the bottom: tri / vert count (instanced → child × N).
        BREP appends the OCCT bake time. -->
   {#if stats}
@@ -864,6 +864,9 @@
   .pd-err { position: absolute; bottom: 8px; left: 8px; z-index: 5; color: #ff8888; font: 11px Arial; background: rgba(0,0,0,0.6); padding: 3px 8px; border-radius: 3px; max-width: 55%; }
   /* BREP "no path for this part" — centred, dark-on-light over the empty scene. */
   .pd-brep-reason { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 6; max-width: 70%; text-align: center; color: #a16207; background: rgba(255,255,255,0.9); border: 1px solid #fde68a; border-radius: 6px; padding: 8px 12px; font: 600 12px Arial; }
+  /* TF topology verdict shows WITH a rendered part → anchor it at the bottom
+     (above the stats line) instead of dead-centre, so it doesn't overlap. */
+  .pd-brep-reason.pd-reason-bottom { top: auto; bottom: 28px; transform: translateX(-50%); }
   /* Vertical Z-pan slider, left edge. */
   /* Z-pan vertical slider on the RIGHT edge — keeps the left clear for the
      2D SVG overlay (and the 'Mesh (live)' label sitting top-left). */
