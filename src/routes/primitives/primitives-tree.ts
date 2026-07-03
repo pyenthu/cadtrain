@@ -15,9 +15,12 @@ export interface Entry { id: string; source: 'bundle' | 'volume' | 'stdlib' | 's
 /** A folder node in the on-volume tree (basic / completions/<family>/… / archive). */
 export interface FolderNode { name: string; path: string; parts: Entry[]; children: FolderNode[]; }
 
-/** Valid move/copy destination paths (the server's CAT_RE): basic | archive |
- *  completions/<family> (+ one optional <sub>), each segment [a-z][a-z0-9_]*. */
-export const MOVE_TARGET_RE = /^((?:basic|archive)(?:\/[a-z][a-z0-9_]*)?|completions\/[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*)?)$/i;
+/** Valid move/copy destination paths — kept in sync with the server's CAT_RE
+ *  (`/api/primitives/move`) AND the mkdir PATH_RE (`/api/primitives/mkdir`), so
+ *  ANY user-created folder is a legal target (Rule 16 — location IS category).
+ *  1–3 segments of `[a-z][a-z0-9_]*`; the reserved top-level names `profiles`
+ *  (profile store) and `stdlib` / `stdstale` (read-only src engines) are excluded. */
+export const MOVE_TARGET_RE = /^(?!(?:profiles|stdlib|stdstale)(?:\/|$))[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*){0,2}$/i;
 
 /** Display label for a top-level folder name. */
 export function tabLabel(name: string): string {

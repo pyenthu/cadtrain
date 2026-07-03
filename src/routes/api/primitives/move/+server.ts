@@ -17,14 +17,17 @@ import { isStdlib } from '$lib/server/stdlib';
 // Proxied to prod via hooks.server.ts (single live store).
 
 const ID_RE = /^[a-z][a-z0-9_]*$/i;
-// basic | basic/<subfolder> | archive | completions/<family>(/<subfolder>)?
-const CAT_RE = /^((?:basic|archive)(?:\/[a-z][a-z0-9_]*)?|completions\/[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*)?)$/i;
+// Any user-created folder is a valid destination (Rule 16 — location IS
+// category), matching the mkdir PATH_RE: 1–3 segments of [a-z][a-z0-9_]*.
+// Reserved top-level names (profiles store, stdlib/stdstale read-only src
+// engines) are excluded. Kept in sync with primitives-tree.ts MOVE_TARGET_RE.
+const CAT_RE = /^(?!(?:profiles|stdlib|stdstale)(?:\/|$))[a-z][a-z0-9_]*(?:\/[a-z][a-z0-9_]*){0,2}$/i;
 
 export const POST = async ({ url }) => {
   const id = url.searchParams.get('id');
   const to = (url.searchParams.get('to') || '').replace(/\/+$/, '');
   if (!id || !ID_RE.test(id)) throw error(400, 'id query param required');
-  if (!to || !CAT_RE.test(to)) throw error(400, 'to must be: basic | archive | completions/<family> | completions/<family>/<subfolder>');
+  if (!to || !CAT_RE.test(to)) throw error(400, 'to must be a 1–3 segment volume folder path of [a-z][a-z0-9_]* (e.g. "basic", "completions/drill_pipe", or a custom folder) — not profiles/stdlib/stdstale');
   if (isStdlib(id)) {
     throw error(403, `"${id}" is a built-in (src) primitive — it can't be moved; it lives in src/lib/cad/stdlib/.`);
   }
