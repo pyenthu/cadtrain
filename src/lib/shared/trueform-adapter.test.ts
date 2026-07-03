@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tfMeshToGeo, triangulateFaces } from './trueform-adapter';
+import { tfMeshToGeo, triangulateFaces, sectionFaceColors, SECTION_OUTER_RGB, SECTION_INNER_RGB } from './trueform-adapter';
 
 /**
  * Guards the bored-pipe shading fix (2026-07-03): the TF adapter must produce
@@ -128,5 +128,77 @@ describe('tfMeshToGeo crease-aware normals', () => {
       const dot = x * rx + y * ry + z * rz;
       expect(dot).toBeGreaterThan(0.98);
     }
+  });
+});
+
+/**
+ * Guards the TF cutaway face→colour split (sectional cross-section): a triangle
+ * whose three verts all lie on a cut plane is a revealed SECTION face (grey
+ * interior); anything else is outer body skin (red). Mirrors the Manifold
+ * `manifoldToCutVC` onCutX/onCutY classifier.
+ */
+describe('sectionFaceColors (TF cutaway split)', () => {
+  const planes = [{ axis: 0 as const, coord: 0 }, { axis: 1 as const, coord: 0 }];
+  // Colours round-trip through Float32Array, so compare with a tolerance.
+  const rgbNear = (cols: ArrayLike<number>, off: number, rgb: [number, number, number]) => {
+    expect(cols[off]).toBeCloseTo(rgb[0], 5);
+    expect(cols[off + 1]).toBeCloseTo(rgb[1], 5);
+    expect(cols[off + 2]).toBeCloseTo(rgb[2], 5);
+  };
+
+  it('colours a face flush with the x=0 cut plane GREY (interior)', () => {
+    // Triangle entirely on x=0 (a cross-section face).
+    const cols = sectionFaceColors([0, 0, 0, 0, 1, 0, 0, 0, 1], [0, 1, 2], { planes });
+    rgbNear(cols, 0, SECTION_INNER_RGB);
+  });
+
+  it('colours a face flush with the y=0 cut plane GREY (interior)', () => {
+    const cols = sectionFaceColors([0, 0, 0, 1, 0, 0, 0, 0, 1], [0, 1, 2], { planes });
+    rgbNear(cols, 0, SECTION_INNER_RGB);
+  });
+
+  it('colours an off-plane (outer skin) face RED', () => {
+    // A face out at x=5 — nowhere near a cut plane.
+    const cols = sectionFaceColors([5, 0, 0, 5, 1, 0, 5, 0, 1], [0, 1, 2], { planes });
+    rgbNear(cols, 0, SECTION_OUTER_RGB);
+  });
+
+  it('a face only PARTLY on the plane is NOT a section face (stays red)', () => {
+    // Two verts on x=0 but the third off it → the cut didn't create this face.
+    const cols = sectionFaceColors([0, 0, 0, 0, 1, 0, 2, 0, 1], [0, 1, 2], { planes });
+    rgbNear(cols, 0, SECTION_OUTER_RGB);
+  });
+
+  it('honours custom outer/inner colours', () => {
+    const outer: [number, number, number] = [1, 1, 1];
+    const inner: [number, number, number] = [0.2, 0.2, 0.2];
+    const onPlane = sectionFaceColors([0, 0, 0, 0, 1, 0, 0, 0, 1], [0, 1, 2], { planes, outer, inner });
+    const offPlane = sectionFaceColors([5, 0, 0, 5, 1, 0, 5, 0, 1], [0, 1, 2], { planes, outer, inner });
+    rgbNear(onPlane, 0, inner);
+    rgbNear(offPlane, 0, outer);
+  });
+});
+
+describe('tfMeshToGeo section colouring', () => {
+  it('emits a per-vertex color attribute when section is supplied', () => {
+    // One on-plane triangle (x=0) + one off-plane triangle.
+    const points = [
+      0, 0, 0, 0, 1, 0, 0, 0, 1,   // 0,1,2 — on x=0 (section → grey)
+      5, 0, 0, 5, 1, 0, 5, 0, 1,   // 3,4,5 — off-plane (skin → red)
+    ];
+    const faces = [0, 1, 2, 3, 4, 5];
+    const g: any = tfMeshToGeo({ points, faces }, undefined, { planes: [{ axis: 0, coord: 0 }] });
+    const col = g.getAttribute('color');
+    expect(col).toBeTruthy();
+    expect(col.count).toBe(6); // 2 tris * 3 corners, non-indexed
+    // First tri corners (0,1,2) grey; second tri corners (3,4,5) red.
+    expect(col.array[0]).toBeCloseTo(SECTION_INNER_RGB[0], 5);
+    expect(col.array[9]).toBeCloseTo(SECTION_OUTER_RGB[0], 5);
+    expect(col.array[10]).toBeCloseTo(SECTION_OUTER_RGB[1], 5);
+  });
+
+  it('emits NO color attribute when section is absent (plain solid path)', () => {
+    const g: any = tfMeshToGeo({ points: [0, 0, 0, 1, 0, 0, 0, 1, 0], faces: [0, 1, 2] });
+    expect(g.getAttribute('color')).toBeFalsy();
   });
 });
