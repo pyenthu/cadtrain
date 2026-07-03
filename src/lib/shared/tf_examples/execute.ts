@@ -39,6 +39,38 @@ function flatFloat32(path: Vec3[]): Float32Array {
   return out;
 }
 
+/** How far to punch a boolean-subtrahend sweep's path past both ends so its caps
+ *  clear the outer solid's caps (mirrors s_tube_demo's BORE_EXT). */
+const BORE_EXT = 1.0;
+
+/** Extend a path by `ext` along its END TANGENTS at both ends (one extra point
+ *  before the first, one after the last). Used for a sweep that's SUBTRACTED so
+ *  its bore punches fully THROUGH the outer end caps — otherwise the two sweeps
+ *  share coincident tilted caps and the mesh boolean stitches phantom handles
+ *  (defect-2: closed+manifold but χ wrong). PROVEN: same path → χ=-16; extended
+ *  → χ=0 (see the clean-boolean probe). Mirrors s_tube_demo.extendPathEnds. */
+function extendPathEnds(path: Vec3[], ext = BORE_EXT): Vec3[] {
+  const n = path.length;
+  if (n < 2) return path;
+  const nrm = (v: Vec3) => Math.hypot(v[0], v[1], v[2]) || 1;
+  const s0: Vec3 = [path[0][0] - path[1][0], path[0][1] - path[1][1], path[0][2] - path[1][2]];
+  const ls = nrm(s0);
+  const e0: Vec3 = [path[0][0] + (s0[0] / ls) * ext, path[0][1] + (s0[1] / ls) * ext, path[0][2] + (s0[2] / ls) * ext];
+  const d1: Vec3 = [path[n - 1][0] - path[n - 2][0], path[n - 1][1] - path[n - 2][1], path[n - 1][2] - path[n - 2][2]];
+  const le = nrm(d1);
+  const e1: Vec3 = [path[n - 1][0] + (d1[0] / le) * ext, path[n - 1][1] + (d1[1] / le) * ext, path[n - 1][2] + (d1[2] / le) * ext];
+  return [e0, ...path, e1];
+}
+
+/** Build a `sweep` instr → a capped tube. `extend` punches the path through both
+ *  ends (for a boolean subtrahend — avoids coincident-cap defect-2). */
+function buildSweep(t: any, instr: any, extend = false): any {
+  const path: Vec3[] = extend ? extendPathEnds(instr.path) : instr.path;
+  const flat = flatFloat32(path);
+  const tube = t.tubeMesh(buildOpenCurve(t, flat, path.length), instr.radius, instr.radialSegments || 32);
+  return instr.capped === false ? tube : capOpenEnds(t, tube);
+}
+
 /** Thrown by {@link executeTfRecipe} when it reaches a node TrueForm can't build
  *  natively (an `UNSUPPORTED` instr, or an unknown op). Callers gate on
  *  {@link recipeHasUnsupported} to avoid ever hitting this. */
@@ -86,20 +118,25 @@ function buildInstr(t: any, instr: TfInstr): any {
       return t.boxMesh(instr.w, instr.h, instr.d);
     case 'cylinder':
       return t.cylinderMesh(instr.radius, instr.height, instr.segments || 64);
-    case 'sweep': {
+    case 'sweep':
       // A circular section swept along a 3D path → tubeMesh over an open Catmull-
       // Rom curve, then capped into a closed solid (the tf_examples/s_tube_demo
       // pattern). `capped === false` (e.g. a closed-loop path) leaves it open.
-      const flat = flatFloat32(instr.path);
-      const tube = t.tubeMesh(buildOpenCurve(t, flat, instr.path.length), instr.radius, instr.radialSegments || 32);
-      return instr.capped === false ? tube : capOpenEnds(t, tube);
-    }
+      return buildSweep(t, instr);
     case 'booleanDifference':
-      return t.booleanDifference(buildInstr(t, instr.obj), buildInstr(t, instr.arg)).mesh;
+      // Extend a swept SUBTRAHEND's path so its bore punches through the outer
+      // caps (no coincident tilted caps → clean χ=0, not defect-2).
+      return t.booleanDifference(
+        buildInstr(t, instr.obj),
+        instr.arg.op === 'sweep' ? buildSweep(t, instr.arg, true) : buildInstr(t, instr.arg),
+      ).mesh;
     case 'booleanUnion':
       return t.booleanUnion(buildInstr(t, instr.obj), buildInstr(t, instr.arg)).mesh;
     case 'booleanIntersection':
-      return t.booleanIntersection(buildInstr(t, instr.obj), buildInstr(t, instr.arg)).mesh;
+      return t.booleanIntersection(
+        buildInstr(t, instr.obj),
+        instr.arg.op === 'sweep' ? buildSweep(t, instr.arg, true) : buildInstr(t, instr.arg),
+      ).mesh;
     case 'union': {
       // list / group / stack → fold booleanUnion over the children (dp_joint pattern).
       const kids = instr.children;
