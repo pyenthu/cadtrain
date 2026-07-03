@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "vite dev --port 3333",
+    "dev:worktree": "bash scripts/dev-worktree.sh",
     "build": "vite build",
     "preview": "vite preview",
     "start": "HOST=0.0.0.0 PORT=${PORT:-3333} node server.js",
