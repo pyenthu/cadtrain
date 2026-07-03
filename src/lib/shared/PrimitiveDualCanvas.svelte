@@ -121,6 +121,9 @@
   let effBakeGlb = $derived((isBrep || isTf) ? false : bakeGlb);
   // TrueForm bake time (ms) for the current mesh — appended to the stats line.
   let tfMs = $state<number | null>(null);
+  // TF "actual" fell back to the imported Manifold mesh (recipe unsupported) →
+  // flag it so the verdict badge reads "MANIFOLD 3D BAKE" in a warning style.
+  let tfFellBack = $state(false);
   // In-canvas adjustable OCCT tolerance (the relabelled "tol" dial). undefined →
   // the prop default (tolerance). Drives the BREP fetch + fetch-cache key.
   let tolOverride = $state<number | undefined>(undefined);
@@ -580,7 +583,13 @@
       // booleans / uncapped sweeps. A clean half-cut solid stays closed+manifold.
       // Label carries which BUILD PATH ran so the user sees native-TF vs the
       // mesh-import fallback (vs a demo) right in the verdict line.
-      const label = tfActual ? `${name ?? id} · ${builtVia}` : tfDemo;
+      // Lead the verdict with the ENGINE that actually produced the shown mesh so
+      // it's never misleading: native/demo = built by TrueForm → "TF BAKE"; the
+      // fallback = the imported MANIFOLD 3D-bake mesh → "MANIFOLD 3D BAKE" (flagged
+      // as a warning so it reads distinctly, not like a TF build).
+      tfFellBack = builtVia === 'mesh-import fallback';
+      const engine = tfFellBack ? 'MANIFOLD 3D BAKE' : 'TF BAKE';
+      const label = tfActual ? `${engine} · ${name ?? id}` : `${engine} · ${tfDemo}`;
       if (stats) {
         brepReason =
           `${label}${cutPlanes ? ' · cutaway' : ''} · ${stats.closed ? 'watertight (closed)' : `open (${stats.boundaryLoops} boundary loop${stats.boundaryLoops === 1 ? '' : 's'})`}` +
@@ -896,7 +905,7 @@
   {#if err}<div class="pd-err">{err}</div>{/if}
   <!-- BREP: no OCCT-buildable solid for this part (revolve / extrude / loft / CSG only).
        TF: reuses the same centred-message chrome for its "no path" / error text. -->
-  {#if (isBrep || isTf) && brepReason}<div class="pd-brep-reason" class:pd-reason-bottom={isTf}>{brepReason}</div>{/if}
+  {#if (isBrep || isTf) && brepReason}<div class="pd-brep-reason" class:pd-reason-bottom={isTf} class:pd-reason-warn={isTf && tfFellBack}>{brepReason}</div>{/if}
   <!-- Part stats at the bottom: tri / vert count (instanced → child × N).
        BREP appends the OCCT bake time. -->
   {#if stats}
@@ -987,6 +996,9 @@
   /* TF topology verdict shows WITH a rendered part → anchor it at the bottom
      (above the stats line) instead of dead-centre, so it doesn't overlap. */
   .pd-brep-reason.pd-reason-bottom { top: auto; bottom: 28px; transform: translateX(-50%); }
+  /* "actual" fell back to the imported MANIFOLD mesh (not a native TF build) —
+     read it as a warning, not a normal verdict. */
+  .pd-brep-reason.pd-reason-warn { color: #b91c1c; border-color: #fca5a5; background: rgba(254,242,242,0.96); }
   /* Vertical Z-pan slider, left edge. */
   /* Z-pan vertical slider on the RIGHT edge — keeps the left clear for the
      2D SVG overlay (and the 'Mesh (live)' label sitting top-left). */
