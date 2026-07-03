@@ -1622,6 +1622,10 @@
   .prim-body {
     display: flex; flex-direction: row;
     flex: 1 1 0; min-height: 0; min-width: 0;
+    /* Cap the folder/file window at 80% of the viewport so a long file list
+       scrolls internally (.prim-rail-scroll) instead of running to the very
+       bottom edge of the sidebar. */
+    max-height: 80vh;
   }
   /* Vertical jump rail — a left column of filing-cabinet tabs whose labels are
      rotated to read top→bottom. Scrolls if there are many folders. Clicking a
@@ -1701,7 +1705,9 @@
   .prim-create-menu-head {
     padding: 4px 8px 6px; font: 600 10px Arial; color: #a8a29e;
     border-bottom: 1px solid #f3f4f6; margin-bottom: 2px;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px;
+    /* Wrap instead of clipping — a long "Move <id> to…" / "primitives/<path>/"
+       header was ellipsis-truncated at 240px and read as cut off. */
+    white-space: normal; overflow-wrap: anywhere; max-width: 260px;
   }
   .prim-create-menu-item {
     text-align: left; padding: 6px 10px; border: 0; border-radius: 4px;
