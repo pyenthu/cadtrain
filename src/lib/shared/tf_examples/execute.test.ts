@@ -288,6 +288,51 @@ describe('executeTfRecipe — mated stack (g_dp_joint bug)', () => {
   });
 });
 
+describe('executeTfRecipe — stack-mode repeat (g_dp_stand bug)', () => {
+  // g_dp_stand-shaped: a graph `stack` of N counted JOINTS. graph-to-tf lowers the
+  // counted child to { op:'repeat', count:N, mode:'stack', child }. The bug: the
+  // repeat used to fold N copies of the SAME child at the SAME local origin, so all
+  // N joints piled at z=0 (total extent = ONE joint) instead of stacking down-hole.
+  const JOINT = 20; // one demo joint's local Z-extent [0, 20]
+  const N = 3;
+  const jointInstr: TfInstr = { op: 'revolve', profile: boredSection(JOINT), segments: 24 };
+
+  it('a stack-mode repeat ×N places the copies END-TO-END (total Z ≈ N×extent), not piled at origin', () => {
+    const t = makeBboxMockTf();
+    const out = executeTfRecipe(t, t, recipe([
+      { op: 'union', mated: true, children: [
+        { op: 'repeat', count: N, mode: 'stack', child: jointInstr },
+      ] },
+    ]));
+    const [mn, mx] = pointsZExtent(out.data.points);
+    const total = mx - mn;
+    // N joints, each JOINT tall, welded with (N-1) junction overlaps of 0.1.
+    expect(total).toBeCloseTo(N * JOINT - (N - 1) * 0.1, 4);
+    // Emphatically NOT the broken single-joint extent (all piled at origin).
+    expect(total).toBeGreaterThan(JOINT * (N - 0.5));
+    // Copies slide onto the running cursor 0, 19.9, 39.8. The FIRST copy's dz is 0
+    // (its top already sits at the cursor) so no translation is emitted; copies 2+3
+    // slide to distinct DOWN-HOLE cursors — the proof they are NOT piled at origin.
+    const dzs = t.calls.filter((c: any) => c.fn === 'makeTranslation').map((c: any) => c.args[2]);
+    expect(dzs.some((z: number) => Math.abs(z - (JOINT - 0.1)) < 1e-6)).toBe(true);
+    expect(dzs.some((z: number) => Math.abs(z - 2 * (JOINT - 0.1)) < 1e-6)).toBe(true);
+    expect(new Set(dzs).size).toBe(N - 1); // (N-1) distinct non-zero cursors, none coincident
+    // N copies → (N-1) folds.
+    expect(t.calls.filter((c: any) => c.fn === 'booleanUnion')).toHaveLength(N - 1);
+  });
+
+  it('a NON-stack-mode repeat (mode absent) leaves the copies piled at origin (v0 approximation)', () => {
+    const t = makeBboxMockTf();
+    const out = executeTfRecipe(t, t, recipe([
+      { op: 'repeat', count: N, child: jointInstr },
+    ]));
+    const [mn, mx] = pointsZExtent(out.data.points);
+    // No stride captured → all copies coincide → extent is just ONE joint.
+    expect(mx - mn).toBeCloseTo(JOINT, 4);
+    expect(t.calls.filter((c: any) => c.fn === 'makeTranslation')).toHaveLength(0);
+  });
+});
+
 describe('recipeHasUnsupported', () => {
   it('is false for a clean revolve/boolean recipe', () => {
     expect(recipeHasUnsupported(recipe([

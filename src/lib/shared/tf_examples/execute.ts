@@ -146,20 +146,36 @@ const STACK_OVERLAP = 0.1;
  * one continuous through-bore. This mirrors `manifold-helpers.stack()` on the
  * Manifold side (flush end-to-end, first child at origin).
  */
-function buildMatedStack(t: any, kids: TfInstr[]): any {
+/**
+ * Position a list of ALREADY-BUILT meshes END-TO-END down +Z and weld them into
+ * one solid — the shared placement machinery behind both a MATED stack container
+ * ({@link buildMatedStack}) and a `stack`-mode `repeat` (N copies of one child).
+ *
+ * Z-DOWN (top = LOWER z, downhole = +z): a running `cursor` marks where the NEXT
+ * mesh's TOP (its min z) goes. The first mesh's top sits at z=0; each subsequent
+ * mesh's top meets the previous mesh's bottom, tucked up by {@link STACK_OVERLAP}
+ * so the union welds cleanly. Each mesh is slid with a `makeTranslation([0,0,dz])`
+ * (composed via {@link applyTransform}, respecting any transform it already
+ * carries), then unioned. Extents come from each mesh's LOCAL point buffer
+ * ({@link localZExtent}), so a mesh authored at its own origin lands correctly.
+ */
+function placeEndToEnd(t: any, meshes: any[]): any {
   let acc: any = null;
-  let cursor = 0; // world z where the NEXT child's TOP (min z) lands
-  for (let i = 0; i < kids.length; i++) {
-    const child = buildInstr(t, kids[i]);
+  let cursor = 0; // world z where the NEXT mesh's TOP (min z) lands
+  for (const child of meshes) {
     const { min: zMin, max: zMax } = localZExtent(child);
-    const dz = cursor - zMin; // slide this child's TOP onto the cursor
+    const dz = cursor - zMin; // slide this mesh's TOP onto the cursor
     if (Math.abs(dz) > 1e-9) applyTransform(t, child, t.makeTranslation(0, 0, dz));
-    // Advance past this child's length, minus the overlap so the next child tucks in.
+    // Advance past this mesh's length, minus the overlap so the next one tucks in.
     cursor += Math.max(0, zMax - zMin) - STACK_OVERLAP;
     acc = acc == null ? child : t.booleanUnion(acc, child).mesh;
   }
-  if (acc == null) throw new TfUnsupportedError('union(empty)');
+  if (acc == null) throw new TfUnsupportedError('placeEndToEnd(empty)');
   return acc;
+}
+
+function buildMatedStack(t: any, kids: TfInstr[]): any {
+  return placeEndToEnd(t, kids.map((k) => buildInstr(t, k)));
 }
 
 /**
@@ -229,13 +245,18 @@ function buildInstr(t: any, instr: TfInstr): any {
       return child;
     }
     case 'repeat': {
-      // Build N copies + union. The v0 recipe does NOT carry the per-copy stride
-      // (repeat lowered to count+child only), so copies coincide — a faithful
-      // approximation until graph-to-tf captures the repeat transform. Each copy
-      // is rebuilt fresh so it's a distinct mesh handle.
+      // Build N distinct copies of the child (each rebuilt fresh so it's its own
+      // mesh handle). A STACK-mode repeat (`mode:'stack'` — e.g. g_dp_stand's
+      // `stack` of N joints) positions its copies END-TO-END down +Z via the same
+      // {@link placeEndToEnd} machinery a mated stack uses, so N joints stack down
+      // the string instead of piling at the shared local origin. Any other mode
+      // (list/place/none — no linear stride captured in v0) folds the copies at
+      // the origin, the faithful approximation until graph-to-tf carries a stride.
       const n = Math.max(1, Math.floor(instr.count));
-      let acc = buildInstr(t, instr.child);
-      for (let i = 1; i < n; i++) acc = t.booleanUnion(acc, buildInstr(t, instr.child)).mesh;
+      const copies = Array.from({ length: n }, () => buildInstr(t, instr.child));
+      if (instr.mode === 'stack') return placeEndToEnd(t, copies);
+      let acc = copies[0];
+      for (let i = 1; i < copies.length; i++) acc = t.booleanUnion(acc, copies[i]).mesh;
       return acc;
     }
     case 'UNSUPPORTED':

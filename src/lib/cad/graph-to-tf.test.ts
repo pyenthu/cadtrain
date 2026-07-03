@@ -226,6 +226,56 @@ describe('graphToTf', () => {
     expect(recipe.notes.some((n) => n.includes('CYCLE'))).toBe(true);
   });
 
+  it('a STACK node with childCounts lowers the counted child to a stack-mode repeat (g_dp_stand)', () => {
+    // g_dp_stand-shaped: a `stack` with ONE child repeated n=3 (childCounts). This
+    // must lower to a mated union whose single child is { op:'repeat', mode:'stack' }
+    // — so the executor stacks the N copies END-TO-END, not piled at the origin.
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_stack'] },
+        n_joint: { id: 'n_joint', type: 'call', src: 'r_cuboid', alias: 'J', args: { w: { kind: 'literal', value: 4 }, h: { kind: 'literal', value: 4 }, d: { kind: 'literal', value: 20 } } },
+        n_stack: {
+          id: 'n_stack',
+          type: 'stack',
+          children: ['n_joint'],
+          childCounts: { n_joint: { kind: 'param', param: 'n' } },
+          childRefs: { n_joint: -2.75 },
+        },
+      },
+      'n_root',
+      { n: { default: 3 } },
+    );
+
+    const recipe = graphToTf(g);
+    expect(recipe.instrs).toHaveLength(1);
+    const top = recipe.instrs[0] as Extract<TfInstr, { op: 'union' }>;
+    expect(top.op).toBe('union');
+    expect(top.mated).toBe(true);
+    expect(top.children).toHaveLength(1);
+    const rep = top.children[0] as Extract<TfInstr, { op: 'repeat' }>;
+    expect(rep.op).toBe('repeat');
+    expect(rep.count).toBe(3);
+    expect(rep.mode).toBe('stack');
+    expect(rep.child).toEqual({ op: 'box', w: 4, h: 4, d: 20 });
+  });
+
+  it('a count of 1 (or an absent childCounts entry) lowers the child directly — no repeat wrapper', () => {
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_stack'] },
+        n_a: { id: 'n_a', type: 'call', src: 'r_cuboid', alias: 'A', args: { w: { kind: 'literal', value: 1 }, h: { kind: 'literal', value: 1 }, d: { kind: 'literal', value: 1 } } },
+        n_b: { id: 'n_b', type: 'call', src: 'r_cuboid', alias: 'B', args: { w: { kind: 'literal', value: 2 }, h: { kind: 'literal', value: 2 }, d: { kind: 'literal', value: 2 } } },
+        n_stack: { id: 'n_stack', type: 'stack', children: ['n_a', 'n_b'], childCounts: { n_a: { kind: 'literal', value: 1 } } },
+      },
+      'n_root',
+    );
+    const top = graphToTf(g).instrs[0] as Extract<TfInstr, { op: 'union' }>;
+    expect(top.children).toEqual([
+      { op: 'box', w: 1, h: 1, d: 1 },
+      { op: 'box', w: 2, h: 2, d: 2 },
+    ]);
+  });
+
   it('tfRecipeText renders a readable plan without throwing', () => {
     const g = mkGraph(
       {
