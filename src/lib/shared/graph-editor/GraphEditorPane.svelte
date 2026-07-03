@@ -123,7 +123,7 @@
   import { resampleSpline } from '$lib/cad/spline-resample';
   import { emitProfileGraph } from '$lib/cad/composition-emit-profile';
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
-  import { autoLayoutGraph, forceSeparate } from '$lib/cad/composition-layout';
+  import { autoLayoutGraph } from '$lib/cad/composition-layout';
   import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/cad/sketch';
   import { sketchColLayout, sketchEntryH } from '$lib/cad/sketch-layout';
   // Pure socket / card / position geometry (P1/G1 extraction — see
@@ -139,6 +139,10 @@
     entryIdxForEvalIdx, miniBez,
     CARD_X0, CARD_PAD, CARD_TITLE_H, PARAM_W_MIN, PARAM_H, PARAM_GAP,
   } from './geom';
+  // Auto-layout + push-apart actions (modularize K.65 — pure, viewport state
+  // passed in via layoutCtx()). The shell keeps the thin autoLayout/pushApart
+  // entry points below (they own the undoLayout snapshot + assign graph).
+  import { overlayCardObstacles, separateGraph, type LayoutContext } from './graph-layout-actions';
   import { exprBlockMember } from '$lib/cad/graph-exprs';
   import { PolyPreviewState } from './poly-preview-state.svelte';
   import PolyPreview from './PolyPreview.svelte';
@@ -2506,7 +2510,7 @@
     graph = autoLayoutGraph(graph, {
       rowGap: 220,
       columnGap: 300,
-      obstacles: overlayCardObstacles(),
+      obstacles: overlayCardObstacles(layoutCtx()),
       nodeSize: (id) => nodeSize(graph,graph.nodes[id]),
     });
     // Finish with a push-apart that keeps the card obstacles ON (so the
@@ -2533,166 +2537,20 @@
     undoLayout = { ...graph.layout };
     applyPushApart();
   }
-  /** The single viewport-tacked overlay card — the combined tab card
-   *  (header + the ACTIVE tab's body) — projected from screen-fixed coords
-   *  into GRAPH space at the current pan/zoom. Returned as
-   *  forceSeparate/autoLayoutGraph obstacle so node cards get pushed clear of
-   *  it and never overlap. The card is glued to the top-left of the viewport
-   *  (PROPS_X0 px from the left), so `(screenX - pan.x) / zoom` maps the
-   *  card's screen rect into graph space; a larger card footprint at low zoom
-   *  maps to a larger graph rect, which is correct. */
-  function overlayCardObstacles(): { id: string; x: number; y: number; w: number; h: number }[] {
-    // Card height = tab header + whichever tab body is showing. The params
-    // body socket spills ~14 px past the card's right edge, so pad the width.
-    const pcardSize = paramCardSize(paramEntries.length, PARAM_W);
-    const bodyH = leftTab === 'params' ? pcardSize.h : propsBodyH;
-    const w = Math.max(PROPS_W, pcardSize.w + 14);
-    return [{
-      id: '__obs_left_card',
-      x: (PROPS_X0 - pan.x) / zoom,
-      y: (PROPS_Y0 - pan.y) / zoom,
-      w: w / zoom,
-      h: (TAB_HEADER_H + bodyH) / zoom,
-    }];
+  /** Build the LayoutContext (viewport + left-card state) the pure
+   *  graph-layout-actions helpers need. */
+  function layoutCtx(): LayoutContext {
+    return {
+      pan, zoom, leftTab, propsBodyH,
+      paramEntriesLen: paramEntries.length, PARAM_W,
+      PROPS_X0, PROPS_Y0, PROPS_W, TAB_HEADER_H,
+      canvasEl, boundLeft, boundRight, boundTop,
+    };
   }
+  // Resolve overlapping cards (extracted → graph-layout-actions.separateGraph).
+  // autoLayout passes pure mode; pushApart uses the defaults.
   function applyPushApart(opts: { useBounds?: boolean; useObstacles?: boolean; useWires?: boolean } = {}) {
-    const { useBounds = true, useObstacles = true, useWires = true } = opts;
-    // The PROPERTIES + PARAMS cards are viewport-fixed obstacles nodes get
-    // pushed clear of. PURE mode skips them + the wires + the bounds — wires
-    // and bounds pull cards toward the viewport/params channel and were
-    // COMPRESSING the clean column layout back together. Pure pairwise
-    // separation only de-overlaps, never compresses.
-    const obstacles: { id: string; x: number; y: number; w: number; h: number }[] = [];
-    if (useObstacles) {
-      obstacles.push(...overlayCardObstacles());
-    }
-    // Boundary walls (#116). The visible canvas region in graph space is
-    // ([0, rect.width]/zoom shifted by -pan.x, etc.). Repellant walls
-    // ride the obstacles channel — a tall thin rect JUST OUTSIDE the edge
-    // that pushes any node touching the edge away. Confiner walls clamp
-    // to the visible interior via confinerBounds. If both edges are off,
-    // we skip the rect lookup entirely.
-    let confinerBounds: { minX?: number; maxX?: number; minY?: number } | undefined;
-    if (useBounds && canvasEl && (boundLeft !== 'off' || boundRight !== 'off' || boundTop !== 'off')) {
-      const rect = canvasEl.getBoundingClientRect();
-      // Viewport edges in graph space — the wall IS the current section
-      // boundary. Cards past the edge (off-screen) get pulled back inside;
-      // cards inside don't get touched. To catch cards that are already
-      // far off-screen, each wall extends as a FULL HALF-PLANE in the
-      // off-screen direction — viewport-end → ±FAR — so a card anywhere
-      // outside the visible region overlaps it and gets pushed back in.
-      const FAR = 10000;
-      const gxLeft = (0 - pan.x) / zoom;
-      const gxRight = (rect.width - pan.x) / zoom;
-      const gyTop = (0 - pan.y) / zoom;
-      const gyBottom = (rect.height - pan.y) / zoom;
-      const wallY = gyTop - FAR;
-      const wallH = (gyBottom - gyTop) + 2 * FAR;
-      // Repellant mode ALSO sets a confinerBounds clamp on that side —
-      // gives a hard "stay inside the viewport" guarantee on top of the
-      // half-plane obstacle, so pairwise pushes that ricochet a card past
-      // the boundary in one iteration get yanked back at the end of that
-      // same iteration. Without this, a chain of 5+ cards can cascade and
-      // send the last 1-2 off-screen as the resolver moves things around.
-      if (boundLeft === 'repellant') {
-        obstacles.push({
-          id: '__obs_wall_left',
-          x: gxLeft - FAR, y: wallY, w: FAR, h: wallH,
-        });
-        confinerBounds = { ...(confinerBounds ?? {}), minX: gxLeft };
-      }
-      if (boundRight === 'repellant') {
-        obstacles.push({
-          id: '__obs_wall_right',
-          x: gxRight, y: wallY, w: FAR, h: wallH,
-        });
-        confinerBounds = { ...(confinerBounds ?? {}), maxX: gxRight };
-      }
-      // Top edge — half-plane above the viewport, pushes nodes down.
-      // Extend wall width FAR beyond the visible x-range so a card sitting
-      // ABOVE the viewport (any x) gets caught.
-      if (boundTop === 'repellant') {
-        // Pad by some buffer (24 px) so cards land well clear of the tab
-        // strip / PARAMS card overlay, not flush against the edge.
-        const topPad = 24 / zoom;
-        obstacles.push({
-          id: '__obs_wall_top',
-          x: gxLeft - FAR, y: gyTop + topPad - FAR, w: (gxRight - gxLeft) + 2 * FAR, h: FAR,
-        });
-        confinerBounds = { ...(confinerBounds ?? {}), minY: gyTop + topPad };
-      }
-    }
-    // Collect the visible wires so push-apart can route cards AROUND them
-    // (Phase 22b — wire repulsion). Skipped in pure mode.
-    const wires = useWires ? collectWires() : [];
-    // Real rendered card heights from the DOM (the nodeSize estimate
-    // undersizes cards with foreignObject param/accordion bodies, so
-    // forceSeparate thought cards cleared when they visually overlapped —
-    // K.78). getBBox is in the card's local graph units, so no zoom
-    // division needed. Fall back to the estimate when a card isn't in the
-    // DOM yet.
-    const realH = new Map<string, number>();
-    if (typeof document !== 'undefined') {
-      for (const el of Array.from(document.querySelectorAll('g.ge-node[data-node-id]'))) {
-        const nid = el.getAttribute('data-node-id');
-        if (!nid) continue;
-        try { const bb = (el as any).getBBox?.(); if (bb && bb.height > 0) realH.set(nid, bb.height); } catch { /* detached */ }
-      }
-    }
-    graph = forceSeparate(graph, {
-      nodeSize: (id) => {
-        const est = nodeSize(graph,graph.nodes[id]);
-        const measured = realH.get(id);
-        // Use the larger of estimate / measured, with a sane floor so
-        // small estimates can't pack cards too tightly.
-        return { w: est.w, h: Math.max(est.h, measured ?? 0, 120) };
-      },
-      padding: 24,
-      obstacles,
-      wires,
-      wirePadding: 16,
-      confinerBounds,
-    });
-  }
-
-  /** Enumerate every visible wire in the graph as a line segment in
-   *  GRAPH space. Used by pushApart so wires push non-endpoint cards
-   *  perpendicular to the segment when a card sits on top of one.
-   *  Mirrors the SVG render path's wire enumeration (method obj/arg,
-   *  mv/rot/repeat child, container child → output). */
-  function collectWires(): { fromId?: NodeId; toId?: NodeId; ax: number; ay: number; bx: number; by: number }[] {
-    const out: { fromId?: NodeId; toId?: NodeId; ax: number; ay: number; bx: number; by: number }[] = [];
-    for (const [id, node] of Object.entries(graph.nodes)) {
-      if (!node) continue;
-      const addInputWire = (srcId: NodeId, slot: 'obj' | 'arg' | 'child') => {
-        if (!graph.nodes[srcId]) return;
-        const a = outputSocketAt(graph,srcId);
-        const b = inputSocketAt(graph,id, slot);
-        out.push({ fromId: srcId, toId: id, ax: a.x, ay: a.y, bx: b.x, by: b.y });
-      };
-      if (node.type === 'method') {
-        if (node.obj) addInputWire(node.obj, 'obj');
-        if (node.arg) addInputWire(node.arg, 'arg');
-      } else if (node.type === 'mv' || node.type === 'rot' || node.type === 'txfmn' || node.type === 'repeat') {
-        if (node.child) addInputWire(node.child, 'child');
-      } else if (node.type === 'stack' || node.type === 'group') {
-        node.children.forEach((c, i) => {
-          if (!graph.nodes[c]) return;
-          const a = outputSocketAt(graph,c);
-          const b = containerSlotInputAt(graph,id, i);
-          out.push({ fromId: c, toId: id, ax: a.x, ay: a.y, bx: b.x, by: b.y });
-        });
-      } else if (node.type === 'list' && id === graph.root) {
-        // Root-list children draw a wire to the Output card's slots.
-        node.children.forEach((c, i) => {
-          if (!graph.nodes[c]) return;
-          const a = outputSocketAt(graph,c);
-          const b = containerSlotInputAt(graph,id, i);
-          out.push({ fromId: c, toId: id, ax: a.x, ay: a.y, bx: b.x, by: b.y });
-        });
-      }
-    }
-    return out;
+    graph = separateGraph(graph, opts, layoutCtx());
   }
 
   // ─── inline transforms on Call cards ────────────────────────────────────
