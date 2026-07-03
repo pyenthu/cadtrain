@@ -173,6 +173,7 @@
   <div class="ft-node">
     <button
       class="ft-folder"
+      class:ft-section={depth === 0}
       type="button"
       style="padding-left: {8 + depth * 14}px"
       title={node.path}
@@ -181,7 +182,7 @@
       <span class="ft-chev">{open ? '▾' : '▸'}</span>
       <span class="ft-folder-ic">{open ? '📂' : '📁'}</span>
       <span class="ft-name">{node.name}</span>
-      <span class="ft-count">({subtreeFileCount(node)})</span>
+      <span class="ft-count">{subtreeFileCount(node)}</span>
     </button>
     {#if open}
       {#each kids as c (c.path)}
@@ -290,6 +291,22 @@
   .ft-folder:hover,
   .ft-file:hover {
     background: #22223a;
+  }
+  /* Top-level folders read as SVTC-style explorer SECTION headers. */
+  .ft-section {
+    font: 700 10px Arial;
+    letter-spacing: 0.6px;
+    text-transform: uppercase;
+    color: #8a8ab0;
+    padding-top: 7px;
+    padding-bottom: 7px;
+    border-top: 1px solid #22223a;
+  }
+  .ft-node:first-child > .ft-section {
+    border-top: none;
+  }
+  .ft-section .ft-count {
+    margin-left: auto;
   }
   .ft-file.active {
     background: #2a2a48;

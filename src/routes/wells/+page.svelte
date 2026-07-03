@@ -30,6 +30,47 @@
   // Far-left placement-tool rail state (scaffold — see WellToolbar).
   let activeTool = $state('select');
 
+  // ── Resizable explorer sidebar (VS-Code / WsonApp-style splitter) ───────────
+  // Width persists to localStorage; drag the splitter between the sidebar and
+  // the main workspace to resize. Clamped so the tree stays usable.
+  const SIDEBAR_W_KEY = 'wells-sidebar-w';
+  const SIDEBAR_MIN = 200;
+  const SIDEBAR_MAX = 460;
+  let sidebarW = $state(250);
+  let resizing = $state(false);
+
+  $effect(() => {
+    if (typeof localStorage === 'undefined') return;
+    const saved = Number(localStorage.getItem(SIDEBAR_W_KEY));
+    if (Number.isFinite(saved) && saved >= SIDEBAR_MIN && saved <= SIDEBAR_MAX) {
+      sidebarW = saved;
+    }
+  });
+
+  function startResize(ev: PointerEvent) {
+    ev.preventDefault();
+    resizing = true;
+    const startX = ev.clientX;
+    const startW = sidebarW;
+    const onMove = (e: PointerEvent) => {
+      sidebarW = Math.max(SIDEBAR_MIN, Math.min(SIDEBAR_MAX, startW + (e.clientX - startX)));
+    };
+    const onUp = () => {
+      resizing = false;
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem(SIDEBAR_W_KEY, String(Math.round(sidebarW)));
+        } catch {
+          /* ignore quota / privacy-mode failures */
+        }
+      }
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
+
   // ── Local workspace (client-side only — File System Access API / <input>) ──
   // Files the user opens from their own machine become a "Workspace" section,
   // distinct from the bundled Samples. Nothing is written server-side; the last
@@ -111,6 +152,11 @@
   let nextKey = 1;
 
   const activeId = $derived(tabs.find((t) => t.key === activeKey)?.id ?? null);
+  // Active file + its condensed summary — drive the workspace header (well
+  // name + type chips) at the top of the main area, WsonApp-style.
+  const activeFile = $derived(activeId ? fileById(activeId) : undefined);
+  const activeSummary = $derived(activeFile && !activeFile.error ? summarise(activeFile.doc) : null);
+  const fmtM = (v: number | null) => (v == null ? '—' : `${v} m`);
 
   function openTab(id: string) {
     const existing = tabs.find((t) => t.id === id);
@@ -144,13 +190,13 @@
   });
 </script>
 
-<div class="wells-app">
+<div class="wells-app" class:resizing>
   <!-- Far-left editor tool rail (SVTC-style icon toolbar). -->
   <WellToolbar bind:active={activeTool} />
 
   <!-- Left file/folder sidebar — SVTC-style explorer (Samples + local Workspace)
        wrapping the shared folder tree, plus the local-file open affordance. -->
-  <div class="wells-sidebar">
+  <div class="wells-sidebar" style="width: {sidebarW}px">
     <WellSideNav
       {tree}
       title="Wells"
@@ -169,7 +215,16 @@
     <a href="/" class="wells-home">← Home</a>
   </div>
 
-  <!-- Main area: tab strip + central well view. -->
+  <!-- Drag splitter — resize the explorer, WsonApp/VS-Code style. -->
+  <div
+    class="wells-splitter"
+    role="separator"
+    aria-orientation="vertical"
+    aria-label="Resize sidebar"
+    onpointerdown={startResize}
+  ></div>
+
+  <!-- Main area: tab strip · workspace header · central well view. -->
   <main class="wells-main">
     <div class="wells-tabs">
       {#if tabs.length === 0}
@@ -192,11 +247,40 @@
       {/each}
     </div>
 
+    <!-- Workspace header — active well name + type chips + counts. Mirrors
+         WsonApp's header row at the top of the diagram workspace. -->
+    {#if activeSummary}
+      <header class="wells-header">
+        <div class="wells-title">
+          <span class="wells-title-ic">◍</span>
+          <h1>{activeSummary.wellName}</h1>
+        </div>
+        <div class="wells-chips">
+          <span class="wells-chip wells-chip-kind">
+            {activeSummary.deviated ? '⟋ deviated' : '│ vertical'}
+          </span>
+          {#if activeSummary.wellType}<span class="wells-chip">{activeSummary.wellType}</span>{/if}
+          <span class="wells-chip">TD {fmtM(activeSummary.td)}</span>
+          <span class="wells-chip">PBTD {fmtM(activeSummary.pbtd)}</span>
+        </div>
+        <div class="wells-metrics">
+          <span class="wells-metric"><b>{activeSummary.counts.casing}</b> csg</span>
+          <span class="wells-metric"><b>{activeSummary.counts.completions}</b> comp</span>
+          <span class="wells-metric"><b>{activeSummary.counts.perforations}</b> perf</span>
+          <span class="wells-metric"><b>{activeSummary.counts.survey}</b> svy</span>
+        </div>
+      </header>
+    {/if}
+
     <div class="wells-stage">
       {#if tabs.length === 0}
         <div class="wells-empty">
-          <p>No well open.</p>
-          <p>Pick a <code>.wson</code> file in the sidebar to open it in a tab.</p>
+          <div class="wells-empty-ic">◍</div>
+          <p class="wells-empty-title">No well open</p>
+          <p class="wells-empty-sub">
+            Pick a <code>.wson</code> file in the sidebar, or
+            <strong>Open Folder</strong> to load your own workspace.
+          </p>
         </div>
       {:else}
         <!-- All panes stay mounted; only the active one is visible (the
@@ -222,13 +306,33 @@
     font-family: Arial, sans-serif;
   }
 
+  /* While dragging the splitter, kill text selection + hint the cursor. */
+  .wells-app.resizing {
+    user-select: none;
+    cursor: col-resize;
+  }
+
   .wells-sidebar {
-    width: 250px;
     flex: none;
     display: flex;
     flex-direction: column;
     min-height: 0;
     border-right: 1px solid #2a2a3e;
+  }
+
+  /* ── Resize splitter ─────────────────────────────────────────────────────── */
+  .wells-splitter {
+    flex: none;
+    width: 5px;
+    margin: 0 -3px 0 -2px; /* widen the grab target without shifting layout */
+    z-index: 5;
+    cursor: col-resize;
+    background: transparent;
+    transition: background 0.12s ease;
+  }
+  .wells-splitter:hover,
+  .wells-app.resizing .wells-splitter {
+    background: #cc3333;
   }
   /* FolderTreeSidebar owns its own border; drop the wrapper's so they don't
      double up. The Home link sits pinned below the tree. */
@@ -257,6 +361,70 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
+  }
+
+  /* ── Workspace header (active well name + chips + counts) ─────────────────── */
+  .wells-header {
+    flex: none;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 8px 16px;
+    background: #16161f;
+    border-bottom: 1px solid #2a2a3e;
+  }
+  .wells-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+  .wells-title-ic {
+    color: #cc3333;
+    font-size: 14px;
+    flex: none;
+  }
+  .wells-title h1 {
+    margin: 0;
+    font: 700 15px Arial;
+    color: #fff;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .wells-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-width: 0;
+  }
+  .wells-chip {
+    font: 600 11px ui-monospace, monospace;
+    background: #232340;
+    border: 1px solid #34345a;
+    border-radius: 9999px;
+    padding: 2px 10px;
+    color: #aab;
+    white-space: nowrap;
+  }
+  .wells-chip-kind {
+    color: #ffb;
+    border-color: #4a4a2a;
+  }
+  .wells-metrics {
+    display: flex;
+    gap: 12px;
+    margin-left: auto;
+    flex: none;
+  }
+  .wells-metric {
+    font: 11px ui-monospace, monospace;
+    color: #778;
+    white-space: nowrap;
+  }
+  .wells-metric b {
+    color: #fff;
+    font-size: 13px;
   }
 
   /* ── Tab strip ─────────────────────────────────────────────────────────── */
@@ -354,9 +522,33 @@
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 4px;
+    gap: 6px;
     color: #55556a;
-    font: 13px ui-monospace, monospace;
+    text-align: center;
+    padding: 0 24px;
+  }
+  .wells-empty-ic {
+    font-size: 44px;
+    color: #cc3333;
+    opacity: 0.4;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+  .wells-empty-title {
+    margin: 0;
+    font: 600 14px Arial;
+    color: #aab;
+  }
+  .wells-empty-sub {
+    margin: 0;
+    max-width: 340px;
+    font: 12px ui-monospace, monospace;
+    color: #667;
+    line-height: 1.5;
+  }
+  .wells-empty-sub strong {
+    color: #aab;
+    font-weight: 700;
   }
   .wells-empty code {
     color: #7fa;
