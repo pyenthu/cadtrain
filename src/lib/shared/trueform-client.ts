@@ -328,3 +328,98 @@ export function tfResult(
   }
   return { data: tfMeshData(solid), stats: tfAnalyze(tf, solid) };
 }
+
+// ── "actual" import — the user's REAL baked part through the TF kernel ───────
+// The tf_examples above are self-contained TF geometry. The "actual" TF-tab mode
+// instead imports the part's ALREADY-baked Manifold triangle mesh (from the 3D
+// bake) and runs it through TrueForm's OWN topology predicates — so the user sees
+// their real geometry in the TF engine + learns whether it survives TF's
+// watertight/manifold/χ check. `tfImportMesh` is the driver for that path.
+
+/**
+ * PURE mesh weld (no WASM) — collapse coincident vertices in a (possibly
+ * non-indexed) triangle mesh into a compact, INDEXED mesh with shared vertices,
+ * quantising positions to `quantum`. cadtrain's render geometry (`manifoldToGeo`)
+ * is usually a NON-INDEXED triangle soup (each triangle carries its own three
+ * corner verts for crease-aware normals). Feeding that soup straight to `tf.mesh`
+ * makes EVERY edge unshared → tf reports it open + non-manifold even for a clean
+ * revolve. Welding by position reconstructs the real shared-edge connectivity so
+ * tf's verdict is meaningful. This is the identity operation for TOPOLOGY —
+ * coincident verts ARE the same vertex — so it can't HIDE a genuine defect: a
+ * genuinely open mesh stays open, and topological handles (a bad boolean's phantom
+ * genus) survive the weld and still show up in χ. Degenerate triangles (two corners
+ * that welded together) are dropped. Isolated + exported so the weld can be tested
+ * without the 31 MB kernel.
+ */
+export function weldMeshByPosition(
+  positions: ArrayLike<number>,
+  indices?: ArrayLike<number> | null,
+  quantum = 1e-4,
+): FlatMesh {
+  const nSrcV = (positions.length / 3) | 0;
+  const idx: ArrayLike<number> =
+    indices && indices.length
+      ? indices
+      : Array.from({ length: nSrcV }, (_, i) => i); // soup → implicit 0..3F-1
+  const map = new Map<string, number>();
+  const outPts: number[] = [];
+  const outFaces: number[] = [];
+  const q = quantum > 0 ? quantum : 1e-4;
+  const keyFor = (vi: number) => {
+    const x = positions[vi * 3], y = positions[vi * 3 + 1], z = positions[vi * 3 + 2];
+    return `${Math.round(x / q)},${Math.round(y / q)},${Math.round(z / q)}`;
+  };
+  const weld = (vi: number): number => {
+    const k = keyFor(vi);
+    let ni = map.get(k);
+    if (ni === undefined) {
+      ni = (outPts.length / 3) | 0;
+      outPts.push(positions[vi * 3], positions[vi * 3 + 1], positions[vi * 3 + 2]);
+      map.set(k, ni);
+    }
+    return ni;
+  };
+  for (let f = 0; f + 2 < idx.length; f += 3) {
+    const a = weld(idx[f] | 0), b = weld(idx[f + 1] | 0), c = weld(idx[f + 2] | 0);
+    if (a === b || b === c || c === a) continue; // collapsed → drop
+    outFaces.push(a, b, c);
+  }
+  return { points: Float32Array.from(outPts), faces: Int32Array.from(outFaces) };
+}
+
+/**
+ * Import a raw triangle mesh (the part's baked Manifold geometry) into TrueForm
+ * and return its TF verdict — the "actual" TF-tab path. `positions` is the flat
+ * [V*3] xyz buffer, `indices` the flat [F*3] vertex indices (pass `null`/empty for
+ * a non-indexed soup — one triangle per 3 consecutive verts). The mesh is welded
+ * by position ({@link weldMeshByPosition}) so tf's topology predicates see the real
+ * connectivity, built via `tf.mesh(faces, points)` (same flat-buffer call the
+ * revolve/cap builders use), oriented outward, then run through {@link tfResult}
+ * (cutaway when requested + verdict via {@link tfAnalyze}).
+ *
+ * GRACEFUL on a bad mesh: a non-watertight / non-manifold part won't throw —
+ * `tfAnalyze` reports `closed:false` / `manifold:false` instead. `positivelyOriented`
+ * and the cutaway boolean CAN throw on a degenerate input; each is caught so the
+ * user still gets the raw mesh + verdict (WHY it isn't TF-valid) rather than an error.
+ */
+export async function tfImportMesh(
+  positions: Float32Array | number[],
+  indices?: Uint32Array | number[] | null,
+  opts: { cutaway?: boolean } = {},
+): Promise<TfDemoResult> {
+  const tf = await ensureTf();
+  const t = tf as any;
+  const { points, faces } = weldMeshByPosition(positions, indices ?? null);
+  let solid = t.mesh(faces, points);
+  // Orient outward (positive signed volume) — a bad mesh can make this throw;
+  // keep the raw mesh so the verdict still surfaces.
+  try { solid = t.positivelyOriented(solid); } catch { /* keep raw */ }
+  try {
+    // cuttable:true → tfResult applies the half-quadrant cut when opts.cutaway is
+    // set (applyTfCutaway self-guards a failing boolean → falls back to the solid).
+    return tfResult(tf, t, solid, { cutaway: opts.cutaway, cuttable: true });
+  } catch {
+    // Any predicate/cut failure on a degenerate import → still return mesh + verdict.
+    return { data: tfMeshData(solid), stats: tfAnalyze(tf, solid) };
+  }
+}

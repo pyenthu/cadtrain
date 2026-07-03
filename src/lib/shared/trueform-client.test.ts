@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildCappedMesh } from './trueform-client';
+import { buildCappedMesh, weldMeshByPosition } from './trueform-client';
 
 /**
  * Guards the open-sweep cap fix: `buildCappedMesh` (the PURE fan/centroid logic
@@ -105,5 +105,70 @@ describe('buildCappedMesh', () => {
     const out = buildCappedMesh(points, faces, [[0, 1]]);
     expect(out.points.length).toBe(points.length); // no centroid added
     expect(out.faces.length).toBe(faces.length); // no fan added
+  });
+});
+
+/**
+ * Guards `weldMeshByPosition` (the PURE weld behind the "actual" TF-import path).
+ * cadtrain's render geometry is usually a NON-INDEXED triangle soup (crease-aware
+ * normals split every corner), so feeding it straight to tf.mesh would make every
+ * edge unshared → a clean solid falsely reads open + non-manifold. Welding by
+ * position must reconstruct the shared-edge topology so tf's verdict is honest,
+ * WITHOUT hiding a genuinely open mesh. No WASM needed.
+ */
+describe('weldMeshByPosition', () => {
+  // A unit CUBE as a NON-INDEXED soup: 12 tris × 3 verts = 36 duplicated corners.
+  function cubeSoup(): { positions: Float32Array; indices: null } {
+    // 8 corners
+    const c = [
+      [0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
+      [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1],
+    ];
+    // 12 triangles (2 per face), CCW outward
+    const tris = [
+      [0, 2, 1], [0, 3, 2], // bottom z=0
+      [4, 5, 6], [4, 6, 7], // top z=1
+      [0, 1, 5], [0, 5, 4], // y=0
+      [2, 3, 7], [2, 7, 6], // y=1
+      [1, 2, 6], [1, 6, 5], // x=1
+      [0, 4, 7], [0, 7, 3], // x=0
+    ];
+    const pos: number[] = [];
+    for (const t of tris) for (const vi of t) pos.push(c[vi][0], c[vi][1], c[vi][2]);
+    return { positions: Float32Array.from(pos), indices: null };
+  }
+
+  it('welds a non-indexed cube soup back to 8 shared verts, closed + 2-manifold', () => {
+    const { positions } = cubeSoup();
+    const out = weldMeshByPosition(positions, null);
+    expect(out.points.length / 3).toBe(8);   // 36 soup corners → 8 unique verts
+    expect(out.faces.length / 3).toBe(12);   // all 12 tris kept
+    // Every undirected edge shared by exactly 2 faces → watertight 2-manifold.
+    for (const n of edgeCounts(out.faces).values()) expect(n).toBe(2);
+    // χ = V − E + F = 8 − 12 + 12 = 2 (closed genus-0 solid).
+    const E = edgeCounts(out.faces).size;
+    expect(8 - E + 12).toBe(2);
+  });
+
+  it('honours an explicit index buffer (no soup synthesis)', () => {
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+    const indices = new Uint32Array([0, 1, 2]);
+    const out = weldMeshByPosition(positions, indices);
+    expect(out.points.length / 3).toBe(3);
+    expect(Array.from(out.faces)).toEqual([0, 1, 2]);
+  });
+
+  it('drops triangles that collapse to a line after welding', () => {
+    // Two coincident corners (same position) → the tri degenerates.
+    const positions = new Float32Array([0, 0, 0, 0, 0, 0, 1, 0, 0]);
+    const out = weldMeshByPosition(positions, null);
+    expect(out.faces.length).toBe(0); // collapsed tri dropped
+  });
+
+  it('leaves a genuinely OPEN mesh open (weld does not fabricate topology)', () => {
+    // A single triangle: 3 unique verts, 3 boundary edges each used once.
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+    const out = weldMeshByPosition(positions, null);
+    for (const n of edgeCounts(out.faces).values()) expect(n).toBe(1); // still open
   });
 });
