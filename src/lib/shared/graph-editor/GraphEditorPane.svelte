@@ -121,7 +121,7 @@
   import { emitGraph, consumedByCall } from '$lib/cad/composition-emit';
   import { resolveWiredSplinePoints } from '$lib/cad/spline-eval';
   import { resampleSpline } from '$lib/cad/spline-resample';
-  import { emitProfileGraph } from '$lib/cad/composition-emit-profile';
+  // (emitProfileGraph moved to profile-preview-state.svelte.ts with the resolve effect — #940 CUT 2)
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
   import { autoLayoutGraph } from '$lib/cad/composition-layout';
   import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/cad/sketch';
@@ -135,7 +135,7 @@
     sketchCols,
     sketchRowVisible, nodeSize, containerSlotY,
     outputSocketAt, inputSocketAt, containerSlotInputAt,
-    entryIdxForEvalIdx, miniBez,
+    miniBez,
     CARD_X0, CARD_PAD, CARD_TITLE_H, PARAM_W_MIN, PARAM_H, PARAM_GAP,
   } from './geom';
   // Auto-layout + push-apart actions (modularize K.65 — pure, viewport state
@@ -144,6 +144,8 @@
   import { overlayCardObstacles, separateGraph, type LayoutContext } from './graph-layout-actions';
   import { PolyPreviewState } from './poly-preview-state.svelte';
   import PolyPreview from './PolyPreview.svelte';
+  import { ProfilePreviewState } from './profile-preview-state.svelte';
+  import ProfilePreview from './ProfilePreview.svelte';
   import { dragNumber } from '$lib/shared/dragNumber';
   import RightPane from './RightPane.svelte';
   import WireLayer from './WireLayer.svelte';
@@ -390,7 +392,7 @@
   const polyUI = new PolyPreviewState(
     () => graph,
     (g) => { graph = g; },
-    () => profileSet,
+    () => profilePrev.profileSet,
     (ev, polygonId, idx, axis, expr) => openPolyExprPop(ev, polygonId, idx, axis, expr),
   );
 
@@ -398,22 +400,12 @@
   // cleaned up in onMount). Previously a top-level addEventListener here leaked
   // one anonymous handler per component instance (multi-tab) — Cursor review #1.
 
-  /** Profile-mode preview state — populated by /api/primitives/profiles/resolve
-   *  with the polygon points the build() returns at default params. Driven
-   *  by a separate effect that fires on profile load + on bakeNonce changes
-   *  (the Bake button reuses the same nonce so the user gets a re-resolve
-   *  after editing). `profileSet` ('revolve' | 'cartesian') changes how the
-   *  SVG renders the axis + Y orientation. */
-  let profilePts = $state<[number, number][]>([]);
-  let profileSet = $state<'revolve' | 'cartesian'>('revolve');
-  let profileResolveErr = $state<string | null>(null);
-  let profileSource = $state<string>('');
-  /** Profile's meta.params (loaded from the file's meta block) — used as
-   *  the default param dict when calling /resolve. We can't just read
-   *  graph.params because profiles loaded in legacy mode (no meta.graph
-   *  block) have an empty graph + empty params, but the build() needs
-   *  the file's declared param defaults to produce points. */
-  let profileMetaParams = $state<Record<string, { default?: number }>>({});
+  // Profile-mode preview state (profilePts / profileSet / profileResolveErr /
+  // profileSource / profileMetaParams) + the debounced /resolve effect + the
+  // derived profileView / rootPolygonMode / rootPolygonId moved to the
+  // per-instance ProfilePreviewState class (`profilePrev`, constructed below).
+  // #940 CUT 2. `profileSet` is public on that instance so polyUI (above) + the
+  // load hydration (below) still read/write it.
   /** Universal output-type detection — does the graph produce a 3D
    *  Manifold or 2D polygon points?
    *
@@ -437,148 +429,23 @@
       return true;
     }),
   );
-  /** Derived viewBox + path for the 2D SVG preview (revolve: axis at r=0,
-   *  Z-down; cartesian: Y-flip so positive points up). Mirrors the SVG
-   *  logic in the deleted ProfilePane. */
-  const profileView = $derived.by(() => {
-    const pts = profilePts;
-    if (pts.length === 0) return null;
-    const xs = pts.map((p) => p[0]);
-    const ys = pts.map((p) => p[1]);
-    const xMin0 = Math.min(...xs), xMax0 = Math.max(...xs);
-    const yMin0 = Math.min(...ys), yMax0 = Math.max(...ys);
-    const isCart = rootPolygonMode === 'cartesian';
-    // Cartesian mode: center the SVG on (0, 0) — the extrude rotates
-    // around the origin, so the viewport should show that as the center
-    // even when the polygon's bbox is off-center. viewBox half-extent =
-    // the largest absolute coord in either axis, so positive and negative
-    // sides are mirrored around 0. Revolve mode keeps the natural bbox-
-    // fit so the polygon hugs the visible area.
-    let xMin: number, yMin: number, w: number, h: number;
-    if (isCart) {
-      const half = Math.max(Math.abs(xMin0), Math.abs(xMax0), Math.abs(yMin0), Math.abs(yMax0), 0.001);
-      xMin = -half; yMin = -half; w = 2 * half; h = 2 * half;
-    } else {
-      xMin = xMin0; yMin = yMin0;
-      w = Math.max(0.001, xMax0 - xMin0); h = Math.max(0.001, yMax0 - yMin0);
-    }
-    const pad = Math.max(w, h) * 0.08;
-    return {
-      vb: `${xMin - pad} ${yMin - pad} ${w + 2 * pad} ${h + 2 * pad}`,
-      d: pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0]} ${p[1]}`).join(' ') + ' Z',
-      // Closure: dashed segment from last point back to first.
-      dClose: pts.length > 1
-        ? `M ${pts[pts.length - 1][0]} ${pts[pts.length - 1][1]} L ${pts[0][0]} ${pts[0][1]}`
-        : '',
-      yFlip: isCart,
-      axis: !isCart,
-      xMin, yMin, w, h, pad,
-    };
-  });
-  /** Mode for the right-pane 2D PREVIEW — when the graph's output is a
-   *  single polygon (no solid producer), use polyUI.polygonModeFor on that
-   *  polygon's id so the preview adapts to a downstream extrude even
-   *  though extrude only becomes the consumer after wiring. With no
-   *  polygon present, fall back to the file's saved set. */
-  const rootPolygonMode = $derived.by<'revolve' | 'cartesian'>(() => {
-    const polygons = Object.values(graph.nodes).filter((n) => (n as any).type === 'polygon') as any[];
-    if (polygons.length === 0) return profileSet;
-    return polyUI.polygonModeFor(polygons[0].id);
-  });
-  /** Companion to `rootPolygonMode` — id of the polygon whose vertices
-   *  are visible in the right-pane 2D PREVIEW (the only one that exists
-   *  in 2D-output mode). Used by the vertex-drag pointerdown to know
-   *  which node's coords to rewrite. Null when there's no polygon in
-   *  the graph (the 2D pane shows the on-disk build's points then, and
-   *  those aren't editable). */
-  const rootPolygonId = $derived.by<string | null>(() => {
-    const polygons = Object.values(graph.nodes).filter((n) => (n as any).type === 'polygon') as any[];
-    return polygons.length === 0 ? null : polygons[0].id;
-  });
-  /** Profile-mode resolve — calls /api/primitives/profiles/resolve with
-   *  `profileSource` (loaded from the file) and current default params,
-   *  populating `profilePts` for the right-pane 2D SVG. Re-fires on
-   *  source change and on bakeNonce bumps (the 🔨 button triggers a
-   *  manual re-resolve). The graph itself doesn't yet feed back into
-   *  profileSource — that's the Step-2 profile emit pipeline.
-   *  PROFILE_TODO Phase 2.2: emit graph → build() body each change. */
-  /** Profile-mode resolve. Two source paths:
-   *   * GRAPH path — the canvas has pen_* nodes wired. The graph is
-   *     emitted via composition-emit-profile.ts into a build() body;
-   *     we POST that to /resolve. This is what gives the user a LIVE
-   *     2D preview as they drop / edit pen nodes.
-   *   * ON-DISK path — empty/legacy graph (no pen nodes). We fall back
-   *     to the original profileSource loaded from the file so the
-   *     preview still shows SOMETHING.
-   *
-   *  Params come from the graph's own meta.params (PARAMS card sliders)
-   *  when present, otherwise the file's meta.params defaults. Debounced
-   *  120 ms so a slider drag doesn't flood /resolve. */
-  let profileResolveTimer: ReturnType<typeof setTimeout> | undefined;
-  let lastProfileResolveKey = '';
-  $effect(() => {
-    // 2D resolve fires when the graph's output is a polygon (no solid
-    // producer present). When a revolve/extrude lives in the graph, the
-    // part-bake pipeline takes over and this effect short-circuits.
-    if (hasSolidProducer) return;
-    void bakeNonce; // re-run on manual bake
-
-    // Pick the source: emit the graph when it has profile-shaped nodes
-    // (Polygon — the canonical path — or legacy pen_* Calls); else fall
-    // back to the on-disk profileSource. Bug in v2 first cut — only
-    // pen_* was checked, so a polygon's edits went unnoticed and the
-    // preview kept showing the file's untouched shape.
-    const hasGraphContent = Object.values(graph.nodes).some((n) => {
-      const t = (n as any).type;
-      if (t === 'polygon') return true;
-      if (t === 'call' && String((n as any).src ?? '').startsWith('pen_')) return true;
-      return false;
-    });
-    const src = hasGraphContent ? emitProfileGraph(graph).source : profileSource;
-    if (!src) return;
-
-    // Param dict — prefer graph.params (the editor-controlled sliders)
-    // when populated; fall back to the file's meta.params.
-    const params: Record<string, number> = {};
-    const graphParams = graph.params ?? {};
-    if (Object.keys(graphParams).length > 0) {
-      for (const [k, v] of Object.entries(graphParams)) {
-        params[k] = Number((v as any)?.default ?? 0);
-      }
-    } else {
-      for (const [k, v] of Object.entries(profileMetaParams)) {
-        params[k] = Number((v as any)?.default ?? 0);
-      }
-    }
-
-    // Dedupe — this $effect re-fires on EVERY render (graph identity churn,
-    // tab activation, unrelated state), not just on real source/param
-    // changes. Without a guard, a failing resolve (400) re-POSTed the
-    // identical body 4-5× per interaction. Key includes bakeNonce so the
-    // 🔨 button still forces a retry of an unchanged body.
-    const body = JSON.stringify({ source: src, params });
-    const resolveKey = `${bakeNonce}:${body}`;
-    clearTimeout(profileResolveTimer);
-    profileResolveTimer = setTimeout(async () => {
-      if (resolveKey === lastProfileResolveKey) return;
-      lastProfileResolveKey = resolveKey;
-      try {
-        const r = await fetch('/api/primitives/profiles/resolve', {
-          method: 'POST', headers: { 'content-type': 'application/json' },
-          body,
-        });
-        if (!r.ok) { profileResolveErr = `Resolve ${r.status}: ${(await r.text()).slice(0, 160)}`; return; }
-        const d = await r.json();
-        profilePts = Array.isArray(d.points) ? d.points : [];
-        profileResolveErr = null;
-      } catch (e: any) { profileResolveErr = e?.message ?? String(e); }
-    }, 120);
-  });
 
   /** Re-bake nonce — increment to trigger a fresh /api/primitives/preview
    *  call. Used by the 🔨 Bake button (manual rebake), the 🔄 Rebuild
    *  button (cache wipe + rebake), and the initial-load auto-bake. */
   let bakeNonce = $state(0);
+
+  /** Per-instance profile-2D preview state (#940 CUT 2) — owns profilePts /
+   *  profileSet / profileSource / profileMetaParams / profileResolveErr, the
+   *  debounced /resolve $effect, and the derived profileView / rootPolygonMode /
+   *  rootPolygonId. Reads graph + bakeNonce + hasSolidProducer via getters and
+   *  polyUI for polygonModeFor; polyUI (above) reads profileSet back off it. */
+  const profilePrev = new ProfilePreviewState(
+    () => graph,
+    () => bakeNonce,
+    () => hasSolidProducer,
+    polyUI,
+  );
   /** Set by the explicit 🔄 Rebuild button (rebuildCache) to force the NEXT
    *  composition-bake to run FRESH (`?bust=1`) regardless of bakeNonce. A
    *  rebuild is, by the user's mental model, a real bake — so the yellow
@@ -1116,10 +983,10 @@
         // only. A part graph doesn't surface these fields — the effect
         // short-circuits via hasSolidProducer anyway.
         if (d.set === 'cartesian' || d.set === 'revolve') {
-          profileSet = d.set;
+          profilePrev.profileSet = d.set;
         }
-        profileMetaParams = d.params ?? {};
-        profileSource = String(d.source ?? '');
+        profilePrev.profileMetaParams = d.params ?? {};
+        profilePrev.profileSource = String(d.source ?? '');
         exemplarId = id;
         // Pull the drawing-descriptor markdown out of the saved meta if
         // present. Falls back to extracting from the source string for
@@ -3244,97 +3111,19 @@
       onRebuild={rebuildCache} onRestart={restartDevServer}
       onLoadCutaway={loadCutaway} onGenerateMd={generateMdWithAi}>
       {#snippet profilePreview()}
-            <!-- Profile mode: inline SVG of the resolved polygon. The
-                 graph-driven re-emit is Phase 2.2 — for now this shows
-                 the on-disk build()'s shape at default params. Closure
-                 (last → first vertex) drawn as a dashed line so the
-                 implicit polygon-close is visible. -->
-            {#if profileView}
-              {@const v = profileView}
-              {@const sw = Math.max(v.w, v.h) * 0.008}
-              {@const vsw = Math.max(v.w, v.h) * 0.005}
-              {@const ph = Math.max(v.w, v.h) * 0.012}
-              <div class="ge-profile-2d">
-                <div class="ge-profile-2d-head">{exemplarId} · {profilePts.length} pts · {rootPolygonMode}</div>
-                <svg viewBox={v.vb} preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg">
-                  <g transform={v.yFlip ? `scale(1, -1) translate(0, ${-(2 * v.yMin + v.h)})` : ''}>
-                    {#if v.axis}
-                      <!-- Revolve axis (r = 0 vertical dash line). -->
-                      <line x1="0" y1={v.yMin - v.pad} x2="0" y2={v.yMin + v.h + v.pad}
-                        stroke="#94a3b8" stroke-width={vsw}
-                        stroke-dasharray={`${Math.max(v.w, v.h) * 0.02} ${Math.max(v.w, v.h) * 0.02}`}/>
-                    {:else if v.yFlip}
-                      <!-- Cartesian crosshair (extrude cross-section): show
-                           both axes through (0, 0) so the user sees the
-                           center the extrude rotates around. -->
-                      {@const ad = `${Math.max(v.w, v.h) * 0.02} ${Math.max(v.w, v.h) * 0.02}`}
-                      <line x1={v.xMin - v.pad} y1="0" x2={v.xMin + v.w + v.pad} y2="0"
-                        stroke="#94a3b8" stroke-width={vsw} stroke-dasharray={ad}/>
-                      <line x1="0" y1={v.yMin - v.pad} x2="0" y2={v.yMin + v.h + v.pad}
-                        stroke="#94a3b8" stroke-width={vsw} stroke-dasharray={ad}/>
-                    {/if}
-                    <path d={v.d}
-                      fill="rgba(204, 34, 34, 0.22)" stroke="#991b1b" stroke-width={sw}
-                      stroke-linejoin="round"/>
-                    <!-- Auto-closure dashed line — visual reminder that the
-                         polygon implicitly closes the last vertex back to
-                         the first. -->
-                    <path d={v.dClose}
-                      fill="none" stroke="#991b1b" stroke-width={sw * 0.7}
-                      stroke-dasharray={`${sw * 2.5} ${sw * 2}`} stroke-linecap="round"/>
-                    {#each profilePts as p, i}
-                      {@const rootPoly = rootPolygonId ? (graph.nodes[rootPolygonId] as any) : null}
-                      <!-- Same eval-idx → entry-idx mapping as the popup
-                           preview so loop-generated points read their
-                           true entry kind instead of falling off the
-                           array. (2026-06-11) -->
-                      {@const entryIdx = rootPoly ? entryIdxForEvalIdx(graph,rootPoly, i) : null}
-                      {@const entry = entryIdx !== null ? rootPoly?.points?.[entryIdx] : null}
-                      {@const fromLoop = entryIdx === null}
-                      {@const parametricVertex = !!entry && entry.kind === 'point'
-                        && (entry.r?.kind !== 'literal' || entry.z?.kind !== 'literal')}
-                      {@const draggable = !!entry && entry.kind === 'point' && !parametricVertex && !fromLoop}
-                      {@const fill = fromLoop ? '#a855f7' : (parametricVertex ? '#6d28d9' : '#991b1b')}
-                      {@const stroke = fromLoop ? '#6d28d9' : (parametricVertex ? '#a78bfa' : 'none')}
-                      {@const isHl = !!hlVertex && hlVertex.polyId === rootPolygonId && entryIdx === hlVertex.idx}
-                      {#if isHl}
-                        <circle cx={p[0]} cy={p[1]} r={ph * 2.6} fill="none" stroke="#2563eb" stroke-width={ph * 0.6} pointer-events="none"/>
-                      {/if}
-                      <!-- svelte-ignore a11y_no_static_element_interactions -->
-                      <circle cx={p[0]} cy={p[1]} r={isHl ? ph * 1.7 : ph}
-                        fill={fill}
-                        stroke={stroke}
-                        stroke-width={fromLoop || parametricVertex ? ph * 0.5 : 0}
-                        class:locked={!draggable}
-                        class:parametric={parametricVertex || fromLoop}
-                        onpointerdown={(ev) => {
-                          if (!rootPolygonId) return;
-                          polyUI.startPolyVertexDrag(ev, rootPolygonId, i, v.yFlip ? 'cartesian' : 'revolve');
-                        }}
-                        onpointerenter={(ev) => { if (rootPolygonId) showSvgTip(ev, rootPolygonId, entryIdx, i, profilePts.length, p); }}
-                        onpointermove={(ev) => { polyUI.polyDragMove(ev); moveSvgTip(ev); }}
-                        onpointerleave={() => { if (rootPolygonId) hideSvgTip(rootPolygonId, entryIdx); }}
-                        onpointerup={polyUI.polyDragEnd}>
-                      </circle>
-                      <!-- Point-order markers: green ring + "1" on the FIRST
-                           vertex, orange ring + count on the LAST, so the
-                           winding / point sequence is readable. Non-interactive. -->
-                      {#if i === 0}
-                        <circle cx={p[0]} cy={p[1]} r={ph * 1.8} fill="none" stroke="#16a34a" stroke-width={ph * 0.45} pointer-events="none"/>
-                        <text x={p[0] + ph * 2.4} y={p[1] - ph * 1.6} fill="#15803d" font-size={ph * 3.4} font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={ph * 0.7}>1</text>
-                      {:else if i === profilePts.length - 1}
-                        <circle cx={p[0]} cy={p[1]} r={ph * 1.8} fill="none" stroke="#ea580c" stroke-width={ph * 0.45} pointer-events="none"/>
-                        <text x={p[0] + ph * 2.4} y={p[1] - ph * 1.6} fill="#c2410c" font-size={ph * 3.4} font-weight="700" pointer-events="none" style="paint-order: stroke" stroke="#fff" stroke-width={ph * 0.7}>{profilePts.length}</text>
-                      {/if}
-                    {/each}
-                  </g>
-                </svg>
-              </div>
-            {:else if profileResolveErr}
-              <div class="ge-err"><div>{profileResolveErr}</div></div>
-            {:else}
-              <div class="ge-empty">resolving polygon…</div>
-            {/if}
+            <!-- Profile-mode 2D preview (#940 CUT 2). All resolve state +
+                 derived view live on `profilePrev` (ProfilePreviewState);
+                 vertex drag routes through polyUI; svgTip/hlVertex stay
+                 shell-owned and are passed as callbacks. -->
+            <ProfilePreview
+              pp={profilePrev}
+              {polyUI}
+              {graph}
+              {exemplarId}
+              {hlVertex}
+              {showSvgTip}
+              {moveSvgTip}
+              {hideSvgTip} />
       {/snippet}
     </RightPane>
   </main>
@@ -3770,35 +3559,6 @@
   .ge-vrail-btn.ai:hover, .ge-vrail-btn.ai.on { background: #ede9fe; color: #4c1d95; border-color: #a78bfa; }
   /* .ge-cm-sep is still used by the +Drop node-pick menu below — keep it. */
   .ge-cm-sep { height: 1px; background: #f1f5f9; margin: 4px 6px; }
-  /* ─── Profile-mode 2D preview ────────────────────────────────────── */
-  .ge-profile-2d { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 12px; box-sizing: border-box; }
-  .ge-profile-2d-head { font: 600 11px Arial; color: #57534e; margin-bottom: 8px; letter-spacing: 0.3px; }
-  .ge-profile-2d svg { flex: 1 1 auto; min-height: 240px; width: 100%; background: #fafaf9; border: 1px solid #e5e7eb; border-radius: 4px; }
-  /* Polygon vertex dots are draggable when BOTH coords are literal — the
-     pointermove rewrites (r, z) directly. Wired (param / expr) coords get
-     a not-allowed cursor; dragging them would silently overwrite the
-     wiring. Hover adds a translucent halo via stroke so the drop target
-     reads as interactive (stroke is independent of the inline r attr,
-     unlike a CSS r override which fights the geometry attribute). */
-  /* (The .ge-poly-preview-svg circle halves moved to PolyPreview.svelte — R6a.) */
-  .ge-profile-2d svg circle {
-    cursor: grab;
-    touch-action: none;
-    transition: stroke-width 80ms ease, stroke 80ms ease;
-    stroke: transparent;
-    stroke-width: 0;
-  }
-  .ge-profile-2d svg circle:hover {
-    stroke: rgba(153, 27, 27, 0.28);
-    stroke-width: 0.012em;
-    /* Stroke-width in em scales with the parent's font-size — not the SVG
-       viewBox. The numeric value here is tuned against the path stroke
-       width (sw) which is bbox-relative; the resulting halo reads
-       proportional at common card sizes. */
-  }
-  .ge-profile-2d svg circle:active { cursor: grabbing; }
-  .ge-profile-2d svg circle.locked { cursor: not-allowed; opacity: 0.7; }
-  .ge-profile-2d svg circle.locked:hover { stroke: transparent; stroke-width: 0; }
   /* Embed mode (`?embed=1`) — page is iframed inside /vocab (or similar).
      Override the 100vh so the iframe parent controls the height. */
   .ge-root.embed { height: 100%; }
