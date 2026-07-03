@@ -26,7 +26,8 @@
   import CacheBrowser from '$lib/shared/CacheBrowser.svelte';
   import {
     type Entry, type FolderNode, MOVE_TARGET_RE,
-    tabLabel, subtreeCount, subtreeMatches, sortFolders, nodeAt, findPartDir, moveTargets,
+    tabLabel, subtreeCount, subtreeMatches, sortFolders, nodeAt, findPartDir,
+    isMoveTarget, topLevelOf, ensureFolderPath,
   } from './primitives-tree';
 
   /** Same regex the server uses for primitive ids — keep them in sync.
@@ -181,6 +182,22 @@
     mergePending();
     void loadList();
   }
+  // Optimistic-insert for brand-new FOLDERS — the folder analogue of
+  // pendingCreated. A just-mkdir'd folder is empty, and the proxied /list lags
+  // writes by seconds (memory prod_list_staleness), so relying on the refetch
+  // alone made "create folder" look like it did nothing until a later refresh.
+  // Track pending folder paths → re-insert them into the tree after every
+  // loadList until the server tree carries them, then drop them.
+  let pendingFolders = $state<Set<string>>(new Set());
+  function mergePendingFolders() {
+    if (!tree || pendingFolders.size === 0) return;
+    let changed = false;
+    for (const p of [...pendingFolders]) {
+      if (nodeAt(tree, p)) { pendingFolders.delete(p); changed = true; continue; }
+      if (ensureFolderPath(tree, p)) changed = true;
+    }
+    if (changed) pendingFolders = new Set(pendingFolders);
+  }
   // ─── Create folder (top-level + nested subfolder) ─────────────────────────
   let folderBusy = $state(false);
   async function mkFolder(path: string): Promise<boolean> {
@@ -191,6 +208,11 @@
         if (typeof alert === 'function') alert(`Create folder failed (${r.status}): ${(await r.text()).slice(0, 160)}`);
         return false;
       }
+      // Optimistic: surface the new (empty) folder NOW — don't wait for the
+      // lagging proxied /list (see pendingFolders / mergePendingFolders).
+      pendingFolders.add(path);
+      pendingFolders = new Set(pendingFolders);
+      if (tree) ensureFolderPath(tree, path);
       await loadList();
       return true;
     } catch (e: any) {
@@ -205,7 +227,13 @@
     if (!raw) return;
     const name = raw.trim();
     if (!ID_RE.test(name)) { alert(`bad name "${name}" — must match [a-z][a-z0-9_]*`); return; }
-    if (await mkFolder(name)) ensureExpanded(name);
+    if (await mkFolder(name)) {
+      // A new top-level user folder renders UNDER the Basic tab (extraFolders),
+      // so switch there or it looks like nothing happened when created from
+      // another tab.
+      selectTab('basic');
+      ensureExpanded(name);
+    }
   }
   /** Create a subfolder under `parent` (a tree path). Expands both so the
    *  new folder is visible in place. */
@@ -216,7 +244,13 @@
     if (!ID_RE.test(name)) { alert(`bad name "${name}" — must match [a-z][a-z0-9_]*`); return; }
     const path = `${parent}/${name}`;
     if (path.split('/').length > 3) { alert('Max folder depth is 3 (cat / family / subfolder)'); return; }
-    if (await mkFolder(path)) { ensureExpanded(parent); ensureExpanded(path); }
+    if (await mkFolder(path)) {
+      // Switch to the tab that owns the parent branch so the new subfolder is
+      // in view (completions → Well; everything else → Basic).
+      selectTab(topLevelOf(parent) === 'completions' ? 'completions' : 'basic');
+      ensureExpanded(parent);
+      ensureExpanded(path);
+    }
   }
 
   // Structural roots the sidebar depends on — not user-renamable/deletable.
@@ -611,11 +645,23 @@
 
   // ─── "Move to…" dialog (anchored popover — mirrors the create menu) ───────
   let moveMenu = $state<{ id: string; kind: string; fromDir: string; mode: 'move' | 'copy'; x: number; y: number } | null>(null);
+  /** Selected top-level folder-tab in the "Move/Copy to…" picker (a tree-root
+   *  child name: 'basic' | 'completions' | 'archive' | a user folder). Its
+   *  subtree is shown as an indented, clickable tree on the right. */
+  let moveMenuTab = $state<string>('basic');
+  /** Pre-select the picker tab that owns the source folder so the likely
+   *  destination branch is already open; fall back to Basic. */
+  function defaultMoveTab(fromDir: string): string {
+    const top = topLevelOf(fromDir);
+    const names = new Set((tree?.children ?? []).map((c) => c.name));
+    return top && names.has(top) ? top : (names.has('basic') ? 'basic' : ([...names][0] ?? 'basic'));
+  }
   function openMoveMenu(id: string, kind: string, fromDir: string, mode: 'move' | 'copy', ev: MouseEvent) {
     ev.stopPropagation();
     if (moveMenu?.id === id && moveMenu?.mode === mode) { moveMenu = null; return; }
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     // Anchor under the trigger, nudged left so the menu doesn't overflow the rail.
+    moveMenuTab = defaultMoveTab(fromDir);
     moveMenu = { id, kind, fromDir, mode, x: Math.max(8, r.right - 200), y: r.bottom + 2 };
   }
   function closeMoveMenu() { moveMenu = null; }
@@ -662,7 +708,7 @@
   function rowMenuRename() { const m = rowMenu; closeRowMenu(); if (m) startRename(m.id, m.source); }
   function rowMenuMoveCopy(mode: 'move' | 'copy') {
     const m = rowMenu; closeRowMenu();
-    if (m) moveMenu = { id: m.id, kind: m.kind, fromDir: m.dir, mode, x: m.x, y: m.y };
+    if (m) { moveMenuTab = defaultMoveTab(m.dir); moveMenu = { id: m.id, kind: m.kind, fromDir: m.dir, mode, x: m.x, y: m.y }; }
   }
   function rowMenuDelete() {
     const m = rowMenu; closeRowMenu();
@@ -729,7 +775,8 @@
       profiles  = Array.isArray(pf.profiles)
         ? pf.profiles.map((p: any) => ({ id: p.id, set: p.set, hasSource: !!p.hasSource }))
         : [];
-      mergePending();   // re-surface any just-created parts the server hasn't caught up to yet
+      mergePending();        // re-surface any just-created parts the server hasn't caught up to yet
+      mergePendingFolders(); // …and any just-created empty folders (same lag)
     } catch (e: any) {
       listError = e?.message ?? String(e);
     } finally {
@@ -1361,26 +1408,69 @@
       </div>
     {/if}
 
-    <!-- "Move to…" dialog — anchored popover (one at a time). Lists the volume
-         folder tree as destinations (basic / completions/<family>/<sub> /
-         archive — NOT the read-only stdlib/stdstale src groups, which aren't in
-         the tree). position:fixed to escape the rail's overflow clipping;
-         dismisses on outside-click / Escape (same as the create menu). -->
+    <!-- Recursive DESTINATION node for the Move/Copy picker — mirrors the
+         sidebar's folderNode: an indented, clickable folder row + its children
+         one level deeper. Selecting a row (top-level OR nested) picks it as the
+         move target ("into this exact folder"). The source folder is disabled
+         for Move (can't move onto itself) but allowed for Copy (dup in place). -->
+    {#snippet moveTargetNode(node: FolderNode, depth: number, excludeDir: string)}
+      {@const selectable = isMoveTarget(node.path, excludeDir)}
+      {@const isSource = node.path === moveMenu?.fromDir}
+      <button class="prim-move-target" type="button" role="menuitem"
+        class:source={isSource} disabled={!selectable}
+        style="padding-left: {8 + depth * 14}px"
+        title={selectable ? `Move into primitives/${node.path}/` : `primitives/${node.path}/`}
+        onclick={() => selectable && pickMoveTarget(node.path)}>
+        <span class="prim-folder-ic">📁</span>
+        <span class="prim-name">{depth === 0 ? tabLabel(node.name) : node.name}</span>
+        {#if isSource}<span class="prim-move-here">here</span>{/if}
+      </button>
+      {#each sortFolders(node.children, sortMode) as c (c.path)}
+        {@render moveTargetNode(c, depth + 1, excludeDir)}
+      {/each}
+    {/snippet}
+
+    <!-- "Move/Copy to…" picker — anchored popover (one at a time). A vertical
+         tab rail of the top-level volume folders (archive / basic / completions
+         / any user folder — NOT the read-only stdlib/stdstale src groups, which
+         aren't in the tree) with the selected tab's subfolders shown as an
+         indented, clickable tree on the right (mirrors the sidebar). Clicking a
+         folder — top-level tab OR nested node — sets the move target.
+         position:fixed to escape the rail's overflow clipping; dismisses on
+         outside-click / Escape (same as the create menu). -->
     {#if moveMenu}
       <!-- Copy can target the CURRENT folder too (a duplicate in place), so it
-           passes '' to include every valid folder; Move excludes the source. -->
-      {@const targets = moveTargets(tree, moveMenu.mode === 'copy' ? '' : moveMenu.fromDir)}
-      <div class="prim-move-menu" role="menu"
+           excludes nothing; Move excludes the source folder. -->
+      {@const excludeDir = moveMenu.mode === 'copy' ? '' : moveMenu.fromDir}
+      {@const tabs = topFolders}
+      {@const activeTabName = tabs.some((f) => f.name === moveMenuTab) ? moveMenuTab : (tabs[0]?.name ?? '')}
+      {@const activeNode = nodeAt(tree, activeTabName)}
+      <div class="prim-move-menu prim-move-picker" role="menu"
         style="left: {moveMenu.x}px; top: {moveMenu.y}px">
         <div class="prim-create-menu-head">{moveMenu.mode === 'copy' ? 'Copy' : 'Move'} {moveMenu.id} to…</div>
-        {#if targets.length === 0}
-          <div class="prim-move-empty">no other folders</div>
+        {#if tabs.length === 0}
+          <div class="prim-move-empty">no folders</div>
         {:else}
-          {#each targets as t (t.path)}
-            <button class="prim-create-menu-item" type="button" role="menuitem"
-              style="padding-left: {10 + t.depth * 10}px"
-              onclick={() => pickMoveTarget(t.path)}>📁 {t.path}</button>
-          {/each}
+          <div class="prim-move-picker-body">
+            <!-- LEFT: vertical tab rail of top-level folders. -->
+            <div class="prim-move-tabs" role="tablist" aria-label="Destination category">
+              {#each tabs as tf (tf.path)}
+                <button class="prim-move-tab" type="button" role="tab"
+                  class:active={tf.name === activeTabName}
+                  aria-selected={tf.name === activeTabName}
+                  title={`primitives/${tf.path}/`}
+                  onclick={() => (moveMenuTab = tf.name)}>{tabLabel(tf.name)}</button>
+              {/each}
+            </div>
+            <!-- RIGHT: the selected tab's subtree, clickable to pick a target. -->
+            <div class="prim-move-tree">
+              {#if activeNode}
+                {@render moveTargetNode(activeNode, 0, excludeDir)}
+              {:else}
+                <div class="prim-move-empty">empty</div>
+              {/if}
+            </div>
+          </div>
         {/if}
       </div>
     {/if}
@@ -1728,6 +1818,32 @@
     display: flex; flex-direction: column; gap: 1px;
   }
   .prim-move-empty { padding: 6px 10px; font: 11px Arial; color: #a8a29e; }
+
+  /* Tabbed-tree destination picker — a vertical tab rail of top-level folders +
+     the selected tab's indented subtree (mirrors the sidebar folder tree). */
+  .prim-move-picker { min-width: 300px; padding: 4px 4px 6px; }
+  .prim-move-picker-body { display: flex; align-items: stretch; gap: 6px; min-height: 60px; max-height: 300px; }
+  .prim-move-tabs {
+    flex: 0 0 auto; display: flex; flex-direction: column; gap: 2px;
+    padding-right: 6px; border-right: 1px solid #e7e5e4; overflow-y: auto; max-width: 130px;
+  }
+  .prim-move-tab {
+    text-align: left; white-space: nowrap; padding: 4px 8px; border: 0; border-radius: 4px;
+    background: transparent; color: #44403c; font: 12px Arial; cursor: pointer;
+  }
+  .prim-move-tab:hover { background: #f3f4f6; }
+  .prim-move-tab.active { background: #d1fae5; color: #166534; font-weight: 600; }
+  .prim-move-tree { flex: 1 1 auto; overflow-y: auto; min-width: 150px; }
+  .prim-move-target {
+    display: flex; align-items: center; gap: 4px; width: 100%; text-align: left;
+    padding: 4px 8px; border: 0; border-radius: 4px; background: transparent;
+    color: #1c1917; font: 12px Arial; cursor: pointer;
+  }
+  .prim-move-target .prim-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .prim-move-target:hover:not(:disabled) { background: #d1fae5; color: #166534; }
+  .prim-move-target:disabled { cursor: default; color: #a8a29e; }
+  .prim-move-target.source { font-style: italic; }
+  .prim-move-here { flex: 0 0 auto; font: 10px Arial; color: #a8a29e; }
 
   /* Move (↪) row action — blue like rename (it's an "edit", not a delete),
      hover-revealed beside ✎. Always reachable for volume + archive parts. */
