@@ -175,6 +175,119 @@ describe('executeTfRecipe', () => {
   });
 });
 
+/**
+ * A BBOX-AWARE mock kernel for the MATED-STACK test. The real TrueForm WASM boolean
+ * kernel can't run in the vitest node env (no cross-origin isolation / SharedArrayBuffer
+ * — see mandrel.test.ts), so we can't `ensureTf`. Instead we drive the executor with a
+ * mock whose meshes carry REAL geometry: `t.mesh(faces, points)` (called by
+ * `tfRevolveProfile`) returns a handle whose `points.data` is the actual pure
+ * `buildRevolveMesh` output → real per-child Z-extents. The mock matrix is a pure
+ * Z-translation (matMul sums), and `booleanUnion` bakes each operand's transform into a
+ * merged handle spanning the combined WORLD Z-range — exactly the extent bookkeeping the
+ * real kernel does. So `executeTfRecipe`'s final mesh reports the true stacked Z-extent,
+ * letting us prove the children are placed END-TO-END, not overlapped at the origin. */
+function makeBboxMockTf() {
+  const calls: { fn: string; args: any[] }[] = [];
+  const rec = (fn: string, ...args: any[]) => { calls.push({ fn, args }); };
+  const handle = (points: Float32Array, tag: string) => ({
+    __tag: tag,
+    numberOfFaces: 12,
+    numberOfPoints: points.length / 3,
+    points: { data: points },
+    faces: { data: new Int32Array([0, 1, 2]) },
+    transformation: null as any,
+  });
+  // Pure Z-translation matrix (only z matters for a Z-stack); matMul composes by summing.
+  const mat = (z: number): any => ({ __tz: z, matMul(other: any) { return mat(z + (other?.__tz ?? 0)); } });
+  const worldZ = (mesh: any): [number, number] => {
+    const d = mesh.points.data as Float32Array;
+    const tz = mesh.transformation?.__tz ?? 0;
+    let mn = Infinity, mx = -Infinity;
+    for (let i = 2; i < d.length; i += 3) { const z = d[i] + tz; if (z < mn) mn = z; if (z > mx) mx = z; }
+    return [mn, mx];
+  };
+  const t: any = {
+    calls,
+    // tfRevolveProfile → buildRevolveMesh (pure) → t.mesh(faces, points): keep the real points.
+    mesh: (faces: any, points: Float32Array) => { rec('mesh', faces, points); return handle(points, 'rev'); },
+    makeTranslation: (x: number, y: number, z: number) => { rec('makeTranslation', x, y, z); return mat(z); },
+    makeRotation: (deg: number, axis: string) => { rec('makeRotation', deg, axis); return mat(0); },
+    // Bake both operands' world Z-range into the merged handle (transform → null).
+    booleanUnion: (a: any, b: any) => {
+      rec('booleanUnion', a, b);
+      const [amn, amx] = worldZ(a), [bmn, bmx] = worldZ(b);
+      const mn = Math.min(amn, bmn), mx = Math.max(amx, bmx);
+      return { mesh: handle(new Float32Array([0, 0, mn, 1, 0, mx, 0, 1, (mn + mx) / 2]), 'union') };
+    },
+    positivelyOriented: (m: any) => { rec('positivelyOriented', m); return m; },
+    isClosed: () => true,
+    isManifold: () => true,
+    eulerCharacteristic: () => 0, // a stack of bored tubes → one genus-1 solid (χ=0)
+    boundaryPaths: () => ({ length: 0 }),
+    signedVolume: () => 1,
+    volume: () => 42,
+  };
+  return t;
+}
+
+/** Half-section (r,z) revolving to a bored genus-1 tube of local Z-extent [0, len]. */
+const boredSection = (len: number): [number, number][] => [[3, 0], [3, len], [1.7, len], [1.7, 0]];
+/** [minZ, maxZ] of a mesh's world vertex buffer (post-finalise, transforms baked). */
+function pointsZExtent(points: Float32Array): [number, number] {
+  let mn = Infinity, mx = -Infinity;
+  for (let i = 2; i < points.length; i += 3) { const z = points[i]; if (z < mn) mn = z; if (z > mx) mx = z; }
+  return [mn, mx];
+}
+
+describe('executeTfRecipe — mated stack (g_dp_joint bug)', () => {
+  // g_dp_joint-shaped: box (z 0..6) + tube (z 0..25) + pin (z 0..7), each a bored
+  // revolve authored at its OWN local origin. The bug: a plain union piles all three
+  // at z=0 (total extent = the longest child, 25) so the pin is buried inside the tube.
+  const BOX = 6, TUBE = 25, PIN = 7;
+  const SUM = BOX + TUBE + PIN; // 38 — the end-to-end total
+  const matedRecipe: TfRecipe = recipe([
+    { op: 'union', mated: true, children: [
+      { op: 'revolve', profile: boredSection(BOX), segments: 24 },
+      // the tube arrives wrapped in an identity translate (as g_dp_joint's graph emits)
+      { op: 'translate', offset: [0, 0, 0], child: { op: 'revolve', profile: boredSection(TUBE), segments: 24 } },
+      { op: 'revolve', profile: boredSection(PIN), segments: 24 },
+    ] },
+  ]);
+
+  it('stacks box→tube→pin END-TO-END (total Z-extent ≈ Σ child extents), not overlapped at origin', () => {
+    const t = makeBboxMockTf();
+    const out = executeTfRecipe(t, t, matedRecipe);
+    const [mn, mx] = pointsZExtent(out.data.points);
+    const total = mx - mn;
+    // Two 0.1 junction overlaps → total = 38 - 0.2 = 37.8; a wide margin proves it is
+    // NOT the broken 25 (all three piled at the origin).
+    expect(total).toBeCloseTo(SUM - 2 * 0.1, 4);
+    expect(total).toBeGreaterThan(TUBE + 5);
+    // Each child slid onto the running cursor: box dz≈0, tube dz≈5.9, pin dz≈30.8.
+    const dzs = t.calls.filter((c: any) => c.fn === 'makeTranslation').map((c: any) => c.args[2]);
+    // (the tube's identity [0,0,0] wrapper also records a makeTranslation(0,0,0))
+    expect(dzs).toContain(0);
+    expect(dzs.some((z: number) => Math.abs(z - 5.9) < 1e-6)).toBe(true);
+    expect(dzs.some((z: number) => Math.abs(z - 30.8) < 1e-6)).toBe(true);
+    // Two folds weld the three parts into one solid; the analyse verdict passes through
+    // (real χ=0 of the welded solid is verified in-browser, like every tf boolean —
+    // per dp_joint.test.ts; the pure per-part genus-1 proof lives there too).
+    expect(t.calls.filter((c: any) => c.fn === 'booleanUnion')).toHaveLength(2);
+    expect(out.stats.closed).toBe(true);
+    expect(out.stats.euler).toBe(0);
+  });
+
+  it('a PLAIN (non-mated) union of the same three children leaves them overlapped at origin', () => {
+    const t = makeBboxMockTf();
+    const plain: TfRecipe = recipe([{ op: 'union', children: (matedRecipe.instrs[0] as any).children }]);
+    const out = executeTfRecipe(t, t, plain);
+    const [mn, mx] = pointsZExtent(out.data.points);
+    // No mating → all three at z=0 → total extent is just the longest child (the tube).
+    expect(mx - mn).toBeCloseTo(TUBE, 4);
+    expect(t.calls.filter((c: any) => c.fn === 'makeTranslation')).toHaveLength(1); // only the identity wrapper
+  });
+});
+
 describe('recipeHasUnsupported', () => {
   it('is false for a clean revolve/boolean recipe', () => {
     expect(recipeHasUnsupported(recipe([

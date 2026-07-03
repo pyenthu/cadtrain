@@ -102,6 +102,67 @@ function applyTransform(t: any, mesh: any, mat: any): void {
 }
 
 /**
+ * Local Z-extent (min/max of a built mesh's own vertex buffer) — the axial size
+ * used to stack a MATED container end-to-end. Reads `mesh.points.data` directly
+ * (the LOCAL point buffer, before any `.transformation` the mesh carries), so it
+ * is the child's intrinsic length regardless of where it will be placed. Returns
+ * `{min:0,max:0}` for an empty/degenerate buffer (a zero-length child just doesn't
+ * advance the cursor). */
+function localZExtent(mesh: any): { min: number; max: number } {
+  const d = mesh?.points?.data as ArrayLike<number> | undefined;
+  if (!d || d.length < 3) return { min: 0, max: 0 };
+  let min = Infinity;
+  let max = -Infinity;
+  for (let i = 2; i < d.length; i += 3) {
+    const z = d[i];
+    if (z < min) min = z;
+    if (z > max) max = z;
+  }
+  return Number.isFinite(min) ? { min, max } : { min: 0, max: 0 };
+}
+
+/** Junction interpenetration (world units) so adjacent stacked solids WELD into
+ *  one watertight manifold instead of kissing at a coincident coplanar face — the
+ *  tf/Manifold boolean caveat that would otherwise leave a seam / phantom handle.
+ *  Mirrors dp_joint's OVERLAP; small vs. any real part length. */
+const STACK_OVERLAP = 0.1;
+
+/**
+ * Build a MATED container (a graph `stack` node → `{op:'union', mated:true}`).
+ *
+ * A plain union folds every child at its OWN local origin, so a stack authored as
+ * box(z 0..6) + tube(z 0..25) + pin(z 0..7) piles all three at z=0 and the pin is
+ * buried inside the tube — the g_dp_joint bug. Here we honour `mated`: measure each
+ * built child's Z-extent and place the children END-TO-END down +Z. Extents are
+ * only known once the child mesh exists, so this is the executor's job (the compiler
+ * can't measure a mesh it hasn't built).
+ *
+ * Z-DOWN convention (top = LOWER z, downhole = +z): a running `cursor` marks where
+ * the NEXT child's TOP (its min z) goes. The first child's top sits at z=0; each
+ * subsequent child's top meets the previous child's bottom, tucked up by
+ * {@link STACK_OVERLAP} so the union welds cleanly. Each child is shifted with a
+ * `makeTranslation([0,0,dz])` composed via {@link applyTransform} (respecting any
+ * transform the child already carries), then unioned. Coaxial bores stay aligned →
+ * one continuous through-bore. This mirrors `manifold-helpers.stack()` on the
+ * Manifold side (flush end-to-end, first child at origin).
+ */
+function buildMatedStack(t: any, kids: TfInstr[]): any {
+  let acc: any = null;
+  let cursor = 0; // world z where the NEXT child's TOP (min z) lands
+  for (let i = 0; i < kids.length; i++) {
+    const child = buildInstr(t, kids[i]);
+    const { min: zMin, max: zMax } = localZExtent(child);
+    const dz = cursor - zMin; // slide this child's TOP onto the cursor
+    if (Math.abs(dz) > 1e-9) applyTransform(t, child, t.makeTranslation(0, 0, dz));
+    // Advance past this child's length, minus the overlap so the next child tucks in.
+    cursor += Math.max(0, zMax - zMin) - STACK_OVERLAP;
+    acc = acc == null ? child : t.booleanUnion(acc, child).mesh;
+  }
+  if (acc == null) throw new TfUnsupportedError('union(empty)');
+  return acc;
+}
+
+/**
  * Recursively build ONE `TfInstr` → a TrueForm `Mesh` handle, mirroring the
  * tf_examples call patterns. Booleans/transforms/containers recurse into their
  * child instrs first, exactly as the graph nests them.
@@ -141,6 +202,11 @@ function buildInstr(t: any, instr: TfInstr): any {
       // list / group / stack → fold booleanUnion over the children (dp_joint pattern).
       const kids = instr.children;
       if (kids.length === 0) throw new TfUnsupportedError('union(empty)');
+      // A MATED stack (graph `stack` node) auto-positions its children end-to-end
+      // down +Z (each is authored at its own local origin, so a plain fold would
+      // pile them at z=0 — the g_dp_joint overlap-at-origin bug). A plain (group/
+      // list) union leaves the children where they already sit.
+      if (instr.mated) return buildMatedStack(t, kids);
       let acc = buildInstr(t, kids[0]);
       for (let i = 1; i < kids.length; i++) acc = t.booleanUnion(acc, buildInstr(t, kids[i])).mesh;
       return acc;
