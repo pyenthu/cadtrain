@@ -66,6 +66,20 @@
         Ortho
       </label>
     </div>
+    <!-- Diagnostic view toggles (VIEW-ONLY, no re-bake): Wireframe flips the
+         live-mesh material to show the raw triangulation (tells a geometry bug
+         apart from a shading/lighting bug); Normals mounts a VertexNormalsHelper
+         so you can literally see the normal directions/lengths. -->
+    <div class="sv-row sv-row-toggles">
+      <label class="sv-check" title="Wireframe — show the raw triangulation (view-only; no re-bake). Distinguishes a geometry bug from a material/lighting bug.">
+        <input type="checkbox" bind:checked={scene.wireframe} />
+        Wireframe
+      </label>
+      <label class="sv-check" title="Vertex normals — draw each vertex normal as a line (view-only). The definitive normals/lighting diagnosis. Skipped for GPU-instanced parts.">
+        <input type="checkbox" bind:checked={scene.showNormals} />
+        Normals
+      </label>
+    </div>
     <!-- Smooth-shading: render-time flatShading flip (free, no re-bake).
          Auto = the per-part heuristic (curved engines smooth, cubes/hex flat);
          Smooth / Flat force it. Crease = the BUILD-TIME minSharpAngle baked into

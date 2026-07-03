@@ -33,6 +33,7 @@
   import { T, useThrelte } from '@threlte/core';
   import { OrbitControls, Edges } from '@threlte/extras';
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+  import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js';
   import * as THREE from 'three';
   import { onMount } from 'svelte';
   import { scene } from '$lib/shared/scene-state.svelte';
@@ -477,9 +478,57 @@
   // at a time, so they all bind to the same ref.
   let liveMat: any = null;
   $effect(() => {
-    const flat = !smoothShade; // tracked
-    if (liveMat) { liveMat.flatShading = flat; liveMat.needsUpdate = true; invalidate(); }
+    const flat = !smoothShade;         // tracked
+    const wire = scene.wireframe;      // tracked — VIEW-ONLY wireframe diagnostic
+    if (liveMat) { liveMat.flatShading = flat; liveMat.wireframe = wire; liveMat.needsUpdate = true; invalidate(); }
   });
+  // Wireframe for the GPU-INSTANCED path: instMesh's material comes from
+  // makeLitMaterial (not the liveMat ref), so drive its `wireframe` flag here so
+  // the toggle covers uniform Stack/Repeat parts too. In place → no rebuild.
+  $effect(() => {
+    const m = instMesh;
+    const wire = scene.wireframe; // tracked
+    const mat = m?.material as any;
+    if (mat) { mat.wireframe = wire; mat.needsUpdate = true; invalidate(); }
+  });
+  // --- vertex-normals diagnostic (VIEW-ONLY) ---
+  // A THREE.VertexNormalsHelper drawn on the live mesh so the user can SEE each
+  // vertex normal's direction/length — the definitive normals/lighting check.
+  // The helper bakes the mesh's WORLD matrix into itself and draws in world
+  // space, so it's mounted at the SCENE ROOT (outside the view-scale group) and
+  // aligns because it inherits the mesh's world transform (which already
+  // includes that group's [xScale,xScale,zScale] + meshPos). Skipped for the
+  // GPU-instanced path (the helper can't ride per-instance matrices). Lazy:
+  // nothing is built while the toggle is off.
+  let liveMeshRef = $state<any>(null);
+  let normalsHelper = $state<any>(null);
+  $effect(() => {
+    const show = scene.showNormals;      // tracked
+    const mesh = liveMeshRef;            // tracked (remounts on geoVersion re-key)
+    const _v = geoVersion;               // rebuild when the geometry buffer changes
+    void _v;
+    if (!show || !mesh || instanced) { normalsHelper = null; return; }
+    // Normal line length ~4% of the part's largest dim so it reads at any scale.
+    const len = bbox ? Math.max(0.05, Math.max(bbox.ex, bbox.ey, bbox.ez) * 0.04) : 0.3;
+    let h: any = null;
+    try {
+      mesh.updateWorldMatrix(true, false);
+      h = new VertexNormalsHelper(mesh, len, 0x2266ff);
+    } catch { h = null; }
+    normalsHelper = h;
+    invalidate();
+    return () => { try { h?.dispose?.(); } catch { /* already gone */ } };
+  });
+  // Keep the helper aligned as the VIEW scale / Z-pan change (the mesh's world
+  // matrix shifts but the helper's baked-in matrix doesn't auto-follow).
+  $effect(() => {
+    const h = normalsHelper;
+    scene.xScale; scene.zScale; scene.zFocus; // tracked deps
+    if (h && liveMeshRef) {
+      try { liveMeshRef.updateWorldMatrix(true, false); h.update(); invalidate(); } catch { /* transient */ }
+    }
+  });
+
   // One-time uniforms-lib init (LTC textures the RectAreaLight needs). It's
   // async — the light renders UNLIT until init completes, and the on-demand
   // loop won't re-render on its own, so invalidate() once it's ready (this was
@@ -656,7 +705,7 @@
       {#if instEdges}<T is={instEdges} />{/if}
     {:else if showCutaway && cutVC}
       <!-- Geometry is pre-warped server-side; no subdivide / warp shader. -->
-      <T.Mesh geometry={cutVC}>
+      <T.Mesh geometry={cutVC} bind:ref={liveMeshRef}>
         {#if scene.zRectLight}
           <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {:else}
@@ -667,7 +716,7 @@
     {:else if full}
       {@const hasVC = !!full?.getAttribute?.('color')}
       <!-- Geometry is pre-warped server-side; no subdivide / warp shader. -->
-      <T.Mesh geometry={full}>
+      <T.Mesh geometry={full} bind:ref={liveMeshRef}>
         {#if scene.zRectLight}
           {#if hasVC}
             <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
@@ -701,6 +750,14 @@
   </T.Group>
 {/if}
 </T.Group><!-- /view-scale group -->
+
+<!-- Vertex-normals diagnostic (VIEW-ONLY). Mounted at the scene ROOT: the helper
+     bakes the live mesh's WORLD matrix (which already includes the view-scale
+     group + meshPos) into itself, so it aligns without inheriting that group's
+     transform a second time. Nothing renders when the toggle is off. -->
+{#if normalsHelper}
+  <T is={normalsHelper} />
+{/if}
 
 <!-- Title + description are now DOM overlays in PrimitiveDualCanvas (.pd-stage),
      not a Threlte <HTML> overlay — the latter's wrapper rendered with

@@ -126,6 +126,20 @@ export const scene = $state({
   /** Black edge overlay on the mesh, drawn at a 20° threshold. UI in
    *  SceneControls. */
   showEdges: true,
+  /** WIREFRAME diagnostic — VIEW ONLY. Flips the live-mesh material's
+   *  `wireframe` flag in place (no re-bake, no geometry change) so the user can
+   *  see the raw triangulation and tell a GEOMETRY bug (wrong triangles) apart
+   *  from a MATERIAL / normals / lighting bug. Independent of smooth/flat
+   *  shading. Applies to every backend (manifold/brep/tf) since it's a property
+   *  of the live-mesh material. UI in SceneControls. Default OFF. */
+  wireframe: false,
+  /** Vertex-NORMALS diagnostic — VIEW ONLY. Mounts a THREE.VertexNormalsHelper
+   *  on the live mesh so the user can literally SEE each vertex normal's
+   *  direction + length — the definitive normals / lighting diagnosis. Lazy /
+   *  guarded (nothing mounted when off → zero cost); skipped for the GPU-
+   *  instanced path (the helper can't ride per-instance matrices). UI in
+   *  SceneControls. Default OFF. */
+  showNormals: false,
   // Warp is now baked into the Manifold geometry server-side (so the black
   // wire EDGES follow the bulge too — see builder.finalizeManifold). These
   // fields drive the SceneControls UI + the /preview request body.
