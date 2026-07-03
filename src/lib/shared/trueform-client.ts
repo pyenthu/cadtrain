@@ -133,10 +133,18 @@ export function tfAnalyze(tf: Tf, mesh: any): TfMeshStats {
   return { tris, verts, closed, manifold, euler, boundaryLoops, signedVolume, volume };
 }
 
-/** A demo result: flat mesh data for the adapter + tf's own topology verdict. */
+/** One planar cut face of the cutaway box (world plane axis + offset). Handed to
+ *  the adapter so it can colour the newly-exposed cross-section faces grey. */
+export interface TfCutPlane { axis: 0 | 1 | 2; coord: number }
+
+/** A demo result: flat mesh data for the adapter + tf's own topology verdict.
+ *  `cutPlanes` is present ONLY when a cross-section cut was applied (the TF
+ *  cutaway path) — the adapter colours triangles flush with any of these planes
+ *  as the revealed interior (grey), everything else as outer skin (red). */
 export interface TfDemoResult {
   data: TfMeshData;
   stats: TfMeshStats;
+  cutPlanes?: TfCutPlane[];
 }
 
 /**
@@ -270,13 +278,110 @@ export async function tfSweepCylDemo(opts: { radius?: number; height?: number; a
  *  `r_cyl`/`s_cyl` are the same shaft built revolve-style vs sweep-style. */
 export type TfDemoKind = 'box' | 'sweep' | 'boolean' | 'r_cyl' | 's_cyl';
 
-/** Dispatch a TF-tab demo by kind. Returns mesh data + tf's topology verdict. */
-export async function tfDemo(kind: TfDemoKind): Promise<TfDemoResult> {
-  if (kind === 'sweep') return tfSweepDemo();
-  if (kind === 'boolean') return tfBooleanDemo();
-  if (kind === 'r_cyl') return tfRevolveCylDemo();
-  if (kind === 's_cyl') return tfSweepCylDemo();
+/** Demos that produce a CLOSED solid — the cutaway (a boolean half-quadrant cut)
+ *  only makes sense on a solid with an interior to reveal. The open uncapped
+ *  sweeps (`sweep`, `s_cyl`) have no interior, so they ignore the cut and render
+ *  the solid tube unchanged. */
+const CUTTABLE_KINDS: ReadonlySet<TfDemoKind> = new Set<TfDemoKind>(['box', 'r_cyl', 'boolean']);
+
+/** Build the raw (un-cut) tf `Mesh` handle for a demo kind, DEFAULT params —
+ *  the single geometry source shared by the dispatch + cutaway paths (mirrors
+ *  the standalone `tf*Demo` helpers' defaults). */
+function buildDemoMesh(t: any, kind: TfDemoKind): any {
+  if (kind === 'r_cyl') return t.cylinderMesh(3, 16, 48);
+  if (kind === 'boolean') {
+    const outer = t.cylinderMesh(6, 16, 64);
+    const inner = t.cylinderMesh(3.5, 16 + 4, 64); // taller so the bore punches through both caps
+    return t.booleanDifference(outer, inner).mesh;
+  }
+  if (kind === 'sweep') {
+    // Helix path (coilRadius 6, pitch 3.5, 3 turns, 64 pts/turn) swept r=1.2.
+    const coilRadius = 6, pitch = 3.5, turns = 3, ptsPerTurn = 64;
+    const n = Math.max(4, Math.round(turns * ptsPerTurn));
+    const pts = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const a = (i / ptsPerTurn) * 2 * Math.PI;
+      pts[i * 3] = coilRadius * Math.cos(a);
+      pts[i * 3 + 1] = coilRadius * Math.sin(a);
+      pts[i * 3 + 2] = (i / ptsPerTurn) * pitch;
+    }
+    return t.tubeMesh(buildOpenCurve(t, pts, n), 1.2, 24);
+  }
+  if (kind === 's_cyl') {
+    const height = 16, radius = 3, axialSegments = 2, radialSegments = 48;
+    const n = Math.max(2, axialSegments + 1);
+    const pts = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      pts[i * 3] = 0; pts[i * 3 + 1] = 0;
+      pts[i * 3 + 2] = -height / 2 + (i / (n - 1)) * height;
+    }
+    return t.tubeMesh(buildOpenCurve(t, pts, n), radius, radialSegments);
+  }
+  return t.boxMesh(4, 4, 4);
+}
+
+/** A single open `Curves` path over a shared point buffer (indices 0..n-1). */
+function buildOpenCurve(t: any, pts: Float32Array, n: number): any {
+  const idx: number[] = [];
+  for (let i = 0; i < n; i++) idx.push(i);
+  const offsets = t.ndarray(new Int32Array([0, idx.length]), [2]);
+  const data = t.ndarray(new Int32Array(idx), [idx.length]);
+  return t.curves(t.offsetBlockedBuffer(offsets, data), pts);
+}
+
+/**
+ * Apply the SECTIONAL cutaway to a closed solid mesh — the TF mirror of the
+ * Manifold 3D-bake cutaway. Manifold removes the +x,+y quadrant over the part's
+ * full Z (`manifold-helpers.ts:getCutBox`): a corner box at world x∈[0,xspan],
+ * y∈[0,yspan] spanning the whole Z range + margin, exposing the interior on the
+ * x=0 and y=0 planes. We reproduce that box in TrueForm (`boxMesh` is centred →
+ * translate it into the +x,+y corner) and `booleanDifference(solid, cutter)`.
+ * Returns the cut mesh + the two exposed cut planes so the adapter can colour
+ * the revealed section faces grey. Any failure → the un-cut solid, no planes.
+ */
+function applyTfCutaway(t: any, mesh: any): { mesh: any; planes?: TfCutPlane[] } {
+  try {
+    const pts = mesh.points.data as Float32Array | Float64Array;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+    for (let i = 0; i < pts.length; i += 3) {
+      const x = pts[i], y = pts[i + 1], z = pts[i + 2];
+      if (x < minX) minX = x; if (x > maxX) maxX = x;
+      if (y < minY) minY = y; if (y > maxY) maxY = y;
+      if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+    }
+    const MARGIN = 20;
+    const xspan = Math.max(Math.abs(minX), Math.abs(maxX)) + MARGIN;
+    const yspan = Math.max(Math.abs(minY), Math.abs(maxY)) + MARGIN;
+    const zlen = (maxZ - minZ) + 2 * MARGIN;
+    // boxMesh is CENTERED at origin; translate so it occupies x∈[0,xspan],
+    // y∈[0,yspan], z∈[minZ-MARGIN, minZ-MARGIN+zlen] — the same +x,+y corner box
+    // Manifold's getCutBox builds (M.cube([...], false).translate([0,0,minZ-M])).
+    const cutter = t.boxMesh(xspan, yspan, zlen);
+    cutter.transformation = t.makeTranslation(xspan / 2, yspan / 2, (minZ - MARGIN) + zlen / 2);
+    const cut = t.booleanDifference(mesh, cutter).mesh;
+    // Exposed planes = the cutter's inner walls (world x=0 and y=0).
+    return { mesh: cut, planes: [{ axis: 0, coord: 0 }, { axis: 1, coord: 0 }] };
+  } catch {
+    return { mesh };
+  }
+}
+
+/**
+ * Dispatch a TF-tab demo by kind. Returns mesh data + tf's topology verdict.
+ * When `opts.cutaway` is set AND the kind is a closed solid, the mesh is cut
+ * (half-quadrant boolean, mirroring the Manifold cutaway) and `cutPlanes` is
+ * returned so the adapter renders a grey-interior / red-outer cross-section.
+ */
+export async function tfDemo(kind: TfDemoKind, opts: { cutaway?: boolean } = {}): Promise<TfDemoResult> {
   const tf = await ensureTf();
-  const box = (tf as any).boxMesh(4, 4, 4);
-  return { data: tfMeshData(box), stats: tfAnalyze(tf, box) };
+  const t = tf as any;
+  const solid = buildDemoMesh(t, kind);
+  if (opts.cutaway && CUTTABLE_KINDS.has(kind)) {
+    const { mesh: cut, planes } = applyTfCutaway(t, solid);
+    if (planes) {
+      // Analyse the CUT solid — a clean half-cut is still closed + manifold.
+      return { data: tfMeshData(cut), stats: tfAnalyze(tf, cut), cutPlanes: planes };
+    }
+  }
+  return { data: tfMeshData(solid), stats: tfAnalyze(tf, solid) };
 }

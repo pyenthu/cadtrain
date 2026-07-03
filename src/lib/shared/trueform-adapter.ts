@@ -39,6 +39,78 @@ export interface TfMeshInput {
   faceStride?: number;
 }
 
+/** Default cross-section face colours — the historical Manifold half-section
+ *  convention (`render-helpers.ts:manifoldToCutVC`): outer body RED, revealed
+ *  interior / cut face GREY. Kept byte-identical so a TF cutaway reads the same
+ *  as the Manifold 3D-bake cutaway. */
+export const SECTION_OUTER_RGB: [number, number, number] = [0.8, 0.06, 0.06];
+export const SECTION_INNER_RGB: [number, number, number] = [0.45, 0.45, 0.45];
+
+/** One planar cut face of the cutaway box, e.g. `{ axis: 0, coord: 0 }` = the
+ *  world x=0 plane. A result triangle whose THREE verts all sit on such a plane
+ *  is a newly-exposed cross-section face (→ grey interior). */
+export interface CutPlane {
+  /** 0 = x, 1 = y, 2 = z. */
+  axis: 0 | 1 | 2;
+  /** Plane offset along that axis (world units). */
+  coord: number;
+}
+
+/** How to colour a cut result's faces into outer skin vs revealed section. */
+export interface SectionColoring {
+  /** The cutter box's exposed planes — a triangle flush with any of these is a
+   *  section (interior/grey) face. Mirrors Manifold's `onCutX`/`onCutY` test. */
+  planes: CutPlane[];
+  /** RGB (0..1) for the outer body faces. Default {@link SECTION_OUTER_RGB}. */
+  outer?: [number, number, number];
+  /** RGB (0..1) for the revealed section faces. Default {@link SECTION_INNER_RGB}. */
+  inner?: [number, number, number];
+  /** Coincidence tolerance for "vertex lies on the plane" (world units). */
+  eps?: number;
+}
+
+/**
+ * Per-FACE cross-section colours for a cut result — the pure face→colour split
+ * (unit-tested). A triangle is a SECTION face (interior → grey) when all three
+ * of its vertices lie on one of the cutter's exposed planes; otherwise it is
+ * outer body skin (→ red). This is the exact geometric classifier Manifold's
+ * `manifoldToCutVC` uses (`onCutX`/`onCutY`) — chosen over TrueForm's
+ * `faceLabels`/`labels` because those only reference the ORIGIN face in the part
+ * operand and do NOT distinctly tag the cutter-created faces (empirically the
+ * boolean's `labels` region covers only a subset of the true section faces).
+ *
+ * `index` is the flat, already-triangulated [F*3] buffer; returns a flat [F*3]
+ * RGB buffer (one colour per FACE, three floats). Expand to per-corner in the
+ * geometry builder.
+ */
+export function sectionFaceColors(
+  points: ArrayLike<number>,
+  index: ArrayLike<number>,
+  section: SectionColoring,
+): Float32Array {
+  const nt = (index.length / 3) | 0;
+  const out = new Float32Array(nt * 3);
+  const outer = section.outer ?? SECTION_OUTER_RGB;
+  const inner = section.inner ?? SECTION_INNER_RGB;
+  const eps = section.eps ?? 1e-2;
+  const planes = section.planes;
+  for (let t = 0; t < nt; t++) {
+    const a = index[t * 3], b = index[t * 3 + 1], c = index[t * 3 + 2];
+    let onSection = false;
+    for (let p = 0; p < planes.length; p++) {
+      const ax = planes[p].axis, co = planes[p].coord;
+      if (
+        Math.abs(points[a * 3 + ax] - co) < eps &&
+        Math.abs(points[b * 3 + ax] - co) < eps &&
+        Math.abs(points[c * 3 + ax] - co) < eps
+      ) { onSection = true; break; }
+    }
+    const rgb = onSection ? inner : outer;
+    out[t * 3] = rgb[0]; out[t * 3 + 1] = rgb[1]; out[t * 3 + 2] = rgb[2];
+  }
+  return out;
+}
+
 /**
  * Fan-triangulate an index buffer whose faces have `stride` vertices each into
  * a flat triangle index array. stride === 3 is returned as-is (already tris).
@@ -134,8 +206,14 @@ function creaseAwareCornerNormals(pos: ArrayLike<number>, tri: ArrayLike<number>
  * Build a THREE.BufferGeometry from TrueForm data with crease-aware normals.
  * Non-indexed (split at creases) so a bored pipe reads as a smooth-walled solid
  * with a clean bore + sharp rims. `creaseAngleDeg` tunes the sharp/smooth split.
+ *
+ * When `section` is supplied (the TF cutaway path), a per-vertex `color`
+ * attribute is emitted — outer body faces RED, revealed cross-section faces
+ * GREY — so the result renders through the SAME `cutVC` / `vertexColors` branch
+ * as the Manifold + BREP half-sections (`PrimitiveDualScene`). Absent `section`,
+ * output is unchanged (position + normal only) → the plain solid path.
  */
-export function tfMeshToGeo(data: TfMeshInput, creaseAngleDeg = DEFAULT_CREASE_ANGLE): THREE.BufferGeometry {
+export function tfMeshToGeo(data: TfMeshInput, creaseAngleDeg = DEFAULT_CREASE_ANGLE, section?: SectionColoring): THREE.BufferGeometry {
   const g = new THREE.BufferGeometry();
   const positions = data.points instanceof Float32Array ? data.points : Float32Array.from(data.points as any);
   const index = triangulateFaces(data.faces, data.faceStride ?? 3);
@@ -156,5 +234,19 @@ export function tfMeshToGeo(data: TfMeshInput, creaseAngleDeg = DEFAULT_CREASE_A
   const normals = creaseAwareCornerNormals(positions, index, creaseAngleDeg);
   g.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
   g.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  if (section) {
+    // Per-face RGB (outer/section) → scatter to the 3 corners of each triangle.
+    const faceCols = sectionFaceColors(positions, index, section);
+    const outCol = new Float32Array(nCorner * 3);
+    const nt = (index.length / 3) | 0;
+    for (let t = 0; t < nt; t++) {
+      const r = faceCols[t * 3], gr = faceCols[t * 3 + 1], b = faceCols[t * 3 + 2];
+      for (let k = 0; k < 3; k++) {
+        const o = (t * 3 + k) * 3;
+        outCol[o] = r; outCol[o + 1] = gr; outCol[o + 2] = b;
+      }
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
+  }
   return g;
 }

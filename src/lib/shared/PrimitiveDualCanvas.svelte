@@ -457,21 +457,33 @@
       ]);
       if (ac.signal.aborted) return;
       const t0 = performance.now();
-      const { data, stats } = await runTfDemo(tfDemo);
+      // Mirror the Manifold cutaway: the SAME `scene.showCutaway` toggle drives a
+      // half-quadrant boolean cut on the TF solid. The cut result carries the two
+      // exposed cut planes (`cutPlanes`); we feed them to the adapter so the
+      // revealed cross-section renders GREY (interior) and the outer skin RED —
+      // the same `cutVC` / `vertexColors` branch as the Manifold + BREP sections.
+      // The Z-slider (scene.zFocus) pans the shared camera, so it applies here
+      // too — no per-backend slider wiring needed.
+      const { data, stats, cutPlanes } = await runTfDemo(tfDemo, { cutaway: scene.showCutaway });
       if (ac.signal.aborted) return;
-      const g = tfMeshToGeo(data);
-      geo = { full: g }; geoVersion++;
+      if (cutPlanes) {
+        const cutVC = tfMeshToGeo(data, undefined, { planes: cutPlanes });
+        geo = { cutVC };
+      } else {
+        geo = { full: tfMeshToGeo(data) };
+      }
+      geoVersion++;
       tfMs = performance.now() - t0; meshStatus = 'ok'; err = null;
       const tris = data.faces.length / 3, verts = data.points.length / 3;
       // Surface tf's OWN topology verdict (the watertightness check) as the
       // reason line + console — the KNOWN TrueForm weakness is non-watertight
-      // booleans / uncapped sweeps.
+      // booleans / uncapped sweeps. A clean half-cut solid stays closed+manifold.
       if (stats) {
         brepReason =
-          `${tfDemo} · ${stats.closed ? 'watertight (closed)' : `open (${stats.boundaryLoops} boundary loop${stats.boundaryLoops === 1 ? '' : 's'})`}` +
+          `${tfDemo}${cutPlanes ? ' · cutaway' : ''} · ${stats.closed ? 'watertight (closed)' : `open (${stats.boundaryLoops} boundary loop${stats.boundaryLoops === 1 ? '' : 's'})`}` +
           ` · ${stats.manifold ? 'manifold' : 'NON-manifold'} · χ=${stats.euler}` +
           (stats.closed ? ` · vol=${stats.volume.toFixed(2)}` : '');
-        console.log('[tf] demo', tfDemo, stats);
+        console.log('[tf] demo', tfDemo, cutPlanes ? '(cutaway)' : '', stats);
       }
       onBakeMeta?.({ cached: false, ms: tfMs, tris, verts, supported: true });
     } catch (e: any) {
