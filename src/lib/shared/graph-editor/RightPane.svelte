@@ -511,9 +511,11 @@
                a bored-pipe boolean, or the original from-scratch box. -->
           <div class="ge-tf-demo-row">
             <span class="ge-tf-demo-label">tf demo</span>
-            <label><input type="radio" name="tfdemo" value="sweep" bind:group={tfDemoKind}/> sweep (helix tube)</label>
-            <label><input type="radio" name="tfdemo" value="boolean" bind:group={tfDemoKind}/> boolean (bored pipe)</label>
-            <label><input type="radio" name="tfdemo" value="box" bind:group={tfDemoKind}/> box</label>
+            <select class="ge-tf-demo-select" bind:value={tfDemoKind} aria-label="TrueForm demo geometry">
+              <option value="sweep">sweep (helix tube)</option>
+              <option value="boolean">boolean (bored pipe)</option>
+              <option value="box">box</option>
+            </select>
           </div>
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
             args={bake.args ?? paramDefaults}
@@ -629,8 +631,8 @@
   .ge-bake-meta-spacer { flex: 1 1 auto; }
   .ge-tf-demo-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 5px 8px; background: #faf9f8; border-bottom: 1px solid #e7e5e4; font: 600 11px Arial; color: #57534e; }
   .ge-tf-demo-row .ge-tf-demo-label { text-transform: uppercase; letter-spacing: 0.5px; color: #a8a29e; }
-  .ge-tf-demo-row label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
-  .ge-tf-demo-row input { margin: 0; cursor: pointer; appearance: auto; -webkit-appearance: auto; accent-color: #7c3aed; }
+  .ge-tf-demo-row .ge-tf-demo-select { font: 600 11px Arial; color: #57534e; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; padding: 3px 6px; cursor: pointer; accent-color: #7c3aed; }
+  .ge-tf-demo-row .ge-tf-demo-select:focus { outline: none; border-color: #7c3aed; }
   .ge-draft-toggle { display: inline-flex; align-items: center; gap: 3px; font: 600 11px Arial; color: #57534e; cursor: pointer; user-select: none; }
   .ge-draft-toggle input { margin: 0; cursor: pointer; appearance: auto; -webkit-appearance: auto; accent-color: #d97706; width: 13px; height: 13px; }
   .ge-cache-badge { padding: 2px 8px; border-radius: 12px; font: 600 10px ui-monospace, monospace; }
