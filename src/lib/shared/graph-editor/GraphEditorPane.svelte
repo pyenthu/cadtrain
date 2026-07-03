@@ -73,11 +73,6 @@
     addExprDef,
     addExprInstance,
     addSpline,
-    setSplinePoints,
-    setSplineSamples,
-    setSplineClosed,
-    setSplinePointsExpr,
-    setSplinePlot,
     removeExprDef,
     addStackPlaceholder,
     addRepeatPlaceholder,
@@ -119,8 +114,7 @@
     type RotNode,
   } from '$lib/cad/composition-graph';
   import { emitGraph, consumedByCall } from '$lib/cad/composition-emit';
-  import { resolveWiredSplinePoints } from '$lib/cad/spline-eval';
-  import { resampleSpline } from '$lib/cad/spline-resample';
+  // (resolveWiredSplinePoints / resampleSpline moved to spline-state.svelte.ts — #940 spline cut)
   // (emitProfileGraph moved to profile-preview-state.svelte.ts with the resolve effect — #940 CUT 2)
   import { bakeGraphPreview } from '$lib/cad/composition-bake';
   import { autoLayoutGraph } from '$lib/cad/composition-layout';
@@ -188,6 +182,7 @@
   // constructed below once `graph`/`clientToGraph` are in scope.
   import { WireState } from './wire-state.svelte';
   import { SketchState } from './sketch-state.svelte';
+  import { SplineState } from './spline-state.svelte';
   // Source/meta parsers + the expected-params cache (drift detection) —
   // modularize K.65 Phase B. `expected` is a shared singleton $state cache keyed
   // by primitive src; the graph-touching fns take/return graph explicitly.
@@ -1806,99 +1801,17 @@
     closePicker();
     const made = addSpline(graph);
     graph = made.graph;
-    openSplineEditor(undefined, made.id);
+    spline.openSplineEditor(undefined, made.id);
   }
 
-  // ─── spline-editor popup (TODO #15) ───────────────────────────────────────
-  // GEP owns the open + anchor; SplineEditorPopup is self-contained chrome.
-  let splineEditId = $state<string | null>(null);
-  let splinePopPos = $state<{ left: number; top: number }>({ left: 120, top: 80 });
-  function openSplineEditor(ev: MouseEvent | undefined, id: string) {
-    const node = graph.nodes[id] as any;
-    if (!node || node.type !== 'spline') return;
-    if (ev) splinePopPos = { left: ev.clientX + 12, top: Math.max(12, ev.clientY - 40) };
-    else splinePopPos = { left: 120, top: 80 };
-    splineEditId = id;
-  }
-  /** Live node behind the open popup (reactive — so edits reflect immediately). */
-  let splineNode = $derived(splineEditId ? (graph.nodes[splineEditId] as any) : null);
-  /** The CONTROL POINTS the editor renders. When the spline's points are WIRED
-   *  from an expression (#26), evaluate that expression's output live (reuses the
-   *  bake's emitExprBlocks lowering) so the popup shows the RESOLVED points, not
-   *  the stale manual handles. Unwired ⇒ the manual `points`. `$derived` so it
-   *  tracks graph / param / expression edits. */
-  let splineDisplayPoints = $derived.by<[number, number, number][]>(() => {
-    const n = splineNode;
-    if (!n) return [];
-    if (n.pointsExpr != null) return resolveWiredSplinePoints(graph, n.pointsExpr);
-    return (n.points ?? []) as [number, number, number][];
-  });
-  function onSplinePoints(pts: [number, number, number][]) {
-    if (!splineEditId) return;
-    graph = setSplinePoints(graph, splineEditId, pts);
-    bakeNonce++;
-  }
-  function onSplineSamples(n: number) {
-    if (!splineEditId) return;
-    graph = setSplineSamples(graph, splineEditId, asLiteral(n));
-    bakeNonce++;
-  }
-  function onSplineClosed(v: boolean) {
-    if (!splineEditId) return;
-    // The spline owns loop-ness; a sweep wired to its path auto-follows (emit
-    // forces closedPath/caps). Nudge the bake so the change re-renders.
-    graph = setSplineClosed(graph, splineEditId, v);
-    bakeNonce++;
-  }
-  /** Drop the wired control-points source (#26) → back to the manual points. */
-  function onSplineUnwire() {
-    if (!splineEditId) return;
-    graph = setSplinePointsExpr(graph, splineEditId, null);
-    bakeNonce++;
-  }
-  /** Toggle the PLOT-in-the-main-3D-bake diagnostic overlay for the spline being
-   *  edited (TODO #24). VIEW-ONLY — no re-bake, only the overlay set changes. */
-  function onSplinePlot(v: boolean) {
-    if (!splineEditId) return;
-    graph = setSplinePlot(graph, splineEditId, v);
-  }
-
-  // ─── plotted-spline diagnostic overlays (TODO #24) ─────────────────────────
-  // Auto-colour palette — distinct hues so PATH vs SECTION (and any further
-  // plotted splines) read apart at a glance. A node's explicit `plotColor` wins.
-  const SPLINE_PLOT_COLORS = ['#e11d48', '#2563eb', '#16a34a', '#d97706', '#9333ea', '#0891b2'];
-  /** Every spline with `plot === true`, resolved to { curve, control points,
-   *  colour } for the main-bake overlay. Reuses resolveWiredSplinePoints (#26)
-   *  for wired control points and resampleSpline (the SAME curve the bake uses)
-   *  for the display polyline — NO second point resolver. `$derived` so it
-   *  tracks point drags / N / wiring / plot toggles live. */
-  let splineOverlays = $derived.by(() => {
-    const out: { id: string; color: string; curve: [number, number, number][]; points: [number, number, number][]; closed?: boolean }[] = [];
-    let ci = 0;
-    for (const n of Object.values(graph.nodes)) {
-      if ((n as any).type !== 'spline' || (n as any).plot !== true) continue;
-      const sp = n as any;
-      const points: [number, number, number][] = sp.pointsExpr != null
-        ? resolveWiredSplinePoints(graph, sp.pointsExpr)
-        : ((sp.points ?? []) as [number, number, number][]);
-      const color = (typeof sp.plotColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(sp.plotColor))
-        ? sp.plotColor
-        : SPLINE_PLOT_COLORS[ci % SPLINE_PLOT_COLORS.length];
-      ci++;
-      if (points.length < 2) { // still show the handles even if the curve can't form
-        out.push({ id: sp.id, color, curve: [], points, closed: sp.closed === true });
-        continue;
-      }
-      const N = sp.samples?.kind === 'literal' ? Math.max(2, Number(sp.samples.value)) : 48;
-      // Dense polyline for a smooth overlay tube (≥ N, capped): the bake's own
-      // resampleSpline, so the plotted curve matches the swept spine.
-      const dense = Math.max(N, Math.min(256, points.length * 24));
-      let curve: [number, number, number][] = [];
-      try { curve = resampleSpline(points as any, dense, sp.closed === true) as any; } catch { curve = []; }
-      out.push({ id: sp.id, color, curve, points, closed: sp.closed === true });
-    }
-    return out;
-  });
+  /** Per-instance spline-editor cluster (#940 spline cut) — owns the popup
+   *  open/anchor (splineEditId/splinePopPos), the live splineNode +
+   *  splineDisplayPoints derivations behind the popup, the onSpline* mutators,
+   *  and the splineOverlays diagnostic set the RightPane 3D bake reads. Reads /
+   *  writes the pane's graph via getters + nudges the re-bake via bumpBakeNonce
+   *  (the inline handlers' `bakeNonce++`). NOT a module singleton — /primitives
+   *  mounts N panes, an open popup + overlays are per-pane. */
+  const spline = new SplineState(() => graph, (g) => { graph = g; }, () => { bakeNonce++; });
   /** Picker "ƒ expr" item (B.7 v3) — route to the Expressions MENU (the expr-def
    *  manager) instead of silently dropping an instance of a (possibly empty,
    *  unwireable) def. The menu is where you define a named expr with params/
@@ -2848,20 +2761,20 @@
       onClose={() => (aiMenuOpen = false)} />
   {/if}
 
-  {#if splineEditId && splineNode}
+  {#if spline.splineEditId && spline.splineNode}
     <SplineEditorPopup
-      pos={splinePopPos}
-      points={splineDisplayPoints}
-      samples={splineNode.samples?.kind === 'literal' ? Number(splineNode.samples.value) : 32}
-      closed={splineNode.closed === true}
-      wired={splineNode.pointsExpr != null}
-      plot={splineNode.plot === true}
-      onPointsChange={onSplinePoints}
-      onSamplesChange={onSplineSamples}
-      onClosedChange={onSplineClosed}
-      onPlotChange={onSplinePlot}
-      onUnwire={onSplineUnwire}
-      onClose={() => (splineEditId = null)} />
+      pos={spline.splinePopPos}
+      points={spline.splineDisplayPoints}
+      samples={spline.splineNode.samples?.kind === 'literal' ? Number(spline.splineNode.samples.value) : 32}
+      closed={spline.splineNode.closed === true}
+      wired={spline.splineNode.pointsExpr != null}
+      plot={spline.splineNode.plot === true}
+      onPointsChange={spline.onSplinePoints}
+      onSamplesChange={spline.onSplineSamples}
+      onClosedChange={spline.onSplineClosed}
+      onPlotChange={spline.onSplinePlot}
+      onUnwire={spline.onSplineUnwire}
+      onClose={() => (spline.splineEditId = null)} />
   {/if}
 
   {#if bakeMenuOpen}
@@ -2980,7 +2893,7 @@
               {openPolyBindingExprPop}
               {openPolyRepeatCountExprPop}
               {openExprDefEditor}
-              onOpenSplineEditor={openSplineEditor}
+              onOpenSplineEditor={spline.openSplineEditor}
               {setHoverVertex}
               {clearHoverVertex}
               openPolyPreview={polyUI.openPolyPreview}
@@ -3104,7 +3017,7 @@
     <RightPane
       {bake} {exemplarId} {paramDefaults} {graph} {hasSolidProducer}
       active={props.active}
-      splineOverlays={splineOverlays}
+      splineOverlays={spline.splineOverlays}
       {legacyLoad} {sourceText}
       {cutawayBusy} {cutawayStatus} {rebuildStatus} {restartBusy} {restartStatus} {mdAiBusy}
       bind:rightTab bind:drawingMd
