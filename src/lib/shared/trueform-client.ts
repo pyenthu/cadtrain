@@ -73,6 +73,123 @@ export function tfMeshData(mesh: any): TfMeshData {
   return { points, faces };
 }
 
+// ── Capping open sweeps → watertight solids ─────────────────────────────────
+// `tubeMesh` sweeps a circular section along a path but does NOT cap the ends,
+// so a swept tube comes back OPEN (one boundary loop per end). An open mesh has
+// no enclosed interior, so the cutaway (a boolean half-quadrant cut) has nothing
+// to reveal and is skipped. Capping each open loop with a centroid triangle-fan
+// turns the tube into a CLOSED, watertight solid → it cuts like the other solids.
+
+/** A flat triangle-mesh payload (same shape as {@link TfMeshData}); the result
+ *  of the PURE cap builder, ready for `tf.mesh(faces, points)`. */
+export interface FlatMesh {
+  points: Float32Array;
+  faces: Int32Array;
+}
+
+/**
+ * PURE cap builder (no WASM) — close each open boundary loop with a centroid
+ * triangle-fan. `points` is the [V*3] vertex buffer, `faces` the [F*3] index
+ * buffer, `loops` the ordered vertex-index lists of the open boundaries (as
+ * returned by tf's `boundaryPaths`). For each loop we add ONE centroid vertex
+ * and a fan of `L` triangles closing the opening, so every former boundary edge
+ * is now shared by exactly two faces (watertight, 2-manifold).
+ *
+ * WINDING (the load-bearing detail): each cap triangle must traverse its shared
+ * boundary edge in the OPPOSITE direction to the wall face that owns it — that's
+ * the manifold-orientation rule, and it makes the cap AGREE with the existing
+ * walls (whatever direction they run). So we look up the boundary edge (a→b) in
+ * the set of directed half-edges present in the input faces: if the wall uses
+ * a→b we wind the cap (b, a, centroid); otherwise (a, b, centroid). The result
+ * is a SINGLE consistently-oriented surface (walls + caps agree). The caller
+ * then runs it through `positivelyOriented` to flip the whole thing OUTWARD if
+ * the source walls happened to be inward (tf's `tubeMesh` walls are — see the
+ * unit + kernel tests). A fixed winding that ignored the wall direction mixed
+ * orientations and defeated `positivelyOriented`, which is why this matters.
+ *
+ * A loop whose first index repeats at the end (a closed path) is de-duplicated;
+ * loops with < 3 distinct verts are skipped (can't cap). Isolated + exported so
+ * the fan/centroid/winding logic can be tested without the 31 MB WASM kernel.
+ */
+export function buildCappedMesh(
+  points: ArrayLike<number>,
+  faces: ArrayLike<number>,
+  loops: readonly (readonly number[])[],
+): FlatMesh {
+  const outPts: number[] = Array.from(points as ArrayLike<number>);
+  const outFaces: number[] = Array.from(faces as ArrayLike<number>);
+  // Directed half-edges present in the EXISTING faces (before we add caps) — the
+  // cap winds opposite to whichever direction the wall runs (manifold rule).
+  const present = new Set<number>();
+  const nV0 = (outPts.length / 3) | 0;
+  const STRIDE = nV0 + 1; // > max index, so a*STRIDE+b uniquely encodes a→b
+  const enc = (a: number, b: number) => a * STRIDE + b;
+  for (let f = 0; f < faces.length; f += 3) {
+    const a = faces[f], b = faces[f + 1], c = faces[f + 2];
+    present.add(enc(a, b)); present.add(enc(b, c)); present.add(enc(c, a));
+  }
+  let nextV = nV0;
+  for (const raw of loops) {
+    // A closed path may repeat its first index at the end — drop the duplicate.
+    let loop = raw as readonly number[];
+    if (loop.length > 1 && loop[0] === loop[loop.length - 1]) loop = loop.slice(0, -1);
+    const L = loop.length;
+    if (L < 3) continue; // degenerate — nothing to cap
+    let cx = 0, cy = 0, cz = 0;
+    for (const v of loop) { cx += outPts[v * 3]; cy += outPts[v * 3 + 1]; cz += outPts[v * 3 + 2]; }
+    cx /= L; cy /= L; cz /= L;
+    const ci = nextV++;
+    outPts.push(cx, cy, cz);
+    for (let i = 0; i < L; i++) {
+      const a = loop[i], b = loop[(i + 1) % L];
+      // Oppose the wall's boundary half-edge → orientation consistent with walls.
+      if (present.has(enc(a, b))) outFaces.push(b, a, ci);
+      else outFaces.push(a, b, ci);
+    }
+  }
+  return { points: Float32Array.from(outPts), faces: Int32Array.from(outFaces) };
+}
+
+/** Read tf's `boundaryPaths` OffsetBlockedBuffer into plain vertex-index arrays
+ *  (one per open loop). Empty → already closed. */
+function tfBoundaryLoops(t: any, mesh: any): number[][] {
+  const bp = t.boundaryPaths(mesh);
+  const n = bp.length as number;
+  const out: number[][] = [];
+  for (let i = 0; i < n; i++) {
+    const nd = bp.get(i);
+    const d = nd.data as Int32Array | Int8Array | ArrayLike<number>;
+    out.push(Array.from(d as ArrayLike<number>, (x) => x | 0));
+  }
+  return out;
+}
+
+/**
+ * Cap the open ends of a swept/uncapped tube `Mesh` → a CLOSED, watertight solid.
+ * Finds the open boundary loops (`boundaryPaths`), closes each with a centroid
+ * triangle-fan wound to agree with the walls ({@link buildCappedMesh}), rebuilds
+ * via `tf.mesh`, then runs the result through `positivelyOriented` so walls +
+ * caps share ONE consistent OUTWARD orientation (positive signed volume) — tf's
+ * `tubeMesh` walls are consistently INWARD, so this flip is what makes the solid
+ * cut cleanly. Returns the ORIGINAL mesh unchanged when it's already closed (no
+ * loops) or if any step throws (never worse than the uncapped tube).
+ */
+export function capOpenEnds(t: any, mesh: any): any {
+  try {
+    const loops = tfBoundaryLoops(t, mesh);
+    if (loops.length === 0) return mesh; // already watertight
+    const src = tfMeshData(mesh);
+    const capped = buildCappedMesh(src.points, src.faces, loops);
+    let m = t.mesh(capped.faces, capped.points);
+    // Enforce a single consistent outward orientation (manifold-edge voting +
+    // volume-sign flip) — the robust winding fix the fan alone can't guarantee.
+    try { m = t.positivelyOriented(m); } catch { /* keep the plain capped mesh */ }
+    return m;
+  } catch {
+    return mesh; // degenerate / non-orientable → leave the open tube as-is
+  }
+}
+
 /**
  * From-scratch demo geometry (commit 2): a TrueForm-generated box, returned as
  * flat mesh data. Proves the kernel loads + generates + hands back a mesh on the
@@ -155,11 +272,10 @@ export interface TfDemoResult {
  * algorithm-driven path (a coil / spring — the kind of thing `CrossSection`
  * can't do without axial sampling).
  *
- * NOTE ON WATERTIGHTNESS: `tubeMesh` does NOT cap the ends, so an open helix
- * comes back with 2 boundary loops (`closed:false`). That is CORRECT for an
- * uncapped sweep, not a defect. Pass `closedPath:true` to sweep along a full
- * loop (→ a torus-like closed tube, `closed:true`, genus 1) to see a watertight
- * result from the same primitive.
+ * WATERTIGHTNESS: `tubeMesh` does NOT cap the ends, so a raw open helix has 2
+ * boundary loops. We CAP them ({@link capOpenEnds}) by default → a CLOSED,
+ * watertight solid coil (`closed:true`) that cross-sections like the other
+ * solids. Pass `closedPath:true` to sweep a full loop (a torus, already closed).
  */
 export async function tfSweepDemo(opts: {
   coilRadius?: number;
@@ -202,7 +318,9 @@ export async function tfSweepDemo(opts: {
   const paths = t.offsetBlockedBuffer(offsets, data);
   const crv = t.curves(paths, pts);
 
-  const mesh = t.tubeMesh(crv, tubeRadius, radialSegments);
+  // Cap the open ends → a closed, watertight solid coil (an already-closed
+  // torus path is returned unchanged by capOpenEnds).
+  const mesh = capOpenEnds(t, t.tubeMesh(crv, tubeRadius, radialSegments));
   return { data: tfMeshData(mesh), stats: tfAnalyze(tf, mesh) };
 }
 
@@ -248,9 +366,9 @@ export async function tfRevolveCylDemo(opts: { radius?: number; height?: number;
 
 /**
  * s_cyl — the SAME shaft cylinder the SWEEP way. `tubeMesh` sweeps a circular
- * section straight up a vertical path. tubeMesh does NOT cap the ends, so this
- * comes back OPEN (2 boundary loops, closed:false) — the instructive contrast
- * with r_cyl's closed solid. Same radius/height so the two overlay for compare.
+ * section straight up a vertical path; its ends are then CAPPED
+ * ({@link capOpenEnds}) → a CLOSED solid cylinder matching r_cyl (same
+ * radius/height so the two overlay for compare) that cross-sections identically.
  */
 export async function tfSweepCylDemo(opts: { radius?: number; height?: number; axialSegments?: number; radialSegments?: number } = {}): Promise<TfDemoResult> {
   const tf = await ensureTf();
@@ -270,7 +388,7 @@ export async function tfSweepCylDemo(opts: { radius?: number; height?: number; a
   const pathData = t.ndarray(new Int32Array(idx), [idx.length]);
   const paths = t.offsetBlockedBuffer(offsets, pathData);
   const crv = t.curves(paths, pts);
-  const mesh = t.tubeMesh(crv, radius, radialSegments);
+  const mesh = capOpenEnds(t, t.tubeMesh(crv, radius, radialSegments));
   return { data: tfMeshData(mesh), stats: tfAnalyze(tf, mesh) };
 }
 
@@ -279,10 +397,11 @@ export async function tfSweepCylDemo(opts: { radius?: number; height?: number; a
 export type TfDemoKind = 'box' | 'sweep' | 'boolean' | 'r_cyl' | 's_cyl';
 
 /** Demos that produce a CLOSED solid — the cutaway (a boolean half-quadrant cut)
- *  only makes sense on a solid with an interior to reveal. The open uncapped
- *  sweeps (`sweep`, `s_cyl`) have no interior, so they ignore the cut and render
- *  the solid tube unchanged. */
-const CUTTABLE_KINDS: ReadonlySet<TfDemoKind> = new Set<TfDemoKind>(['box', 'r_cyl', 'boolean']);
+ *  only makes sense on a solid with an interior to reveal. The sweeps (`sweep`,
+ *  `s_cyl`) are now CAPPED into watertight solids ({@link capOpenEnds}), so they
+ *  cross-section like the rest. (An open mesh has no interior for the cut to
+ *  reveal, which is why capping is the prerequisite for including them here.) */
+const CUTTABLE_KINDS: ReadonlySet<TfDemoKind> = new Set<TfDemoKind>(['box', 'r_cyl', 'boolean', 'sweep', 's_cyl']);
 
 /** Build the raw (un-cut) tf `Mesh` handle for a demo kind, DEFAULT params —
  *  the single geometry source shared by the dispatch + cutaway paths (mirrors
@@ -305,7 +424,8 @@ function buildDemoMesh(t: any, kind: TfDemoKind): any {
       pts[i * 3 + 1] = coilRadius * Math.sin(a);
       pts[i * 3 + 2] = (i / ptsPerTurn) * pitch;
     }
-    return t.tubeMesh(buildOpenCurve(t, pts, n), 1.2, 24);
+    // Cap the open ends → a closed, watertight solid coil (so it cuts).
+    return capOpenEnds(t, t.tubeMesh(buildOpenCurve(t, pts, n), 1.2, 24));
   }
   if (kind === 's_cyl') {
     const height = 16, radius = 3, axialSegments = 2, radialSegments = 48;
@@ -315,7 +435,8 @@ function buildDemoMesh(t: any, kind: TfDemoKind): any {
       pts[i * 3] = 0; pts[i * 3 + 1] = 0;
       pts[i * 3 + 2] = -height / 2 + (i / (n - 1)) * height;
     }
-    return t.tubeMesh(buildOpenCurve(t, pts, n), radius, radialSegments);
+    // Cap the open ends → a closed solid cylinder (matches r_cyl; cuts cleanly).
+    return capOpenEnds(t, t.tubeMesh(buildOpenCurve(t, pts, n), radius, radialSegments));
   }
   return t.boxMesh(4, 4, 4);
 }

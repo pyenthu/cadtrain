@@ -513,8 +513,8 @@
             <span class="ge-tf-demo-label">tf demo</span>
             <select class="ge-tf-demo-select" bind:value={tfDemoKind} aria-label="TrueForm demo geometry">
               <option value="r_cyl">r_cyl (revolve — capped solid)</option>
-              <option value="s_cyl">s_cyl (sweep — open tube)</option>
-              <option value="sweep">sweep (helix tube)</option>
+              <option value="s_cyl">s_cyl (sweep — capped solid)</option>
+              <option value="sweep">sweep (helix tube — capped solid)</option>
               <option value="boolean">boolean (bored pipe)</option>
               <option value="box">box</option>
             </select>
