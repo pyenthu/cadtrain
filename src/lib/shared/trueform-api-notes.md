@@ -122,6 +122,11 @@ batches OR whole meshes/forms — same function).
 `src/lib/shared/trueform-client.ts`:
 - `tfDemoBox(w,h,d)` — original from-scratch box.
 - `tfSweepDemo(opts)` — **sweep**: helix path → `tubeMesh` (coil/spring).
+- `tfSweepCylDemo(opts)` — **sweep**: straight vertical `tubeMesh` (= r_cyl the sweep way).
+- `capOpenEnds(tf, mesh)` — close a `tubeMesh`'s open ends with centroid fans →
+  a CLOSED, watertight solid (`buildCappedMesh` is the pure, testable core;
+  `positivelyOriented` fixes the winding outward). Both sweeps are capped by
+  default so they cross-section (cutaway) like the other solids.
 - `tfBooleanDemo(opts)` — **CSG**: `cylinderMesh − cylinderMesh` = bored pipe.
 - `tfAnalyze(tf, mesh)` — `{closed, manifold, euler, boundaryLoops, volume, …}`
   via tf's own predicates = the watertightness verdict.
