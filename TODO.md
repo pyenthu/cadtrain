@@ -8,6 +8,7 @@
 
 ### Open — build work
 - **#40 Wireframe / diagnostic view** — toggle a wireframe (and normals) view in the 3D canvas to tell geometry bugs apart from material / normals / lighting issues. SHIPPED.
+- **#43 TF "actual" button** — next to the TF_DEMO dropdown, an **actual** toggle that imports the REAL baked part mesh (the 3D-BAKE Manifold geometry) into the TF kernel via `tf.mesh(faces, points)` — so the TF tab renders/analyzes YOUR part (not a demo), giving TF's independent watertight/manifold verdict + cutaway on the actual geometry.
 - **#41 TF examples registry** — move each TF demo out of `trueform-client.ts` into `src/lib/shared/tf_examples/<name>.ts` (one file per part: box/r_cyl/s_cyl/helix/bored_pipe/dp_pin/cone/…), each exporting `{ name, label, build() }`; an auto-glob registry (`import.meta.glob`) lists them → populates the TF dropdown AND serves as an API. Decouples demos from the kernel driver (kills the two-writers conflict) + makes parts drop-in. Includes a reusable `tfRevolveProfile(profile2D, segments)` lathe (TF has no native revolve) so any axisymmetric volume part (g_dp_pin, g_cone, …) can be replicated by feeding its half-section profile. First content: g_dp_pin + g_cone.
 - **#20 Typed expression outputs** — A/B/D on main. LEFT: C explicit annotation · E consumers (r_sweep.path, r_surface_grid) + ObjectNode emit + record→array adapter. (`typed-expression-outputs.md`)
 - **#11 Expression-as-builder** — unify the 3 repeats: wire list<op>→sketch, list<transform>→place/repeat; lacing; 2D preview. (`expression-list-builder.md`)
