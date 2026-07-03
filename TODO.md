@@ -13,13 +13,10 @@
 
 20. **Typed expression outputs — structural inference + dynamic wiring** (THE design spine).
     An expr is a node that outputs a typed value, wired into a compatible consumer; type
-    INFERRED from structure by default, explicit annotation optional. Phase A on main
-    (`struct-type.ts` + `'auto'` shape; `[[x,y,z],…]` literals just work). **Phase B (typed/
-    colored sockets + plain-language wire-checking) + D (Type-Definer: list types, "add a
-    field" bug, field dropdown) done on branches `worktree-agent-a2305d766500241a7` /
-    `…ab56b8f69c2f89c2e` — pending review/merge.** LEFT: C explicit annotation · E consumers
-    (r_sweep.path / r_surface_grid) + ObjectNode emit + record→array adapter.
-    Plan: `docs/plans/typed-expression-outputs.md`.
+    INFERRED from structure by default, explicit annotation optional. Phase A + B (typed/
+    colored sockets + plain-language wire-checking) + D (Type-Definer) merged to main.
+    LEFT: C explicit annotation · E consumers (r_sweep.path / r_surface_grid) + ObjectNode
+    emit + record→array adapter. Plan: `docs/plans/typed-expression-outputs.md`.
 
 11. **Expression-as-builder — unify the 3 repeats.** LEFT: wire list<op> → sketch +
     list<transform> → place/repeat (retire the 3 repeat types); lacing (longest-repeat-last);
@@ -187,9 +184,11 @@
     local-backed custom tabs FIRST (no OAuth), then CLOUD per-user tabs/folders once OAuth lands.
     Builds on the shipped 3-tab sidebar + folder-move. Plan: `docs/plans/custom-tabs-local-folders.md`.
 
-7. **Well schematic → 3D well diagram (`/wells`)** — PARTIAL (W0 + W1 + tool rail). NEXT: SVTC 3D
-   scene layer; DTX+scale; real `g_*` bakes; flatten; curvature subdivision; W2 2D schematic; W3
-   editor/BOM + wire the tool rail to placement. Plan: `docs/plans/well-schematic.md`.
+7. **Well schematic → 3D well diagram (`/wells`)** — LIVE. SHIPPED: SVTC engine port
+   (`src/lib/wells`) + ewells-style shell (`/wells` with sidebar/tabs) + wired 3D scene.
+   NEXT: register cadtrain `g_*` completion parts into the SVTC parametric registry;
+   perf on long strings; a real wells store; local-workspace / sidenav polish.
+   Plan: `docs/plans/well-schematic.md`.
 
 ### PARKED
 

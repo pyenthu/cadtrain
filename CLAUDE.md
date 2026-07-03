@@ -68,28 +68,27 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
 24. **Generative authoring — RAG-then-translate against the vocabulary first.** On a "new part" request, retrieve from `docs/parts/vocabulary.json` and compose via the deterministic translator (`src/lib/authoring/rule-translator.ts`): (1) synonym match → params only, (2) `extends` parent, (3) `kind:'compose'`, (4) hand-author ONLY when nothing fits — and say so before extending the schema. Save via `/api/primitives/save`; bake-verify via `/api/primitives/preview` (report verts/z-extent/outer-r). Patches via `scripts/promote-to-vocab.ts`; regen `vocabulary-graph.mmd` via `bun scripts/render-vocab-graph.ts`. **NEVER hand-author `/tmp/<id>_swap.ts` ad-hoc scripts when a vocab path exists.**
 25. **The welded-mesh system is the PRIMARY geometry builder.** `src/lib/cad/manifold-mesh.ts` (`gridPatch` / `capFan` / `weldAndBuild`, injected via `primitive-sandbox.ts`; memories `welded_mesh_toolkit_shared` + `raw_mesh_helix_pattern`) builds geometry with **explicit, controllable segmentation** — unlike `CrossSection.revolve`, which gives no axial sampling. It exists specifically to (a) **warp smoothly** (enough Z-samples → a smooth sine, not faceted chords) and (b) **build along a spline** for the coming **deviated / curved profiles**. **Segmentation / warp resolution belongs at BUILD time, never as a post-bake mesh rewrite** — subdividing the final welded Manifold's MeshGL OOB-crashes the WASM core and corrupts the singleton so every later bake fails (why warp-subdivide `d41877b` was reverted in `3fb1fa8`). The old client-side `subdivideAlongZ` (`src/lib/shared/warp.ts`) was a render-time stopgap; the durable fix is build-time Z-segmentation in the weld builders.
 
-## Current focus (2026-06-29 — resume point)
+## Current focus (2026-07-03 — resume point)
 
 > Keep ≤ 20 lines. Shipped detail → `docs/HISTORY.md` + session-handoff
 > memories; roadmap → `/plan` (Rule 19).
 > **Launch `claude --chrome` for fast visual iteration on /primitives + /vocab.**
 
-- **Latest session**: memory `session_handoff_2026-06-29` — READ IT FIRST.
-- **THE design spine** (the live thread): **typed expression outputs — structural
-  inference + dynamic wiring**. An expr is a node that outputs a typed value, wired
-  into a compatible consumer; the **type is INFERRED from the structure** (users
-  never declare), explicit annotation is optional (gradual typing — a contract
-  checked against inference), named types (Type Definer) an optional layer. Plan
-  `docs/plans/typed-expression-outputs.md`. **Phase A SHIPPED** (`struct-type.ts`
-  inference + `'auto'` output shape + live badge; `[[x,y,z],…]` literals just work).
-  LEFT: B typed sockets + plain-language wire-checking · C explicit annotation · D
-  Type Definer fixes (list types, "add at least one field" bug) · E consumers +
-  record→array adapter.
-- **r_sweep** (extrude/weld along a 3D path) works end-to-end; `sweep_demo` is a
-  graph-editable bent tube on the volume (section = a wired polygon → bump its
-  vert count or rewire to a circle expr for a round tube; tubeR/nSec are dead).
-- **Branch `fix/poly-wire-regex-and-card-tidy`** (pushed, NOT merged): all this
-  session's work. Merge → main = prod deploy when ready.
+- **Latest session**: memory `session_handoff_2026-07-02` — READ IT FIRST.
+- **THE CURRENT FOCUS**: **GraphEditorPane modularization reorg** (#940, active) —
+  GEP has drifted to ~5.3k lines; cut it toward a ~1.5k composing shell (layout-
+  actions extraction next). Plan `docs/plans/graph-editor-pane.md`. This unblocks
+  the **warp NODE + editor card** (#936 — geometry core `warp-spline.ts` shipped,
+  the user-facing node is deferred pending the reorg).
+- **Multi-engine matrix** (#939, active): Manifold client✓/server✓ · BREP/replicad
+  server✓ → **client-side TODO** (#934) + display-mesh quality/color (#935) · tf/
+  TrueForm tab✓ (demo box only → per-part + client/server toggle). r_sweep quality
+  + annular hollow-tube fix + BREP/tf tabs + COOP/COEP all SHIPPED 2026-07-02.
+- **Typed expression outputs** (#926, active): LEFT C explicit annotation · E
+  consumers (r_sweep.path / r_surface_grid) + ObjectNode emit. Feeds the
+  **expression-as-builder** unify of the 3 repeats (#923).
+- **/wells** shipped live (SVTC engine + ewells shell + wired 3D). NEXT: register
+  g_* parts into the parametric registry · long-string perf · real store · sidenav.
 - Plans in `docs/plans/`; research in `docs/FINDINGS.md`.
 
 ## Client-side execution (in progress)
@@ -100,9 +99,11 @@ Geometry **execution** is moving off the server into a browser **Web Worker**
 client EXECUTOR bakes the script. **Toggle:** 💻/☁ button in the graph-editor
 left rail (or `localStorage.cad-client-bake`) → `scene.clientBake`; the bake pane
 shows a `⚡client`/`☁server` badge, and the SRC tab has a `⚡compiled` subtab.
-Default OFF (server `/preview` fallback intact). Kills the deja-vu stale-bake bug
-structurally. PR1–3 shipped; plan `docs/plans/client-side-execution.md`; memory
-`client_side_execution`. **Tests: `bun run test` (vitest), NOT `bun test`.**
+Client-first is now the DEFAULT (server `/preview` fallback intact); the prod
+COOP/COEP + static-asset headers that unblock it shipped 2026-07-02. Kills the
+deja-vu stale-bake bug structurally. PR1–3 shipped; plan
+`docs/plans/client-side-execution.md`; memory `client_side_execution`.
+**Tests: `bun run test` (vitest), NOT `bun test`.**
 
 ## Tech stack + commands
 
