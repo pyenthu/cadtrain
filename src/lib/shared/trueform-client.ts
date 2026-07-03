@@ -191,17 +191,6 @@ export function capOpenEnds(t: any, mesh: any): any {
 }
 
 /**
- * From-scratch demo geometry (commit 2): a TrueForm-generated box, returned as
- * flat mesh data. Proves the kernel loads + generates + hands back a mesh on the
- * main thread. `boxMesh(w,h,d)` is centred at the origin.
- */
-export async function tfDemoBox(w = 4, h = 4, d = 4): Promise<TfMeshData> {
-  const tf = await ensureTf();
-  const box = (tf as any).boxMesh(w, h, d);
-  return tfMeshData(box);
-}
-
-/**
  * Topology / watertightness stats for a TrueForm `Mesh`, computed with tf's OWN
  * predicates (topology/sync + geometry/sync). This is the honest "is it a valid
  * solid?" check — the KNOWN TrueForm weakness is booleans / swept caps that come
@@ -265,184 +254,11 @@ export interface TfDemoResult {
 }
 
 /**
- * SWEEP demo — the real payoff. TrueForm has no revolve/loft/extrude, but
- * `tubeMesh(curves, radius, radialSegments)` sweeps a circular section along a
- * 3D polyline using parallel-transport frames (RMF) — i.e. a genuine pipe/sweep.
- * Here we sweep along a HELIX to prove tf builds smooth curved geometry from an
- * algorithm-driven path (a coil / spring — the kind of thing `CrossSection`
- * can't do without axial sampling).
- *
- * WATERTIGHTNESS: `tubeMesh` does NOT cap the ends, so a raw open helix has 2
- * boundary loops. We CAP them ({@link capOpenEnds}) by default → a CLOSED,
- * watertight solid coil (`closed:true`) that cross-sections like the other
- * solids. Pass `closedPath:true` to sweep a full loop (a torus, already closed).
+ * A single open `Curves` path over a shared point buffer (indices 0..n-1) — the
+ * `tubeMesh` sweep input. Kept as a KERNEL helper here (used by the sweep-style
+ * examples in `tf_examples/`); the demo CONTENT lives there, not in this driver.
  */
-export async function tfSweepDemo(opts: {
-  coilRadius?: number;
-  tubeRadius?: number;
-  pitch?: number;
-  turns?: number;
-  ptsPerTurn?: number;
-  radialSegments?: number;
-  closedPath?: boolean;
-} = {}): Promise<TfDemoResult> {
-  const tf = await ensureTf();
-  const t = tf as any;
-  const {
-    coilRadius = 6,
-    tubeRadius = 1.2,
-    pitch = 3.5,
-    turns = 3,
-    ptsPerTurn = 64,
-    radialSegments = 24,
-    closedPath = false,
-  } = opts;
-
-  const n = Math.max(4, Math.round(turns * ptsPerTurn));
-  const pts = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    // A closed path samples one full circle (no pitch); an open path spirals.
-    const a = closedPath ? (i / n) * 2 * Math.PI : (i / ptsPerTurn) * 2 * Math.PI;
-    pts[i * 3 + 0] = coilRadius * Math.cos(a);
-    pts[i * 3 + 1] = coilRadius * Math.sin(a);
-    pts[i * 3 + 2] = closedPath ? 0 : (i / ptsPerTurn) * pitch;
-  }
-
-  // A `Curves` = paths (offset-blocked index blocks) over a shared point buffer.
-  // One path spanning all n points; +1 wrapping index when the path is closed.
-  const idx: number[] = [];
-  for (let i = 0; i < n; i++) idx.push(i);
-  if (closedPath) idx.push(0);
-  const offsets = t.ndarray(new Int32Array([0, idx.length]), [2]);
-  const data = t.ndarray(new Int32Array(idx), [idx.length]);
-  const paths = t.offsetBlockedBuffer(offsets, data);
-  const crv = t.curves(paths, pts);
-
-  // Cap the open ends → a closed, watertight solid coil (an already-closed
-  // torus path is returned unchanged by capOpenEnds).
-  const mesh = capOpenEnds(t, t.tubeMesh(crv, tubeRadius, radialSegments));
-  return { data: tfMeshData(mesh), stats: tfAnalyze(tf, mesh) };
-}
-
-/**
- * BOOLEAN demo — exercises the CSG kernel + directly tests the memory's caveat
- * that TrueForm's boolean is not automatically watertight. Builds a bored pipe
- * (a downhole-relevant solid): an outer solid cylinder MINUS a taller, narrower
- * inner cylinder that punches all the way through → a hollow tube capped by two
- * annular faces. A correct boolean returns this `closed:true`, `manifold:true`,
- * genus-1 (χ = 0). `tfAnalyze` reports whether tf actually delivered that.
- */
-export async function tfBooleanDemo(opts: {
-  outerRadius?: number;
-  innerRadius?: number;
-  height?: number;
-  segments?: number;
-} = {}): Promise<TfDemoResult> {
-  const tf = await ensureTf();
-  const t = tf as any;
-  const { outerRadius = 6, innerRadius = 3.5, height = 16, segments = 64 } = opts;
-  const outer = t.cylinderMesh(outerRadius, height, segments);
-  // Slightly taller so the bore fully punches through both caps (no coplanar
-  // coincident faces → cleaner boolean).
-  const inner = t.cylinderMesh(innerRadius, height + 4, segments);
-  const res = t.booleanDifference(outer, inner);
-  const mesh = res.mesh;
-  return { data: tfMeshData(mesh), stats: tfAnalyze(tf, mesh) };
-}
-
-/**
- * r_cyl — a shaft cylinder the REVOLVE way. `cylinderMesh(radius, height,
- * segments)` is effectively a lathe of a rectangle profile → a CAPPED SOLID
- * cylinder (closed, manifold, χ=2). The TF analogue of Manifold's r_revolve.
- * Centred on the origin (z ∈ [−h/2, +h/2]).
- */
-export async function tfRevolveCylDemo(opts: { radius?: number; height?: number; segments?: number } = {}): Promise<TfDemoResult> {
-  const tf = await ensureTf();
-  const t = tf as any;
-  const { radius = 3, height = 16, segments = 48 } = opts;
-  const mesh = t.cylinderMesh(radius, height, segments);
-  return { data: tfMeshData(mesh), stats: tfAnalyze(tf, mesh) };
-}
-
-/**
- * s_cyl — the SAME shaft cylinder the SWEEP way. `tubeMesh` sweeps a circular
- * section straight up a vertical path; its ends are then CAPPED
- * ({@link capOpenEnds}) → a CLOSED solid cylinder matching r_cyl (same
- * radius/height so the two overlay for compare) that cross-sections identically.
- */
-export async function tfSweepCylDemo(opts: { radius?: number; height?: number; axialSegments?: number; radialSegments?: number } = {}): Promise<TfDemoResult> {
-  const tf = await ensureTf();
-  const t = tf as any;
-  const { radius = 3, height = 16, axialSegments = 2, radialSegments = 48 } = opts;
-  // Straight vertical path from −h/2 to +h/2 (match cylinderMesh centring).
-  const n = Math.max(2, axialSegments + 1);
-  const pts = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    pts[i * 3 + 0] = 0;
-    pts[i * 3 + 1] = 0;
-    pts[i * 3 + 2] = -height / 2 + (i / (n - 1)) * height;
-  }
-  const idx: number[] = [];
-  for (let i = 0; i < n; i++) idx.push(i);
-  const offsets = t.ndarray(new Int32Array([0, idx.length]), [2]);
-  const pathData = t.ndarray(new Int32Array(idx), [idx.length]);
-  const paths = t.offsetBlockedBuffer(offsets, pathData);
-  const crv = t.curves(paths, pts);
-  const mesh = capOpenEnds(t, t.tubeMesh(crv, radius, radialSegments));
-  return { data: tfMeshData(mesh), stats: tfAnalyze(tf, mesh) };
-}
-
-/** Which demo the TF tab renders. `box` is the original from-scratch primitive;
- *  `r_cyl`/`s_cyl` are the same shaft built revolve-style vs sweep-style. */
-export type TfDemoKind = 'box' | 'sweep' | 'boolean' | 'r_cyl' | 's_cyl';
-
-/** Demos that produce a CLOSED solid — the cutaway (a boolean half-quadrant cut)
- *  only makes sense on a solid with an interior to reveal. The sweeps (`sweep`,
- *  `s_cyl`) are now CAPPED into watertight solids ({@link capOpenEnds}), so they
- *  cross-section like the rest. (An open mesh has no interior for the cut to
- *  reveal, which is why capping is the prerequisite for including them here.) */
-const CUTTABLE_KINDS: ReadonlySet<TfDemoKind> = new Set<TfDemoKind>(['box', 'r_cyl', 'boolean', 'sweep', 's_cyl']);
-
-/** Build the raw (un-cut) tf `Mesh` handle for a demo kind, DEFAULT params —
- *  the single geometry source shared by the dispatch + cutaway paths (mirrors
- *  the standalone `tf*Demo` helpers' defaults). */
-function buildDemoMesh(t: any, kind: TfDemoKind): any {
-  if (kind === 'r_cyl') return t.cylinderMesh(3, 16, 48);
-  if (kind === 'boolean') {
-    const outer = t.cylinderMesh(6, 16, 64);
-    const inner = t.cylinderMesh(3.5, 16 + 4, 64); // taller so the bore punches through both caps
-    return t.booleanDifference(outer, inner).mesh;
-  }
-  if (kind === 'sweep') {
-    // Helix path (coilRadius 6, pitch 3.5, 3 turns, 64 pts/turn) swept r=1.2.
-    const coilRadius = 6, pitch = 3.5, turns = 3, ptsPerTurn = 64;
-    const n = Math.max(4, Math.round(turns * ptsPerTurn));
-    const pts = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      const a = (i / ptsPerTurn) * 2 * Math.PI;
-      pts[i * 3] = coilRadius * Math.cos(a);
-      pts[i * 3 + 1] = coilRadius * Math.sin(a);
-      pts[i * 3 + 2] = (i / ptsPerTurn) * pitch;
-    }
-    // Cap the open ends → a closed, watertight solid coil (so it cuts).
-    return capOpenEnds(t, t.tubeMesh(buildOpenCurve(t, pts, n), 1.2, 24));
-  }
-  if (kind === 's_cyl') {
-    const height = 16, radius = 3, axialSegments = 2, radialSegments = 48;
-    const n = Math.max(2, axialSegments + 1);
-    const pts = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      pts[i * 3] = 0; pts[i * 3 + 1] = 0;
-      pts[i * 3 + 2] = -height / 2 + (i / (n - 1)) * height;
-    }
-    // Cap the open ends → a closed solid cylinder (matches r_cyl; cuts cleanly).
-    return capOpenEnds(t, t.tubeMesh(buildOpenCurve(t, pts, n), radius, radialSegments));
-  }
-  return t.boxMesh(4, 4, 4);
-}
-
-/** A single open `Curves` path over a shared point buffer (indices 0..n-1). */
-function buildOpenCurve(t: any, pts: Float32Array, n: number): any {
+export function buildOpenCurve(t: any, pts: Float32Array, n: number): any {
   const idx: number[] = [];
   for (let i = 0; i < n; i++) idx.push(i);
   const offsets = t.ndarray(new Int32Array([0, idx.length]), [2]);
@@ -460,7 +276,7 @@ function buildOpenCurve(t: any, pts: Float32Array, n: number): any {
  * Returns the cut mesh + the two exposed cut planes so the adapter can colour
  * the revealed section faces grey. Any failure → the un-cut solid, no planes.
  */
-function applyTfCutaway(t: any, mesh: any): { mesh: any; planes?: TfCutPlane[] } {
+export function applyTfCutaway(t: any, mesh: any): { mesh: any; planes?: TfCutPlane[] } {
   try {
     const pts = mesh.points.data as Float32Array | Float64Array;
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
@@ -488,16 +304,22 @@ function applyTfCutaway(t: any, mesh: any): { mesh: any; planes?: TfCutPlane[] }
 }
 
 /**
- * Dispatch a TF-tab demo by kind. Returns mesh data + tf's topology verdict.
- * When `opts.cutaway` is set AND the kind is a closed solid, the mesh is cut
- * (half-quadrant boolean, mirroring the Manifold cutaway) and `cutPlanes` is
+ * Finalise a built tf `Mesh` handle into a {@link TfDemoResult} — the shared
+ * back-end of every `tf_examples/` builder. When `opts.cutaway` is set AND the
+ * example is `cuttable` (a closed solid), the mesh is cut (half-quadrant boolean,
+ * mirroring the Manifold cutaway via {@link applyTfCutaway}) and `cutPlanes` is
  * returned so the adapter renders a grey-interior / red-outer cross-section.
+ * Otherwise the plain solid + its topology verdict is returned. Kept here (the
+ * kernel driver) so the example CONTENT files stay thin and don't each reimplement
+ * the cutaway + analyse plumbing.
  */
-export async function tfDemo(kind: TfDemoKind, opts: { cutaway?: boolean } = {}): Promise<TfDemoResult> {
-  const tf = await ensureTf();
-  const t = tf as any;
-  const solid = buildDemoMesh(t, kind);
-  if (opts.cutaway && CUTTABLE_KINDS.has(kind)) {
+export function tfResult(
+  tf: Tf,
+  t: any,
+  solid: any,
+  opts: { cutaway?: boolean; cuttable?: boolean } = {},
+): TfDemoResult {
+  if (opts.cutaway && opts.cuttable) {
     const { mesh: cut, planes } = applyTfCutaway(t, solid);
     if (planes) {
       // Analyse the CUT solid — a clean half-cut is still closed + manifold.
