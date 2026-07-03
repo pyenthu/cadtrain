@@ -14,6 +14,7 @@
  * optional `order` field (lower first), then alphabetical by label.
  */
 import type { TfDemoResult } from '../trueform-client';
+import { ONLY_TF_EXAMPLES, EXCLUDED_TF_EXAMPLES } from './excluded';
 
 /** A single TF-tab demo part. `build` returns mesh data + tf's topology verdict;
  *  `cutaway` (when supported) applies the half-quadrant section cut. */
@@ -38,7 +39,7 @@ export interface TfExample {
 // out below by the `{name, label, build}` duck-type. No WASM loads here: a
 // builder's `build()` (which calls `ensureTf()`) only runs when actually invoked.
 const modules = import.meta.glob<Record<string, unknown>>(
-  ['./*.ts', '!./index.ts', '!./*.test.ts'],
+  ['./*.ts', '!./index.ts', '!./excluded.ts', '!./*.test.ts'],
   { eager: true },
 );
 
@@ -62,6 +63,11 @@ for (const mod of Object.values(modules)) {
  *  part's optional `order` (lower first), then alphabetically by label. Adding a
  *  `tf_examples/<name>.ts` makes it appear automatically; nothing to register. */
 export const tfExamples: { name: string; label: string }[] = [...byName.values()]
+  // Dropdown filter (excluded.ts): the ONLY allow-list wins when non-empty; else
+  // hide the EXCLUDED set. Hidden builders stay resolvable via getTfExample.
+  .filter((e) =>
+    ONLY_TF_EXAMPLES.size > 0 ? ONLY_TF_EXAMPLES.has(e.name) : !EXCLUDED_TF_EXAMPLES.has(e.name),
+  )
   .sort((a, b) =>
     (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) ||
     a.label.localeCompare(b.label),
