@@ -734,9 +734,14 @@
     {@const usesWeldedCurve =
       typeof source === 'string' && /\br_(sweep|loft|surface|helical_surface)\b/.test(source)}
     <!-- BREP carries OCCT exact-surface normals → smooth-shade the solid so the
-         true curvature reads (the cut half-section is faceted regardless). -->
+         true curvature reads (the cut half-section is faceted regardless).
+         TrueForm (tf) is an exact-kernel boolean/generator: its output carries
+         crease-aware normals from trueform-adapter (smooth curved walls, hard
+         rims), so smooth-shade it too or flatShading facets every cylinder — a
+         bored pipe reads blocky. tf-only; Manifold parts keep their heuristic. -->
     {@const smoothShadeAuto =
       isBrep ||
+      isTf ||
       id === 'r_weld_extrude' ||
       id === 'r_sweep' || id === 'r_loft' || id === 'r_surface' || id === 'r_helical_surface' ||
       usesWeldedCurve ||
