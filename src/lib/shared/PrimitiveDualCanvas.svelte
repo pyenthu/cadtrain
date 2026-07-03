@@ -939,7 +939,7 @@
        BREP appends the OCCT bake time. -->
   {#if stats}
     <div class="pd-stats" title={stats.instanced ? `${stats.childTris.toLocaleString()} tris/child × ${stats.count} instances` : ''}>
-      {stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts{stats.instanced ? ` · ×${stats.count} instanced` : ''}{#if isBrep && brepMs != null} · {Math.round(brepMs)}ms OCCT{/if}{#if isTf && tfMs != null} · {Math.round(tfMs)}ms TF{/if}{#if stats.stray > 0} · <span class="pd-stray" title="Near-zero-area (degenerate/sliver) triangles — usually coplanar strays a CSG boolean left at tilted coincident caps.">⚠ {stats.stray.toLocaleString()} stray</span> <button class="pd-stray-btn" type="button" onclick={removeStrays} title="Remove strays (v0): drops the near-zero-area triangles + re-welds. NOTE: for a curved-hollow CSG the genus stays corrupted (phantom handles) — this is cosmetic; the durable fix is the annular sweep. We'll refine the real removal later.">remove</button>{/if}
+      {stats.tris.toLocaleString()} tris · {stats.verts.toLocaleString()} verts{stats.instanced ? ` · ×${stats.count} instanced` : ''}{#if isBrep && brepMs != null} · {Math.round(brepMs)}ms OCCT{/if}{#if isTf && tfMs != null} · {Math.round(tfMs)}ms TF{/if}{#if stats.stray > 0} · <span class="pd-stray" title="Near-zero-area (degenerate) triangles — usually a CSG boolean at tilted coincident caps.">⚠ {stats.stray.toLocaleString()} stray</span> <button class="pd-stray-btn" type="button" onclick={removeStrays} title="Drop degenerate tris + re-weld (cosmetic — genus unchanged; durable fix = annular sweep).">remove</button>{/if}
     </div>
   {/if}
 </div>
