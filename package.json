@@ -7,7 +7,7 @@
     "dev": "vite dev --port 3333",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "HOST=0.0.0.0 PORT=${PORT:-3333} node build",
+    "start": "HOST=0.0.0.0 PORT=${PORT:-3333} node server.js",
     "seed": "bun run scripts/seed_cache.ts",
     "extract:figures": "bun run scripts/extract_figures.ts",
     "extract:generate": "bun run scripts/overnight_extract.ts",

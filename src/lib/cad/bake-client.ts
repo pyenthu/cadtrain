@@ -109,11 +109,26 @@ function getWorker(): Worker {
     worker.onerror = (ev) => {
       // A worker-level error has no request id — fail every in-flight job so no
       // caller hangs, then drop the worker so the next run() respawns it.
-      const err = new Error(`bake worker error: ${ev.message ?? 'unknown'}`);
+      // Surface the FULL ErrorEvent (message is often empty for a script
+      // LOAD/PARSE failure — the filename/lineno are the real signal there).
+      const e = ev as ErrorEvent;
+      const detail =
+        [e?.message, e?.filename && `@ ${e.filename}:${e.lineno ?? '?'}:${e.colno ?? '?'}`]
+          .filter(Boolean).join(' ') || 'unknown (worker script failed to load/parse)';
+      try { console.error('[bake-worker] worker-level error', { message: e?.message, filename: e?.filename, lineno: e?.lineno, colno: e?.colno, error: e?.error }); } catch {}
+      const err = new Error(`bake worker error: ${detail}`);
       for (const job of pending.values()) { if (!job.settled) { job.settled = true; job.reject(err); } }
       pending.clear();
       worker?.terminate();
       worker = null;
+    };
+    // A structured-clone failure on an incoming message (not a bake error) —
+    // surface it rather than silently dropping the reply.
+    worker.onmessageerror = (ev) => {
+      try { console.error('[bake-worker] messageerror (uncloneable reply)', ev); } catch {}
+      const err = new Error('bake worker messageerror: reply could not be deserialized');
+      for (const job of pending.values()) { if (!job.settled) { job.settled = true; job.reject(err); } }
+      pending.clear();
     };
   }
   return worker;
