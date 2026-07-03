@@ -20,6 +20,10 @@
   // in $lib/shared/tf_examples/). Static import is metadata only; no WASM loads
   // until a builder's build() runs inside PrimitiveDualCanvas.
   import { tfExamples } from '$lib/shared/tf_examples';
+  // graph → TrueForm recipe compiler (pure, no WASM). Lets the TF tab's "actual"
+  // mode build the part NATIVELY in tf from its graph ops instead of importing
+  // the baked Manifold mesh.
+  import { graphToTf } from '$lib/cad/graph-to-tf';
 
   type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'tf';
 
@@ -154,6 +158,12 @@
     const out: Record<string, number> = {};
     Object.keys(graph.params).forEach((k, i) => { out[k] = vals[i]; });
     return out;
+  });
+  // Compile the graph → a TrueForm recipe at the CURRENT param values. Fed to the
+  // TF canvas so "actual" mode builds natively (executeTfRecipe) when the recipe
+  // has no unsupported node; recomputed whenever the graph or params change.
+  let tfRecipe = $derived.by(() => {
+    try { return graphToTf(graph, brepParamValues); } catch { return undefined; }
   });
 
   // ─── SVG tab — vector render of the baked geometry (PrimitiveSvgView) ─────
@@ -538,6 +548,7 @@
             backend="tf"
             tfDemo={tfDemoKind}
             tfActual={tfActualOn}
+            tfRecipe={tfRecipe}
             brepSource={bake.source}
             brepParams={brepParamValues}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
