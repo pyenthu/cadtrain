@@ -135,6 +135,10 @@
   let brepMeta = $state<{ cached: boolean; ms: number; tris: number; verts: number; supported: boolean; reason?: string } | null>(null);
   // TF tab — client-side TrueForm bake meta (drives the fresh/error badge).
   let tfMeta = $state<{ cached: boolean; ms: number; tris: number; verts: number; supported: boolean; reason?: string } | null>(null);
+  // Which client-side TrueForm demo geometry the TF tab renders. TrueForm has no
+  // revolve/loft/extrude — 'sweep' pipes a section along a helix (tubeMesh),
+  // 'boolean' bores a pipe (booleanDifference), 'box' is the original primitive.
+  let tfDemoKind = $state<'box' | 'sweep' | 'boolean'>('sweep');
   // Param name → current value (graph.params order ↔ bake.args / paramDefaults).
   let brepParamValues = $derived.by(() => {
     const vals = (bake?.args ?? paramDefaults) as number[];
@@ -502,10 +506,20 @@
     <div class="ge-glb-body" class:hidden={rightTab !== 'tf'}>
       {#if rightTab === 'tf'}
         {#if PrimitiveDualCanvas && bake && typeof bake === 'object' && bake.source}
+          <!-- Demo selector: TrueForm has no revolve/loft/extrude, so the TF tab
+               shows what tf CAN build directly — a swept helix tube (tubeMesh),
+               a bored-pipe boolean, or the original from-scratch box. -->
+          <div class="ge-tf-demo-row">
+            <span class="ge-tf-demo-label">tf demo</span>
+            <label><input type="radio" name="tfdemo" value="sweep" bind:group={tfDemoKind}/> sweep (helix tube)</label>
+            <label><input type="radio" name="tfdemo" value="boolean" bind:group={tfDemoKind}/> boolean (bored pipe)</label>
+            <label><input type="radio" name="tfdemo" value="box" bind:group={tfDemoKind}/> box</label>
+          </div>
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
             args={bake.args ?? paramDefaults}
             source={bake.source}
             backend="tf"
+            tfDemo={tfDemoKind}
             brepSource={bake.source}
             brepParams={brepParamValues}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
@@ -613,6 +627,10 @@
   /* Bake cache status row + Rebuild button */
   .ge-bake-meta { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #fafaf9; border-top: 1px solid #e7e5e4; font: 11px Arial; }
   .ge-bake-meta-spacer { flex: 1 1 auto; }
+  .ge-tf-demo-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 5px 8px; background: #faf9f8; border-bottom: 1px solid #e7e5e4; font: 600 11px Arial; color: #57534e; }
+  .ge-tf-demo-row .ge-tf-demo-label { text-transform: uppercase; letter-spacing: 0.5px; color: #a8a29e; }
+  .ge-tf-demo-row label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+  .ge-tf-demo-row input { margin: 0; cursor: pointer; appearance: auto; -webkit-appearance: auto; accent-color: #7c3aed; }
   .ge-draft-toggle { display: inline-flex; align-items: center; gap: 3px; font: 600 11px Arial; color: #57534e; cursor: pointer; user-select: none; }
   .ge-draft-toggle input { margin: 0; cursor: pointer; appearance: auto; -webkit-appearance: auto; accent-color: #d97706; width: 13px; height: 13px; }
   .ge-cache-badge { padding: 2px 8px; border-radius: 12px; font: 600 10px ui-monospace, monospace; }

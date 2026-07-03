@@ -16,7 +16,7 @@
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfDemo = 'sweep' }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
     /** Spline DIAGNOSTIC overlays (TODO #24) — plotted splines' resolved curves +
      *  control points, drawn INSIDE the live-mesh group so they align with the
@@ -84,6 +84,12 @@
      *  GLB/BREP secondary canvases pass false so two mounted scenes can't
      *  ping-pong the shared scene.xScale/zScale (freeze fix, 2026-07-02). */
     autoScaleOwner?: boolean;
+    /** TF backend only: which client-side TrueForm demo geometry to render.
+     *  'box' = the original from-scratch primitive; 'sweep' = a helix tube
+     *  (tubeMesh — a real swept section along a 3D path); 'boolean' = a bored
+     *  pipe (booleanDifference of two cylinders). Default 'sweep' so the tab
+     *  shows curved parametric geometry, not just a box. */
+    tfDemo?: import('$lib/shared/trueform-client').TfDemoKind;
   } = $props();
 
   let Scene = $state<any>(null);
@@ -445,18 +451,28 @@
     meshStatus = 'building'; brepReason = null; err = null;
     tfAc?.abort(); const ac = new AbortController(); tfAc = ac;
     try {
-      const [{ tfDemoBox }, { tfMeshToGeo }] = await Promise.all([
+      const [{ tfDemo: runTfDemo }, { tfMeshToGeo }] = await Promise.all([
         import('$lib/shared/trueform-client'),
         import('$lib/shared/trueform-adapter'),
       ]);
       if (ac.signal.aborted) return;
       const t0 = performance.now();
-      const data = await tfDemoBox();
+      const { data, stats } = await runTfDemo(tfDemo);
       if (ac.signal.aborted) return;
       const g = tfMeshToGeo(data);
       geo = { full: g }; geoVersion++;
       tfMs = performance.now() - t0; meshStatus = 'ok'; err = null;
       const tris = data.faces.length / 3, verts = data.points.length / 3;
+      // Surface tf's OWN topology verdict (the watertightness check) as the
+      // reason line + console — the KNOWN TrueForm weakness is non-watertight
+      // booleans / uncapped sweeps.
+      if (stats) {
+        brepReason =
+          `${tfDemo} · ${stats.closed ? 'watertight (closed)' : `open (${stats.boundaryLoops} boundary loop${stats.boundaryLoops === 1 ? '' : 's'})`}` +
+          ` · ${stats.manifold ? 'manifold' : 'NON-manifold'} · χ=${stats.euler}` +
+          (stats.closed ? ` · vol=${stats.volume.toFixed(2)}` : '');
+        console.log('[tf] demo', tfDemo, stats);
+      }
       onBakeMeta?.({ cached: false, ms: tfMs, tris, verts, supported: true });
     } catch (e: any) {
       if (e?.name === 'AbortError' || ac.signal.aborted) return;
@@ -540,7 +556,7 @@
     // BREP keys on its own request shape (source/params/tolerance/cut); the
     // Manifold key (id/args/colors/segments/warp) doesn't apply server-side.
     const key = isTf
-      ? JSON.stringify({ b: 'tf', src: brepSource ?? source ?? '', p: brepParams ?? {}, cut: scene.showCutaway })
+      ? JSON.stringify({ b: 'tf', demo: tfDemo, src: brepSource ?? source ?? '', p: brepParams ?? {}, cut: scene.showCutaway })
       : isBrep
       ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
       : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, clientBake: scene.clientBake });
