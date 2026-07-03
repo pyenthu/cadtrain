@@ -83,3 +83,43 @@ export function moveTargets(tree: FolderNode | null, fromDir: string): { path: s
   if (tree) for (const c of tree.children) walk(c, 0);
   return out;
 }
+
+/** True when the folder at `path` is a legal move/copy destination for a part
+ *  currently in `excludeDir` ('' = allow every folder, for copy-in-place). It
+ *  must be a non-root path matching MOVE_TARGET_RE and not the source folder.
+ *  Drives both the flat and the tabbed-tree pickers. */
+export function isMoveTarget(path: string, excludeDir: string): boolean {
+  return !!path && path !== excludeDir && MOVE_TARGET_RE.test(path);
+}
+
+/** The top-level folder name that owns `path` ('completions/svtc' → 'completions').
+ *  Used to pre-select the move-picker tab for the part's current folder and to
+ *  route a freshly-created folder to the right sidebar tab. Empty for ''. */
+export function topLevelOf(path: string): string {
+  return path ? (path.split('/')[0] ?? '') : '';
+}
+
+/** Insert an (empty) folder at `path` into `tree`, creating any missing
+ *  intermediate nodes. Returns true when the tree actually gained a node (the
+ *  path was absent); false when every segment already existed. MUTATES `tree`
+ *  in place — the caller reassigns for reactivity. This is the folder analogue
+ *  of the parts `pendingCreated` optimistic insert: the proxied /list lags
+ *  writes by seconds (memory prod_list_staleness), so a brand-new folder needs
+ *  to be surfaced immediately rather than waiting for the server to catch up. */
+export function ensureFolderPath(tree: FolderNode, path: string): boolean {
+  if (!path) return false;
+  let n: FolderNode = tree;
+  let acc = '';
+  let changed = false;
+  for (const seg of path.split('/')) {
+    acc = acc ? `${acc}/${seg}` : seg;
+    let c = n.children.find((x) => x.name === seg);
+    if (!c) {
+      c = { name: seg, path: acc, parts: [], children: [] };
+      n.children = [...n.children, c];
+      changed = true;
+    }
+    n = c;
+  }
+  return changed;
+}
