@@ -579,7 +579,7 @@
             <!-- "actual" — import THIS part's own baked mesh into TF (not a demo). -->
             <button type="button" class="ge-tf-actual-btn" class:on={tfActualOn}
               aria-pressed={tfActualOn}
-              title="Import this part's own baked Manifold mesh into the TrueForm kernel and show tf's watertight/manifold/χ verdict on your real geometry."
+              title="Build THIS part natively in TrueForm from its graph (composites/sweeps resolve via the server compile); shows tf's watertight/manifold/χ verdict. Falls back to importing the Manifold mesh for ops TF can't build yet."
               onclick={() => (tfActualOn = !tfActualOn)}>actual</button>
           </div>
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
