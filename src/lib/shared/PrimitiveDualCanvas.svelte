@@ -124,6 +124,22 @@
   // TF "actual" fell back to the imported Manifold mesh (recipe unsupported) →
   // flag it so the verdict badge reads "MANIFOLD 3D BAKE" in a warning style.
   let tfFellBack = $state(false);
+  // WHY it fell back (unsupported ops / native error) — shown in the badge so a
+  // non-native result is never silent (the user asked to see the reason).
+  let tfFellBackReason = $state('');
+  /** Collect the distinct UNSUPPORTED nodeTypes in a recipe (deep walk) — for the
+   *  fallback reason badge. */
+  function unsupportedOpsOf(r: import('$lib/cad/graph-to-tf').TfRecipe | undefined): string[] {
+    const out = new Set<string>();
+    const walk = (i: any) => {
+      if (!i) return;
+      if (i.op === 'UNSUPPORTED') out.add(i.nodeType ?? 'unknown');
+      walk(i.obj); walk(i.arg); walk(i.child);
+      if (Array.isArray(i.children)) i.children.forEach(walk);
+    };
+    (r?.instrs ?? []).forEach(walk);
+    return [...out];
+  }
   // In-canvas adjustable OCCT tolerance (the relabelled "tol" dial). undefined →
   // the prop default (tolerance). Drives the BREP fetch + fetch-cache key.
   let tolOverride = $state<number | undefined>(undefined);
@@ -546,11 +562,14 @@
       //  • DEMO — registry dispatch (fall back to r_cyl on an unknown name).
       let builtVia: 'native TF' | 'mesh-import fallback' | 'demo';
       let result: import('$lib/shared/trueform-client').TfDemoResult;
+      tfFellBackReason = ''; // reset; set below when we DON'T build natively
       if (useNative) {
         try {
           result = executeTfRecipe(tf, tf, tfRecipe!, { cutaway: scene.showCutaway });
           builtVia = 'native TF';
         } catch (e: any) {
+          // Native build THREW — surface WHY in the badge, don't just silently import.
+          tfFellBackReason = `TF native build error: ${e?.message ?? e}`;
           console.warn('[tf] native recipe build failed, falling back to mesh import:', e?.message ?? e);
           const mesh = await bakeManifoldForTf(ac.signal);
           if (ac.signal.aborted) return;
@@ -559,6 +578,11 @@
           builtVia = 'mesh-import fallback';
         }
       } else if (tfActual) {
+        // Not native: either no recipe compiled, or it has ops TF can't build
+        // (extrude/loft, or an unresolved composite). Say which in the badge.
+        tfFellBackReason = tfRecipe
+          ? `TF can't build ops: ${unsupportedOpsOf(tfRecipe).join(', ') || 'unknown'}`
+          : 'no TF recipe compiled for this graph';
         result = await tfImportMesh(actualMesh!.positions, actualMesh!.indices, { cutaway: scene.showCutaway });
         builtVia = 'mesh-import fallback';
       } else {
@@ -594,7 +618,8 @@
         brepReason =
           `${label}${cutPlanes ? ' · cutaway' : ''} · ${stats.closed ? 'watertight (closed)' : `open (${stats.boundaryLoops} boundary loop${stats.boundaryLoops === 1 ? '' : 's'})`}` +
           ` · ${stats.manifold ? 'manifold' : 'NON-manifold'} · χ=${stats.euler}` +
-          (stats.closed ? ` · vol=${stats.volume.toFixed(2)}` : '');
+          (stats.closed ? ` · vol=${stats.volume.toFixed(2)}` : '') +
+          (tfFellBack && tfFellBackReason ? ` · ⚠ ${tfFellBackReason}` : '');
         console.log('[tf]', builtVia, label, cutPlanes ? '(cutaway)' : '', stats);
       }
       onBakeMeta?.({ cached: false, ms: tfMs, tris, verts, supported: true });
@@ -680,7 +705,11 @@
     // BREP keys on its own request shape (source/params/tolerance/cut); the
     // Manifold key (id/args/colors/segments/warp) doesn't apply server-side.
     const key = isTf
-      ? JSON.stringify({ b: 'tf', actual: tfActual, demo: tfActual ? '' : tfDemo, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), seg: effSegments, cli: scene.clientBake, cut: scene.showCutaway })
+      // `rcp` = the compiled recipe signature: "actual" swaps the client recipe
+      // (composites → UNSUPPORTED) for the server-inlined one ASYNCHRONOUSLY, and
+      // only the NESTED ops change (s_tube stays booleanDifference at the root), so
+      // the whole recipe must be in the key or the native re-bake never fires.
+      ? JSON.stringify({ b: 'tf', actual: tfActual, demo: tfActual ? '' : tfDemo, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), rcp: tfActual && tfRecipe ? tfRecipe : '', seg: effSegments, cli: scene.clientBake, cut: scene.showCutaway })
       : isBrep
       ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
       : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, clientBake: scene.clientBake });

@@ -160,10 +160,50 @@
     return out;
   });
   // Compile the graph → a TrueForm recipe at the CURRENT param values. Fed to the
-  // TF canvas so "actual" mode builds natively (executeTfRecipe) when the recipe
-  // has no unsupported node; recomputed whenever the graph or params change.
-  let tfRecipe = $derived.by(() => {
+  // TF canvas so "actual" mode builds natively (executeTfRecipe). CLIENT-side
+  // graphToTf handles direct-engine parts (revolve/cuboid/cylinder → g_collar,
+  // g_dp_pin, …) instantly. It CANNOT resolve COMPOSITE Calls (a part that Calls
+  // another volume part, e.g. s_tube_demo → sweep_tube_demo) — those need the async
+  // dep-inlining only the SERVER /api/tf/compile does. So: use the local recipe when
+  // it's fully supported; otherwise fetch the server-resolved (composite-inlined)
+  // recipe. Keeps the fast client path for the common case, server only when needed.
+  let tfRecipeLocal = $derived.by(() => {
     try { return graphToTf(graph, brepParamValues); } catch { return undefined; }
+  });
+  /** Pure walk — does any instr (or a nested boolean/transform/union child) stay
+   *  UNSUPPORTED? Mirrors execute.ts's recipeHasUnsupported without importing it
+   *  (that would pull the TF/WASM bundle into the graph-editor chunk eagerly). */
+  function recipeHasUnsupportedLocal(r: import('$lib/cad/graph-to-tf').TfRecipe | undefined): boolean {
+    if (!r?.instrs) return false;
+    const walk = (i: any): boolean =>
+      !!i && (i.op === 'UNSUPPORTED' ||
+        walk(i.obj) || walk(i.arg) || walk(i.child) ||
+        (Array.isArray(i.children) && i.children.some(walk)));
+    return r.instrs.some(walk);
+  }
+  let tfRecipeServer = $state<import('$lib/cad/graph-to-tf').TfRecipe | undefined>(undefined);
+  // The recipe the canvas uses: the server-resolved one when present (composites),
+  // else the instant client one.
+  let tfRecipe = $derived(tfRecipeServer ?? tfRecipeLocal);
+  // When the client recipe has UNSUPPORTED nodes AND "actual" is on, fetch the
+  // server-inlined recipe (composites resolved). Re-fires on graph/param change.
+  $effect(() => {
+    const local = tfRecipeLocal;
+    const g = graph, p = brepParamValues;
+    if (!tfActualOn || !local || !recipeHasUnsupportedLocal(local)) { tfRecipeServer = undefined; return; }
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/tf/compile', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ graph: g, params: p, id: exemplarId }),
+        });
+        if (!r.ok) return;
+        const data = await r.json();
+        if (!cancelled && data?.recipe) tfRecipeServer = data.recipe;
+      } catch { /* keep the local recipe → mesh-import fallback */ }
+    })();
+    return () => { cancelled = true; };
   });
 
   // ─── SVG tab — vector render of the baked geometry (PrimitiveSvgView) ─────
