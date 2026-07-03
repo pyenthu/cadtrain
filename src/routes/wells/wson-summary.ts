@@ -37,9 +37,17 @@ export interface WsonDoc {
  *  `raw` is the source text (so the future engine view can re-parse if it
  *  wants); `doc`/`error` capture the parse result. */
 export interface WsonFile {
+  /** Canonical selection/tab key. Bundled samples use their `slug`; local
+   *  workspace files are namespaced `ws:<relpath>` so they never collide with
+   *  a bundled slug. */
+  id: string;
   slug: string;
   /** Filename with extension — what the sidebar shows as a leaf. */
   name: string;
+  /** Where the file came from — drives the sidebar section it lands in. */
+  source: 'sample' | 'workspace';
+  /** Relative path within an opened folder (workspace only); '' for flat picks. */
+  relPath?: string;
   raw: string;
   doc: WsonDoc | null;
   error: string | null;
@@ -71,23 +79,43 @@ function slugOf(path: string): string {
   return (path.split('/').pop() ?? '').replace(/\.wson$/i, '');
 }
 
+/**
+ * Parse one `.wson` blob into a `WsonFile`. Shared by the bundled-sample loader
+ * and the local-workspace flow (files opened via the File System Access API /
+ * `<input type=file>`), so both land as identical rows in the sidebar.
+ *
+ * `source` picks the sidebar section; `relPath` (workspace, folder-open) keeps
+ * ids unique across nested folders. Parse errors are captured on `error`, not
+ * thrown — a malformed file still lists (and the view shows the reason).
+ */
+export function parseWsonFile(
+  name: string,
+  raw: string,
+  source: 'sample' | 'workspace' = 'workspace',
+  relPath = '',
+): WsonFile {
+  const slug = name.replace(/\.wson$/i, '');
+  const id = source === 'sample' ? slug : `ws:${relPath || name}`;
+  try {
+    const doc = JSON.parse(raw) as WsonDoc;
+    return { id, slug, name, source, relPath, raw, doc, error: null };
+  } catch (e) {
+    return {
+      id,
+      slug,
+      name,
+      source,
+      relPath,
+      raw,
+      doc: null,
+      error: e instanceof Error ? e.message : String(e),
+    };
+  }
+}
+
 /** All bundled sample `.wson` files, sorted by slug. */
 export const wsonFiles: WsonFile[] = Object.entries(rawSamples)
-  .map(([path, raw]) => {
-    const slug = slugOf(path);
-    try {
-      const doc = JSON.parse(raw) as WsonDoc;
-      return { slug, name: `${slug}.wson`, raw, doc, error: null };
-    } catch (e) {
-      return {
-        slug,
-        name: `${slug}.wson`,
-        raw,
-        doc: null,
-        error: e instanceof Error ? e.message : String(e),
-      };
-    }
-  })
+  .map(([path, raw]) => parseWsonFile(`${slugOf(path)}.wson`, raw, 'sample'))
   .sort((a, b) => a.slug.localeCompare(b.slug));
 
 /** A `.wson` is deviated when any survey station has a non-zero deviation. */
