@@ -11,6 +11,8 @@
    * own. This component deliberately does NOT import from `$lib/wells/**`
    * (engine turf) — it uses the route-local `wson-summary.ts` parser.
    */
+  import { Canvas } from '@threlte/core';
+  import WellSchematic3D from '$lib/wells/WellSchematic3D.svelte';
   import { summarise, type WsonDoc } from './wson-summary';
 
   let {
@@ -33,22 +35,12 @@
       </div>
     </div>
   {:else if summary}
-    <!-- ===================================================================
-         MOUNT: $lib/wells/WellSchematic3D wson={activeWson}
-         The real 3D well-schematic view mounts HERE (parallel engine session).
-         Replace this <section class="wv-stage"> block with:
-             <WellSchematic3D {wson} />
-         imported from '$lib/wells/WellSchematic3D.svelte'. Everything else on
-         this page (sidebar, tabs, summary strip) stays as-is.
-         =================================================================== -->
+    <!-- Real 3D well-schematic view: WellSchematic3D is Threlte scene content
+         (own camera + OrbitControls), so it mounts inside a <Canvas>. -->
     <section class="wv-stage">
-      <div class="wv-stage-inner">
-        <div class="wv-3d-glyph">◍</div>
-        <div class="wv-3d-title">3D schematic mounts here</div>
-        <div class="wv-3d-sub">
-          <code>$lib/wells/WellSchematic3D</code> · prop <code>wson</code>
-        </div>
-      </div>
+      <Canvas>
+        <WellSchematic3D wson={wson as any} />
+      </Canvas>
     </section>
 
     <section class="wv-summary">
