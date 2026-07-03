@@ -183,6 +183,7 @@
   import { WireState } from './wire-state.svelte';
   import { SketchState } from './sketch-state.svelte';
   import { SplineState } from './spline-state.svelte';
+  import { CanvasInteractionState } from './canvas-interaction.svelte';
   // Source/meta parsers + the expected-params cache (drift detection) —
   // modularize K.65 Phase B. `expected` is a shared singleton $state cache keyed
   // by primitive src; the graph-touching fns take/return graph explicitly.
@@ -1006,8 +1007,8 @@
           }
           // Restore canvas viewport — pan + zoom were captured at save time.
           if (graph.viewport) {
-            pan = { ...graph.viewport.pan };
-            zoom = graph.viewport.zoom;
+            ci.pan = { ...graph.viewport.pan };
+            ci.zoom = graph.viewport.zoom;
           }
           exemplarId = id;
         } else {
@@ -1024,9 +1025,13 @@
   // extractGraphFromSource / extractDrawingMdFromSource → graph-editor-bake.svelte.ts (Phase B).
 
   // ─── canvas state — pan + zoom ─────────────────────────────────────────
-  let pan = $state({ x: 0, y: 0 });
-  let zoom = $state(1);
+  // Viewport pan/zoom moved to canvas-interaction.svelte.ts (#940) as the
+  // per-instance `ci` below. canvasEl stays here (the bound <svg> DOM ref, also
+  // read by layoutCtx / clientToCanvas / drag) and is handed to `ci` via a
+  // getter. The pan/zoom $state lives on `ci`; the shell reads ci.pan / ci.zoom.
+  // clientToGraph lives on `ci` and is handed to `wire`.
   let canvasEl: SVGSVGElement | undefined = $state();
+  const ci = new CanvasInteractionState(() => canvasEl);
   /** Pan the canvas so a given node id is centered in the viewport — used
    *  by the broken-reference banner chips to scroll a deleted-ref node into
    *  view. No-op when the node has no layout entry (legacy graphs). */
@@ -1034,44 +1039,27 @@
     const pos = graph.layout[id];
     if (!pos || !canvasEl) return;
     const rect = canvasEl.getBoundingClientRect();
-    pan = {
-      x: rect.width / 2 - pos.x * zoom,
-      y: rect.height / 2 - pos.y * zoom,
+    ci.pan = {
+      x: rect.width / 2 - pos.x * ci.zoom,
+      y: rect.height / 2 - pos.y * ci.zoom,
     };
   }
-  let panning = false; let panStart = { x: 0, y: 0 }; let panOrig = { x: 0, y: 0 };
-  function onCanvasPointerDown(ev: PointerEvent) {
-    // Middle button + Shift ALWAYS pan, even over content (power-user handle).
-    // Plain left-click pans ONLY when the target is the canvas background —
-    // the SVG itself or the grid rect. Any other target (a button, an input,
-    // a node body) gets its own handler — pointerdown bubbles up to the
-    // canvas but we DON'T capture/pan when the click was meant for a child.
-    const isShortcut = ev.button === 1 || ev.shiftKey;
-    const target = ev.target as Element;
-    const isBackground =
-      target === canvasEl ||
-      (target.tagName.toLowerCase() === 'rect' && (target.getAttribute('fill') ?? '').includes('grid'));
-    if (isShortcut || (ev.button === 0 && isBackground)) {
-      panning = true; panStart = { x: ev.clientX, y: ev.clientY }; panOrig = { ...pan };
-      canvasEl?.setPointerCapture(ev.pointerId);
-      ev.preventDefault();
-    }
-  }
+  // The canvas pointermove/pointerup handlers SPLIT pan (ci) from wire
+  // (WireState): ci handles the pan portion, then the wrapper runs the wire-drag
+  // portion. pointerdown + wheel are pure pan/zoom and bind directly to ci.*.
   function onCanvasPointerMove(ev: PointerEvent) {
-    if (panning) {
-      pan = { x: panOrig.x + (ev.clientX - panStart.x), y: panOrig.y + (ev.clientY - panStart.y) };
-    }
+    ci.onCanvasPointerMove(ev);
     if (wire.from) {
       if (!wire.pointerMoved) {
         const dx = ev.clientX - wire.downAt.x, dy = ev.clientY - wire.downAt.y;
         if (dx * dx + dy * dy > 36) wire.pointerMoved = true; // moved >6px ⇒ a drag, not a tap
       }
-      const pt = clientToGraph(ev.clientX, ev.clientY);
+      const pt = ci.clientToGraph(ev.clientX, ev.clientY);
       wire.mouse = pt;
     }
   }
   function onCanvasPointerUp(ev: PointerEvent) {
-    if (panning) { panning = false; canvasEl?.releasePointerCapture(ev.pointerId); }
+    ci.onCanvasPointerUp(ev);
     if (wire.from) {
       // Tap-to-connect: a no-drag tap that just ARMED the wire stays armed so
       // the NEXT tap on a target socket completes it (touch + connect-mode).
@@ -1083,11 +1071,6 @@
         wire.from = null; wire.mouse = null; wire.justArmed = false;
       }
     }
-  }
-  function onCanvasWheel(ev: WheelEvent) {
-    ev.preventDefault();
-    const k = Math.exp(-ev.deltaY * 0.001);
-    zoom = Math.max(0.2, Math.min(3, zoom * k));
   }
 
   // ─── drag-from-sidebar drop target (#161, 2026-06-11) ─────────────────
@@ -1102,8 +1085,8 @@
     if (!canvasEl) return { x: 0, y: 0 };
     const r = canvasEl.getBoundingClientRect();
     return {
-      x: (clientX - r.left - pan.x) / zoom,
-      y: (clientY - r.top  - pan.y) / zoom,
+      x: (clientX - r.left - ci.pan.x) / ci.zoom,
+      y: (clientY - r.top  - ci.pan.y) / ci.zoom,
     };
   }
   function onCanvasDragOver(ev: DragEvent) {
@@ -1211,8 +1194,8 @@
   }
   function onNodePointerMove(ev: PointerEvent) {
     if (!dragging) return;
-    const dx = (ev.clientX - dragStart.x) / zoom;
-    const dy = (ev.clientY - dragStart.y) / zoom;
+    const dx = (ev.clientX - dragStart.x) / ci.zoom;
+    const dy = (ev.clientY - dragStart.y) / ci.zoom;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
     // Preserve `w` so a position drag doesn't wipe out a previous resize.
     dragPending = { x: dragOrig.x + dx, y: dragOrig.y + dy, w: (dragOrig as any).w };
@@ -1266,8 +1249,8 @@
     // polygon card uses height to control scrollable list area; other
     // cards ignore the height override (their nodeSize doesn't consult
     // layout.h) but the persistence is harmless.
-    const dx = (ev.clientX - resizeStartX) / zoom;
-    const dy = (ev.clientY - resizeStartY) / zoom;
+    const dx = (ev.clientX - resizeStartX) / ci.zoom;
+    const dy = (ev.clientY - resizeStartY) / ci.zoom;
     setCardSize(resizing, resizeOrigW + dx, resizeOrigH + dy);
   }
   function onResizePointerUp(ev: PointerEvent) {
@@ -1350,13 +1333,8 @@
   // wire.isCoarse/wire.tapConnect) + every start*/endWireOn*/unwireTransformAxis handler
   // moved to wire-state.svelte.ts (Phase C) as the per-instance `wire` below.
   // GEP's canvas + sketch-stage pointer handlers read/write `wire.*`.
-  // clientToGraph stays here (needs canvasEl/pan/zoom) and is handed to `wire`.
-  function clientToGraph(cx: number, cy: number) {
-    if (!canvasEl) return { x: cx, y: cy };
-    const r = canvasEl.getBoundingClientRect();
-    return { x: ((cx - r.left) - pan.x) / zoom, y: ((cy - r.top) - pan.y) / zoom };
-  }
-  const wire = new WireState(() => graph, (g) => { graph = g; }, clientToGraph);
+  // clientToGraph lives on `ci` (needs canvasEl/pan/zoom) and is handed to `wire`.
+  const wire = new WireState(() => graph, (g) => { graph = g; }, ci.clientToGraph);
   // Per-instance full-tab sketch editor state (Phase E). Shared home for the
   // sketch state referenced by BOTH the node-card arm and the full-tab editor.
   const sketch = new SketchState(() => graph, (g) => { graph = g; }, wire, () => pcs, () => PARAM_W);
@@ -2320,7 +2298,7 @@
    *  graph-layout-actions helpers need. */
   function layoutCtx(): LayoutContext {
     return {
-      pan, zoom, leftTab, propsBodyH,
+      pan: ci.pan, zoom: ci.zoom, leftTab, propsBodyH,
       paramEntriesLen: paramEntries.length, PARAM_W,
       PROPS_X0, PROPS_Y0, PROPS_W, TAB_HEADER_H,
       canvasEl, boundLeft, boundRight, boundTop,
@@ -2459,7 +2437,7 @@
     saveBusy = true;
     saveStatus = `saving ${exemplarId}…`;
     // Capture current viewport into the graph BEFORE serialising.
-    graph = setViewport(graph, pan, zoom);
+    graph = setViewport(graph, ci.pan, ci.zoom);
     // Capture the editor's per-part VIEW scale (VIEW-ONLY). Persist only a
     // MANUAL scale (scene.scaleAuto off — the user dragged a slider); an
     // auto-normalized scale is DROPPED so the part re-auto-scales on next open.
@@ -2826,15 +2804,15 @@
         xmlns="http://www.w3.org/2000/svg"
         role="application"
         aria-label="Graph canvas"
-        onpointerdown={onCanvasPointerDown}
+        onpointerdown={ci.onCanvasPointerDown}
         onpointermove={onCanvasPointerMove}
         onpointerup={onCanvasPointerUp}
-        onwheel={onCanvasWheel}
+        onwheel={ci.onCanvasWheel}
         ondragover={onCanvasDragOver}
         ondragleave={onCanvasDragLeave}
         ondrop={onCanvasDrop}
       >
-        <g transform="translate({pan.x},{pan.y}) scale({zoom})">
+        <g transform="translate({ci.pan.x},{ci.pan.y}) scale({ci.zoom})">
           <defs>
             <pattern id="ge-grid" x="0" y="0" width="40" height="40" patternUnits="userSpaceOnUse">
               <path d="M40 0 L0 0 0 40" fill="none" stroke="#e5e7eb" stroke-width="0.5"/>
@@ -2849,7 +2827,7 @@
             <text x="120" y="35" class="ge-canvas-hint">← drop an outer dial here; drag its socket onto an arg.</text>
           {/if}
 
-          <WireLayer {allNodes} {paramEntries} {leftTab} {graph} {nodePos} {outSock} {inSock} {slotIn} {cardObstacles} {pan} {zoom} {PARAM_W} {CARD_Y0} {consumedSet} />
+          <WireLayer {allNodes} {paramEntries} {leftTab} {graph} {nodePos} {outSock} {inSock} {slotIn} {cardObstacles} pan={ci.pan} zoom={ci.zoom} {PARAM_W} {CARD_Y0} {consumedSet} />
 
           <!-- In-flight wire being dragged -->
           {#if wire.from && wire.mouse}
@@ -2973,7 +2951,7 @@
         {#if saveStatus}
           <span class="ge-canvas-status-save">{saveStatus}</span>
         {/if}
-        <span class="ge-canvas-status-stat">{visibleNodeCount} node{visibleNodeCount === 1 ? '' : 's'} · z {zoom.toFixed(2)}</span>
+        <span class="ge-canvas-status-stat">{visibleNodeCount} node{visibleNodeCount === 1 ? '' : 's'} · z {ci.zoom.toFixed(2)}</span>
       </div>
       <!-- Boundary edge toggles (#116): the small circular buttons that
            used to sit on the canvas edges (🔒 confiner / 🔺 repellant /
