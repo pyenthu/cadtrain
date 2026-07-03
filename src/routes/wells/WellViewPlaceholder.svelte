@@ -1,31 +1,47 @@
 <script lang="ts">
   /**
    * WellViewPlaceholder — the CENTRAL view of the /wells app shell, one per
-   * open `.wson` tab.
+   * open `.wson` tab. Mounts the real 3D engine (`WellSchematic3D`) inside a
+   * Threlte `<Canvas>`, framed by the display control bar (`WellViewControls`,
+   * W-A) and the depth ruler / annotation overlay (`WellDepthRuler`, W-C).
    *
-   * THIS IS A MOUNT SEAM. A parallel session is porting the 3D well engine into
-   * `src/lib/wells/` and will expose `src/lib/wells/WellSchematic3D.svelte`
-   * (prop: `wson`). At merge, the real 3D view replaces this placeholder at the
-   * clearly-marked `<!-- MOUNT: ... -->` comment below. Until then this shows
-   * the loaded WSON's header summary so the shell is useful + testable on its
-   * own. This component deliberately does NOT import from `$lib/wells/**`
-   * (engine turf) — it uses the route-local `wson-summary.ts` parser.
+   * All three read ONE shared `WellViewSettings` object (view-settings.ts) that
+   * the /wells shell owns and threads in — the single source of truth for the
+   * layer/scale/view state. The 3D view publishes its depth-scale back via
+   * `onDepthMap` so the ruler stays in lockstep (never re-derives DTX).
    */
   import { Canvas } from '@threlte/core';
   import WellSchematic3D from '$lib/wells/WellSchematic3D.svelte';
+  import WellViewControls from './WellViewControls.svelte';
+  import WellDepthRuler from './WellDepthRuler.svelte';
   import { summarise, type WsonDoc } from './wson-summary';
+  import { defaultViewSettings, type WellViewSettings } from './view-settings';
 
   let {
     wson = null,
     error = null,
     fileName = '',
-  }: { wson?: WsonDoc | null; error?: string | null; fileName?: string } = $props();
+    // The shell passes a shared settings object; fall back to a per-view
+    // default so the component still works standalone.
+    view = defaultViewSettings(),
+  }: {
+    wson?: WsonDoc | null;
+    error?: string | null;
+    fileName?: string;
+    view?: WellViewSettings;
+  } = $props();
 
-  // Presence of a summary gates the 3D stage vs. the empty message. The
-  // well name + type chips + counts now render in the workspace header
-  // (the /wells shell owns that row, WsonApp-style), so this view is just
-  // the diagram surface.
   const summary = $derived(summarise(wson));
+
+  // Depth-scale published by the 3D view (raw MD → display depth). The ruler
+  // consumes the SAME fn — one source of truth for depth. Identity until the
+  // scene reports (e.g. before Manifold/geometry settles).
+  let remap = $state<(md: number) => number>((md) => md);
+  let rawTd = $state(1000);
+  function onDepthMap(info: { remap: (md: number) => number; rawTd: number; td: number }) {
+    remap = info.remap;
+    rawTd = info.rawTd;
+  }
 </script>
 
 <div class="wv">
@@ -38,12 +54,26 @@
       </div>
     </div>
   {:else if summary}
-    <!-- Real 3D well-schematic view: WellSchematic3D is Threlte scene content
-         (own camera + OrbitControls), so it mounts inside a <Canvas>. -->
-    <section class="wv-stage">
+    <!-- Stage: Threlte scene + non-Canvas overlays (control bar + ruler). -->
+    <section class="wv-stage" class:white={view.whiteBg}>
       <Canvas>
-        <WellSchematic3D wson={wson as any} />
+        <WellSchematic3D
+          wson={wson as any}
+          layers={view.layers}
+          cutaway={view.cutaway}
+          cutAzimuth={view.cutAzimuth}
+          directional={view.directional}
+          dtx={view.dtx}
+          diaScale={view.diaScale}
+          zScale={view.zScale}
+          {onDepthMap}
+        />
       </Canvas>
+
+      <WellViewControls settings={view} />
+      {#if view.showRuler}
+        <WellDepthRuler {wson} {remap} {rawTd} whiteBg={view.whiteBg} />
+      {/if}
     </section>
   {:else}
     <div class="wv-empty">No WSON loaded.</div>
@@ -61,16 +91,19 @@
     overflow: hidden;
   }
 
+  /* Stage fills the pane (W-G b — trimmed the big 14px inset + dashed frame so
+     the 3D view uses the space). Overlays position against this. */
   .wv-stage {
     flex: 1;
     min-height: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 14px;
-    border: 1px dashed #34345a;
-    border-radius: 10px;
+    position: relative;
+    overflow: hidden;
     background: radial-gradient(circle at 50% 35%, #20203a 0%, #10101a 80%);
+  }
+  /* W-G c — schematics read best on white. Flag today tints the 3D backdrop;
+     W-D's 2D/SVG track view will render on this same white surface. */
+  .wv-stage.white {
+    background: #ffffff;
   }
   .wv-error {
     margin: 24px;

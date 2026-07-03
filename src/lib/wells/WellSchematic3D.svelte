@@ -47,8 +47,9 @@
     cutAxis = 'x',
     cutAzimuth = 0,
     directional = true,
-    layers = { showOpenHole: true, showCasing: true, showCement: true, showCompletions: true, showPerforations: true },
+    layers = { showOpenHole: true, showCasing: true, showCement: true, showTubing: true, showCompletions: true, showPerforations: true },
     onCameraMove,
+    onDepthMap,
   }: {
     wson: Wson;
     /** Radial exaggeration (inches → scene units). Optional view dial. */
@@ -64,9 +65,12 @@
     directional?: boolean;
     layers?: {
       showOpenHole?: boolean; showCasing?: boolean; showCement?: boolean;
-      showCompletions?: boolean; showPerforations?: boolean;
+      showTubing?: boolean; showCompletions?: boolean; showPerforations?: boolean;
     };
     onCameraMove?: (pos: { x: number; y: number; z: number }) => void;
+    /** Share the SINGLE depth-scale (raw MD → display depth) so an overlay
+     *  ruler stays in lockstep with the shells — never re-derive it. */
+    onDepthMap?: (info: { remap: (md: number) => number; rawTd: number; td: number }) => void;
   } = $props();
 
   const { camera } = useThrelte();
@@ -99,6 +103,10 @@
    *  so shells + the warped survey stay in the SAME display-depth space. */
   const remap = $derived((md: number) => (dtxObj ? lerpDTX(dtxObj, md) : md) * zScale);
   const td = $derived(remap(rawTd));
+
+  // Publish the depth-scale so a sibling overlay (the depth ruler) can place
+  // ticks/labels in the SAME display-depth space — one source of truth.
+  $effect(() => { onDepthMap?.({ remap, rawTd, td }); });
 
   // Survey remapped through the same depth transform so getInterNode()'s
   // sampling matches the shells built at remapped top/bot.
@@ -371,7 +379,7 @@
     {/each}
   {/if}
 
-  {#if layers.showCompletions && tubingGeom}
+  {#if (layers.showTubing ?? true) && tubingGeom}
     <T.Mesh geometry={tubingGeom} renderOrder={3}>
       <T.MeshStandardMaterial color={cutActive ? '#ffffff' : '#eab308'} vertexColors={cutActive}
         metalness={0.7} roughness={0.3} side={THREE.DoubleSide} />

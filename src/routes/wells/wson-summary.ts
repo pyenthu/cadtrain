@@ -19,6 +19,7 @@
 export interface WsonDoc {
   meta?: {
     wellName?: string;
+    description?: string;
     td?: number;
     pbtd?: number;
     rkbToGl?: number;
@@ -56,6 +57,7 @@ export interface WsonFile {
 /** Condensed header summary for the placeholder view. */
 export interface WsonSummary {
   wellName: string;
+  description: string | null;
   wellType: string | null;
   td: number | null;
   pbtd: number | null;
@@ -130,6 +132,7 @@ export function summarise(doc: WsonDoc | null): WsonSummary | null {
   const meta = doc.meta ?? {};
   return {
     wellName: meta.wellName || 'Unnamed well',
+    description: meta.description ?? null,
     wellType: meta._wellType ?? null,
     td: typeof meta.td === 'number' ? meta.td : null,
     pbtd: typeof meta.pbtd === 'number' ? meta.pbtd : null,

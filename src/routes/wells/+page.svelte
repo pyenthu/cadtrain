@@ -27,9 +27,20 @@
   import WellViewPlaceholder from './WellViewPlaceholder.svelte';
   import { wsonFiles, parseWsonFile, summarise, type WsonFile } from './wson-summary';
   import * as wsCache from './workspace-cache';
+  import { defaultViewSettings } from './view-settings';
 
   // Far-left placement-tool rail state (scaffold — see WellToolbar).
   let activeTool = $state('select');
+
+  // ── Shared display / view state (the single source of truth) ────────────────
+  // One WellViewSettings object drives the control bar, the 3D view, and the
+  // depth ruler for the ACTIVE well. All panes stay mounted (the /primitives
+  // pattern) but only the visible one is interacted with, so a single shared
+  // object is the right granularity — no per-tab drift.
+  const view = $state(defaultViewSettings());
+
+  // Collapsible detail header (SVTC schematic style) — expanded by default.
+  let headerOpen = $state(true);
 
   // ── Resizable explorer sidebar (VS-Code / WsonApp-style splitter) ───────────
   // Width persists to localStorage; drag the splitter between the sidebar and
@@ -352,28 +363,57 @@
       {/each}
     </div>
 
-    <!-- Workspace header — active well name + type chips + counts. Mirrors
-         WsonApp's header row at the top of the diagram workspace. -->
+    <!-- Workspace detail header — collapsible (SVTC schematic style). Collapsed:
+         a one-line summary (name + kind + TD). Expanded: description, type, TD,
+         PBTD + casing/completion/perf/survey counts. -->
     {#if activeSummary}
-      <header class="wells-header">
-        <div class="wells-title">
-          <span class="wells-title-ic">◍</span>
-          <h1>{activeSummary.wellName}</h1>
-        </div>
-        <div class="wells-chips">
+      <header class="wells-header" class:collapsed={!headerOpen}>
+        <div class="wells-header-bar">
+          <button
+            class="wells-header-toggle"
+            type="button"
+            aria-expanded={headerOpen}
+            aria-label={headerOpen ? 'Collapse well details' : 'Expand well details'}
+            title={headerOpen ? 'Collapse details' : 'Expand details'}
+            onclick={() => (headerOpen = !headerOpen)}
+          >
+            <span class="wells-chev" class:open={headerOpen}>▸</span>
+          </button>
+          <div class="wells-title">
+            <span class="wells-title-ic">◍</span>
+            <h1>{activeSummary.wellName}</h1>
+          </div>
           <span class="wells-chip wells-chip-kind">
             {activeSummary.deviated ? '⟋ deviated' : '│ vertical'}
           </span>
           {#if activeSummary.wellType}<span class="wells-chip">{activeSummary.wellType}</span>{/if}
-          <span class="wells-chip">TD {fmtM(activeSummary.td)}</span>
-          <span class="wells-chip">PBTD {fmtM(activeSummary.pbtd)}</span>
+          {#if !headerOpen}
+            <!-- Condensed peek while collapsed. -->
+            <span class="wells-chip">TD {fmtM(activeSummary.td)}</span>
+            <span class="wells-metrics wells-metrics-peek">
+              <span class="wells-metric"><b>{activeSummary.counts.casing}</b> csg</span>
+              <span class="wells-metric"><b>{activeSummary.counts.perforations}</b> perf</span>
+            </span>
+          {/if}
         </div>
-        <div class="wells-metrics">
-          <span class="wells-metric"><b>{activeSummary.counts.casing}</b> csg</span>
-          <span class="wells-metric"><b>{activeSummary.counts.completions}</b> comp</span>
-          <span class="wells-metric"><b>{activeSummary.counts.perforations}</b> perf</span>
-          <span class="wells-metric"><b>{activeSummary.counts.survey}</b> svy</span>
-        </div>
+
+        {#if headerOpen}
+          <div class="wells-header-detail">
+            {#if activeSummary.description}
+              <p class="wells-desc">{activeSummary.description}</p>
+            {/if}
+            <div class="wells-facts">
+              <span class="wells-fact"><span class="wells-fact-k">Type</span>
+                {activeSummary.wellType ?? '—'} · {activeSummary.deviated ? 'deviated' : 'vertical'}</span>
+              <span class="wells-fact"><span class="wells-fact-k">TD</span> {fmtM(activeSummary.td)}</span>
+              <span class="wells-fact"><span class="wells-fact-k">PBTD</span> {fmtM(activeSummary.pbtd)}</span>
+              <span class="wells-fact"><span class="wells-fact-k">Casing</span> {activeSummary.counts.casing}</span>
+              <span class="wells-fact"><span class="wells-fact-k">Completions</span> {activeSummary.counts.completions}</span>
+              <span class="wells-fact"><span class="wells-fact-k">Perfs</span> {activeSummary.counts.perforations}</span>
+              <span class="wells-fact"><span class="wells-fact-k">Survey</span> {activeSummary.counts.survey}</span>
+            </div>
+          </div>
+        {/if}
       </header>
     {/if}
 
@@ -393,7 +433,7 @@
         {#each tabs as t (t.key)}
           {@const file = fileById(t.id)}
           <div class="wells-pane" class:visible={activeKey === t.key}>
-            <WellViewPlaceholder wson={file?.doc ?? null} error={file?.error ?? null} fileName={file?.name ?? tabLabel(t.id)} />
+            <WellViewPlaceholder wson={file?.doc ?? null} error={file?.error ?? null} fileName={file?.name ?? tabLabel(t.id)} {view} />
           </div>
         {/each}
       {/if}
@@ -468,16 +508,73 @@
     min-height: 0;
   }
 
-  /* ── Workspace header (active well name + chips + counts) ─────────────────── */
+  /* ── Workspace detail header (collapsible) ────────────────────────────────── */
   .wells-header {
     flex: none;
     display: flex;
-    align-items: center;
-    gap: 14px;
+    flex-direction: column;
+    gap: 8px;
     padding: 8px 16px;
     background: #16161f;
     border-bottom: 1px solid #2a2a3e;
   }
+  .wells-header.collapsed {
+    padding-bottom: 8px;
+  }
+  .wells-header-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+  }
+  .wells-header-toggle {
+    flex: none;
+    background: none;
+    border: none;
+    color: #889;
+    cursor: pointer;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+  }
+  .wells-header-toggle:hover { color: #fff; }
+  .wells-chev {
+    display: inline-block;
+    font-size: 11px;
+    transition: transform 0.12s ease;
+  }
+  .wells-chev.open { transform: rotate(90deg); }
+  .wells-header-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding-left: 24px;
+  }
+  .wells-desc {
+    margin: 0;
+    font: 12px Arial;
+    color: #99a;
+    line-height: 1.45;
+    max-width: 900px;
+  }
+  .wells-facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 18px;
+  }
+  .wells-fact {
+    font: 12px ui-monospace, monospace;
+    color: #cdd;
+    white-space: nowrap;
+  }
+  .wells-fact-k {
+    color: #667;
+    margin-right: 5px;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.4px;
+  }
+  .wells-metrics-peek { margin-left: 4px; }
   .wells-title {
     display: flex;
     align-items: center;
@@ -496,12 +593,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-  .wells-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    min-width: 0;
   }
   .wells-chip {
     font: 600 11px ui-monospace, monospace;
