@@ -16,7 +16,7 @@
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfDemo = 'r_cyl' }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfDemo = 'r_cyl', tfActual = false }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
     /** Spline DIAGNOSTIC overlays (TODO #24) — plotted splines' resolved curves +
      *  control points, drawn INSIDE the live-mesh group so they align with the
@@ -88,6 +88,10 @@
      *  the `tf_examples/` registry (box · r_cyl · s_cyl · helix · bored_pipe ·
      *  dp_pin · cone). Resolved via `getTfExample(name)`; unknown → r_cyl. */
     tfDemo?: import('$lib/shared/tf_examples').TfExampleName;
+    /** TF backend only: when true, IGNORE `tfDemo` and instead import the part's
+     *  OWN baked Manifold mesh into the TF kernel — the user sees their real
+     *  geometry in TrueForm + tf's independent watertight/manifold/χ verdict. */
+    tfActual?: boolean;
   } = $props();
 
   let Scene = $state<any>(null);
@@ -445,11 +449,53 @@
   // will run the part body through tf booleans. Errors surface the real WASM
   // message in the canvas + the parent badge (supported:false).
   let tfAc: AbortController | null = null;
+  // "actual" mode: bake the part's OWN Manifold mesh (the SAME bake the 3D-BAKE
+  // tab does) and return its flat positions + triangle indices, so the TF path
+  // can import THAT geometry rather than a demo. Prefers the client Web-Worker
+  // bake (works even if the 3D tab was never opened), falls back to the server
+  // /api/primitives/preview. Returns null if no mesh could be baked. The render
+  // geometry is often a NON-INDEXED soup (crease-aware normals split verts) — we
+  // return whatever it is; tfImportMesh welds by position so the verdict is honest.
+  async function bakeManifoldForTf(signal: AbortSignal): Promise<{ positions: Float32Array; indices: Uint32Array | null } | null> {
+    const extract = (g: any): { positions: Float32Array; indices: Uint32Array | null } | null => {
+      const pos = g?.getAttribute?.('position'); if (!pos) return null;
+      const positions = pos.array instanceof Float32Array ? pos.array : new Float32Array(pos.array as ArrayLike<number>);
+      const idxArr = g.index?.array as ArrayLike<number> | undefined;
+      const indices = idxArr ? (idxArr instanceof Uint32Array ? idxArr : new Uint32Array(idxArr)) : null;
+      return { positions, indices };
+    };
+    // CLIENT bake (preferred) — compile → worker. Cutaway OFF: we cut in TF later.
+    if (scene.clientBake && name) {
+      try {
+        const cd = await getCompiled(name, source ?? '', signal);
+        if (signal.aborted) return null;
+        if (cd?.supported && cd.script) {
+          const options = { cutaway: false, instanced: false,
+            ...(effSegments ? { segments: effSegments } : {}), colorOuter, colorInner };
+          const result = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options });
+          if (signal.aborted || isCancelled(result)) return null;
+          const got = extract((result as any).full);
+          if (got) return got;
+        }
+      } catch (e: any) {
+        if (e?.name === 'AbortError' || signal.aborted) return null;
+        console.warn('[tf-actual] client bake failed, falling back to server:', e?.message ?? e);
+      }
+    }
+    // SERVER fallback — /api/primitives/preview (the 3D-bake path).
+    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: false, colorOuter, colorInner, ...(effSegments ? { segments: effSegments } : {}) });
+    const r = await fetch('/api/primitives/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal });
+    if (signal.aborted) return null;
+    if (!r.ok) throw new Error(`preview ${r.status}`);
+    const data = await r.json();
+    const geoPair = deserializeComponentResult({ full: data.full, cutVC: data.cutVC, instanced: data.instanced });
+    return extract((geoPair as any).full);
+  }
   async function rebuildTf(_bust = false) {
     meshStatus = 'building'; brepReason = null; err = null;
     tfAc?.abort(); const ac = new AbortController(); tfAc = ac;
     try {
-      const [{ getTfExample }, { tfMeshToGeo }, { ensureTf }] = await Promise.all([
+      const [{ getTfExample }, { tfMeshToGeo }, { ensureTf, tfImportMesh }] = await Promise.all([
         import('$lib/shared/tf_examples'),
         import('$lib/shared/trueform-adapter'),
         import('$lib/shared/trueform-client'),
@@ -460,6 +506,11 @@
       // download + pthread worker-pool init. ensureTf() is cached/idempotent,
       // so build()'s internal ensureTf then returns instantly — the init cost
       // is paid here, outside the timed window.
+      // In "actual" mode, bake the part's Manifold mesh BEFORE warming/timing tf —
+      // that bake (client worker / server) is the part-geometry cost, not tf's.
+      const actualMesh = tfActual ? await bakeManifoldForTf(ac.signal) : null;
+      if (ac.signal.aborted) return;
+      if (tfActual && !actualMesh) throw new Error('could not bake this part for TF import');
       await ensureTf();
       if (ac.signal.aborted) return;
       const t0 = performance.now();
@@ -470,12 +521,14 @@
       // the same `cutVC` / `vertexColors` branch as the Manifold + BREP sections.
       // The Z-slider (scene.zFocus) pans the shared camera, so it applies here
       // too — no per-backend slider wiring needed.
-      // Registry dispatch: resolve the demo name → its builder (fall back to
-      // r_cyl if an unknown name ever arrives). The example CONTENT lives in
-      // tf_examples/<name>.ts; this canvas just drives the kernel.
-      const ex = getTfExample(tfDemo) ?? getTfExample('r_cyl');
-      if (!ex) throw new Error(`unknown TF demo: ${tfDemo}`);
-      const { data, stats, cutPlanes } = await ex.build({ cutaway: scene.showCutaway });
+      // "actual" → import the part's OWN baked mesh; else registry dispatch:
+      // resolve the demo name → its builder (fall back to r_cyl if an unknown
+      // name arrives). Demo CONTENT lives in tf_examples/<name>.ts.
+      const { data, stats, cutPlanes } = actualMesh
+        ? await tfImportMesh(actualMesh.positions, actualMesh.indices, { cutaway: scene.showCutaway })
+        : await (getTfExample(tfDemo) ?? getTfExample('r_cyl') ??
+            (() => { throw new Error(`unknown TF demo: ${tfDemo}`); })()
+          ).build({ cutaway: scene.showCutaway });
       if (ac.signal.aborted) return;
       if (cutPlanes) {
         const cutVC = tfMeshToGeo(data, undefined, { planes: cutPlanes });
@@ -489,12 +542,13 @@
       // Surface tf's OWN topology verdict (the watertightness check) as the
       // reason line + console — the KNOWN TrueForm weakness is non-watertight
       // booleans / uncapped sweeps. A clean half-cut solid stays closed+manifold.
+      const label = tfActual ? `${name ?? id} (actual)` : tfDemo;
       if (stats) {
         brepReason =
-          `${tfDemo}${cutPlanes ? ' · cutaway' : ''} · ${stats.closed ? 'watertight (closed)' : `open (${stats.boundaryLoops} boundary loop${stats.boundaryLoops === 1 ? '' : 's'})`}` +
+          `${label}${cutPlanes ? ' · cutaway' : ''} · ${stats.closed ? 'watertight (closed)' : `open (${stats.boundaryLoops} boundary loop${stats.boundaryLoops === 1 ? '' : 's'})`}` +
           ` · ${stats.manifold ? 'manifold' : 'NON-manifold'} · χ=${stats.euler}` +
           (stats.closed ? ` · vol=${stats.volume.toFixed(2)}` : '');
-        console.log('[tf] demo', tfDemo, cutPlanes ? '(cutaway)' : '', stats);
+        console.log('[tf]', tfActual ? 'actual' : 'demo', label, cutPlanes ? '(cutaway)' : '', stats);
       }
       onBakeMeta?.({ cached: false, ms: tfMs, tris, verts, supported: true });
     } catch (e: any) {
@@ -579,7 +633,7 @@
     // BREP keys on its own request shape (source/params/tolerance/cut); the
     // Manifold key (id/args/colors/segments/warp) doesn't apply server-side.
     const key = isTf
-      ? JSON.stringify({ b: 'tf', demo: tfDemo, src: brepSource ?? source ?? '', p: brepParams ?? {}, cut: scene.showCutaway })
+      ? JSON.stringify({ b: 'tf', actual: tfActual, demo: tfActual ? '' : tfDemo, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), seg: effSegments, cli: scene.clientBake, cut: scene.showCutaway })
       : isBrep
       ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
       : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, clientBake: scene.clientBake });

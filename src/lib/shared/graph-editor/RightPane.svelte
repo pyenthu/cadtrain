@@ -144,6 +144,10 @@
   // TrueForm has no revolve/loft/extrude, so these show what tf CAN build directly
   // (primitives, tubeMesh sweeps, CSG) + the two revolved parts (lathe via tf.mesh).
   let tfDemoKind = $state<string>('r_cyl');
+  // "actual" mode: import the OPEN part's OWN baked Manifold mesh into the TF
+  // kernel (instead of a demo) and show tf's independent topology verdict. When
+  // ON the demo dropdown is disabled; OFF → back to the selected demo.
+  let tfActualOn = $state<boolean>(false);
   // Param name → current value (graph.params order ↔ bake.args / paramDefaults).
   let brepParamValues = $derived.by(() => {
     const vals = (bake?.args ?? paramDefaults) as number[];
@@ -517,17 +521,23 @@
                plus the revolved parts (dp_pin/cone) built via the tf.mesh lathe. -->
           <div class="ge-tf-demo-row">
             <span class="ge-tf-demo-label">tf demo</span>
-            <select class="ge-tf-demo-select" bind:value={tfDemoKind} aria-label="TrueForm demo geometry">
+            <select class="ge-tf-demo-select" bind:value={tfDemoKind} disabled={tfActualOn} aria-label="TrueForm demo geometry">
               {#each tfExamples as ex (ex.name)}
                 <option value={ex.name}>{ex.label}</option>
               {/each}
             </select>
+            <!-- "actual" — import THIS part's own baked mesh into TF (not a demo). -->
+            <button type="button" class="ge-tf-actual-btn" class:on={tfActualOn}
+              aria-pressed={tfActualOn}
+              title="Import this part's own baked Manifold mesh into the TrueForm kernel and show tf's watertight/manifold/χ verdict on your real geometry."
+              onclick={() => (tfActualOn = !tfActualOn)}>actual</button>
           </div>
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
             args={bake.args ?? paramDefaults}
             source={bake.source}
             backend="tf"
             tfDemo={tfDemoKind}
+            tfActual={tfActualOn}
             brepSource={bake.source}
             brepParams={brepParamValues}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
@@ -639,6 +649,10 @@
   .ge-tf-demo-row .ge-tf-demo-label { text-transform: uppercase; letter-spacing: 0.5px; color: #a8a29e; }
   .ge-tf-demo-row .ge-tf-demo-select { font: 600 11px Arial; color: #57534e; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; padding: 3px 6px; cursor: pointer; accent-color: #7c3aed; }
   .ge-tf-demo-row .ge-tf-demo-select:focus { outline: none; border-color: #7c3aed; }
+  .ge-tf-demo-row .ge-tf-demo-select:disabled { opacity: 0.5; cursor: not-allowed; }
+  .ge-tf-demo-row .ge-tf-actual-btn { font: 600 11px Arial; color: #57534e; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; padding: 3px 10px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; }
+  .ge-tf-demo-row .ge-tf-actual-btn:hover { border-color: #7c3aed; color: #6d28d9; }
+  .ge-tf-demo-row .ge-tf-actual-btn.on { background: #7c3aed; border-color: #7c3aed; color: #fff; }
   .ge-draft-toggle { display: inline-flex; align-items: center; gap: 3px; font: 600 11px Arial; color: #57534e; cursor: pointer; user-select: none; }
   .ge-draft-toggle input { margin: 0; cursor: pointer; appearance: auto; -webkit-appearance: auto; accent-color: #d97706; width: 13px; height: 13px; }
   .ge-cache-badge { padding: 2px 8px; border-radius: 12px; font: 600 10px ui-monospace, monospace; }
