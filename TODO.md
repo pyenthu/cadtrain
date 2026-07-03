@@ -34,5 +34,8 @@
 - **#2 web-llm local backend** — in-browser Qwen2.5 + XGrammar, default-off. (`web-llm-functionary.md`)
 - **#28 Local fn-call model + synthetic data** — synthetic pairs → few-shot → optional LoRA/MLC deploy. (`local-fncall-synthetic-data.md`)
 
+### Research
+- **#44 TrueForm → WebGPU (WGSL) rewrite** — RESEARCH: feasibility of reimplementing `@polydera/trueform`'s kernel in WebGPU compute (WGSL) instead of pthread WASM. Motivator: WebGPU needs NO `SharedArrayBuffer`/cross-origin isolation → could **drop the app-wide COOP/COEP**. Assess which ops GPU-parallelize (generators easy; exact-CSG/arrangements hard — float robustness), prior art, hybrid vs full-rewrite, effort. Doc: `docs/research/trueform-webgpu.md`. Repo: github.com/polydera/trueform.
+
 ### Parked
 - #4 CAD-gen research (arxiv 2606.05515) · #4b Blender fields for nodes · #5 units repo · #7b r_weld_extrude phase angle · #8b expression library · #16 `src/lib` reorg · #17b first-bake-slow profiling · #18b repeat-builder simplify · #19 BUG `casing_schematic` "BREP is deleted".
