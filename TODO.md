@@ -3,6 +3,7 @@
 ### Active focus
 - **#940/#22 Modularize GraphEditorPane** — GEP 5186 lines. First cut shipped (`graph-layout-actions.ts`). NEXT: canvas-interaction class · add-node menu · bake controller · param-wire layer. INLINE only, browser-verify each. (`graph-editor-pane.md`, `modularize-round2.md`)
 - **#7 Wells `/wells`** — LIVE (SVTC engine port + ewells shell + wired 3D + sidenav + local workspace). NEXT: register `g_*` completion parts into the parametric registry; long-string perf; real wells store. (`well-schematic.md`)
+- **#42 Wells interface — model on the SVTC main app** — bring SVTC's WsonApp workspace to `/wells`: (A) view/layer control bar (show/hide oh/ch/cement/tubing/completions/perfs · cutaway · directional · diaScale/zScale/DTX dials · cut azimuth) surfacing existing `WellSchematic3D` props; (B) right editor/inspector dock (completions+survey tables, click-to-inspect a component's params via the parametric registry); (C) depth ruler + leader-line labels; (D) optional 2D track view; (E) real toolbar actions. Plan: `docs/plans/wells-interface.md`.
 - **#39 Multi-engine matrix** — Manifold (client+server) · BREP (server; client TODO) · TrueForm (client; r_cyl/s_cyl/sweep/boolean demos + crease-aware shading). NEXT: BREP client-side + color/smooth; TF real parts. (`docs/architecture/geometry-engines.md`)
 
 ### Open — build work

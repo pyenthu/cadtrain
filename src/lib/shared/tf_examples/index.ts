@@ -9,9 +9,9 @@
  *
  * This decouples the demo CONTENT (these files) from the kernel DRIVER
  * (`trueform-client.ts`, which stays pure ensureTf/mesh/analyse/cap plumbing). To
- * add a demo: drop a `<name>.ts` here exporting a `TfExample`; it appears in the
- * dropdown automatically. `ORDER` gives the dropdown a deterministic, sensible
- * sequence (revolve/sweep families grouped); anything not listed sorts to the end.
+ * add a demo: drop a `<name>.ts` here exporting a `TfExample` — it appears in the
+ * dropdown AUTOMATICALLY (no central list to edit). Dropdown order is each part's
+ * optional `order` field (lower first), then alphabetical by label.
  */
 import type { TfDemoResult } from '../trueform-client';
 
@@ -25,13 +25,13 @@ export interface TfExample {
   /** True when the demo is a CLOSED solid the cutaway can section (all current
    *  examples are). Threaded to `tfResult` so the cutaway only runs when valid. */
   cuttable?: boolean;
+  /** OPTIONAL dropdown sort weight (lower = earlier). Omit and the part sorts
+   *  alphabetically by label — the registry is fully automatic, so a part
+   *  self-declares its position here if it wants one; there is NO central list. */
+  order?: number;
   /** Build the geometry (optionally cut) → `{ data, stats, cutPlanes? }`. */
   build(opts?: { cutaway?: boolean }): Promise<TfDemoResult>;
 }
-
-/** Deterministic dropdown order — grouped: primitive · revolve family · sweep
- *  family · boolean · revolved parts. Names absent here sort alphabetically last. */
-const ORDER = ['box', 'r_cyl', 's_cyl', 'helix', 'bored_pipe', 'dp_pin', 'cone'];
 
 // Eager-glob every sibling module. Builder files export a `TfExample`; helper /
 // registry / test modules (revolve.ts, this file) export other shapes — filtered
@@ -58,15 +58,14 @@ for (const mod of Object.values(modules)) {
   }
 }
 
-/** The ordered demo list for the dropdown (deterministic via {@link ORDER}). */
+/** The demo list for the dropdown — AUTO-DERIVED from the glob. Sorted by each
+ *  part's optional `order` (lower first), then alphabetically by label. Adding a
+ *  `tf_examples/<name>.ts` makes it appear automatically; nothing to register. */
 export const tfExamples: { name: string; label: string }[] = [...byName.values()]
-  .sort((a, b) => {
-    const ia = ORDER.indexOf(a.name), ib = ORDER.indexOf(b.name);
-    if (ia !== -1 && ib !== -1) return ia - ib;
-    if (ia !== -1) return -1;
-    if (ib !== -1) return 1;
-    return a.name.localeCompare(b.name);
-  })
+  .sort((a, b) =>
+    (a.order ?? Number.MAX_SAFE_INTEGER) - (b.order ?? Number.MAX_SAFE_INTEGER) ||
+    a.label.localeCompare(b.label),
+  )
   .map((e) => ({ name: e.name, label: e.label }));
 
 /** Resolve a demo name → its builder (the TF-tab dispatch). Undefined if unknown. */
