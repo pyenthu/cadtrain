@@ -26,6 +26,7 @@
   import WellToolbar from './WellToolbar.svelte';
   import WellViewPlaceholder from './WellViewPlaceholder.svelte';
   import { wsonFiles, parseWsonFile, summarise, type WsonFile } from './wson-summary';
+  import * as wsCache from './workspace-cache';
 
   // Far-left placement-tool rail state (scaffold — see WellToolbar).
   let activeTool = $state('select');
@@ -73,13 +74,19 @@
 
   // ── Local workspace (client-side only — File System Access API / <input>) ──
   // Files the user opens from their own machine become a "Workspace" section,
-  // distinct from the bundled Samples. Nothing is written server-side; the last
-  // workspace LABEL persists to localStorage (handles aren't serialisable, so we
-  // don't try to auto-reopen — we just show the name as a hint).
+  // distinct from the bundled Samples. Nothing is written server-side. The last
+  // workspace LABEL persists to localStorage (a legacy hint), and — the real
+  // restore — the picked directory HANDLE is cached in IndexedDB + the open tabs
+  // in localStorage (see workspace-cache.ts), so the workspace comes back on the
+  // next visit (silently if permission is still granted, else via a Reopen click).
   const LAST_WS_KEY = 'wells-last-workspace';
   let workspaceFiles = $state<WsonFile[]>([]);
   let workspaceLabel = $state<string | null>(null);
   let lastWorkspaceLabel = $state<string | null>(null);
+  // Cached folder handle from a previous visit + the reopen affordance state.
+  let dirHandle = $state<FileSystemDirectoryHandle | null>(null);
+  let reopenLabel = $state<string | null>(null);
+  let restoringWorkspace = $state(false);
 
   $effect(() => {
     if (typeof localStorage !== 'undefined' && lastWorkspaceLabel === null) {
@@ -87,33 +94,71 @@
     }
   });
 
-  function handleOpenFiles(loaded: LoadedFile[], meta?: LoadMeta) {
+  /**
+   * Merge a batch of loaded files into the Workspace section. `autoOpenFirst`
+   * opens the first file (fresh user pick); restore/reopen pass false so cached
+   * tabs drive what's open instead.
+   */
+  function ingestWorkspace(loaded: LoadedFile[], meta: LoadMeta | undefined, autoOpenFirst: boolean) {
     const parsed = loaded.map((f) => parseWsonFile(f.name, f.text, 'workspace', f.relPath));
     // Merge into the workspace, de-duping by id (relative path) — re-opening a
     // folder replaces stale copies rather than stacking duplicates.
     const byId = new Map(workspaceFiles.map((f) => [f.id, f]));
     for (const f of parsed) byId.set(f.id, f);
     workspaceFiles = [...byId.values()].sort((a, b) => (a.relPath || a.name).localeCompare(b.relPath || b.name));
-    workspaceLabel = meta?.folderName ?? `${parsed.length} file${parsed.length === 1 ? '' : 's'}`;
+    const label = meta?.folderName ?? `${parsed.length} file${parsed.length === 1 ? '' : 's'}`;
+    workspaceLabel = label;
     if (typeof localStorage !== 'undefined') {
       try {
-        localStorage.setItem(LAST_WS_KEY, workspaceLabel);
+        localStorage.setItem(LAST_WS_KEY, label);
       } catch {
         /* ignore quota / privacy-mode failures */
       }
     }
-    lastWorkspaceLabel = workspaceLabel;
-    // Auto-open the first freshly-loaded file so the workspace isn't silent.
-    if (parsed[0]) openTab(parsed[0].id);
+    lastWorkspaceLabel = label;
+    // A folder handle (FSA pick) → cache it so we can restore next visit.
+    if (meta?.dirHandle) {
+      dirHandle = meta.dirHandle;
+      reopenLabel = null;
+      void wsCache.saveDirHandle(meta.dirHandle);
+    }
+    if (autoOpenFirst && parsed[0]) openTab(parsed[0].id);
+  }
+
+  function handleOpenFiles(loaded: LoadedFile[], meta?: LoadMeta) {
+    ingestWorkspace(loaded, meta, true);
   }
 
   function clearWorkspace() {
-    // Close any open workspace tabs, then drop the workspace section.
+    // Close any open workspace tabs, then drop the workspace section + cache.
     for (const t of [...tabs]) {
       if (t.id.startsWith('ws:')) closeTabByKey(t.key);
     }
     workspaceFiles = [];
     workspaceLabel = null;
+    dirHandle = null;
+    reopenLabel = null;
+    void wsCache.clearDirHandle();
+  }
+
+  // Re-list a restored folder handle (permission assumed granted) into the
+  // workspace, hydrating any placeholder `ws:` tabs. Never disturbs open tabs.
+  async function hydrateFromHandle(handle: FileSystemDirectoryHandle) {
+    restoringWorkspace = true;
+    try {
+      const loaded = await wsCache.listWsonFromDir(handle);
+      if (loaded.length) ingestWorkspace(loaded, { folderName: handle.name, dirHandle: handle }, false);
+      reopenLabel = null;
+    } finally {
+      restoringWorkspace = false;
+    }
+  }
+
+  // "Reopen" click — requires a user gesture to re-grant FSA permission.
+  async function reopenWorkspace() {
+    if (!dirHandle) return;
+    const ok = await wsCache.requestDirPermission(dirHandle);
+    if (ok) await hydrateFromHandle(dirHandle);
   }
 
   // ── Combined lookup: bundled samples + workspace files ──────────────────────
@@ -182,11 +227,68 @@
     activeKey = key;
   }
 
-  // Open the first sample on mount so the shell isn't blank on landing.
-  $effect(() => {
-    if (tabs.length === 0 && wsonFiles.length && activeKey === null) {
-      tick().then(() => openTab(wsonFiles[0].id));
+  // Label for a tab whose file may not be hydrated yet (a restored `ws:` tab
+  // before its folder is reopened). Falls back to a pretty basename of the id.
+  function tabLabel(id: string): string {
+    const f = fileById(id);
+    if (f) return f.name;
+    const path = id.startsWith('ws:') ? id.slice(3) : id;
+    return path.split('/').pop() || path;
+  }
+
+  // ── Workspace restore + persistence ─────────────────────────────────────────
+  // On mount: restore the cached folder handle (silent iff permission is still
+  // granted, else surface a Reopen affordance) + the open tabs. After boot, any
+  // tab change is persisted. All defensive — a blocked IndexedDB / revoked handle
+  // degrades to the empty-workspace default (open the first sample).
+  let booted = false; // non-reactive one-shot guard
+  let bootDone = $state(false);
+
+  async function bootWorkspace() {
+    const cached = wsCache.loadTabs();
+
+    // 1. Restore the last-opened folder handle if we still have permission.
+    try {
+      const handle = await wsCache.loadDirHandle();
+      if (handle) {
+        dirHandle = handle;
+        const perm = await wsCache.queryDirPermission(handle);
+        if (perm === 'granted') {
+          await hydrateFromHandle(handle); // silent restore
+        } else {
+          // Can't auto-prompt without a user gesture — offer a Reopen button.
+          reopenLabel = handle.name || lastWorkspaceLabel || 'folder';
+        }
+      }
+    } catch {
+      /* IndexedDB blocked / handle unusable → empty-workspace behaviour */
     }
+
+    // 2. Restore the open tabs (samples resolve now; ws: tabs hydrate on reopen).
+    if (cached && cached.ids.length) {
+      for (const id of cached.ids) openTab(id);
+      const target = tabs[cached.activeIdx] ?? tabs[0];
+      if (target) activeKey = target.key;
+    } else if (tabs.length === 0 && activeKey === null) {
+      const first = wsonFiles[0];
+      if (first) openTab(first.id); // no cache → default: first sample
+    }
+
+    bootDone = true;
+  }
+
+  $effect(() => {
+    if (booted) return;
+    booted = true;
+    tick().then(bootWorkspace);
+  });
+
+  // Persist the open-tab list after boot completes (and on every change since).
+  $effect(() => {
+    if (!bootDone) return;
+    const ids = tabs.map((t) => t.id);
+    const activeIdx = Math.max(0, tabs.findIndex((t) => t.key === activeKey));
+    wsCache.saveTabs(ids, activeIdx);
   });
 </script>
 
@@ -208,9 +310,12 @@
       {workspaceLabel}
       workspaceCount={workspaceFiles.length}
       {lastWorkspaceLabel}
+      {reopenLabel}
+      restoring={restoringWorkspace}
       onSelect={openTab}
       onOpenFiles={handleOpenFiles}
       onClearWorkspace={clearWorkspace}
+      onReopen={reopenWorkspace}
     />
     <a href="/" class="wells-home">← Home</a>
   </div>
@@ -231,17 +336,17 @@
         <span class="wells-tabs-hint">select a .wson file →</span>
       {/if}
       {#each tabs as t (t.key)}
-        {@const tf = fileById(t.id)}
+        {@const label = tabLabel(t.id)}
         <div class="wells-tab-wrap" class:active={activeKey === t.key}>
           <button class="wells-tab" type="button" onclick={() => activate(t.key)}>
             <span class="wells-tab-ic">◍</span>
-            <span class="wells-tab-label">{tf?.name ?? t.id}</span>
+            <span class="wells-tab-label">{label}</span>
           </button>
           <button
             class="wells-tab-close"
             type="button"
             title="Close tab"
-            aria-label="Close {tf?.name ?? t.id}"
+            aria-label="Close {label}"
             onclick={(ev) => closeTab(t.key, ev)}>×</button>
         </div>
       {/each}
@@ -288,7 +393,7 @@
         {#each tabs as t (t.key)}
           {@const file = fileById(t.id)}
           <div class="wells-pane" class:visible={activeKey === t.key}>
-            <WellViewPlaceholder wson={file?.doc ?? null} error={file?.error ?? null} fileName={file?.name ?? t.id} />
+            <WellViewPlaceholder wson={file?.doc ?? null} error={file?.error ?? null} fileName={file?.name ?? tabLabel(t.id)} />
           </div>
         {/each}
       {/if}

@@ -34,6 +34,10 @@
   /** Optional metadata for a load (e.g. the picked folder's name). */
   export interface LoadMeta {
     folderName?: string;
+    /** The picked directory handle (File System Access API) — lets the route
+     *  cache it (IndexedDB) so the workspace can be restored on the next visit.
+     *  Absent for the `<input>` fallback (no handle available there). */
+    dirHandle?: FileSystemDirectoryHandle;
   }
 </script>
 
@@ -54,9 +58,15 @@
     workspaceCount = 0,
     /** Persisted label of the last workspace (localStorage hint; not auto-opened). */
     lastWorkspaceLabel = null,
+    /** Name of a cached folder whose permission needs a click to re-grant. When
+     *  set (and no workspace is open) a "Reopen" affordance shows. */
+    reopenLabel = null,
+    /** True while a restored folder is being re-listed (disables the buttons). */
+    restoring = false,
     onSelect = (_id: string) => {},
     onOpenFiles = (_f: LoadedFile[], _m?: LoadMeta) => {},
     onClearWorkspace = () => {},
+    onReopen = () => {},
   }: {
     tree: FolderTree | null;
     activeId?: string | null;
@@ -68,9 +78,12 @@
     workspaceLabel?: string | null;
     workspaceCount?: number;
     lastWorkspaceLabel?: string | null;
+    reopenLabel?: string | null;
+    restoring?: boolean;
     onSelect?: (id: string) => void;
     onOpenFiles?: (files: LoadedFile[], meta?: LoadMeta) => void;
     onClearWorkspace?: () => void;
+    onReopen?: () => void;
   } = $props();
 
   // Capability probes — File System Access API is Chromium-desktop only.
@@ -156,7 +169,8 @@
       const loaded: LoadedFile[] = [];
       await walkDir(dir, '', loaded);
       loaded.sort((a, b) => a.relPath.localeCompare(b.relPath));
-      emitFiles(loaded, { folderName: dir.name });
+      // Pass the handle up so the route can cache it (IndexedDB) for restore.
+      emitFiles(loaded, { folderName: dir.name, dirHandle: dir as FileSystemDirectoryHandle });
     } catch (e: any) {
       if (e?.name !== 'AbortError') error = e?.message ?? String(e);
     } finally {
@@ -196,7 +210,7 @@
         class="wsn-btn wsn-btn-primary"
         type="button"
         onclick={openFolder}
-        disabled={busy}
+        disabled={busy || restoring}
         title={canPickDir ? 'Open a folder of .wson files' : 'Open a folder (browser fallback)'}
       >
         <span class="wsn-btn-ic">📂</span>
@@ -206,7 +220,7 @@
         class="wsn-btn"
         type="button"
         onclick={openFiles}
-        disabled={busy}
+        disabled={busy || restoring}
         title="Open individual .wson files"
         aria-label="Open files"
       >
@@ -226,6 +240,19 @@
           aria-label="Close workspace"
           onclick={onClearWorkspace}>×</button>
       </div>
+    {:else if reopenLabel}
+      <!-- Cached folder from a previous visit — re-granting FSA permission needs
+           a user gesture, so we can't auto-open on load. This click does it. -->
+      <button
+        class="wsn-reopen"
+        type="button"
+        onclick={onReopen}
+        disabled={restoring}
+        title="Re-grant access to {reopenLabel} and restore your workspace"
+      >
+        <span class="wsn-ws-ic">↺</span>
+        <span class="wsn-ws-name">{restoring ? 'Reopening…' : `Reopen ${reopenLabel}`}</span>
+      </button>
     {:else if lastWorkspaceLabel}
       <div class="wsn-ws-last" title="Reopen requires picking the folder again">
         last: {lastWorkspaceLabel}
@@ -376,6 +403,36 @@
     font: 10px ui-monospace, monospace;
     color: #55556a;
     padding: 0 2px;
+  }
+  /* Reopen affordance — a cached folder from a previous visit awaiting a click
+     to re-grant File System Access permission. */
+  .wsn-reopen {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    background: #1b1b2c;
+    border: 1px dashed #4a4a2a;
+    border-radius: 5px;
+    padding: 5px 8px;
+    color: #ffb;
+    cursor: pointer;
+    font: 700 11px Arial;
+    text-align: left;
+    transition:
+      background 0.12s,
+      border-color 0.12s;
+  }
+  .wsn-reopen:hover:not(:disabled) {
+    background: #24243a;
+    border-color: #cc9944;
+  }
+  .wsn-reopen:disabled {
+    opacity: 0.5;
+    cursor: wait;
+  }
+  .wsn-reopen .wsn-ws-name {
+    color: inherit;
   }
   .wsn-note {
     font: 10px ui-monospace, monospace;
