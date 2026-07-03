@@ -38,6 +38,11 @@ function makeMockTf() {
     calls,
     boxMesh: (w: number, h: number, d: number) => { rec('boxMesh', w, h, d); return handle('box'); },
     cylinderMesh: (r: number, hgt: number, s: number) => { rec('cylinderMesh', r, hgt, s); return handle('cyl'); },
+    tubeMesh: (curve: any, radius: number, segs: number) => { rec('tubeMesh', curve, radius, segs); return handle('tube'); },
+    // buildOpenCurve plumbing (trueform-client) — record + return opaque handles.
+    ndarray: (data: any, shape: any) => { rec('ndarray', data, shape); return { __nd: true, data, shape }; },
+    offsetBlockedBuffer: (offsets: any, data: any) => { rec('offsetBlockedBuffer', offsets, data); return { __obb: true }; },
+    curves: (blocks: any, pts: any) => { rec('curves', blocks, pts); return { __curve: true }; },
     mesh: (faces: any, points: any) => { rec('mesh', faces, points); return handle('mesh'); },
     booleanDifference: (obj: any, arg: any) => { rec('booleanDifference', obj, arg); return { mesh: handle('diff', { obj, arg }) }; },
     booleanUnion: (obj: any, arg: any) => { rec('booleanUnion', obj, arg); return { mesh: handle('union', { obj, arg }) }; },
@@ -139,6 +144,30 @@ describe('executeTfRecipe', () => {
     expect(t.calls.some((c: any) => c.fn === 'matMul')).toBe(true);
   });
 
+  it('walks a sweep recipe → tubeMesh(curve, radius, radialSegments) over the built curve', () => {
+    const t = makeMockTf();
+    executeTfRecipe(t, t, recipe([
+      { op: 'sweep', path: [[0, 0, 0], [0, 0, 1], [0, 0, 2]], radius: 0.6, radialSegments: 24, capped: true },
+    ]));
+    const tube = t.calls.find((c: any) => c.fn === 'tubeMesh');
+    expect(tube).toBeTruthy();
+    expect(tube.args[1]).toBe(0.6);   // radius
+    expect(tube.args[2]).toBe(24);    // radialSegments
+    // curve was built first (buildOpenCurve → curves over the flat point buffer).
+    expect(t.calls.some((c: any) => c.fn === 'curves')).toBe(true);
+  });
+
+  it('a curved-hollow-tube recipe (sweep − sweep) walks two tubeMesh + one booleanDifference', () => {
+    const t = makeMockTf();
+    executeTfRecipe(t, t, recipe([
+      { op: 'booleanDifference',
+        obj: { op: 'sweep', path: [[0, 0, 0], [0, 0, 2]], radius: 0.6, radialSegments: 32, capped: true },
+        arg: { op: 'sweep', path: [[0, 0, 0], [0, 0, 2]], radius: 0.5, radialSegments: 32, capped: true } },
+    ]));
+    expect(t.calls.filter((c: any) => c.fn === 'tubeMesh')).toHaveLength(2);
+    expect(t.calls.filter((c: any) => c.fn === 'booleanDifference')).toHaveLength(1);
+  });
+
   it('throws TfUnsupportedError when executing an UNSUPPORTED node', () => {
     const t = makeMockTf();
     expect(() => executeTfRecipe(t, t, recipe([{ op: 'UNSUPPORTED', nodeType: 'call:r_loft' }])))
@@ -176,5 +205,15 @@ describe('recipeHasUnsupported', () => {
   it('treats a revolve with an unresolved (< 3 pt) profile as unsupported', () => {
     expect(recipeHasUnsupported(recipe([{ op: 'revolve', profile: [], segments: 64 }]))).toBe(true);
     expect(recipeHasUnsupported(recipe([{ op: 'revolve', profile: [[1, 0], [1, 2]], segments: 64 }]))).toBe(true);
+  });
+
+  it('a resolved sweep (≥ 2 path pts) is SUPPORTED; an empty/1-pt path is not', () => {
+    expect(recipeHasUnsupported(recipe([
+      { op: 'booleanDifference',
+        obj: { op: 'sweep', path: [[0, 0, 0], [0, 0, 2]], radius: 0.6, radialSegments: 32 },
+        arg: { op: 'sweep', path: [[0, 0, 0], [0, 0, 2]], radius: 0.5, radialSegments: 32 } },
+    ]))).toBe(false);
+    expect(recipeHasUnsupported(recipe([{ op: 'sweep', path: [[0, 0, 0]], radius: 1, radialSegments: 8 }]))).toBe(true);
+    expect(recipeHasUnsupported(recipe([{ op: 'sweep', path: [], radius: 1, radialSegments: 8 }]))).toBe(true);
   });
 });
