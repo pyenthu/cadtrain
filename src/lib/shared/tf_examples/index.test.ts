@@ -8,7 +8,7 @@ import { tfExamples, getTfExample } from './index';
  * builder. No WASM loads — building the list never calls a builder's `build()`.
  */
 describe('tf_examples registry', () => {
-  const EXPECTED = ['box', 'r_cyl', 's_cyl', 'helix', 'bored_pipe', 'dp_pin', 'cone'];
+  const EXPECTED = ['box', 'r_cyl', 's_cyl', 'helix', 'bored_pipe', 'dp_pin', 'dp_joint', 'cone'];
 
   it('lists all example demos (and nothing else) in deterministic order', () => {
     expect(tfExamples.map((e) => e.name)).toEqual(EXPECTED);

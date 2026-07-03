@@ -18,8 +18,9 @@ import { ensureTf, tfResult, type TfDemoResult } from '../trueform-client';
 import { tfRevolveProfile, type ProfilePoint } from './revolve';
 import type { TfExample } from './index';
 
-/** g_dp_pin's exact half-section (r, z) — closed loop, min r = 1.7 (bored). */
-const PROFILE: ProfilePoint[] = [
+/** g_dp_pin's exact half-section (r, z) — closed loop, min r = 1.7 (bored).
+ *  Exported so `dp_joint` can stack the SAME pin profile without duplication. */
+export const PIN_PROFILE: ProfilePoint[] = [
   [3, 0],
   [3, 4],
   [2.6, 4],
@@ -35,7 +36,7 @@ export const dp_pin: TfExample = {
   async build(opts: { cutaway?: boolean } = {}): Promise<TfDemoResult> {
     const tf = await ensureTf();
     const t = tf as any;
-    const solid = tfRevolveProfile(t, PROFILE, 64);
+    const solid = tfRevolveProfile(t, PIN_PROFILE, 64);
     return tfResult(tf, t, solid, { cutaway: opts?.cutaway, cuttable: true });
   },
 };

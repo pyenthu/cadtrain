@@ -31,7 +31,7 @@ export interface TfExample {
 
 /** Deterministic dropdown order — grouped: primitive · revolve family · sweep
  *  family · boolean · revolved parts. Names absent here sort alphabetically last. */
-const ORDER = ['box', 'r_cyl', 's_cyl', 'helix', 'bored_pipe', 'dp_pin', 'cone'];
+const ORDER = ['box', 'r_cyl', 's_cyl', 'helix', 'bored_pipe', 'dp_pin', 'dp_joint', 'cone'];
 
 // Eager-glob every sibling module. Builder files export a `TfExample`; helper /
 // registry / test modules (revolve.ts, this file) export other shapes — filtered
