@@ -11,6 +11,8 @@
  *   Call r_revolve         → { op:'revolve', profile:[[r,z]…], segments }   (tfRevolveProfile)
  *   Call r_cuboid          → { op:'box', w, h, d }                          (boxMesh)
  *   Call *cyl*             → { op:'cylinder', radius, height, segments }    (cylinderMesh)
+ *   Call r_sweep           → { op:'sweep', path:[[x,y,z]…], radius, radialSegments, capped }  (tubeMesh + capOpenEnds)
+ *   Call <composite>       → recurse into the sub-part's graph + splice its root instr(s)
  *   Method subtract/add/…  → { op:'booleanDifference'|'Union'|'Intersection', obj, arg }
  *   Container list/group   → { op:'union', children }                       (booleanUnion fold)
  *   Container stack        → { op:'union', children, mated:true }           (stacked end-to-end)
@@ -36,7 +38,16 @@ import type {
   NodeId,
   PolygonNode,
   SketchNode,
+  ExprNode,
+  SplineNode,
 } from './composition-graph-types';
+
+/** Resolve a COMPOSITE Call's `src` id → its own composition graph (+ optional
+ *  default params), so `graphToTf` can recurse into a sub-part and inline it. The
+ *  translator stays PURE + testable: the caller (server endpoint / test) injects
+ *  the actual source-fetch + `meta.graph` parse. `null` ⇒ unresolvable → the Call
+ *  is left UNSUPPORTED. */
+export type ResolveComposite = (id: string) => { graph: Graph; params?: Record<string, number> } | null;
 
 // ─── instruction data model ─────────────────────────────────────────────────
 
@@ -49,6 +60,7 @@ export type TfInstr =
   | { op: 'revolve'; profile: ProfilePt[]; segments: number; note?: string }
   | { op: 'box'; w: number; h: number; d: number }
   | { op: 'cylinder'; radius: number; height: number; segments: number }
+  | { op: 'sweep'; path: Vec3[]; radius: number; radialSegments: number; capped?: boolean }
   | { op: 'booleanDifference'; obj: TfInstr; arg: TfInstr }
   | { op: 'booleanUnion'; obj: TfInstr; arg: TfInstr }
   | { op: 'booleanIntersection'; obj: TfInstr; arg: TfInstr }
@@ -106,6 +118,17 @@ function evalArg(v: ArgValue | undefined, scope: Record<string, number>): number
 function evalInt(v: ArgValue | undefined, scope: Record<string, number>, fallback: number): number {
   const n = evalArg(v, scope);
   return Number.isFinite(n) ? Math.round(n) : fallback;
+}
+
+/** Evaluate an ArgValue expected to be a boolean (literal `true`/`false`, the
+ *  string forms, or 1/0). Non-literal / unknown → `fallback`. */
+function evalBool(v: ArgValue | undefined, fallback: boolean): boolean {
+  if (!v || v.kind !== 'literal') return fallback;
+  const val: any = v.value;
+  if (typeof val === 'boolean') return val;
+  if (val === 'true' || val === 1) return true;
+  if (val === 'false' || val === 0) return false;
+  return fallback;
 }
 
 // ─── profile resolution (polygon / sketch → [r,z] points) ───────────────────
@@ -177,6 +200,120 @@ function resolveProfileArg(
   return null;
 }
 
+// ─── sweep resolution (path spline + circular section radius) ────────────────
+
+/** Find the `SplineNode` a Call arg refers to. A wired spline output is encoded
+ *  `{kind:'expr', expr:'_x_<splineId>_path'}` (emitSplineBlocks), so the arg's
+ *  expr starts with `_x_<id>_`. Returns the matching spline node, or null. */
+function resolveSplineNode(arg: ArgValue | undefined, graph: Graph): SplineNode | null {
+  if (!arg || arg.kind !== 'expr') return null;
+  for (const n of Object.values(graph.nodes)) {
+    if (n && n.type === 'spline' && arg.expr.startsWith(`_x_${n.id}_`)) return n as SplineNode;
+  }
+  return null;
+}
+
+/** Uniform Catmull-Rom resample of `ctrl` control points → `samples` concrete
+ *  `[x,y,z]` points. Mirrors `tf_examples/s_tube_demo.buildSweepPath` (parameter-
+ *  space Catmull-Rom, endpoints CLAMPED for an open path, WRAPPED for a closed
+ *  loop) so the recipe carries the SAME concrete path the hand-written demo
+ *  sweeps — the sweep analogue of how `revolve` carries a concrete profile. */
+export function resampleCatmullRom(ctrl: Vec3[], samples: number, closed = false): Vec3[] {
+  const n = ctrl.length;
+  if (n === 0 || samples <= 0) return [];
+  if (n === 1) return Array.from({ length: samples }, () => [...ctrl[0]] as Vec3);
+  const P = (i: number): Vec3 =>
+    closed ? ctrl[((i % n) + n) % n] : ctrl[Math.max(0, Math.min(n - 1, i))];
+  const span = closed ? n : n - 1;       // CLOSED wraps last→first; OPEN hits both ends
+  const last = closed ? samples : samples - 1;
+  const out: Vec3[] = [];
+  for (let s = 0; s < samples; s++) {
+    const u = (s / last) * span;
+    let seg = Math.floor(u);
+    if (!closed && seg > n - 2) seg = n - 2;
+    const t = u - seg;
+    const p0 = P(seg - 1), p1 = P(seg), p2 = P(seg + 1), p3 = P(seg + 2);
+    const t2 = t * t, t3 = t2 * t;
+    const pt: Vec3 = [0, 0, 0];
+    for (let k = 0; k < 3; k++) {
+      pt[k] = 0.5 * (
+        2 * p1[k] +
+        (-p0[k] + p2[k]) * t +
+        (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t2 +
+        (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * t3
+      );
+    }
+    out.push(pt);
+  }
+  return out;
+}
+
+/** Resolve a sweep SECTION spline → its circular radius (`tubeMesh` takes ONE
+ *  scalar radius). Two shapes are supported:
+ *   1. a spline WIRED to a circle expr (`pointsExpr` → an `ExprNode` with a
+ *      `rad`/`radius`/`r` param binding) — the `sweep_tube_demo` pattern; the
+ *      binding is evaluated in `scope`.
+ *   2. a spline with LITERAL points roughly equidistant (≤10% dev) from their
+ *      xy-centroid → the mean radius.
+ *  A non-circular / unresolvable section → null (caller keeps it UNSUPPORTED). */
+function sectionRadiusOf(
+  spline: SplineNode | null,
+  graph: Graph,
+  scope: Record<string, number>,
+  notes: string[],
+): number | null {
+  if (!spline) return null;
+  // (1) wired from a circle expr → read its radius param binding.
+  if (spline.pointsExpr && spline.pointsExpr.kind === 'expr') {
+    const srcExpr = spline.pointsExpr.expr;
+    for (const n of Object.values(graph.nodes)) {
+      if (!n || n.type !== 'expr' || !srcExpr.startsWith(`_x_${n.id}_`)) continue;
+      const b = (n as ExprNode).bindings ?? {};
+      const radArg = b.rad ?? b.radius ?? b.r;
+      const r = evalArg(radArg, scope);
+      if (Number.isFinite(r) && r > 0) return r;
+      notes.push(`sweep section ${spline.id}: expr '${(n as ExprNode).defId}' has no resolvable circular 'rad' binding — UNSUPPORTED`);
+      return null;
+    }
+    notes.push(`sweep section ${spline.id}: wired points-expr '${srcExpr}' did not resolve to an expr node — UNSUPPORTED`);
+    return null;
+  }
+  // (2) literal ring — mean radius from the xy-centroid, if roughly circular.
+  const pts = spline.points;
+  if (Array.isArray(pts) && pts.length >= 3) {
+    let cx = 0, cy = 0;
+    for (const p of pts) { cx += p[0]; cy += p[1]; }
+    cx /= pts.length; cy /= pts.length;
+    const radii = pts.map((p) => Math.hypot(p[0] - cx, p[1] - cy));
+    const mean = radii.reduce((a, b) => a + b, 0) / radii.length;
+    const maxDev = Math.max(...radii.map((r) => Math.abs(r - mean)));
+    if (mean > 0 && maxDev <= mean * 0.1) return mean;
+    notes.push(`sweep section ${spline.id}: literal points not circular (rad dev ${((maxDev / (mean || 1)) * 100).toFixed(0)}%) — no scalar radius, UNSUPPORTED`);
+    return null;
+  }
+  return null;
+}
+
+// ─── engine vs composite classification ──────────────────────────────────────
+
+/** Engine `src` ids that have NO TrueForm generator (linear extrude / loft) — a
+ *  Call to one is explicitly UNSUPPORTED (never treated as a composite). */
+const NO_TF_ENGINES = new Set(['r_loft', 'r_weld_extrude', 'r_extrude']);
+
+/** True when a Call `src` is an ENGINE primitive (handled directly, or explicitly
+ *  UNSUPPORTED) rather than a COMPOSITE volume part. Everything NOT an engine is a
+ *  candidate for composite recursion (`resolveComposite`). Shared with the server
+ *  endpoint so both agree on which Call srcs to fetch + inline. */
+export function isEngineSrc(src: string): boolean {
+  return (
+    src === 'r_revolve' ||
+    src === 'r_cuboid' ||
+    src === 'r_sweep' ||
+    /cyl/i.test(src) ||
+    NO_TF_ENGINES.has(src)
+  );
+}
+
 // ─── consumed-set (output filtering, mirrors composition-emit) ───────────────
 
 /** Nodes referenced as an INPUT by another node — dropped from the root's
@@ -210,15 +347,23 @@ function computeConsumed(graph: Graph): Set<NodeId> {
 
 // ─── the walk ────────────────────────────────────────────────────────────────
 
-/** Lower a single node → its TfInstr, recursing into referenced children. */
+/** Max composite-recursion depth (defence against a runaway / mis-authored dep
+ *  chain; the cycle guard already stops true loops). */
+const MAX_COMPOSITE_DEPTH = 12;
+
+/** Lower a single node → its TfInstr, recursing into referenced children. The
+ *  `resolve`/`seen`/`depth` context threads composite-Call recursion state. */
 function lowerNode(
   node: GraphNode | undefined,
   graph: Graph,
   scope: Record<string, number>,
   notes: string[],
+  resolve: ResolveComposite | undefined,
+  seen: Set<string>,
+  depth: number,
 ): TfInstr {
   if (!node) return { op: 'UNSUPPORTED', nodeType: '(missing)', detail: 'referenced node not found' };
-  const ref = (id: NodeId) => lowerNode(graph.nodes[id], graph, scope, notes);
+  const ref = (id: NodeId) => lowerNode(graph.nodes[id], graph, scope, notes, resolve, seen, depth);
 
   switch (node.type) {
     case 'call': {
@@ -241,6 +386,36 @@ function lowerNode(
           d: evalArg(args.d, scope),
         };
       }
+      if (src === 'r_sweep') {
+        // A circular section swept along a spline PATH → tf's tubeMesh (fixed
+        // circular section along a parallel-transport curve) + capped ends. The
+        // `path` arg wires to a spline node (control points → concrete Catmull-
+        // Rom resample, mirroring tf_examples/s_tube_demo); the `section` arg
+        // wires to a circle → its scalar radius. Anything tf's tubeMesh can't
+        // do (no wired spline path, non-circular section) stays UNSUPPORTED so
+        // the caller falls back to the Manifold mesh-import path.
+        const pathNode = resolveSplineNode(args.path, graph);
+        const secSpline = resolveSplineNode(args.section, graph);
+        const radius = sectionRadiusOf(secSpline, graph, scope, notes);
+        if (!pathNode || radius == null) {
+          const why = !pathNode
+            ? 'path arg is not a resolvable spline node'
+            : 'section is not a resolvable circular profile';
+          notes.push(`call ${node.id} (r_sweep): ${why} — UNSUPPORTED (mesh-import fallback)`);
+          return {
+            op: 'UNSUPPORTED',
+            nodeType: 'call:r_sweep',
+            detail: !pathNode ? 'path not resolvable' : 'non-circular/unresolved section',
+          };
+        }
+        const closedPath = evalBool(args.closedPath, pathNode.closed ?? false);
+        const capped = evalBool(args.caps, !closedPath);
+        const samples = Math.max(2, evalInt(pathNode.samples, scope, 32));
+        const ctrl = (pathNode.points ?? []).map((p) => [p[0], p[1], p[2]] as Vec3);
+        const path = resampleCatmullRom(ctrl, samples, closedPath);
+        const radialSegments = Math.max(3, evalInt(secSpline?.samples, scope, 32));
+        return { op: 'sweep', path, radius, radialSegments, capped };
+      }
       if (/cyl/i.test(src)) {
         // A cylinder-like engine → cylinderMesh(radius, height, segments). Best-effort
         // on common arg names (r/radius, len/length/h/height).
@@ -249,10 +424,53 @@ function lowerNode(
         const segments = evalInt(args.segments ?? args.seg, scope, 64);
         return { op: 'cylinder', radius, height, segments };
       }
-      // r_weld_extrude / r_loft / any other engine — TrueForm has no linear
-      // extrude / profile-loft (see trueform-api-notes.md § ⛔). Flag it.
-      notes.push(`call ${node.id}: engine '${src}' has no TrueForm equivalent (no extrude/loft in tf) — UNSUPPORTED`);
-      return { op: 'UNSUPPORTED', nodeType: `call:${src}`, detail: 'no TF generator for this engine' };
+      if (NO_TF_ENGINES.has(src)) {
+        // r_weld_extrude / r_loft / r_extrude — TrueForm has no linear extrude /
+        // profile-loft (see trueform-api-notes.md § ⛔). Flag it.
+        notes.push(`call ${node.id}: engine '${src}' has no TrueForm equivalent (no extrude/loft in tf) — UNSUPPORTED`);
+        return { op: 'UNSUPPORTED', nodeType: `call:${src}`, detail: 'no TF generator for this engine' };
+      }
+      // Not an engine → a COMPOSITE volume part. Resolve its own graph (via the
+      // injected fetcher), map this Call's args → the sub-part's param scope, and
+      // recurse — splicing the sub-recipe's root instr(s) in place of the Call.
+      if (!resolve) {
+        notes.push(`call ${node.id}: composite '${src}' cannot be inlined (no resolver) — UNSUPPORTED`);
+        return { op: 'UNSUPPORTED', nodeType: `call:${src}`, detail: 'no composite resolver' };
+      }
+      if (seen.has(src)) {
+        notes.push(`call ${node.id}: composite '${src}' is a CYCLE (already in the recursion path) — UNSUPPORTED`);
+        return { op: 'UNSUPPORTED', nodeType: `call:${src}`, detail: 'composite cycle' };
+      }
+      if (depth >= MAX_COMPOSITE_DEPTH) {
+        notes.push(`call ${node.id}: composite '${src}' exceeds depth cap ${MAX_COMPOSITE_DEPTH} — UNSUPPORTED`);
+        return { op: 'UNSUPPORTED', nodeType: `call:${src}`, detail: 'composite depth cap' };
+      }
+      const resolved = resolve(src);
+      if (!resolved || !resolved.graph) {
+        notes.push(`call ${node.id}: composite '${src}' did not resolve to a graph — UNSUPPORTED`);
+        return { op: 'UNSUPPORTED', nodeType: `call:${src}`, detail: 'composite unresolved' };
+      }
+      // Map the Call's args → numeric sub-param values, evaluated in the CURRENT
+      // scope (so a parent param/expr flows into the child). Merge over the
+      // sub-part's declared defaults.
+      const callParams: Record<string, number> = {};
+      for (const [k, v] of Object.entries(args)) {
+        const nv = evalArg(v, scope);
+        if (Number.isFinite(nv)) callParams[k] = nv;
+      }
+      const subParams = { ...(resolved.params ?? {}), ...callParams };
+      const subRecipe = graphToTfInner(
+        resolved.graph, subParams, resolve, depth + 1, new Set([...seen, src]),
+      );
+      for (const nt of subRecipe.notes) notes.push(`[${src}] ${nt}`);
+      const subInstrs = subRecipe.instrs;
+      if (subInstrs.length === 0) {
+        notes.push(`call ${node.id}: composite '${src}' produced no output instrs — UNSUPPORTED`);
+        return { op: 'UNSUPPORTED', nodeType: `call:${src}`, detail: 'composite empty' };
+      }
+      // One output → splice it directly; several → union them (the sub-part's
+      // unconsumed outputs, mirroring executeTfRecipe's multi-root union).
+      return subInstrs.length === 1 ? subInstrs[0]! : { op: 'union', children: subInstrs };
     }
 
     case 'method': {
@@ -315,9 +533,29 @@ function lowerNode(
   }
 }
 
-/** Compile a composition graph → a TrueForm instruction recipe (v0). Walks the
- *  ROOT's unconsumed children (the composition's outputs), lowering each. */
-export function graphToTf(graph: Graph, params: Record<string, number> = {}): TfRecipe {
+/** Compile a composition graph → a TrueForm instruction recipe. Walks the ROOT's
+ *  unconsumed children (the composition's outputs), lowering each. `resolveComposite`
+ *  (optional) lets a Call to a COMPOSITE volume part be inlined: its own graph is
+ *  fetched, its args mapped in, and its root instr(s) spliced in place — so an
+ *  assembly of assemblies (e.g. `s_tube_demo` → `sweep_tube_demo` → `r_sweep`)
+ *  compiles to one fully-inlined recipe. Without a resolver, composite Calls stay
+ *  UNSUPPORTED (unchanged v0 behaviour). */
+export function graphToTf(
+  graph: Graph,
+  params: Record<string, number> = {},
+  resolveComposite?: ResolveComposite,
+): TfRecipe {
+  return graphToTfInner(graph, params, resolveComposite, 0, new Set());
+}
+
+/** Internal recursion body — carries the composite `depth` + `seen` cycle-guard. */
+function graphToTfInner(
+  graph: Graph,
+  params: Record<string, number>,
+  resolve: ResolveComposite | undefined,
+  depth: number,
+  seen: Set<string>,
+): TfRecipe {
   const scope = paramScope(graph, params);
   const notes: string[] = [];
   const root = graph.nodes[graph.root];
@@ -331,7 +569,7 @@ export function graphToTf(graph: Graph, params: Record<string, number> = {}): Tf
     outputs = [graph.root];
   }
 
-  const instrs = outputs.map((id) => lowerNode(graph.nodes[id], graph, scope, notes));
+  const instrs = outputs.map((id) => lowerNode(graph.nodes[id], graph, scope, notes, resolve, seen, depth));
   return { instrs, notes };
 }
 
@@ -363,6 +601,8 @@ function fmtInstr(inst: TfInstr, indent: number): string {
       return `${pad}boxMesh(w=${fmtNum(inst.w)}, h=${fmtNum(inst.h)}, d=${fmtNum(inst.d)})`;
     case 'cylinder':
       return `${pad}cylinderMesh(radius=${fmtNum(inst.radius)}, height=${fmtNum(inst.height)}, segments=${inst.segments})`;
+    case 'sweep':
+      return `${pad}tubeMesh(radius=${fmtNum(inst.radius)}, radialSegments=${inst.radialSegments}, capped=${inst.capped !== false}) along a ${inst.path.length}-pt swept path`;
     case 'booleanDifference':
     case 'booleanUnion':
     case 'booleanIntersection':

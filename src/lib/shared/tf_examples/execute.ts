@@ -24,8 +24,20 @@
  * {@link TfUnsupportedError} at the offending node.
  */
 import { tfRevolveProfile } from './revolve';
-import { tfResult, type TfDemoResult } from '../trueform-client';
-import type { TfRecipe, TfInstr } from '$lib/cad/graph-to-tf';
+import { tfResult, buildOpenCurve, capOpenEnds, type TfDemoResult } from '../trueform-client';
+import type { TfRecipe, TfInstr, Vec3 } from '$lib/cad/graph-to-tf';
+
+/** Flatten a `[[x,y,z]…]` path → the `[n*3]` Float32Array `buildOpenCurve` /
+ *  `tubeMesh` sweep along. */
+function flatFloat32(path: Vec3[]): Float32Array {
+  const out = new Float32Array(path.length * 3);
+  for (let i = 0; i < path.length; i++) {
+    out[i * 3] = path[i][0];
+    out[i * 3 + 1] = path[i][1];
+    out[i * 3 + 2] = path[i][2];
+  }
+  return out;
+}
 
 /** Thrown by {@link executeTfRecipe} when it reaches a node TrueForm can't build
  *  natively (an `UNSUPPORTED` instr, or an unknown op). Callers gate on
@@ -74,6 +86,14 @@ function buildInstr(t: any, instr: TfInstr): any {
       return t.boxMesh(instr.w, instr.h, instr.d);
     case 'cylinder':
       return t.cylinderMesh(instr.radius, instr.height, instr.segments || 64);
+    case 'sweep': {
+      // A circular section swept along a 3D path → tubeMesh over an open Catmull-
+      // Rom curve, then capped into a closed solid (the tf_examples/s_tube_demo
+      // pattern). `capped === false` (e.g. a closed-loop path) leaves it open.
+      const flat = flatFloat32(instr.path);
+      const tube = t.tubeMesh(buildOpenCurve(t, flat, instr.path.length), instr.radius, instr.radialSegments || 32);
+      return instr.capped === false ? tube : capOpenEnds(t, tube);
+    }
     case 'booleanDifference':
       return t.booleanDifference(buildInstr(t, instr.obj), buildInstr(t, instr.arg)).mesh;
     case 'booleanUnion':
@@ -168,6 +188,9 @@ function instrHasUnsupported(instr: TfInstr): boolean {
     case 'revolve':
     case 'profile':
       return (instr.profile?.length ?? 0) < MIN_PROFILE_PTS;
+    case 'sweep':
+      // A sweep needs at least a start + end point to define a curve.
+      return (instr.path?.length ?? 0) < 2;
     case 'booleanDifference':
     case 'booleanUnion':
     case 'booleanIntersection':

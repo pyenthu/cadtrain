@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { Graph } from './composition-graph-types';
-import { graphToTf, tfRecipeText, type TfInstr } from './graph-to-tf';
+import { graphToTf, tfRecipeText, type TfInstr, type ResolveComposite } from './graph-to-tf';
 
 /** Minimal graph scaffold — only the fields the translator reads. */
 function mkGraph(nodes: Record<string, any>, root: string, params: Record<string, any> = {}): Graph {
@@ -113,6 +113,117 @@ describe('graphToTf', () => {
     const recipe = graphToTf(g);
     expect(recipe.instrs[0].op).toBe('UNSUPPORTED');
     expect(recipe.notes.length).toBeGreaterThan(0);
+  });
+
+  it('r_sweep of a wired spline path + circle-expr section → a sweep instr with a concrete resampled path + radius', () => {
+    // Mirrors the sweep_tube_demo graph: a 5-pt path spline + a section spline
+    // wired to a `d_circle` expr whose `rad` binding is the part param.
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_sweep'] },
+        n_circle: {
+          id: 'n_circle', type: 'expr', defId: 'd_circle',
+          bindings: { rad: { kind: 'param', param: 'rad' }, num_pts: { kind: 'param', param: 'num_arcs' } },
+        },
+        n_sec: {
+          id: 'n_sec', type: 'spline',
+          points: [[1.5, 0, 0], [0, 1.5, 0], [-1.5, 0, 0]],
+          pointsExpr: { kind: 'expr', expr: '_x_n_circle_pts' },
+          samples: { kind: 'literal', value: 32 }, closed: true,
+        },
+        n_path: {
+          id: 'n_path', type: 'spline',
+          points: [[-0.021, -0.186, 0.646], [0, 0, 1.522], [0, 0, 2.498], [0.063, -0.011, 4.456], [0, 0, 7.531]],
+          samples: { kind: 'literal', value: 32 }, closed: false,
+        },
+        n_sweep: {
+          id: 'n_sweep', type: 'call', src: 'r_sweep', alias: 'body',
+          args: {
+            path: { kind: 'expr', expr: '_x_n_path_path' },
+            section: { kind: 'expr', expr: '_x_n_sec_path' },
+            closedPath: { kind: 'literal', value: false },
+            caps: { kind: 'literal', value: true },
+          },
+        },
+      },
+      'n_root',
+      { rad: { default: 0.6 }, num_arcs: { default: 12 } },
+    );
+
+    const recipe = graphToTf(g);
+    expect(recipe.instrs).toHaveLength(1);
+    const inst = recipe.instrs[0] as Extract<TfInstr, { op: 'sweep' }>;
+    expect(inst.op).toBe('sweep');
+    expect(inst.radius).toBeCloseTo(0.6, 6);       // from the d_circle `rad` binding = param rad
+    expect(inst.radialSegments).toBe(32);          // section spline samples
+    expect(inst.capped).toBe(true);                // caps arg (open path)
+    expect(inst.path).toHaveLength(32);            // resampled to `samples`
+    // First/last resampled points pass through the control endpoints (clamped CR).
+    expect(inst.path[0][2]).toBeCloseTo(0.646, 3);
+    expect(inst.path[31][2]).toBeCloseTo(7.531, 3);
+  });
+
+  it('recurses into a COMPOSITE Call, mapping args → the sub-part scope + splicing its instrs', () => {
+    // Sub-part B: a box whose width IS its `rad` param (default 9).
+    const subB: Graph = mkGraph(
+      {
+        n_r: { id: 'n_r', type: 'list', children: ['n_box'] },
+        n_box: {
+          id: 'n_box', type: 'call', src: 'r_cuboid', alias: 'X',
+          args: { w: { kind: 'param', param: 'rad' }, h: { kind: 'literal', value: 1 }, d: { kind: 'literal', value: 1 } },
+        },
+      },
+      'n_r',
+      { rad: { default: 9 } },
+    );
+    const resolve: ResolveComposite = (id) => (id === 'partB' ? { graph: subB, params: {} } : null);
+
+    // Parent A: subtract two `partB` calls with different `rad` — the s_tube_demo shape.
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_a', 'n_b', 'n_diff'] },
+        n_a: { id: 'n_a', type: 'call', src: 'partB', alias: 'A', args: { rad: { kind: 'literal', value: 0.6 } } },
+        n_b: { id: 'n_b', type: 'call', src: 'partB', alias: 'B', args: { rad: { kind: 'literal', value: 0.5 } } },
+        n_diff: { id: 'n_diff', type: 'method', op: 'subtract', obj: 'n_a', arg: 'n_b' },
+      },
+      'n_root',
+    );
+
+    const recipe = graphToTf(g, {}, resolve);
+    expect(recipe.instrs).toHaveLength(1); // A + B consumed by the subtract
+    const diff = recipe.instrs[0] as Extract<TfInstr, { op: 'booleanDifference' }>;
+    expect(diff.op).toBe('booleanDifference');
+    // Each composite spliced to its single box instr; the Call arg OVERRODE the default 9.
+    expect(diff.obj).toEqual({ op: 'box', w: 0.6, h: 1, d: 1 });
+    expect(diff.arg).toEqual({ op: 'box', w: 0.5, h: 1, d: 1 });
+    expect(recipe.notes.every((n) => !n.includes('UNSUPPORTED'))).toBe(true);
+  });
+
+  it('a composite Call with no resolver → UNSUPPORTED (unchanged v0 behaviour)', () => {
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_c'] },
+        n_c: { id: 'n_c', type: 'call', src: 'some_part', alias: 'A', args: {} },
+      },
+      'n_root',
+    );
+    expect(graphToTf(g).instrs[0].op).toBe('UNSUPPORTED');            // no resolver
+    expect(graphToTf(g, {}, () => null).instrs[0].op).toBe('UNSUPPORTED'); // resolver returns null
+  });
+
+  it('guards a composite CYCLE (self-referential part) → UNSUPPORTED, no infinite recursion', () => {
+    const selfG: Graph = mkGraph(
+      {
+        n_r: { id: 'n_r', type: 'list', children: ['n_self'] },
+        n_self: { id: 'n_self', type: 'call', src: 'loopy', alias: 'A', args: {} },
+      },
+      'n_r',
+    );
+    const resolve: ResolveComposite = (id) => (id === 'loopy' ? { graph: selfG, params: {} } : null);
+    const recipe = graphToTf(selfG, {}, resolve);
+    // The inner self-call hits the cycle guard → its splice is UNSUPPORTED.
+    expect(JSON.stringify(recipe.instrs)).toContain('UNSUPPORTED');
+    expect(recipe.notes.some((n) => n.includes('CYCLE'))).toBe(true);
   });
 
   it('tfRecipeText renders a readable plan without throwing', () => {
