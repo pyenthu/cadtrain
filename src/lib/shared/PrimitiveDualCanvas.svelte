@@ -449,10 +449,18 @@
     meshStatus = 'building'; brepReason = null; err = null;
     tfAc?.abort(); const ac = new AbortController(); tfAc = ac;
     try {
-      const [{ getTfExample }, { tfMeshToGeo }] = await Promise.all([
+      const [{ getTfExample }, { tfMeshToGeo }, { ensureTf }] = await Promise.all([
         import('$lib/shared/tf_examples'),
         import('$lib/shared/trueform-adapter'),
+        import('$lib/shared/trueform-client'),
       ]);
+      if (ac.signal.aborted) return;
+      // Warm the TrueForm kernel BEFORE timing so `tfMs` reflects the pure
+      // GEOMETRY-BUILD time (revolve/boolean), NOT the one-time ~31MB WASM
+      // download + pthread worker-pool init. ensureTf() is cached/idempotent,
+      // so build()'s internal ensureTf then returns instantly — the init cost
+      // is paid here, outside the timed window.
+      await ensureTf();
       if (ac.signal.aborted) return;
       const t0 = performance.now();
       // Mirror the Manifold cutaway: the SAME `scene.showCutaway` toggle drives a
