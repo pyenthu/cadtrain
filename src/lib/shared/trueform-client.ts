@@ -224,13 +224,58 @@ export async function tfBooleanDemo(opts: {
   return { data: tfMeshData(mesh), stats: tfAnalyze(tf, mesh) };
 }
 
-/** Which demo the TF tab renders. `box` is the original from-scratch primitive. */
-export type TfDemoKind = 'box' | 'sweep' | 'boolean';
+/**
+ * r_cyl — a shaft cylinder the REVOLVE way. `cylinderMesh(radius, height,
+ * segments)` is effectively a lathe of a rectangle profile → a CAPPED SOLID
+ * cylinder (closed, manifold, χ=2). The TF analogue of Manifold's r_revolve.
+ * Centred on the origin (z ∈ [−h/2, +h/2]).
+ */
+export async function tfRevolveCylDemo(opts: { radius?: number; height?: number; segments?: number } = {}): Promise<TfDemoResult> {
+  const tf = await ensureTf();
+  const t = tf as any;
+  const { radius = 3, height = 16, segments = 48 } = opts;
+  const mesh = t.cylinderMesh(radius, height, segments);
+  return { data: tfMeshData(mesh), stats: tfAnalyze(tf, mesh) };
+}
 
-/** Dispatch a TF-tab demo by kind. Returns mesh data (+ stats for sweep/boolean). */
+/**
+ * s_cyl — the SAME shaft cylinder the SWEEP way. `tubeMesh` sweeps a circular
+ * section straight up a vertical path. tubeMesh does NOT cap the ends, so this
+ * comes back OPEN (2 boundary loops, closed:false) — the instructive contrast
+ * with r_cyl's closed solid. Same radius/height so the two overlay for compare.
+ */
+export async function tfSweepCylDemo(opts: { radius?: number; height?: number; axialSegments?: number; radialSegments?: number } = {}): Promise<TfDemoResult> {
+  const tf = await ensureTf();
+  const t = tf as any;
+  const { radius = 3, height = 16, axialSegments = 2, radialSegments = 48 } = opts;
+  // Straight vertical path from −h/2 to +h/2 (match cylinderMesh centring).
+  const n = Math.max(2, axialSegments + 1);
+  const pts = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    pts[i * 3 + 0] = 0;
+    pts[i * 3 + 1] = 0;
+    pts[i * 3 + 2] = -height / 2 + (i / (n - 1)) * height;
+  }
+  const idx: number[] = [];
+  for (let i = 0; i < n; i++) idx.push(i);
+  const offsets = t.ndarray(new Int32Array([0, idx.length]), [2]);
+  const pathData = t.ndarray(new Int32Array(idx), [idx.length]);
+  const paths = t.offsetBlockedBuffer(offsets, pathData);
+  const crv = t.curves(paths, pts);
+  const mesh = t.tubeMesh(crv, radius, radialSegments);
+  return { data: tfMeshData(mesh), stats: tfAnalyze(tf, mesh) };
+}
+
+/** Which demo the TF tab renders. `box` is the original from-scratch primitive;
+ *  `r_cyl`/`s_cyl` are the same shaft built revolve-style vs sweep-style. */
+export type TfDemoKind = 'box' | 'sweep' | 'boolean' | 'r_cyl' | 's_cyl';
+
+/** Dispatch a TF-tab demo by kind. Returns mesh data + tf's topology verdict. */
 export async function tfDemo(kind: TfDemoKind): Promise<TfDemoResult> {
   if (kind === 'sweep') return tfSweepDemo();
   if (kind === 'boolean') return tfBooleanDemo();
+  if (kind === 'r_cyl') return tfRevolveCylDemo();
+  if (kind === 's_cyl') return tfSweepCylDemo();
   const tf = await ensureTf();
   const box = (tf as any).boxMesh(4, 4, 4);
   return { data: tfMeshData(box), stats: tfAnalyze(tf, box) };

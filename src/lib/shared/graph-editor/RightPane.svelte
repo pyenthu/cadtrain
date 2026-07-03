@@ -138,7 +138,7 @@
   // Which client-side TrueForm demo geometry the TF tab renders. TrueForm has no
   // revolve/loft/extrude — 'sweep' pipes a section along a helix (tubeMesh),
   // 'boolean' bores a pipe (booleanDifference), 'box' is the original primitive.
-  let tfDemoKind = $state<'box' | 'sweep' | 'boolean'>('sweep');
+  let tfDemoKind = $state<'box' | 'sweep' | 'boolean' | 'r_cyl' | 's_cyl'>('r_cyl');
   // Param name → current value (graph.params order ↔ bake.args / paramDefaults).
   let brepParamValues = $derived.by(() => {
     const vals = (bake?.args ?? paramDefaults) as number[];
@@ -512,6 +512,8 @@
           <div class="ge-tf-demo-row">
             <span class="ge-tf-demo-label">tf demo</span>
             <select class="ge-tf-demo-select" bind:value={tfDemoKind} aria-label="TrueForm demo geometry">
+              <option value="r_cyl">r_cyl (revolve — capped solid)</option>
+              <option value="s_cyl">s_cyl (sweep — open tube)</option>
               <option value="sweep">sweep (helix tube)</option>
               <option value="boolean">boolean (bored pipe)</option>
               <option value="box">box</option>
