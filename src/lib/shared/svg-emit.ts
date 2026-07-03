@@ -10,6 +10,7 @@
 // the shell + the full shading rationale.
 
 import * as THREE from 'three';
+import { triangleKeepMask } from '$lib/shared/svg-reduce';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -29,6 +30,11 @@ export interface SvgEmitOptions {
   lightAngle: number;
   /** Draw the black 20° crease/silhouette edge outline on top. */
   showEdges: boolean;
+  /** Back-face cull — drop triangles whose outward normal faces away from the
+   *  camera. TRUE only for a CLOSED solid mesh (visually identical, ~halves the
+   *  fill count); MUST be FALSE for the cutaway/open mesh (its exposed concave
+   *  inner walls legitimately face away yet are visible). */
+  backfaceCull: boolean;
   /** Above this many triangles → flat per-face fill (no gradients). */
   HIGH_TRI: number;
   /** Lighting terms: s = AMBIENT + KEY·max(0,n·L) + FILL·max(0,n·V), clamped 1. */
@@ -53,6 +59,8 @@ export interface SvgEmitResult {
   emitCount: number;
   /** True when the high-poly flat-fill fallback was taken (triCount > HIGH_TRI). */
   flatFill: boolean;
+  /** Source triangles skipped before emit — back-face-culled + degenerate. */
+  culledCount: number;
 }
 
 // 0..1 channel → 0..255, clamped.
@@ -79,7 +87,7 @@ export function emitSvg(
   opts: SvgEmitOptions,
 ): SvgEmitResult {
   const {
-    idPrefix, sX, sZ, lightAngle, showEdges, HIGH_TRI,
+    idPrefix, sX, sZ, lightAngle, showEdges, HIGH_TRI, backfaceCull,
     AMBIENT, KEY, FILL, DEF_R, DEF_G, DEF_B, DESAT, BRIGHT,
   } = opts;
 
@@ -160,6 +168,23 @@ export function emitSvg(
     if (idx) { a[t] = idx.getX(3 * t); b[t] = idx.getX(3 * t + 1); c[t] = idx.getX(3 * t + 2); }
     else { a[t] = 3 * t; b[t] = 3 * t + 1; c[t] = 3 * t + 2; }
   }
+
+  // ── Triangle reduction (pure) ─────────────────────────────────────────────
+  // Back-face cull (closed solid only) + drop degenerate triangles BEFORE the
+  // Phong subdivision, so every skipped face also drops its K×K sub-fills. The
+  // cull uses the BAKED outward vertex normals (same as the shader) tested
+  // against V (surface→camera), so it's winding-agnostic + consistent. Gated
+  // OFF for the cutaway via `backfaceCull` (its inner walls face away yet show).
+  const keep = triangleKeepMask(
+    {
+      triN, a, b, c,
+      pos: posAttr.array as ArrayLike<number>,
+      nrm: nrmAttr ? (nrmAttr.array as ArrayLike<number>) : undefined,
+    },
+    { view: [V.x, V.y, V.z], cull: backfaceCull },
+  );
+  const culledCount = triN - keep.kept;
+  const km = keep.mask;
 
   // ── Build the <svg> ──────────────────────────────────────────────────────
   const svg = document.createElementNS(SVG_NS, 'svg');
@@ -277,6 +302,7 @@ export function emitSvg(
   };
 
   for (let t = 0; t < triN; t++) {
+    if (!km[t]) continue; // back-face-culled or degenerate → skip (+ its sub-fills)
     const ia = a[t], ib = b[t], ic = c[t];
     // Base colour for THIS face = vertex a's colour (the cutaway bakes one flat
     // colour per face — all 3 verts equal — so vertex a IS the face colour).
@@ -438,5 +464,5 @@ export function emitSvg(
     svg.style.margin = '0 auto';
   }
 
-  return { svg, triCount: triN, emitCount, flatFill };
+  return { svg, triCount: triN, emitCount, flatFill, culledCount };
 }

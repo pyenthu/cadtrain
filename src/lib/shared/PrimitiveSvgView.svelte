@@ -256,6 +256,10 @@
       lightAngle,
       showEdges: scene.showEdges,
       HIGH_TRI,
+      // Back-face cull halves the fill count on a CLOSED solid (visually
+      // identical — occluded faces). OFF for the cutaway: its exposed inner
+      // walls face away from the lens yet must still render.
+      backfaceCull: !useCut,
       AMBIENT, KEY, FILL,
       DEF_R, DEF_G, DEF_B,
       DESAT, BRIGHT,
