@@ -13,9 +13,13 @@ describe('tf_examples registry', () => {
   // require touching this test. These core demos must always be present.
   const CORE = ['box', 'r_cyl', 's_cyl', 'helix', 'bored_pipe', 'dp_pin', 'cone'];
 
-  it('auto-lists at least the core demos (order-agnostic)', () => {
+  it('registry still RESOLVES the core demos + dropdown is dup-free', () => {
+    // The dropdown list (tfExamples) is filtered by excluded.ts (ONLY allow-list /
+    // EXCLUDED set), so core demos may be HIDDEN from the picker — but they must
+    // stay RESOLVABLE via getTfExample (the registry keeps every builder).
+    for (const n of CORE) expect(getTfExample(n), `registry missing ${n}`).toBeTruthy();
     const names = tfExamples.map((e) => e.name);
-    for (const n of CORE) expect(names, `registry missing ${n}`).toContain(n);
+    expect(names.length, 'dropdown is empty').toBeGreaterThan(0);
     expect(new Set(names).size).toBe(names.length); // no duplicate names
   });
 
