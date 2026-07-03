@@ -1,0 +1,180 @@
+{
+  "meta": {
+    "wellName": "SAMPLE-5 ESP-equipped Producer",
+    "rkbToGl": 8,
+    "td": 1800,
+    "pbtd": 1790,
+    "location": {
+      "x": 334780,
+      "y": 4262580,
+      "crs": "UTM 12N",
+      "lon": -112.886,
+      "lat": 38.489
+    },
+    "_wellType": "producer"
+  },
+  "oh": [
+    {
+      "bitSize": 26,
+      "top": 0,
+      "bot": 80
+    },
+    {
+      "bitSize": 17.5,
+      "top": 80,
+      "bot": 400
+    },
+    {
+      "bitSize": 12.25,
+      "top": 400,
+      "bot": 1800
+    }
+  ],
+  "ch": [
+    {
+      "od": 20,
+      "id": 19.124,
+      "top": 0,
+      "bot": 80,
+      "grade": "K55",
+      "weight": 94,
+      "type": "conductor"
+    },
+    {
+      "od": 13.375,
+      "id": 12.415,
+      "top": 0,
+      "bot": 400,
+      "grade": "K55",
+      "weight": 54.5,
+      "type": "surface"
+    },
+    {
+      "od": 9.625,
+      "id": 8.681,
+      "top": 0,
+      "bot": 1800,
+      "grade": "L80",
+      "weight": 47,
+      "type": "production"
+    }
+  ],
+  "perforations": [
+    {
+      "top": 1750,
+      "bot": 1780,
+      "label": "Main reservoir"
+    }
+  ],
+  "completions": [
+    {
+      "description": "Tubing Hanger (Completions)",
+      "tool_comp": "tbgHanger",
+      "od": 8.681,
+      "top": 0,
+      "bot": 0.5
+    },
+    {
+      "description": "Tubing Joints",
+      "tool_comp": "MISC.TUBING",
+      "od": 4.5,
+      "top": 0.5,
+      "bot": 1350
+    },
+    {
+      "description": "Y-Tool (for ESP bypass \u2014 placeholder, not in catalogue)",
+      "tool_comp": "MISC.TUBING",
+      "od": 4.5,
+      "top": 1350,
+      "bot": 1352
+    },
+    {
+      "description": "ESP Discharge Head (placeholder)",
+      "tool_comp": "MISC.TUBING",
+      "od": 4.5,
+      "top": 1352,
+      "bot": 1354
+    },
+    {
+      "description": "ESP Pump (placeholder, 100 stages)",
+      "tool_comp": "MISC.TUBING",
+      "od": 4.5,
+      "top": 1354,
+      "bot": 1360
+    },
+    {
+      "description": "ESP Gas Separator + Intake (placeholder)",
+      "tool_comp": "MISC.TUBING",
+      "od": 4.5,
+      "top": 1360,
+      "bot": 1362
+    },
+    {
+      "description": "ESP Seal Section (placeholder)",
+      "tool_comp": "MISC.TUBING",
+      "od": 4.5,
+      "top": 1362,
+      "bot": 1365
+    },
+    {
+      "description": "ESP Motor (placeholder)",
+      "tool_comp": "MISC.TUBING",
+      "od": 4.5,
+      "top": 1365,
+      "bot": 1375
+    },
+    {
+      "description": "MLE (placeholder)",
+      "tool_comp": "MISC.TUBING",
+      "od": 4.5,
+      "top": 1375,
+      "bot": 1377
+    },
+    {
+      "description": "Perforated Pup (tail pipe)",
+      "tool_comp": "MISC.PUP_PERF",
+      "od": 4.5,
+      "top": 1377,
+      "bot": 1400
+    }
+  ],
+  "cementing": [
+    {
+      "od": 20,
+      "top": 0,
+      "bot": 80
+    },
+    {
+      "od": 13.375,
+      "top": 0,
+      "bot": 400
+    },
+    {
+      "od": 9.625,
+      "top": 1000,
+      "bot": 1800
+    }
+  ],
+  "profile": [
+    {
+      "md": 0,
+      "dev": 0,
+      "az": 0
+    },
+    {
+      "md": 800,
+      "dev": 0,
+      "az": 0
+    },
+    {
+      "md": 1200,
+      "dev": 30,
+      "az": 90
+    },
+    {
+      "md": 1980,
+      "dev": 30,
+      "az": 90
+    }
+  ]
+}
