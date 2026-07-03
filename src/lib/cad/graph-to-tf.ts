@@ -485,8 +485,25 @@ function lowerNode(
     case 'list':
     case 'group':
     case 'stack': {
-      const children = ((node as any).children as NodeId[]).map(ref);
-      return { op: 'union', children, ...(node.type === 'stack' ? { mated: true } : {}) };
+      const isStack = node.type === 'stack';
+      const childIds = ((node as any).children as NodeId[]) ?? [];
+      // PER-CHILD COUNT (×N): a child listed in this container's `childCounts` is
+      // repeated N times — mirroring composition-emit's
+      // `...Array(N).fill(0).map(() => withStackRef(child, ref))`. In a STACK
+      // container the copies stack END-TO-END down +Z (`repeat` mode 'stack'), so
+      // the executor's buildMatedStack places them by Z-extent instead of piling
+      // them all at the shared local origin (the g_dp_stand overlap-at-origin bug).
+      // A count of 1 (or an absent entry) lowers the child directly, unchanged.
+      const childCounts = (node as any).childCounts as Record<NodeId, ArgValue> | undefined;
+      const children = childIds.map((cid) => {
+        const inst = ref(cid);
+        const count = childCounts ? evalInt(childCounts[cid], scope, 1) : 1;
+        if (count > 1) {
+          return { op: 'repeat' as const, count, child: inst, ...(isStack ? { mode: 'stack' } : {}) };
+        }
+        return inst;
+      });
+      return { op: 'union', children, ...(isStack ? { mated: true } : {}) };
     }
 
     case 'mv': {
