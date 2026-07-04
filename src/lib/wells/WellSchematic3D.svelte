@@ -265,8 +265,10 @@
       const od = tb.od ?? 2.875, id = od * 0.85;
       const top = remap(tb.top), bot = remap(tb.bot);
       const innerR = (id * diaScale) / 2, outerR = (od * diaScale) / 2;
+      // Completion (tubing) → 90° quarter WEDGE cut (270° stays intact) so the
+      // jewelry reads whole with a notch to the bore — richer than SVTC's uniform 180°.
       tubing = cutActive
-        ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_TUBING, {}, wellDir, cutAzimuth))
+        ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_TUBING, {}, wellDir, cutAzimuth, 90))
         : cutPending ? null : shellForRange(top, bot, innerR, outerR);
     }
 
@@ -389,7 +391,9 @@
       const built = key ? parametricGeoms[key] : undefined;
       if (built) return { ...m, parametricGeom: built.geom };
       if (!cutActive) return { ...m, parametricGeom: null, geom: null };
-      const geom = safe(() => cutCylinder(m.top, m.bot, m.radius, cutAxis, rgb(m.color), {}, wellDir, cutAzimuth));
+      // Completion component (packer / nipple / mule shoe / ICD …) → 90° quarter
+      // WEDGE (270° stays) so the component reads whole with a notch to the bore.
+      const geom = safe(() => cutCylinder(m.top, m.bot, m.radius, cutAxis, rgb(m.color), {}, wellDir, cutAzimuth, 90));
       return { ...m, parametricGeom: null, geom };
     }));
 

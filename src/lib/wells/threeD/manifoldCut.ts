@@ -94,7 +94,7 @@ export async function initManifold(): Promise<any> {
 
 export function isManifoldReady(): boolean { return _wasm !== null; }
 
-// ── Internal: build the half-space cutter cube ──────────────────────────────
+// ── Internal: build the half-space cutter cube (180° — removes one HALF) ──────
 function cutterBox(cutAxis: string) {
   const { Manifold } = _wasm;
   const BIG = 1e5;
@@ -107,12 +107,42 @@ function cutterBox(cutAxis: string) {
   return Manifold.cube([BIG * 2, BIG * 2, BIG]).translate([-BIG, -BIG, -BIG]);
 }
 
+// The second axis paired with the primary `cutAxis` to carve a 90° WEDGE. The
+// removed region is the INTERSECTION of the two half-spaces (one quadrant) so
+// subtracting it leaves 270° of the solid — the completion reads whole with a
+// notch to the bore. Pairing keeps the notch straddling the same primary plane
+// the 180° cut uses (x→[x,y], y→[y,x], z→[z,x]).
+function quadrantAxes(cutAxis: string): [string, string] {
+  if (cutAxis === 'y') return ['y', 'x'];
+  if (cutAxis === 'z') return ['z', 'x'];
+  return ['x', 'y'];
+}
+
+// ── Internal: build the 90° quadrant cutter (removes ONE quarter — 270° stays)
+// = the intersection of two orthogonal half-space boxes. Subtracting it removes
+// a 90° wedge, exposing TWO flat cut faces (one on each half-space plane).
+function cutterQuadrant(cutAxis: string) {
+  const [a, b] = quadrantAxes(cutAxis);
+  return cutterBox(a).intersect(cutterBox(b));
+}
+
+/** The 3D cutter for a given cut angle (180 = half-space, 90 = quadrant wedge). */
+function cutterFor(cutAxis: string, cutDeg: number) {
+  return cutDeg === 90 ? cutterQuadrant(cutAxis) : cutterBox(cutAxis);
+}
+
+/** The axis (or axes) whose plane(s) carry the grey cut face for a cut angle.
+ *  180° exposes one plane (cutAxis); 90° exposes both quadrant planes. */
+function cutFaceAxes(cutAxis: string, cutDeg: number): string | string[] {
+  return cutDeg === 90 ? quadrantAxes(cutAxis) : cutAxis;
+}
+
 // ── Internal: manifold → THREE with vertex colors on the cut face ────────────
 // `cutColor` default is a neutral grey; override per-primitive (cement uses a
 // beige so the cross-section reads as cement, not steel). `cutVariance` (0..1)
 // adds per-triangle hash-based brightness jitter so cement reads as aggregate.
 function manifoldToColoredGeo(
-  manifold: any, cutAxis: string, mainColor: number[],
+  manifold: any, cutAxis: string | string[], mainColor: number[],
   cutColor: number[] = [0.62, 0.62, 0.66], cutVariance = 0,
 ): THREE.BufferGeometry {
   const mesh = manifold.getMesh();
@@ -122,7 +152,10 @@ function manifoldToColoredGeo(
   const nt = tri.length / 3;
   const outPos = new Float32Array(nt * 9);
   const outCol = new Float32Array(nt * 9);
-  const axIdx = cutAxis === 'x' ? 0 : cutAxis === 'y' ? 1 : 2;
+  // A triangle is a cut face when all 3 verts lie on ANY exposed cut plane.
+  // 180° cuts expose one plane; the 90° quadrant wedge exposes two.
+  const axIdxs = (Array.isArray(cutAxis) ? cutAxis : [cutAxis])
+    .map((a) => (a === 'x' ? 0 : a === 'y' ? 1 : 2));
   const EPS = 1;
   const [mr, mg, mb] = mainColor;
   const [cr0, cg0, cb0] = cutColor;
@@ -134,10 +167,13 @@ function manifoldToColoredGeo(
     outPos[i * 9 + 0] = ax; outPos[i * 9 + 1] = ay; outPos[i * 9 + 2] = az;
     outPos[i * 9 + 3] = bx; outPos[i * 9 + 4] = by; outPos[i * 9 + 5] = bz;
     outPos[i * 9 + 6] = cx; outPos[i * 9 + 7] = cy; outPos[i * 9 + 8] = cz;
-    const av = axIdx === 0 ? ax : axIdx === 1 ? ay : az;
-    const bv = axIdx === 0 ? bx : axIdx === 1 ? by : bz;
-    const cv = axIdx === 0 ? cx : axIdx === 1 ? cy : cz;
-    const isCut = Math.abs(av) < EPS && Math.abs(bv) < EPS && Math.abs(cv) < EPS;
+    let isCut = false;
+    for (const axIdx of axIdxs) {
+      const av = axIdx === 0 ? ax : axIdx === 1 ? ay : az;
+      const bv = axIdx === 0 ? bx : axIdx === 1 ? by : bz;
+      const cv = axIdx === 0 ? cx : axIdx === 1 ? cy : cz;
+      if (Math.abs(av) < EPS && Math.abs(bv) < EPS && Math.abs(cv) < EPS) { isCut = true; break; }
+    }
     let r, g, b2;
     if (isCut) {
       r = cr0; g = cg0; b2 = cb0;
@@ -332,45 +368,48 @@ function resolveAzimuthDeg(cutAxis: string, cutAzimuthDeg: number): number {
 /** Solid cylinder along Z from z=top to z=bot, with the chosen half removed. */
 export function cutCylinder(
   top: number, bot: number, radius: number, cutAxis: string, mainColor: number[],
-  style: any = {}, wellDir: WellDirection | null = null, cutAzimuthDeg = 0,
+  style: any = {}, wellDir: WellDirection | null = null, cutAzimuthDeg = 0, cutDeg = 180,
 ): THREE.BufferGeometry | null {
   if (!_wasm) throw new Error('manifold-3d not initialised');
   const { Manifold, CrossSection } = _wasm;
   const len = bot - top;
   if (!(len > 0) || !(radius > 0)) return null;
 
-  // Vertical-well fast path — Manifold.cylinder + axis-aligned cutterBox.
+  // Vertical-well fast path — Manifold.cylinder + axis-aligned cutter
+  // (cutterBox=180° half, cutterQuadrant=90° wedge).
   if (!hasRealDeviation(wellDir)) {
     let t = _now();
     const cyl = Manifold.cylinder(len, radius, radius, 64).translate([0, 0, top]);
     _timing.solid += _now() - t; _timing.builds++;
     t = _now();
-    const result = cyl.subtract(cutterBox(cutAxis));
+    const result = cyl.subtract(cutterFor(cutAxis, cutDeg));
     _timing.cutaway += _now() - t; _timing.csgOps++;
     t = _now();
-    const g = manifoldToColoredGeo(result, cutAxis, mainColor, style.cutColor, style.cutVariance);
+    const g = manifoldToColoredGeo(result, cutFaceAxes(cutAxis, cutDeg), mainColor, style.cutColor, style.cutVariance);
     _timing.extract += _now() - t;
     return g;
   }
 
-  // Strategy E (deviated wells) — build the HALF cross-section in 2D, extrude
-  // it directly. The flat side of the half-disc becomes the cut face; every
-  // X=0 vertex maps to the wellbore centerline under warpGeometry so the cut
-  // face follows the tangent automatically.
-  // The half-section 2D intersect IS the cutaway (it carves the flat section
-  // face); charge it to `cutaway` — like the vertical-path cutterBox subtract —
-  // so the diagnostic badge honestly reflects that a cut ran on deviated wells
-  // (otherwise a deviated cutaway misreports "cutaway 0ms").
+  // Strategy E (deviated wells) — build the cross-section in 2D, extrude it
+  // directly. The flat side(s) of the disc become the cut face; every X=0 vertex
+  // maps to the wellbore centerline under warpGeometry so the cut face follows
+  // the tangent automatically. 180° keeps HALF (intersect a half-plane); 90°
+  // keeps 270° (subtract one quadrant square) so completions read whole.
+  // The 2D boolean IS the cutaway (it carves the flat section face); charge it to
+  // `cutaway` — like the vertical-path subtract — so the badge honestly reflects
+  // that a cut ran on deviated wells (else it misreports "cutaway 0ms").
   let t = _now();
-  const halfCircle = CrossSection.circle(radius, 64).intersect(
-    CrossSection.square([radius * 3, radius * 3], true).translate([-radius * 1.5, 0])
-  );
-  _timing.cutaway += _now() - t; _timing.csgOps++; // half-section = 1 CSG cut
+  const section = cutDeg === 90
+    ? CrossSection.circle(radius, 64).subtract(
+        CrossSection.square([radius * 3, radius * 3], true).translate([-radius * 1.5, -radius * 1.5]))
+    : CrossSection.circle(radius, 64).intersect(
+        CrossSection.square([radius * 3, radius * 3], true).translate([-radius * 1.5, 0]));
+  _timing.cutaway += _now() - t; _timing.csgOps++; // section boolean = 1 CSG cut
   t = _now();
-  const cyl = Manifold.extrude(halfCircle, len, boreNDivisions(len)).translate([0, 0, top]);
+  const cyl = Manifold.extrude(section, len, boreNDivisions(len)).translate([0, 0, top]);
   _timing.solid += _now() - t; _timing.builds++;
   t = _now();
-  const geo = manifoldToColoredGeo(cyl, 'x', mainColor, style.cutColor, style.cutVariance);
+  const geo = manifoldToColoredGeo(cyl, cutFaceAxes('x', cutDeg), mainColor, style.cutColor, style.cutVariance);
   _timing.extract += _now() - t;
   const azDeg = resolveAzimuthDeg(cutAxis, cutAzimuthDeg);
   if (azDeg % 360 !== 0) geo.rotateZ((azDeg * Math.PI) / 180);
@@ -381,14 +420,14 @@ export function cutCylinder(
  *  removed. innerR=0 collapses to a solid cylinder. */
 export function cutTube(
   top: number, bot: number, innerR: number, outerR: number, cutAxis: string, mainColor: number[],
-  style: any = {}, wellDir: WellDirection | null = null, cutAzimuthDeg = 0,
+  style: any = {}, wellDir: WellDirection | null = null, cutAzimuthDeg = 0, cutDeg = 180,
 ): THREE.BufferGeometry | null {
   if (!_wasm) throw new Error('manifold-3d not initialised');
   const { Manifold, CrossSection } = _wasm;
   const len = bot - top;
   if (!(len > 0) || !(outerR > innerR) || !(innerR >= 0)) return null;
 
-  // Vertical-well fast path.
+  // Vertical-well fast path (cutterBox=180° half, cutterQuadrant=90° wedge).
   if (!hasRealDeviation(wellDir)) {
     let t = _now();
     const outer = Manifold.cylinder(len, outerR, outerR, 64);
@@ -396,38 +435,44 @@ export function cutTube(
     _timing.solid += _now() - t; _timing.builds += 2;
     t = _now();
     const ring = outer.subtract(inner).translate([0, 0, top]);
-    const result = ring.subtract(cutterBox(cutAxis));
-    _timing.cutaway += _now() - t; _timing.csgOps += 2; // annulus hollow-out + half-space cut
+    const result = ring.subtract(cutterFor(cutAxis, cutDeg));
+    _timing.cutaway += _now() - t; _timing.csgOps += 2; // annulus hollow-out + cut
     t = _now();
-    const g = manifoldToColoredGeo(result, cutAxis, mainColor, style.cutColor, style.cutVariance);
+    const g = manifoldToColoredGeo(result, cutFaceAxes(cutAxis, cutDeg), mainColor, style.cutColor, style.cutVariance);
     _timing.extract += _now() - t;
     return g;
   }
 
-  // Strategy E (deviated wells) — half-annular 2D CrossSection extrude. The two
-  // flat sides of the half-annulus become extruded walls triangulated at ring
-  // density; no 3D cutterBox, no coincident caps, no fins on deviated wells.
+  // Strategy E (deviated wells) — annular 2D CrossSection extrude. The flat
+  // side(s) of the section become extruded walls triangulated at ring density;
+  // no 3D cutterBox, no coincident caps, no fins on deviated wells. 180° keeps
+  // HALF (intersect a half-plane); 90° keeps 270° (subtract one quadrant square)
+  // so completion tubing reads mostly whole along the trajectory.
   let t = _now();
-  const halfPlane = CrossSection.square([outerR * 3, outerR * 3], true)
-                                .translate([-outerR * 1.5, 0]);
-  const outerHalf = CrossSection.circle(outerR, 64).intersect(halfPlane);
-  let halfRingCs;
-  let ops = 1; // outerHalf intersect
+  const keep = (r: number) =>
+    cutDeg === 90
+      ? CrossSection.circle(r, 64).subtract(
+          CrossSection.square([outerR * 3, outerR * 3], true).translate([-outerR * 1.5, -outerR * 1.5]))
+      : CrossSection.circle(r, 64).intersect(
+          CrossSection.square([outerR * 3, outerR * 3], true).translate([-outerR * 1.5, 0]));
+  const outerSec = keep(outerR);
+  let ringCs;
+  let ops = 1; // outer section boolean
   if (innerR > 0) {
-    const innerHalf = CrossSection.circle(innerR, 64).intersect(halfPlane);
-    halfRingCs = outerHalf.subtract(innerHalf);
-    ops += 2; // innerHalf intersect + annulus subtract
+    const innerSec = keep(innerR);
+    ringCs = outerSec.subtract(innerSec);
+    ops += 2; // inner section boolean + annulus subtract
   } else {
-    halfRingCs = outerHalf;
+    ringCs = outerSec;
   }
-  // The half-annulus 2D booleans ARE the cutaway (they carve the flat section
+  // The annular 2D booleans ARE the cutaway (they carve the flat section
   // face) — charge them to `cutaway`, not `solid`, so the badge is honest.
   _timing.cutaway += _now() - t; _timing.csgOps += ops;
   t = _now();
-  const ring = Manifold.extrude(halfRingCs, len, boreNDivisions(len)).translate([0, 0, top]);
+  const ring = Manifold.extrude(ringCs, len, boreNDivisions(len)).translate([0, 0, top]);
   _timing.solid += _now() - t; _timing.builds++;
   t = _now();
-  const geo = manifoldToColoredGeo(ring, 'x', mainColor, style.cutColor, style.cutVariance);
+  const geo = manifoldToColoredGeo(ring, cutFaceAxes('x', cutDeg), mainColor, style.cutColor, style.cutVariance);
   _timing.extract += _now() - t;
   const azDeg = resolveAzimuthDeg(cutAxis, cutAzimuthDeg);
   if (azDeg % 360 !== 0) geo.rotateZ((azDeg * Math.PI) / 180);

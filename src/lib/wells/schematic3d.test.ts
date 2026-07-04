@@ -211,6 +211,70 @@ describe('manifold geometry — sample WSON features', () => {
     expect(grey, 'grey cut-face triangles present (cross-section, not a solid)').toBeGreaterThan(0);
   }, 30000);
 
+  it('differential cutaway — outer strings cut 180° (½ vol), completions 90° (¾ vol)', () => {
+    // Enhancement over SVTC's uniform 180°: outer well layers lose a full HALF
+    // (annular cross-section), completions lose only a 90° WEDGE so the jewelry
+    // reads whole (270° stays). Same tube geometry, two cut angles.
+    // Signed-tetrahedron volume of a watertight non-indexed triangle soup.
+    function meshVolume(geo: THREE.BufferGeometry): number {
+      const pos = geo.getAttribute('position').array as ArrayLike<number>;
+      let v = 0;
+      for (let i = 0; i < pos.length; i += 9) {
+        const ax = pos[i],     ay = pos[i + 1], az = pos[i + 2];
+        const bx = pos[i + 3], by = pos[i + 4], bz = pos[i + 5];
+        const cx = pos[i + 6], cy = pos[i + 7], cz = pos[i + 8];
+        v += ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx);
+      }
+      return Math.abs(v) / 6;
+    }
+    function countCutFaceGreys(geo: THREE.BufferGeometry): number {
+      const col = geo.getAttribute('color');
+      let grey = 0;
+      for (let i = 0; i < col.count; i++) {
+        const r = col.getX(i), g = col.getY(i), b = col.getZ(i);
+        if (Math.abs(r - g) < 0.15 && Math.abs(g - b) < 0.15 && r > 0.4 && r < 0.8) grey++;
+      }
+      return grey;
+    }
+
+    const R = 20, r = 10, top = 0, bot = 100;
+    const fullVol = Math.PI * (R * R - r * r) * (bot - top); // ideal annular shell
+
+    // 180° — outer-string cut (vertical fast-path, distinct RED wall color).
+    beginWellTiming();
+    const g180 = cutTube(top, bot, r, R, 'x', [0.9, 0.1, 0.1], {}, null, 0, 180)!;
+    const t180 = readWellTiming();
+    // 90° — completion wedge, SAME tube.
+    beginWellTiming();
+    const g90 = cutTube(top, bot, r, R, 'x', [0.9, 0.1, 0.1], {}, null, 0, 90)!;
+    const t90 = readWellTiming();
+
+    expect(g180).not.toBeNull();
+    expect(g90).not.toBeNull();
+
+    const v180 = meshVolume(g180), v90 = meshVolume(g90);
+    // 180° keeps HALF the shell; 90° keeps THREE QUARTERS (270°).
+    expect(v180 / fullVol, '180° ≈ ½ volume').toBeGreaterThan(0.45);
+    expect(v180 / fullVol, '180° ≈ ½ volume').toBeLessThan(0.55);
+    expect(v90 / fullVol, '90° ≈ ¾ volume').toBeGreaterThan(0.70);
+    expect(v90 / fullVol, '90° ≈ ¾ volume').toBeLessThan(0.80);
+    // Direct ratio: ¾ ÷ ½ = 1.5 — the wedge keeps 50% MORE material than the half.
+    expect(v90 / v180, '90°/180° ≈ 1.5').toBeGreaterThan(1.35);
+    expect(v90 / v180, '90°/180° ≈ 1.5').toBeLessThan(1.65);
+
+    // Distinct bbox: 180° removes the whole x<0 half → min.x ≈ 0; 90° removes
+    // only the x<0∧y<0 quadrant → x still reaches −R (an asymmetric notch, not a half).
+    g180.computeBoundingBox(); g90.computeBoundingBox();
+    expect(g180.boundingBox!.min.x, '180° half → min.x ≈ 0').toBeGreaterThan(-1);
+    expect(g90.boundingBox!.min.x, '90° notch → x still reaches −R').toBeLessThan(-R * 0.8);
+
+    // Both are genuine cutaways: grey cut-face tris + CSG ran.
+    expect(countCutFaceGreys(g180), '180° grey cut face').toBeGreaterThan(0);
+    expect(countCutFaceGreys(g90), '90° grey cut face').toBeGreaterThan(0);
+    expect(t180.csgOps, '180° csgOps>0').toBeGreaterThan(0);
+    expect(t90.csgOps, '90° csgOps>0').toBeGreaterThan(0);
+  });
+
   it('builds a perforation cutSphere at the perf midpoint', () => {
     const p = sample9.wson.perforations![0];
     const dir = buildWellDirection(sample9.wson.profile, sample9.wson.meta.td!);
