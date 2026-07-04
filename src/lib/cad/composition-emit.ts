@@ -361,6 +361,10 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     // opaque part stays byte-identical. External readers (well schematic) can
     // read the transparency without parsing meta.graph.
     ...(typeof graph.opacity === 'number' && graph.opacity < 1 ? { opacity: graph.opacity } : {}),
+    // Named material TEXTURE (G-MAT2) — sparse top-level mirror. Emitted only
+    // when a non-empty name is set so an un-textured part stays byte-identical.
+    // External readers can pick up the material without parsing meta.graph.
+    ...(typeof graph.texture === 'string' && graph.texture.trim() ? { texture: graph.texture.trim() } : {}),
     // Editor VIEW scale (VIEW-ONLY) — sparse top-level mirror of the values in
     // the serialised graph block. Present only when a MANUAL scale was saved.
     ...(graph.viewZScale != null ? { viewZScale: graph.viewZScale } : {}),
@@ -1063,6 +1067,9 @@ function serialiseGraph(graph: Graph): Record<string, unknown> {
     // Render OPACITY (0–1) — sparse so legacy/opaque files stay byte-identical.
     // hydrateGraph reads this back into graph.opacity.
     ...(typeof graph.opacity === 'number' && graph.opacity < 1 ? { opacity: graph.opacity } : {}),
+    // Named material TEXTURE (G-MAT2) — sparse so un-textured files stay byte-
+    // identical. hydrateGraph reads this back into graph.texture.
+    ...(typeof graph.texture === 'string' && graph.texture.trim() ? { texture: graph.texture.trim() } : {}),
     // Editor VIEW scale (VIEW-ONLY) — sparse so legacy files stay byte-identical.
     // hydrateGraph reads these back into graph.viewZScale / graph.viewXScale.
     ...(graph.viewZScale != null ? { viewZScale: graph.viewZScale } : {}),

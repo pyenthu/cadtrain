@@ -286,6 +286,12 @@ export function hydrateGraph(serialised: any): Graph {
   const opacityOrUndef = (v: any) =>
     (typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 1) ? v : undefined;
   const savedOpacity = opacityOrUndef((serialised as any).opacity);
+  // Named material TEXTURE (G-MAT2, VIEW-ONLY). Sparse: restore only a non-empty
+  // string so un-textured files stay undefined (= no map). Unknown names are
+  // tolerated here (getMaterialTexture resolves them to undefined at render).
+  const textureOrUndef = (v: any) =>
+    (typeof v === 'string' && v.trim() && v.trim() !== 'none') ? v.trim() : undefined;
+  const savedTexture = textureOrUndef((serialised as any).texture);
   // Per-part appearance overrides (sparse, keyed by node id). Sanitise each
   // entry's fields the same way as the part-level colours.
   const savedPartAppearance = (() => {
@@ -300,6 +306,7 @@ export function hydrateGraph(serialised: any): Graph {
       const m = typeof v.material === 'string' ? v.material.trim() : '';
       if (m && m !== 'none') e.material = m;
       if (typeof v.opacity === 'number' && Number.isFinite(v.opacity) && v.opacity > 0 && v.opacity < 1) e.opacity = v.opacity;
+      const tx = textureOrUndef(v.texture); if (tx) e.texture = tx;
       if (Object.keys(e).length) out[id] = e;
     }
     return Object.keys(out).length ? out : undefined;
@@ -399,6 +406,7 @@ export function hydrateGraph(serialised: any): Graph {
     ...(savedColorInner ? { colorInner: savedColorInner } : {}),
     ...(savedMaterial ? { material: savedMaterial } : {}),
     ...(savedOpacity != null ? { opacity: savedOpacity } : {}),
+    ...(savedTexture ? { texture: savedTexture } : {}),
     ...(savedViewZScale != null ? { viewZScale: savedViewZScale } : {}),
     ...(savedViewXScale != null ? { viewXScale: savedViewXScale } : {}),
     ...(savedPartAppearance ? { partAppearance: savedPartAppearance } : {}),
