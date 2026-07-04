@@ -99,6 +99,55 @@ export function topLevelOf(path: string): string {
   return path ? (path.split('/')[0] ?? '') : '';
 }
 
+/** Built-in folders that can't be MOVED as a source (they anchor the sidebar
+ *  layout). Kept in sync with the server's PROTECTED set in
+ *  `/api/primitives/folder/move`. */
+export const FOLDER_PROTECTED_ROOTS = new Set(['basic', 'completions', 'archive', 'profiles']);
+/** Reserved top-level buckets — never a valid folder-move source OR target.
+ *  Kept in sync with the server's INTERNAL set in `/api/primitives/folder/move`. */
+export const FOLDER_INTERNAL_TOPS = new Set(['archive', 'stdlib', 'stdstale', 'profiles']);
+/** 1–3 segments of [a-z][a-z0-9_]* — the server's folder-move PATH_RE. */
+const FOLDER_PATH_RE = /^[a-z][a-z0-9_]*(\/[a-z][a-z0-9_]*){0,2}$/i;
+
+/** True when `maybe` is `ancestor` itself or nested underneath it. Segment-aware
+ *  so `basic/foo` is NOT reported as under `basic/foobar` (a raw `startsWith`
+ *  would get that wrong). Used to reject dropping a folder into its own subtree. */
+export function isPathAtOrUnder(ancestor: string, maybe: string): boolean {
+  if (!ancestor) return true; // the root contains everything
+  return maybe === ancestor || maybe.startsWith(`${ancestor}/`);
+}
+
+/** Pure validity + destination for dropping FOLDER `from` INTO folder `to`
+ *  (nesting): the moved folder becomes `${to}/${leaf(from)}`. Returns
+ *  `{ ok, dest, reason? }`. Mirrors every guard in the server's
+ *  `/api/primitives/folder/move` so an invalid drop never fires a doomed
+ *  request AND the drop-target highlight only appears on legal targets:
+ *    - both paths must be 1–3 segment volume folder paths,
+ *    - `from` can't be a built-in root (basic/completions/archive/profiles),
+ *    - neither top segment may be an internal bucket (archive/stdlib/stdstale/profiles),
+ *    - `to` can't be `from` itself or anywhere inside `from`'s subtree,
+ *    - the result can't already be where `from` lives (drop onto its own parent = no-op),
+ *    - the nested result can't exceed the 3-segment depth limit.
+ *  `reason === 'already there'` is the benign no-op case (silent). */
+export function folderMoveInto(from: string, to: string): { ok: boolean; dest: string; reason?: string } {
+  const bad = (reason: string) => ({ ok: false, dest: '', reason });
+  if (!from || !to) return bad('missing path');
+  if (!FOLDER_PATH_RE.test(from)) return bad(`"${from}" is not a movable folder`);
+  if (!FOLDER_PATH_RE.test(to)) return bad(`"${to}" is not a valid destination folder`);
+  if (FOLDER_PROTECTED_ROOTS.has(from.toLowerCase())) return bad(`"${from}" is a built-in folder and can't be moved`);
+  const fromTop = from.split('/')[0].toLowerCase();
+  const toTop = to.split('/')[0].toLowerCase();
+  if (FOLDER_INTERNAL_TOPS.has(fromTop)) return bad(`"${from}" is internal (archive / stdlib / stale) and can't be moved`);
+  if (FOLDER_INTERNAL_TOPS.has(toTop)) return bad(`"${to}" is an internal bucket — not a drop target`);
+  // Dropping a folder onto itself or into its own descendant would orphan it.
+  if (isPathAtOrUnder(from, to)) return bad(`can't move "${from}" into itself or its own subtree`);
+  const leaf = from.split('/').pop()!;
+  const dest = `${to}/${leaf}`;
+  if (dest === from) return bad('already there'); // dropped back onto its current parent
+  if (dest.split('/').length > 3) return bad('nesting too deep (max 3 levels)');
+  return { ok: true, dest };
+}
+
 /** Insert an (empty) folder at `path` into `tree`, creating any missing
  *  intermediate nodes. Returns true when the tree actually gained a node (the
  *  path was absent); false when every segment already existed. MUTATES `tree`

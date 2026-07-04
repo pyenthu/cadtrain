@@ -28,6 +28,7 @@
     type Entry, type FolderNode, MOVE_TARGET_RE,
     tabLabel, subtreeCount, subtreeMatches, sortFolders, nodeAt, findPartDir,
     isMoveTarget, topLevelOf, ensureFolderPath,
+    folderMoveInto, FOLDER_PROTECTED_ROOTS,
   } from './primitives-tree';
 
   /** Same regex the server uses for primitive ids — keep them in sync.
@@ -516,10 +517,17 @@
   // MOVE_TARGET_RE → ./primitives-tree. findPartDir(tree, id) likewise.
   const PRIM_DND = 'application/x-cadtrain-prim';       // payload = the part id (also read by the canvas drop)
   const PRIM_DND_FROM = 'application/x-cadtrain-prim-from'; // payload = JSON { kind, dir } source meta
+  const FOLDER_DND = 'application/x-cadtrain-folder';   // payload = the dragged folder's path (nest-into-folder)
 
   let moveBusy = $state<string | null>(null);
-  /** Folder/tab path currently under a part-drag (drop-target highlight). */
+  /** Folder/tab path currently under a part- OR folder-drag (drop-target highlight). */
   let dragOverPath = $state<string | null>(null);
+  /** The folder path currently being dragged. `dataTransfer.getData` is empty
+   *  during `dragover` (only readable on `drop`), so we stash the source here on
+   *  dragstart to validate the highlight live. Cleared on dragend/drop. */
+  let folderDragFrom = $state<string | null>(null);
+  /** Folder-move in flight (source path) — disables its ⋯ while moving. */
+  let folderMoveBusy = $state<string | null>(null);
 
   /** Optimistically relocate the entry between tree nodes (the proxied /list
    *  lags writes — memory prod_list_staleness). loadList reconciles after. */
@@ -610,17 +618,46 @@
   function isDropTarget(path: string, kind: string): boolean {
     return (kind === 'volume' || kind === 'archive') && MOVE_TARGET_RE.test(path);
   }
+  /** A folder can RECEIVE a dragged folder only if it's a volume folder and the
+   *  nest is structurally legal (see folderMoveInto — self/descendant/no-op/depth
+   *  guards). The dragged source is read from `folderDragFrom` because
+   *  dataTransfer payloads aren't readable during dragover. */
+  function isFolderDropTarget(path: string, kind: string): boolean {
+    if (kind !== 'volume' || !folderDragFrom) return false;
+    return folderMoveInto(folderDragFrom, path).ok;
+  }
   function onFolderDragOver(ev: DragEvent, path: string, kind: string) {
+    const types = ev.dataTransfer?.types;
+    if (!types) return;
+    // Folder-into-folder nesting takes priority when a folder is being dragged.
+    if (types.includes(FOLDER_DND)) {
+      if (!isFolderDropTarget(path, kind)) return;
+      ev.preventDefault();
+      ev.dataTransfer!.dropEffect = 'move';
+      if (dragOverPath !== path) dragOverPath = path;
+      return;
+    }
+    // Part-into-folder move (the pre-existing path).
     if (!isDropTarget(path, kind)) return;
-    if (!ev.dataTransfer || !ev.dataTransfer.types.includes(PRIM_DND)) return;
+    if (!types.includes(PRIM_DND)) return;
     ev.preventDefault();
-    ev.dataTransfer.dropEffect = 'move';
+    ev.dataTransfer!.dropEffect = 'move';
     if (dragOverPath !== path) dragOverPath = path;
   }
   function onFolderDragLeave(path: string) {
     if (dragOverPath === path) dragOverPath = null;
   }
   function onFolderDrop(ev: DragEvent, path: string, kind: string) {
+    // Folder drop first — a folder drag carries FOLDER_DND, not PRIM_DND.
+    if (ev.dataTransfer?.types.includes(FOLDER_DND)) {
+      if (kind !== 'volume') return;
+      ev.preventDefault();
+      dragOverPath = null;
+      const from = ev.dataTransfer.getData(FOLDER_DND) || folderDragFrom || '';
+      folderDragFrom = null;
+      if (from) void moveFolderInto(from, path);
+      return;
+    }
     if (!isDropTarget(path, kind)) return;
     ev.preventDefault();
     dragOverPath = null;
@@ -641,6 +678,58 @@
     if (!fromDir) fromDir = findPartDir(tree, id) ?? '';
     if (srcKind !== 'volume' && srcKind !== 'archive') return; // read-only src part — can't move
     void movePart(id, srcKind, fromDir, path);
+  }
+
+  /** Optimistically relocate folder `from`'s subtree to `dest` in the live tree
+   *  (the proxied /list lags — prod_list_staleness — so surface the nesting now;
+   *  loadList reconciles right after). Mutates the $state tree in place: detach
+   *  the node from its old parent, re-root its (and every descendant's) `path`
+   *  prefix from `from` → `dest`, rename its leaf, attach under the new parent. */
+  function relocateFolderInTree(from: string, dest: string) {
+    if (!tree) return;
+    const parentOf = (p: string) => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+    const oldParent = nodeAt(tree, parentOf(from));
+    const node = nodeAt(tree, from);
+    const newParent = nodeAt(tree, parentOf(dest));
+    if (!oldParent || !node || !newParent || oldParent === node) return;
+    oldParent.children = oldParent.children.filter((c) => c.path !== from);
+    const reroot = (n: FolderNode) => {
+      n.path = dest + n.path.slice(from.length);
+      for (const c of n.children) reroot(c);
+    };
+    reroot(node);
+    node.name = dest.split('/').pop()!;
+    if (!newParent.children.some((c) => c.path === dest)) newParent.children = [...newParent.children, node];
+  }
+
+  /** Drag-nest a FOLDER: move `from` INTO folder `toParent` (dest = toParent/leaf).
+   *  Reuses the folder/move endpoint (same one behind the tab-move action); the
+   *  structural guards live in the pure `folderMoveInto` so an illegal drop never
+   *  gets here. Optimistic relocate + ensureExpanded, then loadList reconciles. */
+  async function moveFolderInto(from: string, toParent: string) {
+    const v = folderMoveInto(from, toParent);
+    if (!v.ok) {
+      if (v.reason && v.reason !== 'already there' && typeof alert === 'function') alert(`Can't move folder: ${v.reason}`);
+      return;
+    }
+    const dest = v.dest;
+    if (nodeAt(tree, dest)) { if (typeof alert === 'function') alert(`A folder "${dest}" already exists.`); return; }
+    folderMoveBusy = from;
+    try {
+      const r = await fetch(`/api/primitives/folder/move?from=${encodeURIComponent(from)}&to=${encodeURIComponent(dest)}`, { method: 'POST' });
+      if (!r.ok) {
+        if (typeof alert === 'function') alert(`Move folder failed (${r.status}): ${(await r.text()).slice(0, 200)}`);
+        return;
+      }
+      relocateFolderInTree(from, dest); // optimistic — show the nesting now
+      ensureExpanded(toParent);
+      ensureExpanded(dest);
+      await loadList();                 // reconcile against the server
+    } catch (e: any) {
+      if (typeof alert === 'function') alert(`Move folder error: ${e?.message ?? e}`);
+    } finally {
+      folderMoveBusy = null;
+    }
   }
 
   // ─── "Move to…" dialog (anchored popover — mirrors the create menu) ───────
@@ -1242,12 +1331,26 @@
       {@const open = filter.trim() ? true : isExpanded(node.path)}
       {@const kids = sortFolders(node.children, sortMode).filter((n) => !filter.trim() || subtreeMatches(n, pass))}
       {@const files = sortBy(node.parts).filter(pass)}
+      {@const folderDraggable = kind === 'volume' && !isCoarsePointer && !FOLDER_PROTECTED_ROOTS.has(node.path)}
       <div class="prim-tree-node">
         <div class="prim-folder-row-wrap">
           <button class="prim-folder-row" type="button"
             class:drop-target={dragOverPath === node.path}
+            class:dragging={folderDragFrom === node.path}
             style="padding-left: {8 + depth * 14}px"
-            title={`primitives/${node.path}/`}
+            title={folderDraggable
+              ? `primitives/${node.path}/ — drag onto another folder to nest it`
+              : `primitives/${node.path}/`}
+            draggable={folderDraggable}
+            ondragstart={(ev) => {
+              if (!folderDraggable) return;
+              if (ev.dataTransfer) {
+                ev.dataTransfer.setData(FOLDER_DND, node.path);
+                ev.dataTransfer.effectAllowed = 'move';
+              }
+              folderDragFrom = node.path;
+            }}
+            ondragend={() => { folderDragFrom = null; dragOverPath = null; }}
             ondragover={(ev) => onFolderDragOver(ev, node.path, kind)}
             ondragleave={() => onFolderDragLeave(node.path)}
             ondrop={(ev) => onFolderDrop(ev, node.path, kind)}
@@ -1874,6 +1977,10 @@
   /* Drop-target highlight while dragging a part over a folder row / top tab —
      green wash + inset ring so the target reads clearly during the drag. */
   .prim-folder-row.drop-target { background: #dcfce7; box-shadow: inset 0 0 0 2px #86efac; }
+  /* A draggable (user-movable) folder gets the grab cursor, like part rows. */
+  .prim-folder-row[draggable="true"] { cursor: grab; }
+  .prim-folder-row[draggable="true"]:active { cursor: grabbing; }
+  .prim-folder-row.dragging { opacity: 0.55; }
   .prim-tabbtn.drop-target { background: #166534; color: #fff; border-color: #166534; }
 
   /* ⛁ Cache footer row — amber tint so the inspector reads as a distinct

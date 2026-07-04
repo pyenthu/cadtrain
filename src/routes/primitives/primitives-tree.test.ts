@@ -5,6 +5,8 @@ import {
   topLevelOf,
   ensureFolderPath,
   nodeAt,
+  isPathAtOrUnder,
+  folderMoveInto,
 } from './primitives-tree';
 
 /** Minimal tree: root → basic (+ basic/spirals), completions/svtc, archive. */
@@ -38,6 +40,57 @@ describe('isMoveTarget', () => {
     expect(isMoveTarget('stdlib', '')).toBe(false);
     expect(isMoveTarget('stdstale/r_extrude', '')).toBe(false);
     expect(isMoveTarget('a/b/c/d', '')).toBe(false); // 4 segments
+  });
+});
+
+describe('isPathAtOrUnder', () => {
+  it('is true for the folder itself and any descendant', () => {
+    expect(isPathAtOrUnder('basic', 'basic')).toBe(true);
+    expect(isPathAtOrUnder('basic', 'basic/spirals')).toBe(true);
+    expect(isPathAtOrUnder('basic', 'basic/spirals/x')).toBe(true);
+  });
+  it('is segment-aware — a sibling prefix is NOT a descendant', () => {
+    expect(isPathAtOrUnder('basic', 'basicfoo')).toBe(false);
+    expect(isPathAtOrUnder('basic/foo', 'basic/foobar')).toBe(false);
+  });
+  it('root contains everything', () => {
+    expect(isPathAtOrUnder('', 'anything')).toBe(true);
+  });
+});
+
+describe('folderMoveInto', () => {
+  it('nests a folder under a target — dest = target/leaf', () => {
+    expect(folderMoveInto('basic/spirals', 'completions')).toEqual({ ok: true, dest: 'completions/spirals' });
+    expect(folderMoveInto('mytools', 'basic')).toEqual({ ok: true, dest: 'basic/mytools' });
+  });
+  it('rejects dropping a folder onto itself or into its own subtree', () => {
+    expect(folderMoveInto('basic', 'basic').ok).toBe(false);
+    expect(folderMoveInto('basic', 'basic/spirals').ok).toBe(false);
+  });
+  it('reports the drop-onto-current-parent no-op as "already there"', () => {
+    // basic/spirals dropped back onto basic → dest basic/spirals === from
+    expect(folderMoveInto('basic/spirals', 'basic')).toMatchObject({ ok: false, reason: 'already there' });
+  });
+  it('refuses to move a built-in root folder', () => {
+    expect(folderMoveInto('basic', 'completions').ok).toBe(false);
+    expect(folderMoveInto('completions', 'basic').ok).toBe(false);
+    expect(folderMoveInto('archive', 'basic').ok).toBe(false);
+  });
+  it('refuses internal buckets as source or target', () => {
+    expect(folderMoveInto('stdlib/x', 'basic').ok).toBe(false);
+    expect(folderMoveInto('basic/spirals', 'archive').ok).toBe(false);
+    expect(folderMoveInto('basic/spirals', 'stdstale').ok).toBe(false);
+  });
+  it('enforces the 3-segment depth limit', () => {
+    // basic/a/b (3) into completions/x → completions/x/b would be 3 (ok),
+    // but basic/a/b into completions/x/y → 4 segments (rejected upstream: target is 3 already)
+    expect(folderMoveInto('basic/a/b', 'completions/x').ok).toBe(true);
+    expect(folderMoveInto('basic/a', 'completions/x/y')).toMatchObject({ ok: false }); // target already 3-deep
+  });
+  it('rejects malformed / empty paths', () => {
+    expect(folderMoveInto('', 'basic').ok).toBe(false);
+    expect(folderMoveInto('basic/spirals', '').ok).toBe(false);
+    expect(folderMoveInto('Bad Name', 'basic').ok).toBe(false);
   });
 });
 
