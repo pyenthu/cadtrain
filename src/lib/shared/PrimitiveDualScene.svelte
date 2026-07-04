@@ -40,6 +40,7 @@
   // TEMP warp experiment — mirror ComponentScene/ComponentSceneGlb so the
   // warp toggle works in the combined canvas too (was dropped in the rewrite).
   import { attachWarpShader, subdivideAlongZ } from '$lib/shared/warp';
+  import { getMaterialTexture } from '$lib/shared/material-textures';
 
   let {
     geo = null,
@@ -57,6 +58,7 @@
     overlays = [],
     smoothShade = false,
     opacity = 1,
+    texture = undefined,
   }: {
     geo?: any;            // { full, cutVC } from /api/primitives/preview
     geoVersion?: number;
@@ -81,6 +83,14 @@
      *  (`scene.xrayOpacity`) into `effOpacity` below. 1 × 1 = opaque, byte-
      *  identical to the pre-opacity render. */
     opacity?: number;
+    /** Part-level named material TEXTURE (G-MAT2, VIEW-ONLY). Resolved to a
+     *  shared procedural THREE.Texture via getMaterialTexture and set as the
+     *  material `.map` on the live mesh, the baked GLB, and the GPU-instanced
+     *  path. It TINTS with the per-vertex colour-by-source and composes with
+     *  opacity. undefined / unknown name ⇒ no map ⇒ identical to today. This is
+     *  a PER-PART property: a composed assembly is one vertex-coloured mesh
+     *  with no per-subpart UVs, so the single map covers the whole part. */
+    texture?: string;
     smoothShade?: boolean;  // EXPERIMENT: smooth-shade the LIVE mesh (use baked
     // calculateNormals(3, 60) vertex normals instead of flatShading face-derived
     // normals). Gated per-primitive at the canvas layer (currently r_weld_extrude
@@ -153,7 +163,7 @@
     const colAttr = childGeo.getAttribute?.('color');
     const hasColor = !!colAttr;
     const childVertexAlpha = !!colAttr && (colAttr as any).itemSize === 4;
-    const mat = makeLitMaterial(hasColor, useStd, !smoothShade, effOpacity, childVertexAlpha);
+    const mat = makeLitMaterial(hasColor, useStd, !smoothShade, effOpacity, childVertexAlpha, texture);
     // (Warp is now baked into childGeo server-side — no render-time shader.)
     const count = instanced.count;
     const mesh = new THREE.InstancedMesh(childGeo, mat, count);
@@ -222,18 +232,24 @@
   // overlapping transparent shells (e.g. casing over tubing) blend instead of
   // z-fighting / occluding. =1 → THREE's opaque defaults (transparent:false,
   // depthWrite:true) → byte-identical to the pre-opacity material.
-  function makeLitMaterial(hasColor: boolean, useStd: boolean, flat: boolean, op = 1, vertexAlpha = false): THREE.Material {
+  // `textureName` (G-MAT2) resolves to a shared procedural map set as `.map`.
+  // Undefined / unknown ⇒ no map (byte-identical to the pre-texture material).
+  // The map TINTS with vertexColors (colour-by-source) and rides the same
+  // transparent/opacity rules.
+  function makeLitMaterial(hasColor: boolean, useStd: boolean, flat: boolean, op = 1, vertexAlpha = false, textureName?: string): THREE.Material {
     const t = op < 1 || vertexAlpha;
     const alpha = t ? { transparent: true, opacity: op, depthWrite: false } : {};
+    const map = getMaterialTexture(textureName);
+    const tex = map ? { map } : {};
     if (useStd) {
       return new THREE.MeshStandardMaterial({
         color: hasColor ? '#ffffff' : '#cc2222', vertexColors: hasColor,
-        roughness: 0.5, metalness: 0.0, flatShading: flat, side: THREE.DoubleSide, ...alpha,
+        roughness: 0.5, metalness: 0.0, flatShading: flat, side: THREE.DoubleSide, ...tex, ...alpha,
       });
     }
     return new THREE.MeshPhongMaterial({
       color: hasColor ? '#ffffff' : '#cc2222', vertexColors: hasColor,
-      specular: '#666666', shininess: 120, flatShading: flat, side: THREE.DoubleSide, ...alpha,
+      specular: '#666666', shininess: 120, flatShading: flat, side: THREE.DoubleSide, ...tex, ...alpha,
     });
   }
 
@@ -269,14 +285,15 @@
   // when on so the RectAreaLight actually shades it. GLB is always flatShading.
   $effect(() => {
     const useStd = scene.zRectLight;
+    const texName = texture; // tracked — re-dress the GLB when the material texture changes
     if (!loaded) return;
-    const want = useStd ? 'std' : 'phong';
+    const want = (useStd ? 'std' : 'phong') + '|' + (texName ?? '');
     if (want === glbMatMode) return;
     loaded.traverse((obj: any) => {
       if (!obj.isMesh) return;
       const hasColor = !!(obj.geometry as THREE.BufferGeometry).attributes.color;
       if (obj.material?.dispose) obj.material.dispose();
-      obj.material = makeLitMaterial(hasColor, useStd, true, effOpacity);
+      obj.material = makeLitMaterial(hasColor, useStd, true, effOpacity, false, texName);
       attachWarpShader(obj.material as any);
     });
     glbMatMode = want;
@@ -531,8 +548,16 @@
     const wire = scene.wireframe;      // tracked — VIEW-ONLY wireframe diagnostic
     const op = effOpacity;             // tracked — part opacity × scene x-ray
     const va = hasVertexAlpha;         // tracked — RGBA per-subpart alpha present
+    const texName = texture;           // tracked — named material texture (G-MAT2)
     void geoVersion;                   // tracked — re-apply after a re-bake remounts liveMat fresh
-    if (liveMat) { liveMat.flatShading = flat; liveMat.wireframe = wire; applyOpacity(liveMat, op, va); invalidate(); }
+    if (liveMat) {
+      liveMat.flatShading = flat; liveMat.wireframe = wire; applyOpacity(liveMat, op, va);
+      // Set/clear the procedural material map IN PLACE (the inline template
+      // material has no `map`; an undefined/unknown name clears it).
+      const map = getMaterialTexture(texName) ?? null;
+      if (liveMat.map !== map) { liveMat.map = map; liveMat.needsUpdate = true; }
+      invalidate();
+    }
   });
   // Fade the baked GLB meshes to match `effOpacity` IN PLACE — the GLB material
   // effect above only re-dresses on a Phong↔Standard family swap, so an opacity-

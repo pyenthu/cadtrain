@@ -528,6 +528,17 @@ export type Graph = {
    *  (`meta.opacity` + the serialised graph block) and `hydrateGraph`. VIEW-ONLY
    *  (a material property) — never touches geometry/bake. */
   opacity?: number;
+  /** PER-PART named material TEXTURE (G-MAT2) — a procedural map applied to the
+   *  render (`cement` = hatched aggregate, `steel` = brushed metal, `rock` =
+   *  open-hole face). SPARSE/optional: absent ⇒ no map, byte-identical to today.
+   *  VIEW-ONLY (a material property) — never touches geometry/bake. Round-trips
+   *  through emit (`meta.texture` + the serialised graph block) and
+   *  `hydrateGraph`, exactly like `opacity`. The name is resolved to a shared
+   *  `THREE.Texture` by `$lib/shared/material-textures.getMaterialTexture`;
+   *  unknown names resolve to `undefined` (no map). PER-SUBPART texture in a
+   *  composed assembly is NOT supported (one vertex-coloured mesh has no
+   *  per-subpart UVs) — this is a PER-PART property. */
+  texture?: string;
   /** PER-PART editor VIEW scale (VIEW-ONLY exaggeration — never geometry/bake).
    *  `viewZScale` = Z/length exaggeration, `viewXScale` = X/diameter ("xDia")
    *  exaggeration; they mirror `scene.zScale` / `scene.xScale`. SPARSE/optional:
@@ -564,7 +575,7 @@ export type Graph = {
 /** One part's appearance overrides (all sparse/optional). `opacity` (0–1) is
  *  reserved for the per-SUBPART alpha path (stretch C); the part-level
  *  `Graph.opacity` above is what stage A/B render today. */
-export type PartAppearance = { colorOuter?: string; colorInner?: string; material?: string; opacity?: number };
+export type PartAppearance = { colorOuter?: string; colorInner?: string; material?: string; opacity?: number; texture?: string };
 
 /** One CALCULATED expression (B.6 / id 914 — the expression builder).
  *  `name` is the `e.<name>` output identifier (must be a unique, ident-safe

@@ -299,6 +299,31 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
     expect(g3.viewXScale).toBeUndefined();
   });
 
+  it('named material TEXTURE (G-MAT2): emit + hydrate round-trip', async () => {
+    const { addCall, hydrateGraph } = await import('./composition-graph');
+    const { emitGraph } = await import('./composition-emit');
+    let g = newGraph();
+    const a = addCall(g, 'dt_box'); g = a.graph;
+    (g as any).texture = 'cement';
+    // Emit writes it BOTH as a top-level meta mirror + inside the graph block.
+    const out = emitGraph(g, { id: 'tTX' });
+    expect((out.source.match(/texture: 'cement'/g) ?? []).length).toBeGreaterThanOrEqual(2);
+    // Hydrate restores a non-empty string; 'none'/absent → undefined.
+    const g2 = hydrateGraph({
+      nodes: { [a.id]: { id: a.id, type: 'call', src: 'dt_box', alias: 'A', args: {} }, root: { id: 'root', type: 'list', children: [a.id] } },
+      root: 'root', params: {}, imports: [], layout: {}, texture: 'steel',
+    } as any);
+    expect(g2.texture).toBe('steel');
+    const g3 = hydrateGraph({
+      nodes: { [a.id]: { id: a.id, type: 'call', src: 'dt_box', alias: 'A', args: {} }, root: { id: 'root', type: 'list', children: [a.id] } },
+      root: 'root', params: {}, imports: [], layout: {}, texture: 'none',
+    } as any);
+    expect(g3.texture).toBeUndefined();
+    // Absent ⇒ undefined ⇒ emit byte-identical (no `texture:` key).
+    const g4 = { ...g }; delete (g4 as any).texture;
+    expect(emitGraph(g4 as any, { id: 'tTX2' }).source).not.toContain('texture:');
+  });
+
   it('legacy Repeat {child} hydrates to children:[child] (repeat-enhance fold)', async () => {
     const { hydrateGraph } = await import('./composition-graph');
     // A serialised graph in the OLD single-`child` shape.
