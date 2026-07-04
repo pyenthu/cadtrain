@@ -5,6 +5,13 @@
 - **#7 Wells `/wells`** — LIVE (SVTC engine + ewells shell + wired 3D + sidenav + local workspace). NEXT: register `g_*` completion parts into the parametric registry; long-string perf; real wells store. (`well-schematic.md`)
 - **#42 Wells interface (SVTC WsonApp)** — W-A view/layer control bar · W-B editor/inspector dock · W-C depth ruler + labels · W-D dual 3D/2D canvas (2D = SVG track, white bg) · W-E left toolbar rail · W-F workspace cache · W-G shell polish (collapsible SVTC header · trim canvas padding). (`wells-interface.md`)
 - **#39 Multi-engine matrix** — Manifold (client+server) ✓ · BREP (server; **client TODO**) · TrueForm (native compiler + composites + defect-2 bore-extend fixed). NEXT: TF r_weld_extrude native (#51); BREP client-side. (`docs/architecture/geometry-engines.md`)
+- **#42b Wells → ewells.app PARITY gaps** (shell/controls/ruler/labella/cache SHIPPED; enhance list: `docs/plans/wells-ewells-gaps.md`):
+  - [ ] G1 editing (VIEWER→EDITOR): mutation+undo · CompletionsEditor · SurveyEditor · inspector-on-select (SVTC deep-dive's #1)
+  - [ ] G2 3D schematic layout (narrow/off-center → width/center/fit + auto-scale)
+  - [ ] G3 labels split left+right banks (currently one bank)
+  - [ ] G4 white SCENE bg actually applies (materials legible)
+  - [ ] G5 element-rail icons/labels + select→filter/inspect
+  - [ ] G6 anchored element/param popovers · G7 2D track view (W-D, wson-2d.ts) · G8 toolbar actions (W-E) · G9 depth-ruler polish (MD/TVD) · G10 <ewells specifics — user to add>
 
 ### Open — TrueForm
 - **#46 Graph→TF compiler** — SHIPPED: native render, composite dep-resolution, bore-extend hollow sweeps. LEFT: make TF tab render the actual part by DEFAULT (retire the "actual" toggle); two-tier recompile driven by a STRUCTURAL hash (topology + param names/count, NOT values) so param edits stay real-time.
@@ -26,4 +33,5 @@
 - **#29** complete + document the AI fn library (one registry, CI sync test) · **#1** RAG/assist (engine + panel shipped; LEFT `route`/`selectedId` in ctx) · **#27** feedback/RL DB (👍/👎 → `turns.jsonl`) · **#2** web-llm (Qwen2.5 + XGrammar, default-off) · **#28** synthetic fn-call data → few-shot/LoRA.
 
 ### Parked
+- #PMP pmp-library (github.com/pmp-library) — C++ mesh-processing (MIT); redundant with TrueForm's remesh/smooth, no JS/TS bindings → DON'T adopt as a 3rd WASM kernel. Keep as a REFERENCE for SUBDIVISION (Loop/Catmull-Clark) if TF taubin/remesh proves insufficient for #51 NURBS-style smoothing.
 - #4 CAD-gen research (arxiv 2606.05515) · #4b Blender fields for nodes · #5 units repo · #7b r_weld_extrude phase angle · #8b expression library · #16 `src/lib` reorg · #17b first-bake-slow profiling · #18b repeat-builder simplify · #19 BUG `casing_schematic` "BREP is deleted".
