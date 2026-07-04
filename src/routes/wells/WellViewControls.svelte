@@ -1,131 +1,159 @@
 <script lang="ts">
   /**
-   * WellViewControls — the display / view + layer control bar over the 3D
-   * well stage (W-A, `docs/plans/wells-interface.md` §A). Modeled on the CAD
-   * editor's `SceneControls` gear pattern but laid out as a horizontal ewells
-   * chrome bar pinned to the top of the stage.
+   * WellViewControls — the top-of-stage view bar (W-A, `docs/plans/
+   * wells-interface.md` §A). Modeled on SVTC's `WsonDisplayMenu` button+popover
+   * hierarchy: the always-visible bar carries only the PRIMARY control (the
+   * 2D | 3D surface toggle); a single adjustments gear opens a compact
+   * DISPLAY-MENU popover holding everything else — the Cutaway group (which
+   * reveals the Cut-az dial when on), the Scale group (Dia× / Depth×), and the
+   * Directional / DTX / Ruler / White render toggles.
    *
    * Drives `WellSchematic3D`'s props by MUTATING the shared `WellViewSettings`
    * object (deep-reactive — the 3D view + depth ruler read the same object, so
-   * there is ONE source of truth; see view-settings.ts).
+   * there is ONE source of truth; see view-settings.ts). The popover's open
+   * state (`dispAnchor`) is LOCAL UI only — it is never threaded into the 3D
+   * view, so it adds no new reactive dependency that could re-trigger a rebuild.
    *
-   * NOTE — camera presets (elevation / plan / 3D) are intentionally NOT here:
-   * the scene's camera is derived + owned by <OrbitControls>, with only an
-   * `onCameraMove` READOUT hook and no external setter. Adding presets would
-   * mean reworking the scene's camera ownership (out of this piece's scope);
-   * deferred + noted rather than faked.
+   * Layer/element toggles live on the LEFT element rail (WellElementRail —
+   * SVTC's element switch). Display settings live ONLY here now (they used to be
+   * duplicated in the element rail's own popover; that duplicate was removed so
+   * there is a single display-menu entry point, matching WsonDisplayMenu).
+   *
+   * The popover is the shared `WellPopover` (body-fixed, closes on outside-click
+   * / Escape) — cadtrain's popovers-over-inline convention.
    */
   import type { WellViewSettings } from './view-settings';
+  import WellPopover from './WellPopover.svelte';
 
   let { settings }: { settings: WellViewSettings } = $props();
 
-  // Collapsed → a slim strip with just a re-open toggle, so the bar never
-  // eats the stage when the user wants a clean view.
-  let open = $state(true);
-
-  // Layer/element toggles live on the LEFT element rail now (WellElementRail —
-  // SVTC's main element switch). This bar keeps the VIEW toggles + scale dials.
+  // Display-menu popover — anchored to the gear button. Local UI state; toggling
+  // it never touches `settings`, so it introduces no reactive dep into the 3D
+  // view (the earlier /wells rebuild-loop lesson).
+  let dispAnchor = $state<DOMRect | null>(null);
+  function toggleDisplay(e: MouseEvent) {
+    if (dispAnchor) {
+      dispAnchor = null;
+      return;
+    }
+    dispAnchor = (e.currentTarget as HTMLElement).getBoundingClientRect();
+  }
 
   // Clamp a typed numeric-entry value on commit.
   function clampNum(v: number, min: number, max: number, fallback: number) {
     return Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
   }
-
-  // Cutaway dials are 3D-only — dim + disable them in the 2D track view.
-  const cutDisabled = $derived(!settings.cutaway || settings.viewMode === '2d');
 </script>
 
 <div
   class="wvc"
-  class:closed={!open}
   role="toolbar"
   tabindex="-1"
   aria-label="Well view controls"
   onpointerdown={(e) => e.stopPropagation()}
   onwheel={(e) => e.stopPropagation()}
 >
-  <button
-    class="wvc-handle"
-    type="button"
-    title={open ? 'Hide view controls' : 'Show view controls'}
-    aria-label="Toggle view controls"
-    aria-expanded={open}
-    onclick={() => (open = !open)}
-  >
-    <span class="wvc-handle-ic">⚙</span>
-    {#if !open}<span class="wvc-handle-txt">View</span>{/if}
-  </button>
+  <!-- 2D | 3D surface toggle — the one PRIMARY control kept top-level. 2D = fast
+       pure-SVG track (default); 3D lazy-mounts the Manifold cutaway. -->
+  <div class="wvc-seg" role="group" aria-label="View mode">
+    <button type="button" class="wvc-seg-btn" class:on={settings.viewMode === '2d'}
+      title="2D SVG track schematic (fast)" aria-pressed={settings.viewMode === '2d'}
+      onclick={() => (settings.viewMode = '2d')}>2D</button>
+    <button type="button" class="wvc-seg-btn" class:on={settings.viewMode === '3d'}
+      title="3D Manifold cutaway" aria-pressed={settings.viewMode === '3d'}
+      onclick={() => (settings.viewMode = '3d')}>3D</button>
+  </div>
 
-  {#if open}
-    <!-- 2D | 3D surface toggle. 2D = fast pure-SVG track (default); 3D lazy-
-         mounts the Manifold cutaway only when first selected. -->
-    <div class="wvc-seg" role="group" aria-label="View mode">
-      <button type="button" class="wvc-seg-btn" class:on={settings.viewMode === '2d'}
-        title="2D SVG track schematic (fast)" aria-pressed={settings.viewMode === '2d'}
-        onclick={() => (settings.viewMode = '2d')}>2D</button>
-      <button type="button" class="wvc-seg-btn" class:on={settings.viewMode === '3d'}
-        title="3D Manifold cutaway" aria-pressed={settings.viewMode === '3d'}
-        onclick={() => (settings.viewMode = '3d')}>3D</button>
+  <!-- Single adjustments gear → the display-menu popover (SVTC WsonDisplayMenu). -->
+  <button
+    type="button"
+    class="wvc-gear"
+    class:on={!!dispAnchor}
+    aria-label="Display settings"
+    aria-haspopup="dialog"
+    aria-expanded={!!dispAnchor}
+    title="Display settings"
+    onclick={toggleDisplay}
+  >
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+      stroke-width="1.4" stroke-linecap="round">
+      <path d="M2 4h7M2 8h4M2 12h9" />
+      <circle cx="11.5" cy="4" r="1.7" />
+      <circle cx="8.5" cy="8" r="1.7" />
+      <circle cx="12.5" cy="12" r="1.7" />
+    </svg>
+  </button>
+</div>
+
+{#if dispAnchor}
+  <WellPopover anchor={dispAnchor} title="Display settings" width={244} onClose={() => (dispAnchor = null)}>
+    <!-- Cutaway group — 3D-only (mirrors WsonDisplayMenu's show3DCutaway). The
+         Cut-az dial is revealed only when Cutaway is on. -->
+    {#if settings.viewMode === '3d'}
+      <div class="dm-group">
+        <button type="button" class="dm-pill" class:on={settings.cutaway}
+          aria-pressed={settings.cutaway}
+          onclick={() => (settings.cutaway = !settings.cutaway)}>◑ Cutaway</button>
+        {#if settings.cutaway}
+          <label class="dm-dial" title="Cutaway plane rotation around the wellbore axis">
+            <span class="dm-lbl">Cut az</span>
+            <input type="range" min="0" max="360" step="5" bind:value={settings.cutAzimuth} />
+            <input class="dm-num" type="number" min="0" max="360" step="5" value={settings.cutAzimuth}
+              onchange={(e) => (settings.cutAzimuth = clampNum(+e.currentTarget.value, 0, 360, settings.cutAzimuth))} />
+            <span class="dm-unit">°</span>
+          </label>
+        {/if}
+      </div>
+      <div class="dm-divider"></div>
+    {/if}
+
+    <!-- Scale group — Dia× (radial exaggeration) + Depth× (depth stretch). -->
+    <div class="dm-group">
+      <label class="dm-dial" title="Radial exaggeration (inches → scene units)">
+        <span class="dm-lbl">Dia ×</span>
+        <input type="range" min="1" max="20" step="0.5" bind:value={settings.diaScale} />
+        <input class="dm-num" type="number" min="1" max="20" step="0.5" value={settings.diaScale}
+          onchange={(e) => (settings.diaScale = clampNum(+e.currentTarget.value, 1, 20, settings.diaScale))} />
+        <span class="dm-unit"></span>
+      </label>
+      <label class="dm-dial" title="Depth stretch (applied after DTX)">
+        <span class="dm-lbl">Depth ×</span>
+        <input type="range" min="0.25" max="4" step="0.25" bind:value={settings.zScale} />
+        <input class="dm-num" type="number" min="0.25" max="4" step="0.25" value={settings.zScale}
+          onchange={(e) => (settings.zScale = clampNum(+e.currentTarget.value, 0.25, 4, settings.zScale))} />
+        <span class="dm-unit"></span>
+      </label>
     </div>
 
-    <span class="wvc-sep"></span>
+    <div class="dm-divider"></div>
 
-    <!-- View toggles -->
-    <div class="wvc-group" aria-label="View">
-      <button type="button" class="wvc-chip" class:on={settings.cutaway} class:dim={settings.viewMode === '2d'}
-        title="Half-section cutaway (3D only)" aria-pressed={settings.cutaway}
-        onclick={() => (settings.cutaway = !settings.cutaway)}>◑ Cutaway</button>
-      <button type="button" class="wvc-chip" class:on={settings.directional}
-        title="Follow the deviation survey" aria-pressed={settings.directional}
+    <!-- Render toggles — the secondary pills moved out of the always-visible bar. -->
+    <div class="dm-toggles">
+      <button type="button" class="dm-pill" class:on={settings.directional}
+        aria-pressed={settings.directional}
         onclick={() => (settings.directional = !settings.directional)}>⟋ Directional</button>
-      <button type="button" class="wvc-chip" class:on={settings.dtx}
-        title="DTX depth emphasis (expand cluttered zones)" aria-pressed={settings.dtx}
+      <button type="button" class="dm-pill" class:on={settings.dtx}
+        aria-pressed={settings.dtx}
         onclick={() => (settings.dtx = !settings.dtx)}>↕ DTX</button>
-      <button type="button" class="wvc-chip" class:on={settings.showRuler}
-        title="Depth ruler + component labels" aria-pressed={settings.showRuler}
+      <button type="button" class="dm-pill" class:on={settings.showRuler}
+        aria-pressed={settings.showRuler}
         onclick={() => (settings.showRuler = !settings.showRuler)}>▏ Ruler</button>
-      <button type="button" class="wvc-chip" class:on={settings.whiteBg}
-        title="White schematic background" aria-pressed={settings.whiteBg}
+      <button type="button" class="dm-pill" class:on={settings.whiteBg}
+        aria-pressed={settings.whiteBg}
         onclick={() => (settings.whiteBg = !settings.whiteBg)}>◻ White</button>
     </div>
-
-    <span class="wvc-sep"></span>
-
-    <!-- Dials — slider + numeric entry (both mutate the shared settings). -->
-    <div class="wvc-group wvc-dials" aria-label="Scale">
-      <label class="wvc-dial" class:dim={cutDisabled} title="Cutaway plane rotation (3D only)">
-        <span class="wvc-dial-lbl">Cut az</span>
-        <input type="range" min="0" max="360" step="5" bind:value={settings.cutAzimuth} disabled={cutDisabled} />
-        <input class="wvc-num" type="number" min="0" max="360" step="5" value={settings.cutAzimuth} disabled={cutDisabled}
-          onchange={(e) => (settings.cutAzimuth = clampNum(+e.currentTarget.value, 0, 360, settings.cutAzimuth))} />
-      </label>
-      <label class="wvc-dial" title="Radial exaggeration (inches → scene units)">
-        <span class="wvc-dial-lbl">Dia ×</span>
-        <input type="range" min="1" max="20" step="0.5" bind:value={settings.diaScale} />
-        <input class="wvc-num" type="number" min="1" max="20" step="0.5" value={settings.diaScale}
-          onchange={(e) => (settings.diaScale = clampNum(+e.currentTarget.value, 1, 20, settings.diaScale))} />
-      </label>
-      <label class="wvc-dial" title="Depth stretch (applied after DTX)">
-        <span class="wvc-dial-lbl">Depth ×</span>
-        <input type="range" min="0.25" max="4" step="0.25" bind:value={settings.zScale} />
-        <input class="wvc-num" type="number" min="0.25" max="4" step="0.25" value={settings.zScale}
-          onchange={(e) => (settings.zScale = clampNum(+e.currentTarget.value, 0.25, 4, settings.zScale))} />
-      </label>
-    </div>
-  {/if}
-</div>
+  </WellPopover>
+{/if}
 
 <style>
   .wvc {
     position: absolute;
     top: 8px;
     left: 8px;
-    right: 8px;
     z-index: 20;
-    display: flex;
-    flex-wrap: wrap;
+    display: inline-flex;
     align-items: center;
-    gap: 6px 10px;
+    gap: 8px;
     padding: 6px 8px;
     background: rgba(16, 16, 26, 0.86);
     border: 1px solid #2a2a3e;
@@ -135,49 +163,6 @@
     color: #ccd;
     user-select: none;
   }
-  .wvc.closed {
-    right: auto;
-    padding: 4px;
-    gap: 0;
-  }
-  .wvc-handle {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    background: transparent;
-    border: none;
-    color: #aab;
-    cursor: pointer;
-    padding: 2px 4px;
-    font: inherit;
-  }
-  .wvc-handle:hover { color: #fff; }
-  .wvc-handle-ic { font-size: 13px; color: #cc4444; }
-  .wvc-handle-txt { font-weight: 700; }
-
-  .wvc-group { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
-
-  .wvc-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    background: #1a1a2a;
-    border: 1px solid #2f2f46;
-    border-radius: 9999px;
-    color: #889;
-    cursor: pointer;
-    padding: 3px 9px;
-    font: 600 11px Arial;
-    white-space: nowrap;
-    transition: background 80ms, color 80ms, border-color 80ms;
-  }
-  .wvc-chip:hover { color: #fff; border-color: #44446a; }
-  .wvc-chip.on {
-    background: #232340;
-    border-color: #cc3333;
-    color: #fff;
-  }
-  .wvc-chip.dim { opacity: 0.4; }
 
   /* 2D | 3D segmented control. */
   .wvc-seg {
@@ -199,37 +184,69 @@
     background: #cc3333;
     color: #fff;
   }
-  .wvc-sep {
-    width: 1px;
-    align-self: stretch;
-    background: #2a2a3e;
-    margin: 0 2px;
-  }
 
-  .wvc-dials { gap: 4px 12px; }
-  .wvc-dial {
+  /* Adjustments gear — opens the display-menu popover. */
+  .wvc-gear {
     display: inline-flex;
     align-items: center;
-    gap: 5px;
+    justify-content: center;
+    width: 28px;
+    height: 24px;
+    background: #1a1a2a;
+    border: 1px solid #2f2f46;
+    border-radius: 7px;
+    color: #aab;
+    cursor: pointer;
+    transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  }
+  .wvc-gear:hover { color: #fff; border-color: #44446a; }
+  .wvc-gear.on { background: #232340; border-color: #cc3333; color: #fff; }
+
+  /* ── Display-menu popover contents (SVTC WsonDisplayMenu pill styling) ─────── */
+  .dm-group { display: flex; flex-direction: column; gap: 8px; }
+  .dm-divider { height: 1px; background: #2a2a3e; margin: 1px 0; }
+
+  .dm-dial {
+    display: grid;
+    grid-template-columns: 46px 1fr 52px 10px;
+    align-items: center;
+    gap: 8px;
     cursor: pointer;
   }
-  .wvc-dial.dim { opacity: 0.4; }
-  .wvc-dial-lbl { color: #99a; white-space: nowrap; }
-  .wvc-dial input[type='range'] {
-    width: 78px;
-    accent-color: #cc3333;
-    cursor: pointer;
-  }
-  .wvc-num {
-    width: 48px;
+  .dm-lbl { color: #99a; font: 11px Arial; white-space: nowrap; }
+  .dm-dial input[type='range'] { width: 100%; accent-color: #cc3333; cursor: pointer; }
+  .dm-num {
+    width: 52px;
     background: #12121e;
     border: 1px solid #34345a;
     border-radius: 5px;
     color: #fff;
     font: 11px ui-monospace, monospace;
-    padding: 2px 4px;
+    padding: 3px 5px;
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  .wvc-num:disabled { opacity: 0.5; }
+  .dm-unit { color: #778; font: 10px ui-monospace, monospace; }
+
+  .dm-toggles { display: flex; flex-wrap: wrap; gap: 4px; }
+  .dm-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: #1a1a2a;
+    border: 1px solid #2f2f46;
+    border-radius: 9999px;
+    color: #889;
+    cursor: pointer;
+    padding: 3px 9px;
+    font: 600 10px Arial;
+    white-space: nowrap;
+    transition: background 0.08s, color 0.08s, border-color 0.08s;
+  }
+  .dm-pill:hover { color: #fff; border-color: #44446a; }
+  .dm-pill.on {
+    background: #232340;
+    border-color: #cc3333;
+    color: #fff;
+  }
 </style>
