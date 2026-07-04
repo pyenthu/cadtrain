@@ -25,6 +25,8 @@
   import WellViewControls from './WellViewControls.svelte';
   import WellElementRail from './WellElementRail.svelte';
   import WellDepthRuler from './WellDepthRuler.svelte';
+  import WellTimingBadge from './WellTimingBadge.svelte';
+  import type { WellBuildTiming } from '$lib/wells/threeD/manifoldCut';
   import { buildRemap, type Wson2DInput } from '$lib/wells/wson-2d';
   import { summarise, type WsonDoc } from './wson-summary';
   import { defaultViewSettings, type WellViewSettings } from './view-settings';
@@ -69,6 +71,16 @@
     remap = info.remap;
     rawTd = info.rawTd;
   }
+
+  // DIAGNOSTIC — per-rebuild 3D build timing for the flash badge. `flashN` bumps
+  // on every rebuild so the badge replays its flash animation (dial changes show
+  // their cost). Only rendered for the 3D view.
+  let build3d = $state<WellBuildTiming | null>(null);
+  let flashN = $state(0);
+  function onBuildTiming(t: WellBuildTiming) {
+    build3d = t;
+    flashN += 1;
+  }
 </script>
 
 <div class="wv">
@@ -103,12 +115,15 @@
               zScale={view.zScale}
               whiteBg={view.whiteBg}
               {onDepthMap}
+              {onBuildTiming}
             />
           </Canvas>
           {#if view.showRuler}
             <!-- 3D overlay ruler (2D carries its own column). -->
             <WellDepthRuler {wson} {remap} {rawTd} whiteBg={view.whiteBg} leftInset={60} />
           {/if}
+          <!-- Diagnostic phase-timing flash badge (3D view only). -->
+          <WellTimingBadge timing={build3d} {flashN} />
         </div>
       {/if}
 

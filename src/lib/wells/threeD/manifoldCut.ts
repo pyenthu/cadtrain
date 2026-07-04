@@ -31,6 +31,56 @@ import type { WellDirection } from './direction';
 
 let _wasm: any = null;
 
+// ── Diagnostic phase timing ─────────────────────────────────────────────────
+// PURE INSTRUMENTATION (no behaviour change). The 3D build is the /wells perf
+// hot path (docs/research/wells-perf-ewells-vs-cadtrain.md): per-string Manifold
+// solids + a boolean cutaway + per-vertex warp + mesh extraction, all synchronous
+// on the main thread. We accumulate wall-clock per phase into a module singleton
+// so WellSchematic3D can snapshot a whole build pass and surface a flash badge.
+export interface WellPhaseTiming {
+  /** Manifold primitive construction (cylinder / extrude / sphere). */
+  solid: number;
+  /** Boolean CSG — the half-space cutaway subtract (+ annulus inner subtract). */
+  cutaway: number;
+  /** manifold → THREE.BufferGeometry mesh extraction (+ per-vertex colours). */
+  extract: number;
+  /** Parallel-transport per-vertex warp along the survey. */
+  warp: number;
+  /** # boolean/CSG ops performed. */
+  csgOps: number;
+  /** # Manifold primitives built. */
+  builds: number;
+}
+
+/** A whole build-pass summary (phase timing + tallies) for the flash badge. */
+export interface WellBuildTiming extends WellPhaseTiming {
+  /** Total wall-clock of the build pass (ms) — includes untimed JS overhead. */
+  total: number;
+  /** # strings/elements rendered (oh + casing + cement + tubing + perfs + comps). */
+  strings: number;
+  /** Total triangles across all built display geometries. */
+  tris: number;
+  /** true when the half-section cutaway (CSG) was active for this pass. */
+  cutActive: boolean;
+}
+
+function zeroTiming(): WellPhaseTiming {
+  return { solid: 0, cutaway: 0, extract: 0, warp: 0, csgOps: 0, builds: 0 };
+}
+
+let _timing: WellPhaseTiming = zeroTiming();
+
+/** SSR-safe monotonic clock (0 when performance is unavailable). */
+function _now(): number {
+  return typeof performance !== 'undefined' ? performance.now() : 0;
+}
+
+/** Reset the phase accumulator — call at the START of a build pass. */
+export function beginWellTiming(): void { _timing = zeroTiming(); }
+
+/** Snapshot the accumulated phase timing since the last beginWellTiming(). */
+export function readWellTiming(): WellPhaseTiming { return { ..._timing }; }
+
 /** Initialise (or reuse) cadtrain's shared Manifold WASM singleton. Idempotent.
  *  Returns the wasm module exposing `{ Manifold, CrossSection, ... }`. */
 export async function initManifold(): Promise<any> {
@@ -152,6 +202,8 @@ export function warpGeometry(geo: THREE.BufferGeometry, wellDir: WellDirection |
   const pos = geo.attributes.position as THREE.BufferAttribute;
   if (pos.count === 0) return geo;
 
+  const _tWarp = _now();
+
   // ── Sample centerline + build parallel-transport frame ──────────────────
   const stepMD = 5;
   const td = wellDir.maxDepth;
@@ -164,7 +216,7 @@ export function warpGeometry(geo: THREE.BufferGeometry, wellDir: WellDirection |
   // getSegment is strict `<` on md2; nudge just inside).
   const last = wellDir.getInterNode(Math.max(0, td - 1e-3));
   if (last) samples.push({ md: td, pt: [last.pt[0], last.pt[1], last.pt[2]] });
-  if (samples.length < 2) return geo;
+  if (samples.length < 2) { _timing.warp += _now() - _tWarp; return geo; }
 
   // Finite-difference tangents from neighboring sample positions.
   for (let i = 0; i < samples.length; i++) {
@@ -244,6 +296,7 @@ export function warpGeometry(geo: THREE.BufferGeometry, wellDir: WellDirection |
   }
   pos.needsUpdate = true;
   geo.computeVertexNormals();
+  _timing.warp += _now() - _tWarp;
   return geo;
 }
 
@@ -288,20 +341,31 @@ export function cutCylinder(
 
   // Vertical-well fast path — Manifold.cylinder + axis-aligned cutterBox.
   if (!hasRealDeviation(wellDir)) {
+    let t = _now();
     const cyl = Manifold.cylinder(len, radius, radius, 64).translate([0, 0, top]);
+    _timing.solid += _now() - t; _timing.builds++;
+    t = _now();
     const result = cyl.subtract(cutterBox(cutAxis));
-    return manifoldToColoredGeo(result, cutAxis, mainColor, style.cutColor, style.cutVariance);
+    _timing.cutaway += _now() - t; _timing.csgOps++;
+    t = _now();
+    const g = manifoldToColoredGeo(result, cutAxis, mainColor, style.cutColor, style.cutVariance);
+    _timing.extract += _now() - t;
+    return g;
   }
 
   // Strategy E (deviated wells) — build the HALF cross-section in 2D, extrude
   // it directly. The flat side of the half-disc becomes the cut face; every
   // X=0 vertex maps to the wellbore centerline under warpGeometry so the cut
   // face follows the tangent automatically.
+  let t = _now();
   const halfCircle = CrossSection.circle(radius, 64).intersect(
     CrossSection.square([radius * 3, radius * 3], true).translate([-radius * 1.5, 0])
   );
   const cyl = Manifold.extrude(halfCircle, len, boreNDivisions(len)).translate([0, 0, top]);
+  _timing.solid += _now() - t; _timing.builds++; _timing.csgOps++; // half-section = 1 CSG intersect
+  t = _now();
   const geo = manifoldToColoredGeo(cyl, 'x', mainColor, style.cutColor, style.cutVariance);
+  _timing.extract += _now() - t;
   const azDeg = resolveAzimuthDeg(cutAxis, cutAzimuthDeg);
   if (azDeg % 360 !== 0) geo.rotateZ((azDeg * Math.PI) / 180);
   return warpGeometry(geo, wellDir);
@@ -320,28 +384,41 @@ export function cutTube(
 
   // Vertical-well fast path.
   if (!hasRealDeviation(wellDir)) {
+    let t = _now();
     const outer = Manifold.cylinder(len, outerR, outerR, 64);
     const inner = Manifold.cylinder(len + 0.02, innerR, innerR, 64).translate([0, 0, -0.01]);
+    _timing.solid += _now() - t; _timing.builds += 2;
+    t = _now();
     const ring = outer.subtract(inner).translate([0, 0, top]);
     const result = ring.subtract(cutterBox(cutAxis));
-    return manifoldToColoredGeo(result, cutAxis, mainColor, style.cutColor, style.cutVariance);
+    _timing.cutaway += _now() - t; _timing.csgOps += 2; // annulus hollow-out + half-space cut
+    t = _now();
+    const g = manifoldToColoredGeo(result, cutAxis, mainColor, style.cutColor, style.cutVariance);
+    _timing.extract += _now() - t;
+    return g;
   }
 
   // Strategy E (deviated wells) — half-annular 2D CrossSection extrude. The two
   // flat sides of the half-annulus become extruded walls triangulated at ring
   // density; no 3D cutterBox, no coincident caps, no fins on deviated wells.
+  let t = _now();
   const halfPlane = CrossSection.square([outerR * 3, outerR * 3], true)
                                 .translate([-outerR * 1.5, 0]);
   const outerHalf = CrossSection.circle(outerR, 64).intersect(halfPlane);
   let halfRingCs;
+  let ops = 1; // outerHalf intersect
   if (innerR > 0) {
     const innerHalf = CrossSection.circle(innerR, 64).intersect(halfPlane);
     halfRingCs = outerHalf.subtract(innerHalf);
+    ops += 2; // innerHalf intersect + annulus subtract
   } else {
     halfRingCs = outerHalf;
   }
   const ring = Manifold.extrude(halfRingCs, len, boreNDivisions(len)).translate([0, 0, top]);
+  _timing.solid += _now() - t; _timing.builds++; _timing.csgOps += ops;
+  t = _now();
   const geo = manifoldToColoredGeo(ring, 'x', mainColor, style.cutColor, style.cutVariance);
+  _timing.extract += _now() - t;
   const azDeg = resolveAzimuthDeg(cutAxis, cutAzimuthDeg);
   if (azDeg % 360 !== 0) geo.rotateZ((azDeg * Math.PI) / 180);
   return warpGeometry(geo, wellDir);
@@ -356,7 +433,14 @@ export function cutSphere(
   if (!_wasm) throw new Error('manifold-3d not initialised');
   const { Manifold } = _wasm;
   if (!(radius > 0)) return null;
+  let t = _now();
   const sph = Manifold.sphere(radius, 32).translate([center.x, center.y, center.z]);
+  _timing.solid += _now() - t; _timing.builds++;
+  t = _now();
   const result = sph.subtract(cutterBox(cutAxis));
-  return manifoldToColoredGeo(result, cutAxis, mainColor, style.cutColor, style.cutVariance);
+  _timing.cutaway += _now() - t; _timing.csgOps++;
+  t = _now();
+  const g = manifoldToColoredGeo(result, cutAxis, mainColor, style.cutColor, style.cutVariance);
+  _timing.extract += _now() - t;
+  return g;
 }
