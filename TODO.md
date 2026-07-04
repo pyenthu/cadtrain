@@ -11,6 +11,7 @@
   - [ ] **C · RENDER polish** — 3D center/fill · labels left+right banks + **anchor option (diagram vs depth-rail)** · white SCENE bg (only CSS-wired today) · element-rail icons
   - [ ] **D · CHROME** — toolbar actions (W-E) · ruler MD/TVD · camera presets
   - [x] **E · 2D track view** (W-D, `wson-2d.ts`) — DONE, now the DEFAULT · **F · <user: ewells specifics>** (see #42b gap list)
+- **#42c Completion element library (`bw_*` parametric parts)** — build the downhole completion/well elements as parametric volume parts (RAG the SVTC completion vocab: nipples, packers, ICD/screens, sliding sleeves SSD, gas-lift/side-pocket mandrels, flow couplings, pup joints, safety valves, bell guides, hangers). **DONE:** `bw_casing/cement/open_hole/tubing`(collared)`/hanger/mule_shoe/nipple`. **NEXT:** `bw_packer` + a tubing element, then the rest of the completion jewelry (reuse existing `g_*` completion parts where they exist). These feed the wells **element registry** (A2) so the wells engine builds by CALLING them with row params.
 
 ### Open — TrueForm
 - **#46 Graph→TF compiler** — SHIPPED: native render, composite dep-resolution, bore-extend hollow sweeps. LEFT: make TF tab render the actual part by DEFAULT (retire the "actual" toggle); two-tier recompile driven by a STRUCTURAL hash (topology + param names/count, NOT values) so param edits stay real-time.
