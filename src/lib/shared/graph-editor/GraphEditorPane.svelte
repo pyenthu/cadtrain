@@ -75,6 +75,7 @@
     addSpline,
     addWarpPlaceholder,
     addMaterialNode,
+    updateMaterialNode,
     resolveEffectiveAppearance,
     removeExprDef,
     addStackPlaceholder,
@@ -178,6 +179,7 @@
   import BakeMenu from './BakeMenu.svelte';
   import AiMenu from './AiMenu.svelte';
   import SplineEditorPopup from './SplineEditorPopup.svelte';
+  import MaterialEditorPopover from './MaterialEditorPopover.svelte';
   import { createAssistSession } from './ge-assist.svelte';
   import { clampToViewport } from './popover-clamp';
   import { releaseImplicitCapture } from './pointer-capture';
@@ -291,6 +293,21 @@
   let exprPopDef = $derived.by<ExprDef | null>(() =>
     exprPop ? ((graph.exprDefs ?? []).find((d) => d.id === exprPop!.defId) ?? null) : null,
   );
+  // Material editor popover (G-MAT-CARD) — click a material node's ◑/name to
+  // edit its appearance bundle (colour · inner · material · opacity · texture).
+  let matPop = $state<{ anchor: { x: number; y: number }; id: string } | null>(null);
+  let matPopNode = $derived.by<any>(() =>
+    matPop ? (graph.nodes[matPop.id] as any ?? null) : null,
+  );
+  /** Open the material editor anchored to the clicked ◑/name of a material node. */
+  function openMaterialEditor(ev: PointerEvent, id: string) {
+    const r = (ev.currentTarget as Element).getBoundingClientRect();
+    matPop = { anchor: { x: r.right + 8, y: r.top }, id };
+  }
+  /** Patch a material node's appearance (sparse; null/'none' clears). */
+  function patchMaterial(patch: any) {
+    if (matPop) graph = updateMaterialNode(graph, matPop.id, patch);
+  }
   // The Expressions MENU (B.7 v3 PR-3) — lists graph.exprDefs and is the home
   // of the define → instance → wire flow (the expr-def MANAGER: add/edit/drop/
   // delete). Opened from the ✎ picker's "ƒ expr" item (dropExpr); the four-
@@ -2741,6 +2758,14 @@
       onCancel={() => (exprPop = null)} />
   {/if}
 
+  {#if matPop && matPopNode}
+    <MaterialEditorPopover
+      node={matPopNode}
+      anchor={matPop.anchor}
+      onPatch={patchMaterial}
+      onClose={() => (matPop = null)} />
+  {/if}
+
   {#if typesPop}
     <TypeDefinerPopover onClose={() => (typesPop = false)} />
   {/if}
@@ -2890,6 +2915,7 @@
               {openPolyRepeatCountExprPop}
               {openExprDefEditor}
               onOpenSplineEditor={spline.openSplineEditor}
+              onOpenMaterialEditor={openMaterialEditor}
               {setHoverVertex}
               {clearHoverVertex}
               openPolyPreview={polyUI.openPolyPreview}
