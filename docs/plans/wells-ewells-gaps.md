@@ -22,7 +22,10 @@ cache (folder + tabs restore).
   - [ ] define the element library (`oh`, `casing`, `tubing`, `cement`, `completion`, `perf`) as parametric parts + a registry (extend `src/lib/wells/threeD/parametric/registry.ts`)
   - [ ] engine builds a well by CALLING these with row params (od/id/top/bot/grade/…)
   - [ ] register the existing `g_*` completion jewelry into the same registry (the standing NEXT item)
-- [ ] **A3 · AUTO-SCALE** — auto-fit the schematic to the view + sensible default dia/depth exaggeration (a deep narrow well shouldn't render as an invisible sliver). Auto aspect + fit-to-view on load / on data change; the Dia×/Depth× dials override the auto value.
+- [ ] **A3 · AUTO-SCALE (vertical + deviated)** — auto-fit the schematic to the view + sensible default dia/depth exaggeration (a deep narrow well shouldn't render as an invisible sliver). Auto aspect + fit-to-view on load / on data change; the Dia×/Depth× dials override the auto value. **Two cases, different fit math:**
+  - **Vertical** — the well is a thin deep column; auto-pick a Dia× exaggeration so the bore reads (SVTC-style depth-vs-diameter aspect), fit the depth span to the stage height.
+  - **Deviated** — the trajectory has real X/Y extent (build + horizontal); fit the whole 3D/2D **bounding box of the warped path** (not just depth), so a horizontal lateral isn't clipped or squashed. Applies to BOTH the 2D SVG track view and the 3D scene (camera-fit).
+  - Recompute on load + on data/Dia×/Depth× change; the manual dials remain an override on top of the auto value.
 
 ## B. EDITING (viewer → editor — SVTC deep-dive's #1 gap)
 - [ ] **B1 · Mutation layer + undo/redo** (SVTC `setSrc`/`createHistory`) — prereq for all editing.
