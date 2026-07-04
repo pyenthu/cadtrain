@@ -24,7 +24,7 @@
  * {@link TfUnsupportedError} at the offending node.
  */
 import { tfRevolveProfile } from './revolve';
-import { tfResult, buildOpenCurve, capOpenEnds, type TfDemoResult } from '../trueform-client';
+import { tfResult, buildOpenCurve, capOpenEnds, runTfGuarded, type TfDemoResult } from '../trueform-client';
 import type { TfRecipe, TfInstr, Vec3 } from '$lib/cad/graph-to-tf';
 
 /** Flatten a `[[x,y,z]…]` path → the `[n*3]` Float32Array `buildOpenCurve` /
@@ -305,15 +305,23 @@ export function executeTfRecipe(
 ): TfDemoResult {
   const instrs = recipe?.instrs ?? [];
   if (instrs.length === 0) throw new TfUnsupportedError('(empty recipe)');
-  // Build each ROOT output; union multiples into one solid (the composition's
-  // unconsumed outputs, mirroring dp_joint's box+tube+pin weld).
-  let solid = buildInstr(t, instrs[0]);
-  for (let i = 1; i < instrs.length; i++) {
-    solid = t.booleanUnion(solid, buildInstr(t, instrs[i])).mesh;
-  }
-  // Enforce one consistent outward orientation (harmless if already positive).
-  try { solid = t.positivelyOriented(solid); } catch { /* keep the union as-is */ }
-  return tfResult(tf, t, solid, { cutaway: opts?.cutaway, cuttable: true });
+  // The whole native build (tubeMesh / boxMesh / boolean{Difference,Union,
+  // Intersection} …) runs inside runTfGuarded: a boolean on degenerate/coincident
+  // geometry (the defect-2 tilted-coincident-cap class) can WASM-`unreachable`,
+  // which POISONS the shared TF kernel so every LATER bake fails too. The guard
+  // resets the singleton on a trap (next ensureTf re-inits a clean kernel) and
+  // rethrows a readable reason instead of the opaque "unreachable" + a dead kernel.
+  return runTfGuarded(() => {
+    // Build each ROOT output; union multiples into one solid (the composition's
+    // unconsumed outputs, mirroring dp_joint's box+tube+pin weld).
+    let solid = buildInstr(t, instrs[0]);
+    for (let i = 1; i < instrs.length; i++) {
+      solid = t.booleanUnion(solid, buildInstr(t, instrs[i])).mesh;
+    }
+    // Enforce one consistent outward orientation (harmless if already positive).
+    try { solid = t.positivelyOriented(solid); } catch { /* keep the union as-is */ }
+    return tfResult(tf, t, solid, { cutaway: opts?.cutaway, cuttable: true });
+  });
 }
 
 /** Deep-scan a recipe for any node TrueForm can't build natively: an explicit

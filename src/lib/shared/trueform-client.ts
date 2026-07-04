@@ -31,27 +31,129 @@ type Tf = typeof import('@polydera/trueform');
 
 let _tf: Tf | null = null;
 let _initPromise: Promise<Tf> | null = null;
+// Cache-bust generation for the dynamic import. See resetTf(): after a WASM trap
+// we bump this so the NEXT ensureTf() imports a FRESH module instance (its own
+// `_initPromise` / `_native` heap) rather than tf's poisoned singleton. Starts at
+// 0 → the FIRST init uses the BARE specifier (byte-identical to the verified path
+// + preserves the `new URL("trueform_wasm.wasm", import.meta.url)` asset resolve).
+let _tfGen = 0;
 
 /**
  * Lazy-import + initialise the TrueForm WASM kernel on the MAIN THREAD, cached.
  * Safe to call repeatedly — the first call loads + inits, later calls resolve to
  * the same module. Throws (with the real message) if the WASM fails to load.
+ *
+ * SELF-HEAL: an emscripten `unreachable` (or other WASM trap) during a TF op
+ * corrupts tf's shared kernel — and tf's OWN `init()` memoises a private
+ * `_native` WASM instance behind a private `_initPromise` with no reset hook, so
+ * merely dropping our reference + re-calling `init()` returns the SAME poisoned
+ * heap. {@link resetTf} therefore bumps `_tfGen`; when it is > 0 we import with a
+ * `?tfgen=N` cache-bust query, which makes the bundler hand back a FRESH module
+ * instance (fresh `_initPromise` → fresh `_native` heap) that self-inits clean.
+ * (`new URL("…wasm", import.meta.url)` still resolves to the un-queried sibling —
+ * URL resolution drops the base's query — so the heal doesn't break asset load.)
+ * If the init itself REJECTS we clear `_initPromise` so a transient failure isn't
+ * cached forever (a later retry can re-init instead of replaying the rejection).
  */
 export async function ensureTf(): Promise<Tf> {
   if (_tf) return _tf;
   if (_initPromise) return _initPromise;
+  const gen = _tfGen;
   _initPromise = (async () => {
-    const tf = (await import('@polydera/trueform')) as Tf;
+    // gen 0 = the ORIGINAL static-literal import so Vite/rollup resolve the bare
+    // specifier + wasm sibling exactly as the verified path did (unchanged healthy
+    // path). gen > 0 (self-heal after a trap) = a `?tfgen=N` cache-bust so a FRESH
+    // module instance is handed back (fresh `_initPromise` → fresh `_native` heap).
+    const tf = (gen === 0
+      ? await import('@polydera/trueform')
+      : await import(/* @vite-ignore */ `@polydera/trueform?tfgen=${gen}`)) as Tf;
     await tf.init();
     _tf = tf;
     return tf;
   })();
-  return _initPromise;
+  try {
+    return await _initPromise;
+  } catch (e) {
+    // Don't cache a rejected init — let the next call retry a clean re-init.
+    if (_tfGen === gen) _initPromise = null;
+    throw e;
+  }
+}
+
+/**
+ * Drop the cached TrueForm kernel + bump the import generation so the NEXT
+ * {@link ensureTf} re-imports a FRESH module instance (fresh WASM heap). Call
+ * after a WASM trap ({@link isTfFatalTrap}) — those poison tf's shared singleton,
+ * and without this every later TF bake fails until a page reload. Mirrors the
+ * OCCT `resetOC()` self-heal (commit ed563e9), adapted for tf's hidden `_native`:
+ * because tf's own `init()` can't be reset, the heal is a cache-busted re-import.
+ */
+export function resetTf(): void {
+  _tf = null;
+  _initPromise = null;
+  _tfGen++;
+}
+
+/** The current import generation — 0 until the first {@link resetTf}. Exposed for
+ *  tests to assert the self-heal bumped it (so the next ensureTf re-imports). */
+export function tfGeneration(): number {
+  return _tfGen;
 }
 
 /** Whether the kernel is already initialised (no async needed). */
 export function tfReady(): boolean {
   return _tf != null;
+}
+
+/**
+ * Is this thrown value a WASM-level TRAP (not an ordinary validation Error)? An
+ * emscripten `unreachable`, an out-of-bounds memory/table access, a null-function
+ * / signature-mismatch indirect call, an `abort()`, or a BARE numeric heap-pointer
+ * throw all indicate the shared TF kernel heap is likely CORRUPTED → the caller
+ * must {@link resetTf} so subsequent bakes don't inherit the poison. Ordinary
+ * "not watertight" / bad-input Errors do NOT match (they don't corrupt the heap).
+ */
+export function isTfFatalTrap(e: unknown): boolean {
+  if (typeof e === 'number' || typeof e === 'bigint') return true;
+  if (typeof WebAssembly !== 'undefined' && e instanceof WebAssembly.RuntimeError) return true;
+  const s = String((e as any)?.message ?? e);
+  return /unreachable|out of bounds|null function|signature mismatch|RuntimeError|\bAborted?\b|table index|memory access/i.test(s);
+}
+
+/** A human-readable reason for a TF failure — turns the opaque WASM trap string
+ *  ("unreachable", "memory access out of bounds") into an explanation + the fact
+ *  the kernel was reset, so the bake pane's reason line is actionable instead of
+ *  showing "TrueForm: unreachable" (mirrors the BREP readable-reason work, 69c6cd6). */
+export function describeTfError(e: unknown): string {
+  const raw = String((e as any)?.message ?? e);
+  if (/unreachable/i.test(raw))
+    return 'TrueForm kernel trap (unreachable) — a TF op aborted, most likely a boolean on degenerate/coincident geometry. Kernel reset; re-run the bake.';
+  if (/out of bounds|memory access/i.test(raw))
+    return 'TrueForm kernel trap (memory out-of-bounds) — malformed mesh input. Kernel reset; re-run the bake.';
+  if (/null function|signature mismatch|table index/i.test(raw))
+    return 'TrueForm kernel trap (bad indirect call) — corrupted kernel state. Kernel reset; re-run the bake.';
+  return raw;
+}
+
+/**
+ * Run a TF kernel operation with self-heal. On a fatal WASM trap
+ * ({@link isTfFatalTrap}) it {@link resetTf}s the poisoned singleton and rethrows
+ * a READABLE reason ({@link describeTfError}) so the failing bake degrades to an
+ * actionable message AND the next `ensureTf()` re-inits a clean kernel — instead
+ * of "unreachable" plus a dead kernel that fails every later bake. Non-trap errors
+ * (ordinary validation failures) pass through unchanged (no reset). Synchronous —
+ * the tf ops it wraps are synchronous once the kernel is initialised.
+ */
+export function runTfGuarded<T>(fn: () => T): T {
+  try {
+    return fn();
+  } catch (e) {
+    if (isTfFatalTrap(e)) {
+      resetTf();
+      throw new Error(describeTfError(e));
+    }
+    throw e;
+  }
 }
 
 /**
@@ -410,16 +512,22 @@ export async function tfImportMesh(
   const tf = await ensureTf();
   const t = tf as any;
   const { points, faces } = weldMeshByPosition(positions, indices ?? null);
-  let solid = t.mesh(faces, points);
-  // Orient outward (positive signed volume) — a bad mesh can make this throw;
-  // keep the raw mesh so the verdict still surfaces.
-  try { solid = t.positivelyOriented(solid); } catch { /* keep raw */ }
-  try {
-    // cuttable:true → tfResult applies the half-quadrant cut when opts.cutaway is
-    // set (applyTfCutaway self-guards a failing boolean → falls back to the solid).
-    return tfResult(tf, t, solid, { cutaway: opts.cutaway, cuttable: true });
-  } catch {
-    // Any predicate/cut failure on a degenerate import → still return mesh + verdict.
-    return { data: tfMeshData(solid), stats: tfAnalyze(tf, solid) };
-  }
+  // Wrap the kernel work in runTfGuarded: `t.mesh` on a malformed import can WASM-
+  // trap ("unreachable" / OOB), which poisons the shared kernel — the guard resets
+  // the singleton (next ensureTf re-inits clean) + rethrows a readable reason.
+  return runTfGuarded(() => {
+    let solid = t.mesh(faces, points);
+    // Orient outward (positive signed volume) — a bad mesh can make this throw;
+    // keep the raw mesh so the verdict still surfaces. (A benign throw here is NOT
+    // a heap-corrupting trap, so swallowing it is safe.)
+    try { solid = t.positivelyOriented(solid); } catch { /* keep raw */ }
+    try {
+      // cuttable:true → tfResult applies the half-quadrant cut when opts.cutaway is
+      // set (applyTfCutaway self-guards a failing boolean → falls back to the solid).
+      return tfResult(tf, t, solid, { cutaway: opts.cutaway, cuttable: true });
+    } catch {
+      // Any predicate/cut failure on a degenerate import → still return mesh + verdict.
+      return { data: tfMeshData(solid), stats: tfAnalyze(tf, solid) };
+    }
+  });
 }

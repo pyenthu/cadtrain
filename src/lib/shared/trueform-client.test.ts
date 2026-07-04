@@ -1,5 +1,13 @@
 import { describe, it, expect } from 'vitest';
-import { buildCappedMesh, weldMeshByPosition } from './trueform-client';
+import {
+  buildCappedMesh,
+  weldMeshByPosition,
+  isTfFatalTrap,
+  describeTfError,
+  runTfGuarded,
+  resetTf,
+  tfGeneration,
+} from './trueform-client';
 
 /**
  * Guards the open-sweep cap fix: `buildCappedMesh` (the PURE fan/centroid logic
@@ -170,5 +178,75 @@ describe('weldMeshByPosition', () => {
     const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
     const out = weldMeshByPosition(positions, null);
     for (const n of edgeCounts(out.faces).values()) expect(n).toBe(1); // still open
+  });
+});
+
+/**
+ * Guards the TF kernel SELF-HEAL (the "one bad op → every later TF bake fails"
+ * fix). A WASM `unreachable` trap poisons tf's shared singleton; `runTfGuarded`
+ * must recognise the trap, {@link resetTf} the singleton (so the next `ensureTf`
+ * re-imports a FRESH kernel), and rethrow a READABLE reason — while ordinary
+ * validation errors pass through untouched (no needless kernel re-init). All
+ * pure logic, no 31 MB WASM needed.
+ */
+describe('isTfFatalTrap', () => {
+  it('matches emscripten WASM traps (unreachable / OOB / bad indirect call)', () => {
+    expect(isTfFatalTrap(new Error('unreachable'))).toBe(true);
+    expect(isTfFatalTrap(new Error('RuntimeError: unreachable executed'))).toBe(true);
+    expect(isTfFatalTrap(new Error('memory access out of bounds'))).toBe(true);
+    expect(isTfFatalTrap(new Error('null function or function signature mismatch'))).toBe(true);
+    expect(isTfFatalTrap(new Error('Aborted(). Build with -sASSERTIONS'))).toBe(true);
+  });
+  it('matches a WebAssembly.RuntimeError instance', () => {
+    expect(isTfFatalTrap(new WebAssembly.RuntimeError('unreachable'))).toBe(true);
+  });
+  it('matches a BARE numeric heap-pointer throw (emscripten C++ exception)', () => {
+    expect(isTfFatalTrap(123456)).toBe(true);
+    expect(isTfFatalTrap(9007199254740991n)).toBe(true);
+  });
+  it('does NOT match an ordinary validation error (no reset warranted)', () => {
+    expect(isTfFatalTrap(new Error('mesh is not watertight'))).toBe(false);
+    expect(isTfFatalTrap(new Error("TrueForm cannot build node 'call:r_loft' natively"))).toBe(false);
+  });
+});
+
+describe('describeTfError', () => {
+  it('turns the opaque "unreachable" trap into an actionable reason', () => {
+    const msg = describeTfError(new Error('unreachable'));
+    expect(msg).toMatch(/unreachable/i);
+    expect(msg).toMatch(/reset/i); // tells the user the kernel self-healed
+    expect(msg).not.toBe('unreachable'); // not the bare opaque string
+  });
+  it('passes an ordinary message through unchanged', () => {
+    expect(describeTfError(new Error('bad profile'))).toBe('bad profile');
+  });
+});
+
+describe('runTfGuarded — TF singleton self-heal', () => {
+  it('resets the kernel + rethrows a readable reason on a WASM trap', () => {
+    const gen0 = tfGeneration();
+    expect(() => runTfGuarded(() => { throw new Error('unreachable'); }))
+      .toThrow(/unreachable[\s\S]*reset|reset/i);
+    // The self-heal bumped the import generation → next ensureTf re-imports fresh.
+    expect(tfGeneration()).toBe(gen0 + 1);
+  });
+
+  it('rethrows a non-trap error UNCHANGED and does NOT reset the kernel', () => {
+    const gen0 = tfGeneration();
+    const ordinary = new Error('mesh is not watertight');
+    expect(() => runTfGuarded(() => { throw ordinary; })).toThrow(ordinary);
+    expect(tfGeneration()).toBe(gen0); // no needless re-init
+  });
+
+  it('returns the value unchanged on success (no reset)', () => {
+    const gen0 = tfGeneration();
+    expect(runTfGuarded(() => 42)).toBe(42);
+    expect(tfGeneration()).toBe(gen0);
+  });
+
+  it('resetTf bumps the generation so the next import is cache-busted', () => {
+    const gen0 = tfGeneration();
+    resetTf();
+    expect(tfGeneration()).toBe(gen0 + 1);
   });
 });
