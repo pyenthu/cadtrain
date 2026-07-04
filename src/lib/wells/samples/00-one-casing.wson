@@ -1,0 +1,19 @@
+{
+  "meta": {
+    "wellName": "TEST One Casing",
+    "td": 1000,
+    "pbtd": 1000,
+    "_wellType": "producer"
+  },
+  "ch": [
+    {
+      "od": 9.625,
+      "id": 8.681,
+      "top": 0,
+      "bot": 1000,
+      "grade": "L80",
+      "weight": 47,
+      "type": "casing"
+    }
+  ]
+}

@@ -230,7 +230,7 @@
       const top = remap(o.top), bot = remap(o.bot), r = (o.bitSize * diaScale) / 2;
       const geom = cutActive
         ? safe(() => cutCylinder(top, bot, r, cutAxis, COL_OH, {}, wellDir, cutAzimuth))
-        : cutPending ? null : solidTubeForRange(top, bot, r);
+        : solidTubeForRange(top, bot, r);
       return { geom, label: `${o.bitSize}" OH` };
     }).filter((g) => g.geom);
 
@@ -241,7 +241,7 @@
       const innerR = (id * diaScale) / 2, outerR = (od * diaScale) / 2;
       const geom = cutActive
         ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_CH, {}, wellDir, cutAzimuth))
-        : cutPending ? null : shellForRange(top, bot, innerR, outerR);
+        : shellForRange(top, bot, innerR, outerR);
       return { geom, label: `${c.od}" ${c.grade ?? ''}` };
     }).filter((g) => g.geom);
 
@@ -254,7 +254,7 @@
       const innerR = (inner * diaScale) / 2, outerR = (outer * diaScale) / 2;
       const geom = cutActive
         ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_CEMENT, STYLE_CEMENT_CUT, wellDir, cutAzimuth))
-        : cutPending ? null : shellForRange(top, bot, innerR, outerR);
+        : shellForRange(top, bot, innerR, outerR);
       return { geom, label: `Cement` };
     }).filter((g) => g.geom);
 
@@ -269,7 +269,7 @@
       // jewelry reads whole with a notch to the bore — richer than SVTC's uniform 180°.
       tubing = cutActive
         ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_TUBING, {}, wellDir, cutAzimuth, 90))
-        : cutPending ? null : shellForRange(top, bot, innerR, outerR);
+        : shellForRange(top, bot, innerR, outerR);
     }
 
     // Perforation markers — spheres at perf midpoints (world-placed, not warped).
