@@ -16,22 +16,42 @@
    * SVG id namespacing: patterns get a per-instance `svgNs` prefix
    * (memory `svg_gradient_id_collision`) — /primitives mounts N panes on a page.
    */
-  import { computeWson2D, type Wson2DInput, type Pt, type LabelAnchor } from '$lib/wells/wson-2d';
+  import { computeWson2D, type Wson2DInput, type Pt, type LabelAnchor, type CompSeg } from '$lib/wells/wson-2d';
   import { spreadLabels } from './label-layout';
   import type { WsonDoc } from './wson-summary';
   import { defaultViewSettings, type WellViewSettings } from './view-settings';
+  import type { CompletionPatch } from '$lib/wells/wson-mutate';
+  import WellCompPopup from './WellCompPopup.svelte';
 
   let {
     wson = null,
     view = defaultViewSettings(),
     remap,
+    onUpdateCompletion,
+    onDeleteCompletion,
   }: {
     wson?: WsonDoc | null;
     view?: WellViewSettings;
     /** SHARED raw MD → display depth. When omitted, wson-2d rebuilds it from
      *  view.dtx / view.zScale (identical formula). */
     remap?: (md: number) => number;
+    /** Edit-the-diagram hooks (the page's mutation layer). When absent, the
+     *  double-click editor is inert — the view stays read-only. */
+    onUpdateCompletion?: (srcIndex: number, patch: CompletionPatch) => void;
+    onDeleteCompletion?: (srcIndex: number) => void;
   } = $props();
+
+  // ── Double-click completion editor (SVTC CanvasCompPopup parity) ─────────────
+  // Which completion is being edited + the trigger rect the popover anchors to.
+  let editing = $state<{ comp: CompSeg; anchor: DOMRect } | null>(null);
+  const editable = $derived(!!onUpdateCompletion);
+
+  function openEditor(comp: CompSeg, ev: MouseEvent) {
+    if (!editable) return;
+    ev.stopPropagation();
+    const el = ev.currentTarget as SVGGraphicsElement;
+    editing = { comp, anchor: el.getBoundingClientRect() };
+  }
 
   // Per-instance id prefix so cement/icd patterns never collide across panes.
   const svgNs = `w2d-${Math.random().toString(36).slice(2, 8)}`;
@@ -176,10 +196,18 @@
             : comp.type === 'hanger' ? '#475569'
             : '#334155'}
           {#if scene.deviated}
-            <path d={path(comp.poly)} {fill} {stroke} stroke-width="1" opacity="0.92" />
+            <path d={path(comp.poly)} {fill} {stroke} stroke-width="1" opacity="0.92"
+              class:editable ondblclick={(e) => openEditor(comp, e)}
+              role={editable ? 'button' : undefined}
+              tabindex={editable ? 0 : undefined}
+              aria-label={editable ? `Edit ${comp.label}` : undefined} />
           {:else}
             <rect x={comp.rect.x} y={comp.rect.y} width={Math.max(2, comp.rect.w)} height={Math.max(1.5, comp.rect.h)}
-              {fill} {stroke} stroke-width="1" opacity="0.92" />
+              {fill} {stroke} stroke-width="1" opacity="0.92"
+              class:editable ondblclick={(e) => openEditor(comp, e)}
+              role={editable ? 'button' : undefined}
+              tabindex={editable ? 0 : undefined}
+              aria-label={editable ? `Edit ${comp.label}` : undefined} />
           {/if}
         {/each}
       {/if}
@@ -216,6 +244,22 @@
       {/if}
     </svg>
   </div>
+
+  <!-- Double-click completion editor (body-fixed, anchored beside the seg). -->
+  {#if editing && editable}
+    <WellCompPopup
+      anchor={editing.anchor}
+      comp={{
+        description: editing.comp.label,
+        od: editing.comp.od,
+        top: editing.comp.top,
+        bot: editing.comp.bot,
+      }}
+      onSave={(patch) => onUpdateCompletion?.(editing!.comp.srcIndex, patch)}
+      onDelete={() => onDeleteCompletion?.(editing!.comp.srcIndex)}
+      onClose={() => (editing = null)}
+    />
+  {/if}
 {:else}
   <div class="w2d-empty">No WSON loaded.</div>
 {/if}
@@ -235,6 +279,15 @@
     display: block;
     margin: 8px auto;
     font-family: ui-monospace, monospace;
+  }
+  /* A completion is double-click editable — hint it, and lift its opacity on
+     hover so the interactive target reads (edit-the-diagram differentiator). */
+  .editable {
+    cursor: pointer;
+  }
+  .editable:hover {
+    opacity: 1;
+    stroke-width: 1.6;
   }
   .w2d-empty {
     height: 100%;

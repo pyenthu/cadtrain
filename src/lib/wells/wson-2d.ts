@@ -91,6 +91,9 @@ export interface CompSeg extends BodySeg {
   type: 'packer' | 'hanger' | 'icd' | 'liner' | 'tubing';
   od: number;
   outerRadius: number;
+  /** Index into the source `wson.completions[]` — the edit key the 2D view's
+   *  double-click handler passes to the mutation layer (`wson-mutate.ts`). */
+  srcIndex: number;
 }
 
 /** Perforation marks — a set of small arrow triangles (each = a 3-point poly). */
@@ -427,6 +430,7 @@ export function computeWson2D(wson: Wson2DInput, opts: Wson2DOpts): Wson2DScene 
     }
     const outerRadius = r * (type === 'packer' || type === 'hanger' ? 1.5 : 1.2);
     completions.push({
+      srcIndex: i,
       top, bot, type, od: c.od ?? 2.875, outerRadius,
       rect: rectFor(top, bot, r),
       poly: deviated ? bodyPoly(top, bot, r, r) : [],
