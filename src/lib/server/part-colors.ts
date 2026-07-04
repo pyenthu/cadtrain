@@ -66,11 +66,12 @@ function depColorFromMeta(meta: any): DepColor | undefined {
 export async function resolveDepColors(
   source: string,
   fetchFn: typeof globalThis.fetch,
+  seen: Set<string> = new Set(),
 ): Promise<DepColorMap> {
   const out: DepColorMap = {};
   let uses: string[] = [];
   try { uses = usesOf(source); } catch { return out; }
-  const unique = [...new Set(uses)].filter((d) => /^[a-z_][a-z0-9_]*$/i.test(d));
+  const unique = [...new Set(uses)].filter((d) => /^[a-z_][a-z0-9_]*$/i.test(d) && !seen.has(d));
   await Promise.all(unique.map(async (dep) => {
     try {
       const r = await fetchFn(`/api/primitives/source?name=${encodeURIComponent(dep)}`, { cache: 'no-store' });
@@ -78,11 +79,38 @@ export async function resolveDepColors(
       const d = await r.json();
       const s = typeof d?.source === 'string' ? d.source : '';
       if (!s) return;
-      const c = depColorFromMeta(evalMetaLiteral(s));
-      if (c) out[dep] = c;
+      // EFFECTIVE-appearance inheritance (#86): resolve the dep's OWN color-by-
+      // source RECURSIVELY, then hand its BODY's effective colour up — so a
+      // material set at ANY level carries to the next assembly. A parent still
+      // overrides per-instance (its instanceColors win over this inherited dep
+      // colour in the parent's analyzeParts). `seen` breaks any use-cycle.
+      const depOfDep = await resolveDepColors(s, fetchFn, new Set([...seen, dep]));
+      let meta: any = null;
+      try { meta = evalMetaLiteral(s); } catch { /* leaf-ish */ }
+      const lut = analyzeParts(s, depOfDep);
+      const eff = lut.active ? effectiveDepColor(meta, lut, depOfDep) : depColorFromMeta(meta);
+      if (eff) out[dep] = eff;
     } catch { /* dep unreadable → palette fallback */ }
   }));
   return out;
+}
+
+/** The EFFECTIVE colour a part exports to its PARENT (#86 inheritance): the
+ *  BODY's own per-part override ▸ this part's top-level Default (meta.colorOuter)
+ *  ▸ the body's dep's effective colour. EXPLICIT only — a body coloured only by
+ *  the deterministic palette exports NOTHING (the parent picks for that instance
+ *  itself), so palette fallbacks never leak up a level. */
+function effectiveDepColor(meta: any, lut: PartColorLUT, depOfDep: DepColorMap): DepColor | undefined {
+  const ic = (lut.bodyName && meta?.instanceColors && typeof meta.instanceColors === 'object')
+    ? (meta.instanceColors[lut.bodyName] ?? {}) : {};
+  const dc = lut.bodyCall ? depOfDep[lut.bodyCall] : undefined;
+  const outer = hexOrUndef(ic.outer) ?? hexOrUndef(meta?.colorOuter) ?? dc?.outer;
+  const inner = hexOrUndef(ic.inner) ?? hexOrUndef(meta?.colorInner) ?? dc?.inner;
+  const icOp = typeof ic.opacity === 'number' && ic.opacity > 0 && ic.opacity < 1 ? ic.opacity : undefined;
+  const mOp = typeof meta?.opacity === 'number' && meta.opacity > 0 && meta.opacity < 1 ? meta.opacity : undefined;
+  const opacity = icOp ?? mOp ?? dc?.opacity;
+  if (!outer && !inner && opacity === undefined) return undefined;
+  return { ...(outer ? { outer } : {}), ...(inner ? { inner } : {}), ...(opacity !== undefined ? { opacity } : {}) };
 }
 
 export interface PartColorLUT {
@@ -107,13 +135,19 @@ export interface PartColorLUT {
   bodyInner: string;
   /** Primary body's outer colour — the unknown additive-surface fallback. */
   bodyColor: string;
+  /** Primary body's INSTANCE NAME + the dep it CALLS — used by resolveDepColors
+   *  to compute this part's EFFECTIVE colour (what a PARENT inherits): the body's
+   *  own per-part override ▸ this part's top-level Default ▸ the body's dep. Null
+   *  when no body recognized. (#86 effective-appearance inheritance.) */
+  bodyName: string | null;
+  bodyCall: string | null;
   /** True when there's a usable table → renderer colors by source. */
   active: boolean;
 }
 
 const INACTIVE: PartColorLUT = {
   outer: {}, inner: {}, opacity: {}, subtractive: [], bodyId: null,
-  bodyInner: DEFAULT_INNER_COLOR, bodyColor: '#cc2222', active: false,
+  bodyInner: DEFAULT_INNER_COLOR, bodyColor: '#cc2222', bodyName: null, bodyCall: null, active: false,
 };
 
 /** Extract a per-instance opacity override (0<o<1) from a parent's stored
@@ -193,7 +227,7 @@ export function analyzeParts(source: string, depColors?: DepColorMap): PartColor
     if (op !== undefined) opacity[id] = op;
     if (subtractiveNames.has(inst.name)) subtractive.push(id);
   }
-  return { outer, inner, opacity, subtractive, bodyId, bodyInner: bodyPair.inner, bodyColor: bodyPair.outer, active: true };
+  return { outer, inner, opacity, subtractive, bodyId, bodyInner: bodyPair.inner, bodyColor: bodyPair.outer, bodyName, bodyCall: bodyCall ?? null, active: true };
 }
 
 /** Per-instance colour LUT for a K.63 .asm.ts source. Each Call node in
@@ -265,5 +299,7 @@ function analyzeAssembly(meta: any, depColors?: DepColorMap): PartColorLUT {
     if (op !== undefined) opacity[id] = op;
     if (subtractiveNames.has(name)) subtractive.push(id);
   }
-  return { outer, inner, opacity, subtractive, bodyId, bodyInner: bodyPair.inner, bodyColor: bodyPair.outer, active: true };
+  // In the .asm.ts path the Call node's alias IS the dep fn name (n.fn), so the
+  // body's instance name doubles as the dep it calls.
+  return { outer, inner, opacity, subtractive, bodyId, bodyInner: bodyPair.inner, bodyColor: bodyPair.outer, bodyName, bodyCall: bodyName, active: true };
 }
