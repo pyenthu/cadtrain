@@ -234,7 +234,10 @@
     for (const t of tabs) {
       const f = fileById(t.id);
       if (f?.doc && workingDocs[t.id] === undefined) {
-        workingDocs[t.id] = structuredClone(f.doc);
+        // JSON round-trip, NOT structuredClone — f.doc is a Svelte $state proxy
+        // and structuredClone(proxy) throws DataCloneError (crashed the whole
+        // /wells page → "3D not opening"). WSON is plain JSON, so this is safe.
+        workingDocs[t.id] = JSON.parse(JSON.stringify(f.doc));
       }
     }
   });
