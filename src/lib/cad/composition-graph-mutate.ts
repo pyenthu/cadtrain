@@ -14,7 +14,7 @@ import type {
   PolygonNode, PolyRepeatBinding, PolyRepeatNode, SketchOpEntry, SketchNode,
   SketchRepeatNode, SketchRepeatRef, SketchExprListRef,
   ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem, SplineNode, WarpNode,
-  GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph,
+  GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph, MaterialNode, PartAppearance,
 } from './composition-graph-types';
 import { newNodeId, asLiteral, asParam, asExpr } from './composition-graph-types';
 
@@ -1290,6 +1290,97 @@ export function setSplinePointsExpr(graph: Graph, id: NodeId, value: ArgValue | 
   if (value == null) delete next.pointsExpr;
   else next.pointsExpr = value;
   return finalize({ ...graph, nodes: { ...graph.nodes, [id]: next } });
+}
+
+// ─── MATERIAL nodes (G-MAT-CARD) ───────────────────────────────────────────
+// A floating, view-only node holding a reusable appearance bundle. Wire its
+// output socket into a Call node's material socket (bindMaterial) to assign the
+// bundle to that part. Not part of the render tree → emits no body.
+
+/** Drop a new material node onto the canvas with sensible defaults. */
+export function addMaterialNode(graph: Graph, at?: LayoutXY): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const existing = Object.values(graph.nodes).filter((n) => n.type === 'material').length;
+  const node: MaterialNode = {
+    id, type: 'material',
+    name: `mat${existing + 1}`,
+    colorOuter: '#cc2222',
+  };
+  const xy: LayoutXY = at ?? { x: 120 + (existing % 4) * 200, y: 480 + existing * 40 };
+  const g = finalize({
+    ...graph,
+    nodes: { ...graph.nodes, [id]: node },
+    layout: { ...graph.layout, [id]: xy },
+  });
+  return { graph: g, id };
+}
+
+/** Patch a material node's appearance fields (sparse). A field set to `null`
+ *  is CLEARED (removed); `undefined` keys are left untouched. */
+export function updateMaterialNode(
+  graph: Graph, id: NodeId,
+  patch: Partial<{ name: string; colorOuter: string | null; colorInner: string | null; material: string | null; opacity: number | null; texture: string | null }>,
+): Graph {
+  const node = graph.nodes[id];
+  if (!node || node.type !== 'material') return graph;
+  const next = { ...node } as MaterialNode;
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined) continue;
+    if (v === null || (typeof v === 'string' && (v === '' || v === 'none'))) delete (next as any)[k];
+    else (next as any)[k] = v;
+  }
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: next } });
+}
+
+/** Delete a material node AND any bindings that reference it. */
+export function removeMaterialNode(graph: Graph, id: NodeId): Graph {
+  if (graph.nodes[id]?.type !== 'material') return graph;
+  const nodes = { ...graph.nodes }; delete nodes[id];
+  const layout = { ...graph.layout }; delete layout[id];
+  let materialBindings = graph.materialBindings;
+  if (materialBindings && Object.values(materialBindings).includes(id)) {
+    materialBindings = Object.fromEntries(Object.entries(materialBindings).filter(([, m]) => m !== id));
+    if (!Object.keys(materialBindings).length) materialBindings = undefined;
+  }
+  return finalize({ ...graph, nodes, layout, materialBindings });
+}
+
+/** Bind a material node to a Call (output-part) node — the part's appearance
+ *  then resolves from the material. Overwrites any existing binding for that
+ *  part. No-op unless both nodes exist and are the right types. */
+export function bindMaterial(graph: Graph, callId: NodeId, matId: NodeId): Graph {
+  if (graph.nodes[callId]?.type !== 'call' || graph.nodes[matId]?.type !== 'material') return graph;
+  return finalize({ ...graph, materialBindings: { ...graph.materialBindings, [callId]: matId } });
+}
+
+/** Remove the material binding for a Call node (falls back to partAppearance /
+ *  part-level default). */
+export function unbindMaterial(graph: Graph, callId: NodeId): Graph {
+  if (!graph.materialBindings?.[callId]) return graph;
+  const materialBindings: Record<NodeId, NodeId> = { ...graph.materialBindings };
+  delete materialBindings[callId];
+  return finalize({ ...graph, materialBindings: Object.keys(materialBindings).length ? materialBindings : undefined });
+}
+
+/** Resolve the EFFECTIVE appearance for an output-part Call node: a wired
+ *  MaterialNode bundle (if bound + present) wins over the per-part
+ *  `partAppearance` override, which in turn is what the viewer already layers on
+ *  the part-level default. Returns a sparse PartAppearance-shaped object. */
+export function resolveEffectiveAppearance(graph: Graph, callId: NodeId): PartAppearance {
+  const matId = graph.materialBindings?.[callId];
+  if (matId) {
+    const m = graph.nodes[matId];
+    if (m && m.type === 'material') {
+      const out: PartAppearance = {};
+      if (m.colorOuter) out.colorOuter = m.colorOuter;
+      if (m.colorInner) out.colorInner = m.colorInner;
+      if (m.material && m.material !== 'none') out.material = m.material;
+      if (typeof m.opacity === 'number' && m.opacity > 0 && m.opacity < 1) out.opacity = m.opacity;
+      if (m.texture) out.texture = m.texture;
+      return out;
+    }
+  }
+  return graph.partAppearance?.[callId] ?? {};
 }
 
 /** Toggle the spline between a CLOSED loop and an OPEN curve. The path producer

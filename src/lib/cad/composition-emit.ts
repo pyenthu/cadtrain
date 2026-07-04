@@ -1107,6 +1107,9 @@ function serialiseGraph(graph: Graph): Record<string, unknown> {
     ...(graph.viewZScale != null ? { viewZScale: graph.viewZScale } : {}),
     ...(graph.viewXScale != null ? { viewXScale: graph.viewXScale } : {}),
     ...(graph.partAppearance && Object.keys(graph.partAppearance).length ? { partAppearance: graph.partAppearance } : {}),
+    // MATERIAL wire bindings (callId → materialNodeId) — sparse so files with no
+    // material wiring stay byte-identical. hydrateGraph reads this back.
+    ...(graph.materialBindings && Object.keys(graph.materialBindings).length ? { materialBindings: graph.materialBindings } : {}),
     // Calculated expressions (B.6 / id 914) — sparse so legacy files stay
     // byte-identical. hydrateGraph reads these back into graph.exprs.
     ...(graph.exprs && graph.exprs.length ? { exprs: graph.exprs } : {}),

@@ -74,6 +74,7 @@
     addExprInstance,
     addSpline,
     addWarpPlaceholder,
+    addMaterialNode,
     removeExprDef,
     addStackPlaceholder,
     addRepeatPlaceholder,
@@ -1735,6 +1736,11 @@
    *  left socket; emits warpSpline(solid, path, opts). */
   function dropWarp() { closePicker(); graph = addWarpPlaceholder(graph).graph; }
 
+  /** Drop a MATERIAL node (G-MAT-CARD) — a floating appearance bundle. Wire its
+   *  output into a part's material socket to assign colour/texture/opacity,
+   *  replacing the Properties-panel per-part assignment. */
+  function dropMaterial() { closePicker(); graph = addMaterialNode(graph).graph; bakeNonce++; }
+
   /** Profile-mode "pen" nodes — turtle-graphics-style polygon authoring.
    *  Each pen node lands as a Call with a synthetic src tag (`pen_mv`,
    *  `pen_line`, …) and default literal args. The Phase 2b profile-
@@ -3252,6 +3258,11 @@
       <!-- Spline PATH (TODO #15) — 3D control points → list<point3> → r_sweep.path. -->
       <button class="ge-pick-item" type="button" onclick={dropSpline}>
         <span class="ge-pick-icon">⌇</span><span class="ge-pick-name">spline</span><span class="ge-pick-hint">3D path</span>
+      </button>
+      <!-- Material CARD (G-MAT-CARD) — reusable appearance bundle; wire into a
+           part's material socket to replace the Properties assignment. -->
+      <button class="ge-pick-item" type="button" onclick={dropMaterial}>
+        <span class="ge-pick-icon">◑</span><span class="ge-pick-name">material</span><span class="ge-pick-hint">colour·texture</span>
       </button>
       <!-- Loop — the standalone Repeat card (build N copies as a list, pre-wired
            into a Stack). Same drop as container▸repeat, surfaced top-level so it

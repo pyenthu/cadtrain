@@ -333,6 +333,18 @@ export function hydrateGraph(serialised: any): Graph {
     }
     return Object.keys(out).length ? out : undefined;
   })();
+  // MATERIAL wire bindings (callId → materialNodeId) — restore the sparse map,
+  // keeping only well-formed string→string pairs (dangling refs resolve to no
+  // material at read time, so no need to validate node existence here).
+  const savedMaterialBindings = (() => {
+    const raw = (serialised as any).materialBindings;
+    if (!raw || typeof raw !== 'object') return undefined;
+    const out: Record<string, string> = {};
+    for (const [callId, matId] of Object.entries(raw as Record<string, any>)) {
+      if (typeof callId === 'string' && typeof matId === 'string' && callId && matId) out[callId] = matId;
+    }
+    return Object.keys(out).length ? out : undefined;
+  })();
   // Calculated expressions (B.6 / id 914) — restore the sparse `exprs` array,
   // keeping only well-formed {name, src} string rows (defensive against hand-
   // edited / legacy files). Absent ⇒ undefined ⇒ emit byte-identical to today.
@@ -432,6 +444,7 @@ export function hydrateGraph(serialised: any): Graph {
     ...(savedViewZScale != null ? { viewZScale: savedViewZScale } : {}),
     ...(savedViewXScale != null ? { viewXScale: savedViewXScale } : {}),
     ...(savedPartAppearance ? { partAppearance: savedPartAppearance } : {}),
+    ...(savedMaterialBindings ? { materialBindings: savedMaterialBindings } : {}),
     ...(savedExprs ? { exprs: savedExprs } : {}),
     ...(exprDefsOut.length ? { exprDefs: exprDefsOut } : {}),
   };

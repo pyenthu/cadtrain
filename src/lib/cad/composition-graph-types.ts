@@ -488,7 +488,31 @@ export type WarpNode = {
   validate?: boolean;
 };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode;
+/** MATERIAL node (G-MAT-CARD) — a FLOATING, view-only node holding a reusable
+ *  appearance bundle (same fields as PartAppearance) plus a user `name`. It is
+ *  NOT part of the render tree and emits NO body: like a param source it lives
+ *  in `graph.nodes` purely so the editor can render + wire it. A wire from a
+ *  material node to a Call node's material socket records
+ *  `graph.materialBindings[callId] = matId`; that part's EFFECTIVE appearance
+ *  then resolves to this bundle (see resolveEffectiveAppearance in
+ *  composition-graph-mutate). Round-trips for free — serialiseGraph writes
+ *  graph.nodes wholesale, and every `node.type` switch simply has no case for
+ *  it (silently skipped by validation / emit-body / uses walks). */
+export type MaterialNode = {
+  id: NodeId;
+  type: 'material';
+  name?: string;
+  colorOuter?: string;
+  colorInner?: string;
+  /** Phong preset — 'steel'|'aluminum'|'titanium'|'brass'|'none'. */
+  material?: string;
+  /** Render opacity 0–1 (<1 = see-through). */
+  opacity?: number;
+  /** Procedural texture map name — 'rock'|'cement'|'steel'|…. */
+  texture?: string;
+};
+
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode | MaterialNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 
@@ -590,6 +614,14 @@ export type Graph = {
    *  segment refactor). Per-part z-offset is NOT here — it uses the Stack's
    *  existing per-child ref (`setStackChildRef`). */
   partAppearance?: Record<NodeId, PartAppearance>;
+  /** MATERIAL wire bindings — output-part Call node id → MaterialNode id. A Call
+   *  whose id is a key here resolves its appearance from the referenced
+   *  MaterialNode (winning over `partAppearance[callId]` + the part-level
+   *  default). One material node may be bound to many parts (reusable). SPARSE +
+   *  optional → absent ⇒ nothing wired, byte-identical emit. Round-trips via
+   *  serialiseGraph + hydrateGraph exactly like `partAppearance`. See
+   *  resolveEffectiveAppearance (composition-graph-mutate). */
+  materialBindings?: Record<NodeId, NodeId>;
   /** CALCULATED expressions (B.6 / id 914). SPARSE + optional → absent/empty
    *  ⇒ the emitted source is byte-identical to today (no migration). When
    *  non-empty, composition-emit prepends the topo-ordered `const e_<name> =

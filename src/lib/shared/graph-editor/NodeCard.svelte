@@ -42,6 +42,7 @@
     moveSketchOp,
     removeSketchOp,
     removeNode,
+    removeMaterialNode,
     setSplinePlot,
     setWarpRefine,
     setWarpStretch,
@@ -130,6 +131,7 @@
     openPolyRepeatCountExprPop,
     openExprDefEditor,
     onOpenSplineEditor,
+    onOpenMaterialEditor,
     setHoverVertex,
     clearHoverVertex,
     openPolyPreview,
@@ -180,6 +182,9 @@
     openExprDefEditor: (ev: MouseEvent, defId: string) => void;
     /** Open the 3D spline-editor popup for a `spline` node (TODO #15). */
     onOpenSplineEditor: (ev: MouseEvent, id: string) => void;
+    /** Open the material-editor popover for a material node (G-MAT-CARD). Optional
+     *  so callers that don't wire material editing still type-check. */
+    onOpenMaterialEditor?: (ev: PointerEvent, id: string) => void;
     setHoverVertex: (polyId: string, idx: number) => void;
     clearHoverVertex: (polyId: string, idx: number) => void;
     openPolyPreview: (ev: PointerEvent, polyId: string) => void;
@@ -1607,6 +1612,45 @@
                   data-tip={`path: ${splinePort?.label ?? 'list of 3D points'} — drag onto a sweep’s path arg`}
                   onpointerdown={(ev) => wire.startExprOutWire(ev, n.id, 'path')}/>
 
+              {:else if n.type === 'material'}
+                {@const m = n as any}
+                {@const mw = size.w}
+                {@const mh = size.h}
+                {@const swatch = m.colorOuter ?? '#cc2222'}
+                <!-- MATERIAL card (G-MAT-CARD) — a floating, reusable appearance
+                     bundle. Compact card: ◑ + name + colour swatch + a material
+                     OUTPUT socket on the right. Click ◑/name to edit the bundle
+                     (colour · inner · material · opacity · texture) in a popover;
+                     drag the RIGHT socket onto a part's material socket to assign
+                     it, replacing the Properties per-part assignment. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg material"
+                  width={mw} height={mh} rx="6"
+                  data-tip="Material — reusable appearance (colour · texture · opacity). Click to edit; drag the RIGHT socket into a part's material socket to assign it."
+                  style="width: {mw}px; height: {mh}px"
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <!-- ◑ + name — click opens the material editor popover -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x="12" y="20" class="ge-node-title ge-mat-title"
+                  data-tip="Edit this material (colour · inner · material · opacity · texture)"
+                  onpointerdown={(ev) => { ev.stopPropagation(); onOpenMaterialEditor?.(ev, n.id); }}>◑ {m.name ?? 'material'}</text>
+                <!-- colour swatch preview -->
+                <rect x="12" y={mh - 22} width="20" height="12" rx="2" style={`fill: ${swatch}`} stroke="#555" stroke-width="0.75"/>
+                {#if m.texture}<text x="38" y={mh - 12} class="ge-mat-tex">{m.texture}</text>{/if}
+                <!-- × delete -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={mw - 20} y="19" class="ge-node-x"
+                  data-tip="Delete this material node (also unwires any parts using it)"
+                  onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeMaterialNode(graph, n.id)); }}>×</text>
+                <!-- OUTPUT socket (right edge, centered) — material channel. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out material-out"
+                  cx={mw} cy={mh / 2} r="6"
+                  data-tip="material out — drag onto a part's ◑ material socket to assign this appearance"
+                  onpointerdown={(ev) => (wire as any).startMaterialWire?.(ev, n.id)}/>
+
               {:else if n.type === 'warp'}
                 {@const w = n as any}
                 {@const childWired = typeof w.child === 'string' && !!w.child && !!graph.nodes[w.child]}
@@ -1760,6 +1804,11 @@
   .ge-node-bg.expr { fill: #ecfeff; stroke: #0e7490; stroke-width: 2; }
   /* Spline PATH producer (TODO #15) — violet family, matches list<point3>. */
   .ge-node-bg.spline { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; }
+  /* Material card (G-MAT-CARD) — emerald producer, matches the material-out socket. */
+  .ge-node-bg.material { fill: #ecfdf5; stroke: #10b981; stroke-width: 1.5; }
+  .ge-mat-title { cursor: pointer; }
+  .ge-mat-tex { font: 9px ui-monospace, monospace; fill: #6b7280; }
+  .ge-sock.out.material-out { fill: #10b981; stroke: #059669; stroke-width: 2; }
   /* Wired-points state (#26) — a deeper fill so it reads as "expression-driven". */
   .ge-node-bg.spline.wired { fill: #ede9fe; stroke: #6d28d9; }
   .ge-sp-wired-badge { font: 700 9px ui-monospace, monospace; fill: #6d28d9; pointer-events: none; }
