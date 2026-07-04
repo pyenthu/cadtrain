@@ -66,9 +66,15 @@ function deserializeGeometry(s: SerializedGeometry): THREE.BufferGeometry {
     );
   }
   if (s.colors) {
+    // #61 stage C — colour is 3 (RGB) or 4 (RGBA, per-subpart alpha) components.
+    // Infer the stride from the vertex count so the alpha channel survives the
+    // round-trip (THREE reads it as USE_COLOR_ALPHA when the material is
+    // transparent). Falls back to 3 when positions are absent/empty.
+    const nv = s.positions.length / 3;
+    const comps = nv > 0 && s.colors.length % nv === 0 ? s.colors.length / nv : 3;
     geo.setAttribute(
       'color',
-      new THREE.BufferAttribute(new Float32Array(s.colors), 3),
+      new THREE.BufferAttribute(new Float32Array(s.colors), comps === 4 ? 4 : 3),
     );
   }
   if (s.index) {

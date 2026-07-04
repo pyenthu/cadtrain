@@ -22,6 +22,12 @@ export { CIRCULAR_SEGMENTS_DEFAULT, CIRCULAR_SEGMENTS_COMPOSE, setCircularSegmen
 export interface PartColorLUT {
   outer: Record<number, string>;
   inner: Record<number, string>;
+  /** hashId → render OPACITY (0–1). #61 stage C — present only for subparts
+   *  whose authored opacity is <1; absent → opaque. When ANY entry is <1 the
+   *  colour-by-source bake emits a 4-component (RGBA) vertex-colour attribute
+   *  (alpha = the owning subpart's opacity) so one composed mesh can render a
+   *  transparent subpart beside opaque ones. Empty/absent → RGB, byte-identical. */
+  opacity?: Record<number, number>;
   subtractive: number[];
   bodyId: number | null;
   bodyInner: string;
@@ -838,9 +844,21 @@ function colorBySourceGeo(
   const bodyInnerRgb = hexToRgb(parts.bodyInner);
   const bodyOuterRgb: [number, number, number] =
     (parts.bodyId != null && outerRgb.get(parts.bodyId)) || hexToRgb(parts.bodyColor);
-
+  // #61 stage C — per-subpart ALPHA. When ANY subpart's opacity is <1 the
+  // colour attribute becomes 4-component (RGBA); alpha for a triangle follows
+  // the SAME source→role classification as its colour (a cross-section reveal
+  // borrows the body's alpha, a cut/bore wall the tool's, else the part's own).
+  // No entry <1 → `alphaOn` is false → RGB output, byte-identical to pre-alpha.
+  const opac: Record<number, number> = parts.opacity ?? {};
+  const alphaOn = Object.keys(opac).some((k) => opac[Number(k)] < 1);
+  const bodyAlpha = (parts.bodyId != null ? opac[parts.bodyId] : undefined) ?? 1;
+  const alphaFor = (id: number): number => {
+    if (id === SECTION_ID) return bodyAlpha;
+    return opac[id] ?? 1;
+  };
+  const comps = alphaOn ? 4 : 3;
   const outPos = new Float32Array(nt * 9);
-  const outCol = new Float32Array(nt * 9);
+  const outCol = new Float32Array(nt * comps * 3);
   // calculateNormals is per-facet/flat on a straight prism and ALL-ZERO on some
   // welded/revolved meshes — so PREFER crease-aware smooth normals recomputed
   // from the INDEXED topology (a non-indexed computeVertexNormals would be FLAT;
@@ -863,15 +881,19 @@ function colorBySourceGeo(
     if (id === SECTION_ID) rgb = bodyInnerRgb;          // cross-section reveal
     else if (subtractive.has(id)) rgb = innerRgb.get(id) ?? bodyInnerRgb; // cut/bore wall
     else rgb = outerRgb.get(id) ?? bodyOuterRgb;        // external skin
-    const idx = i * 9;
+    const a = alphaOn ? alphaFor(id) : 1;               // per-source alpha
+    const idx = i * 9;                                  // position/normal stride (nt*9)
+    const cidx = i * comps * 3;                         // colour stride (nt*comps*3)
     for (let v = 0; v < 3; v++) {
       const vi = tri[i * 3 + v];
       outPos[idx + v * 3]     = vp[vi * np];
       outPos[idx + v * 3 + 1] = vp[vi * np + 1];
       outPos[idx + v * 3 + 2] = vp[vi * np + 2];
-      outCol[idx + v * 3]     = rgb[0];
-      outCol[idx + v * 3 + 1] = rgb[1];
-      outCol[idx + v * 3 + 2] = rgb[2];
+      const co = cidx + v * comps;
+      outCol[co]     = rgb[0];
+      outCol[co + 1] = rgb[1];
+      outCol[co + 2] = rgb[2];
+      if (alphaOn) outCol[co + 3] = a;
       if (creaseNrm) {
         outNrm[idx + v * 3]     = creaseNrm[idx + v * 3];
         outNrm[idx + v * 3 + 1] = creaseNrm[idx + v * 3 + 1];
@@ -885,7 +907,9 @@ function colorBySourceGeo(
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
-  geo.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
+  // itemSize 4 (RGBA) when any subpart is transparent — THREE reads the 4th
+  // component as vertex alpha (USE_COLOR_ALPHA) once the material is transparent.
+  geo.setAttribute('color', new THREE.BufferAttribute(outCol, comps));
   geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
   return geo;
 }

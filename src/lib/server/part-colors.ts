@@ -25,7 +25,7 @@ import { partHashId } from '$lib/cad/part-id';
  *  Keyed by DEP ID (the called function name) in a `DepColorMap`. #86 — this
  *  is what makes a composed part show each subpart in the colour it was
  *  authored with, instead of a palette-by-instance-name colour. */
-export interface DepColor { outer?: string; inner?: string }
+export interface DepColor { outer?: string; inner?: string; opacity?: number }
 export type DepColorMap = Record<string, DepColor>;
 
 const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
@@ -42,8 +42,14 @@ function depColorFromMeta(meta: any): DepColor | undefined {
   const matInner = hexOrUndef(m?.inner?.color) ?? hexOrUndef(m?.color);
   const outer = hexOrUndef(meta.colorOuter) ?? matOuter;
   const inner = hexOrUndef(meta.colorInner) ?? matInner;
-  if (!outer && !inner) return undefined;
-  return { ...(outer ? { outer } : {}), ...(inner ? { inner } : {}) };
+  // #61 G-MAT1 stage C — a subpart's OWN render opacity (meta.opacity, 0<o<1)
+  // rides along so a composed assembly can render that subpart transparent
+  // (e.g. bw_open_hole = 0.15) while its siblings stay opaque. Anything ≥1 /
+  // non-finite / absent → undefined = fully opaque = byte-identical pre-alpha.
+  const o = typeof meta.opacity === 'number' && Number.isFinite(meta.opacity) ? meta.opacity : NaN;
+  const opacity = o > 0 && o < 1 ? o : undefined;
+  if (!outer && !inner && opacity === undefined) return undefined;
+  return { ...(outer ? { outer } : {}), ...(inner ? { inner } : {}), ...(opacity !== undefined ? { opacity } : {}) };
 }
 
 /**
@@ -85,6 +91,12 @@ export interface PartColorLUT {
   /** hashId → inner '#rrggbb' (the colour shown on this part's cut surfaces —
    *  e.g. a subtractive tool's bore wall). */
   inner: Record<number, string>;
+  /** hashId → render OPACITY (0–1). Present only for subparts whose own
+   *  `meta.opacity` (or per-instance appearance override) is <1; absent → 1
+   *  (opaque). Drives the RGBA vertex-colour alpha in the colour-by-source
+   *  bake so ONE composed mesh can show a transparent subpart (open hole) next
+   *  to opaque ones (casing/cement/tubing). Empty → byte-identical RGB output. */
+  opacity: Record<number, number>;
   /** hashIds used as subtract/intersect tools → their faces are CUT surfaces
    *  and take the `inner` colour, not `outer`. */
   subtractive: number[];
@@ -100,9 +112,18 @@ export interface PartColorLUT {
 }
 
 const INACTIVE: PartColorLUT = {
-  outer: {}, inner: {}, subtractive: [], bodyId: null,
+  outer: {}, inner: {}, opacity: {}, subtractive: [], bodyId: null,
   bodyInner: DEFAULT_INNER_COLOR, bodyColor: '#cc2222', active: false,
 };
+
+/** Extract a per-instance opacity override (0<o<1) from a parent's stored
+ *  instanceColors / partAppearance entry — the parent's explicit pick, which
+ *  WINS over the subpart's own meta.opacity. Anything else → undefined. */
+function overrideOpacity(entry: unknown): number | undefined {
+  if (!entry || typeof entry !== 'object') return undefined;
+  const o = (entry as any).opacity;
+  return typeof o === 'number' && Number.isFinite(o) && o > 0 && o < 1 ? o : undefined;
+}
 
 export function analyzeParts(source: string, depColors?: DepColorMap): PartColorLUT {
   // K.63 ASSEMBLY PATH — `.asm.ts` files carry meta.composition (a TreeNode)
@@ -158,6 +179,7 @@ export function analyzeParts(source: string, depColors?: DepColorMap): PartColor
 
   const outer: Record<number, string> = {};
   const inner: Record<number, string> = {};
+  const opacity: Record<number, number> = {};
   const subtractive: number[] = [];
   for (const inst of instances) {
     const id = partHashId(inst.name);
@@ -165,9 +187,13 @@ export function analyzeParts(source: string, depColors?: DepColorMap): PartColor
     const c = colorsForInstance(inst.name, override);
     outer[id] = c.outer;
     inner[id] = c.inner;
+    // #61 stage C — per-subpart alpha: the parent's explicit override wins,
+    // else the subpart's own authored meta.opacity. Absent → opaque (omitted).
+    const op = overrideOpacity(instanceColors[inst.name]) ?? depColors?.[inst.call]?.opacity;
+    if (op !== undefined) opacity[id] = op;
     if (subtractiveNames.has(inst.name)) subtractive.push(id);
   }
-  return { outer, inner, subtractive, bodyId, bodyInner: bodyPair.inner, bodyColor: bodyPair.outer, active: true };
+  return { outer, inner, opacity, subtractive, bodyId, bodyInner: bodyPair.inner, bodyColor: bodyPair.outer, active: true };
 }
 
 /** Per-instance colour LUT for a K.63 .asm.ts source. Each Call node in
@@ -226,13 +252,18 @@ function analyzeAssembly(meta: any, depColors?: DepColorMap): PartColorLUT {
 
   const outer: Record<number, string> = {};
   const inner: Record<number, string> = {};
+  const opacity: Record<number, number> = {};
   const subtractive: number[] = [];
   for (const name of seen) {
     const id = partHashId(name);
     const c = colorsForInstance(name, instanceColors[name] ?? depColors?.[name]);
     outer[id] = c.outer;
     inner[id] = c.inner;
+    // #61 stage C — per-subpart alpha (the .asm.ts Call alias doubles as the dep
+    // id, so depColors[name] is the subpart's own opacity; parent override wins).
+    const op = overrideOpacity(instanceColors[name]) ?? depColors?.[name]?.opacity;
+    if (op !== undefined) opacity[id] = op;
     if (subtractiveNames.has(name)) subtractive.push(id);
   }
-  return { outer, inner, subtractive, bodyId, bodyInner: bodyPair.inner, bodyColor: bodyPair.outer, active: true };
+  return { outer, inner, opacity, subtractive, bodyId, bodyInner: bodyPair.inner, bodyColor: bodyPair.outer, active: true };
 }

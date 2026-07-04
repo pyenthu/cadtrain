@@ -108,15 +108,29 @@
   // Apply an opacity onto a THREE material IN PLACE: <1 → transparent + no
   // depth-write (so overlapping transparent shells blend instead of z-fighting
   // / occluding); =1 → the opaque defaults (transparent:false, depthWrite:true).
-  function applyOpacity(mat: any, op: number) {
+  // `vertexAlpha` (stage C) forces transparency even when the whole-part `op`
+  // is 1: the mesh's colour attribute is RGBA (itemSize 4) and carries a <1
+  // alpha on some subpart (e.g. an open hole in a well). THREE only multiplies
+  // that per-vertex alpha (USE_COLOR_ALPHA) when the material is transparent,
+  // so a single opaque part with a transparent subpart still needs it on.
+  function applyOpacity(mat: any, op: number, vertexAlpha = false) {
     if (!mat) return;
-    const t = op < 1;
+    const t = op < 1 || vertexAlpha;
     if (mat.transparent !== t) mat.transparent = t;
     if (mat.opacity !== op) mat.opacity = op;
     const dw = !t;
     if (mat.depthWrite !== dw) mat.depthWrite = dw;
     mat.needsUpdate = true;
   }
+
+  // True when the ACTIVE live-mesh geometry carries a 4-component (RGBA) colour
+  // attribute — i.e. the colour-by-source bake baked a per-subpart alpha in. The
+  // material must then be transparent so the alpha channel is honoured.
+  let hasVertexAlpha = $derived.by(() => {
+    const g = (showCutaway && cutVC) ? cutVC : full;
+    const c = g?.getAttribute?.('color');
+    return !!c && (c as any).itemSize === 4;
+  });
 
   // Build the InstancedMesh imperatively (Threlte mounts it via `<T is>`).
   // - Picks the canonical CHILD geo: cutVC under cutaway, else full — so the
@@ -136,8 +150,10 @@
     const childGeo: THREE.BufferGeometry | null = (showCutaway && cutVC) ? cutVC : full;
     if (!childGeo) return null;
     const useStd = scene.zRectLight;
-    const hasColor = !!childGeo.getAttribute?.('color');
-    const mat = makeLitMaterial(hasColor, useStd, !smoothShade, effOpacity);
+    const colAttr = childGeo.getAttribute?.('color');
+    const hasColor = !!colAttr;
+    const childVertexAlpha = !!colAttr && (colAttr as any).itemSize === 4;
+    const mat = makeLitMaterial(hasColor, useStd, !smoothShade, effOpacity, childVertexAlpha);
     // (Warp is now baked into childGeo server-side — no render-time shader.)
     const count = instanced.count;
     const mesh = new THREE.InstancedMesh(childGeo, mat, count);
@@ -206,8 +222,8 @@
   // overlapping transparent shells (e.g. casing over tubing) blend instead of
   // z-fighting / occluding. =1 → THREE's opaque defaults (transparent:false,
   // depthWrite:true) → byte-identical to the pre-opacity material.
-  function makeLitMaterial(hasColor: boolean, useStd: boolean, flat: boolean, op = 1): THREE.Material {
-    const t = op < 1;
+  function makeLitMaterial(hasColor: boolean, useStd: boolean, flat: boolean, op = 1, vertexAlpha = false): THREE.Material {
+    const t = op < 1 || vertexAlpha;
     const alpha = t ? { transparent: true, opacity: op, depthWrite: false } : {};
     if (useStd) {
       return new THREE.MeshStandardMaterial({
@@ -514,7 +530,9 @@
     const flat = !smoothShade;         // tracked
     const wire = scene.wireframe;      // tracked — VIEW-ONLY wireframe diagnostic
     const op = effOpacity;             // tracked — part opacity × scene x-ray
-    if (liveMat) { liveMat.flatShading = flat; liveMat.wireframe = wire; applyOpacity(liveMat, op); invalidate(); }
+    const va = hasVertexAlpha;         // tracked — RGBA per-subpart alpha present
+    void geoVersion;                   // tracked — re-apply after a re-bake remounts liveMat fresh
+    if (liveMat) { liveMat.flatShading = flat; liveMat.wireframe = wire; applyOpacity(liveMat, op, va); invalidate(); }
   });
   // Fade the baked GLB meshes to match `effOpacity` IN PLACE — the GLB material
   // effect above only re-dresses on a Phong↔Standard family swap, so an opacity-
