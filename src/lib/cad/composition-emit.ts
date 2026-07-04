@@ -36,6 +36,7 @@ import {
   type SplineNode,
   asLiteral,
   topoOrder,
+  resolveEffectiveAppearance,
   STACK_REF_PARAM,
 } from './composition-graph';
 import {
@@ -239,6 +240,25 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   const order = topoOrder(graph);
   const varNames = assignVarNames(graph, order);
 
+  // #86 — per-part appearance → meta.instanceColors, keyed by the EMITTED var
+  // name (== the loader's partHashId stamp) so the color-by-source LUT
+  // (analyzeParts) renders each Call in its wired-material / per-part colour,
+  // OVERRIDING the part-level Default. resolveEffectiveAppearance folds a wired
+  // material node ahead of the manual partAppearance override. Sparse: a graph
+  // with no overrides/materials emits nothing → byte-identical to today.
+  const instanceColors: Record<string, { outer?: string; inner?: string; opacity?: number }> = {};
+  for (const [id, node] of Object.entries(graph.nodes)) {
+    if (node?.type !== 'call') continue;
+    const vn = varNames.get(id);
+    if (!vn) continue;
+    const eff = resolveEffectiveAppearance(graph, id);
+    const entry: { outer?: string; inner?: string; opacity?: number } = {};
+    if (eff.colorOuter) entry.outer = eff.colorOuter;
+    if (eff.colorInner) entry.inner = eff.colorInner;
+    if (typeof eff.opacity === 'number' && eff.opacity > 0 && eff.opacity < 1) entry.opacity = eff.opacity;
+    if (Object.keys(entry).length) instanceColors[vn] = entry;
+  }
+
   // OUTPUT FILTERING: a node referenced as input to ANOTHER node (method's
   // obj/arg, mv/rot/method's child, etc.) is an intermediate value — emitted
   // as a const but NOT part of the returned list. The root list's natural
@@ -379,6 +399,9 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     ...(graph.viewZScale != null ? { viewZScale: graph.viewZScale } : {}),
     ...(graph.viewXScale != null ? { viewXScale: graph.viewXScale } : {}),
     ...(graph.partAppearance && Object.keys(graph.partAppearance).length ? { partAppearance: graph.partAppearance } : {}),
+    // #86 — per-part colour LUT (keyed by emitted var name) so the color-by-
+    // source render applies each part's wired-material / override colour.
+    ...(Object.keys(instanceColors).length ? { instanceColors } : {}),
     params: graph.params,
     graph: serialiseGraph(graph),
   };

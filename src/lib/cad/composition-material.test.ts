@@ -101,4 +101,25 @@ describe('material node — emit → hydrate round-trip', () => {
     const src = emitGraph(graph, { id: 'w_plain' }).source;
     expect(src).not.toContain('materialBindings');
   });
+
+  it('#86 — a wired material emits meta.instanceColors so it renders per-part', () => {
+    const { graph, callId } = graphWithOnePart();
+    const alias = (graph.nodes[callId] as any).alias;
+    const { graph: g2, id: matId } = addMaterialNode(graph);
+    const g3 = updateMaterialNode(g2, matId, { colorOuter: '#00aaff', opacity: 0.3 });
+    const g4 = bindMaterial(g3, callId, matId);
+
+    const src = emitGraph(g4, { id: 'w_mat_render' }).source;
+    // instanceColors is keyed by the emitted var name (== the Call's alias) so
+    // the color-by-source LUT (analyzeParts) picks it up.
+    expect(src).toContain('instanceColors');
+    expect(src).toContain(`${alias}:`);
+    expect(src).toContain("outer: '#00aaff'");
+    expect(src).toContain('opacity: 0.3');
+  });
+
+  it('a plain graph (no overrides) emits no instanceColors — byte-identical', () => {
+    const { graph } = graphWithOnePart();
+    expect(emitGraph(graph, { id: 'w_plain2' }).source).not.toContain('instanceColors');
+  });
 });
