@@ -225,6 +225,28 @@ export function hydrateGraph(serialised: any): Graph {
     migratedNodes[id] = n;
   }
 
+  // Warp / bend MODIFIER nodes (#36) — defensive normalisation so a hand-edited
+  // / partial file always has a well-formed `path` ArgValue + sparse opts.
+  // Idempotent; absent/legacy files have no warp nodes ⇒ no-op.
+  for (const id of Object.keys(migratedNodes)) {
+    const n = migratedNodes[id] as any;
+    if (n?.type !== 'warp') continue;
+    if (typeof n.child !== 'string' || !n.child) n.child = null;
+    // `path` must be an ArgValue; lift a bare number/string, default to an empty
+    // literal-points array expr (so an unwired warp emits `warpSpline(child, [])`).
+    if (!(n.path && (n.path.kind === 'expr' || n.path.kind === 'param' || n.path.kind === 'literal'))) {
+      n.path = { kind: 'expr', expr: '[]' };
+    }
+    // `refine` is a sparse ArgValue; drop anything malformed.
+    if (n.refine != null && !(n.refine.kind === 'expr' || n.refine.kind === 'param' || n.refine.kind === 'literal')) {
+      delete n.refine;
+    }
+    // `stretch` / `validate` normalise to strict booleans; false ⇒ drop (sparse).
+    if (n.stretch === true) n.stretch = true; else delete n.stretch;
+    if (n.validate === true) n.validate = true; else delete n.validate;
+    migratedNodes[id] = n;
+  }
+
   // Transforms are SEPARATE mv / rot cards (2026-07-01). The old fold that
   // migrated mv/rot → a unified `txfmn` (xform) card was REMOVED — it re-ran on
   // every load, so a saved mv reappeared as an xform card. mv/rot now stay as

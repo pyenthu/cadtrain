@@ -13,10 +13,10 @@ import type {
   RepeatOp, RepeatNode, NodeTransform, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonExprListRef, PolygonEntry,
   PolygonNode, PolyRepeatBinding, PolyRepeatNode, SketchOpEntry, SketchNode,
   SketchRepeatNode, SketchRepeatRef, SketchExprListRef,
-  ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem, SplineNode,
+  ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem, SplineNode, WarpNode,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph,
 } from './composition-graph-types';
-import { newNodeId, asLiteral, asParam } from './composition-graph-types';
+import { newNodeId, asLiteral, asParam, asExpr } from './composition-graph-types';
 
 /** Update a node's canvas position. Pure (returns new graph). */
 export function setLayout(graph: Graph, id: NodeId, xy: LayoutXY): Graph {
@@ -33,7 +33,7 @@ export function defaultCallPosition(graph: Graph): LayoutXY {
   const dropped = Object.values(graph.nodes).filter((n) =>
     n.type === 'call' || n.type === 'polygon' || n.type === 'method' ||
     n.type === 'mv'   || n.type === 'rot'     || n.type === 'repeat' ||
-    n.type === 'txfmn' || n.type === 'poly_repeat',
+    n.type === 'txfmn' || n.type === 'poly_repeat' || n.type === 'warp',
   ).length;
   return { x: 80 + (dropped % 4) * 240, y: 80 + Math.floor(dropped / 4) * 180 };
 }
@@ -178,6 +178,11 @@ export function collectEdges(graph: Graph): Edge[] {
       for (const [inName, v] of Object.entries(node.bindings ?? {})) {
         if (v?.kind === 'param') edges.push({ from: `p.${v.param}`, to: `${node.id}.bindings.${inName}` });
       }
+    } else if (node.type === 'warp') {
+      // The warp's `path` + `refine` slots can be wired to a param (the bend
+      // control-points array or the build-time subdivision count).
+      if (node.path?.kind === 'param')   edges.push({ from: `p.${node.path.param}`,   to: `${node.id}.path` });
+      if (node.refine?.kind === 'param') edges.push({ from: `p.${node.refine.param}`, to: `${node.id}.refine` });
     }
   }
   return edges;
@@ -1317,6 +1322,85 @@ export function setSplinePlot(graph: Graph, id: NodeId, plot: boolean, color?: s
   return finalize({ ...graph, nodes: { ...graph.nodes, [id]: next } });
 }
 
+// ─── Warp / bend MODIFIER helpers (#36) ─────────────────────────────────────
+//
+// A `warp` node BENDS a built solid (`child`) along a spline (`path`), emitting
+// `warpSpline(<child>, <path>, opts)`. Like a transform it appends to the root
+// (a geometry OUTPUT) and its child wires in on the LEFT edge; its `path` arg is
+// normally wired to a SplineNode's output (an `expr` referencing `_x_<id>_path`)
+// the same way an r_sweep path is. All mutations return a NEW Graph.
+
+/** Add a warp node bending `child` along `path`. Appends to the root list (a
+ *  geometry output, like addMethod). `child` may be '' / null for an unwired
+ *  drop; `path` defaults to an empty literal-points array expr. */
+export function addWarp(
+  graph: Graph,
+  child: NodeId | null = null,
+  path: ArgValue = asExpr('[]'),
+  parentId?: NodeId,
+): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const node: WarpNode = { id, type: 'warp', child: child || null, path };
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
+  const final = appendChild(next, parentId ?? graph.root, id);
+  return { graph: finalize(final), id };
+}
+
+/** Drop an UNWIRED warp node — child null + empty path until the user wires a
+ *  solid into the LEFT socket + a spline into the PATH socket. */
+export function addWarpPlaceholder(graph: Graph, parentId?: NodeId) {
+  return addWarp(graph, null, asExpr('[]'), parentId);
+}
+
+/** Internal: apply `fn` to the warp node at `id`, no-op when it isn't a warp. */
+function updateWarp(graph: Graph, warpId: NodeId, fn: (n: WarpNode) => WarpNode): Graph {
+  const node = graph.nodes[warpId];
+  if (!node || node.type !== 'warp') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [warpId]: fn(node) } });
+}
+
+/** Rebind a warp's `child` (the solid being bent). Thin alias over the generic
+ *  setTransformChild (which now also accepts a warp). */
+export function setWarpChild(graph: Graph, warpId: NodeId, childId: NodeId): Graph {
+  return setTransformChild(graph, warpId, childId);
+}
+
+/** Set the warp's `path` arg — an expr referencing a wired SplineNode's output
+ *  (`_x_<id>_path`), a param, or a literal points-array expr. */
+export function setWarpPath(graph: Graph, warpId: NodeId, path: ArgValue): Graph {
+  return updateWarp(graph, warpId, (n) => ({ ...n, path }));
+}
+
+/** Set (or clear, via null) the build-time `refine` subdivision dial — an
+ *  ArgValue so it can be param/expr-driven. Clearing drops the field (⇒ the
+ *  adaptive default in warpManifoldAlongSpline). */
+export function setWarpRefine(graph: Graph, warpId: NodeId, refine: ArgValue | null): Graph {
+  return updateWarp(graph, warpId, (n) => {
+    if (refine == null) { const { refine: _drop, ...rest } = n; return rest; }
+    return { ...n, refine };
+  });
+}
+
+/** Toggle `stretch` — elongate the part to span the whole spline (true) vs keep
+ *  its own length + merely bend (false, the default). Sparse: false drops the
+ *  field so the emit stays minimal. */
+export function setWarpStretch(graph: Graph, warpId: NodeId, stretch: boolean): Graph {
+  return updateWarp(graph, warpId, (n) => {
+    if (!stretch) { const { stretch: _drop, ...rest } = n; return rest; }
+    return { ...n, stretch: true };
+  });
+}
+
+/** Toggle `validate` — run the opt-in post-warp genus/volume sanity check that
+ *  WARNS on an inverted / self-intersecting bend. Sparse: false drops the field. */
+export function setWarpValidate(graph: Graph, warpId: NodeId, validate: boolean): Graph {
+  return updateWarp(graph, warpId, (n) => {
+    if (!validate) { const { validate: _drop, ...rest } = n; return rest; }
+    return { ...n, validate: true };
+  });
+}
+
 /** Immutable update of one def by id (no-op if the id is unknown). */
 function mapDef(graph: Graph, defId: NodeId, fn: (d: ExprDef) => ExprDef): Graph {
   const defs = graph.exprDefs ?? [];
@@ -1603,8 +1687,11 @@ export function addRotPlaceholder(graph: Graph, parentId?: NodeId) {
  *  legacy mv/rot wrappers AND the unified txfmn node. */
 export function setTransformChild(graph: Graph, transformId: NodeId, childId: NodeId): Graph {
   const node = graph.nodes[transformId];
-  if (!node || (node.type !== 'mv' && node.type !== 'rot' && node.type !== 'txfmn')) return graph;
-  const updated = { ...node, child: childId } as MvNode | RotNode | TxfmnNode;
+  // Also accepts a `warp` node — its `child` (the solid being bent) wires in on
+  // the LEFT edge like a transform, so the shared endWireOnInput('child') path
+  // Just Works for it too.
+  if (!node || (node.type !== 'mv' && node.type !== 'rot' && node.type !== 'txfmn' && node.type !== 'warp')) return graph;
+  const updated = { ...node, child: childId } as MvNode | RotNode | TxfmnNode | WarpNode;
   return finalize({ ...graph, nodes: { ...graph.nodes, [transformId]: updated } });
 }
 
@@ -1786,6 +1873,12 @@ export function removeNode(graph: Graph, id: NodeId): Graph {
       if (n.obj === id || n.arg === id) continue;
       next[nid] = n;
     } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn') {
+      if (n.child === id) continue;
+      next[nid] = n;
+    } else if (n.type === 'warp') {
+      // A warp with its bent solid removed is orphaned — drop it too (mirrors
+      // the mv/rot cascade). A removed spline PATH source only clears the
+      // wired-ref (the warp keeps its literal points), so it isn't cascaded.
       if (n.child === id) continue;
       next[nid] = n;
     } else {
@@ -2034,6 +2127,11 @@ export function topoOrder(graph: Graph): NodeId[] {
       visit(node.obj);
       visit(node.arg);
     } else if (node.type === 'mv' || node.type === 'rot' || node.type === 'txfmn') {
+      if (node.child) visit(node.child);
+    } else if (node.type === 'warp') {
+      // Visit the bent solid first so its `const` emits before the
+      // `warpSpline(child, …)` call that consumes it (TDZ). The spline PATH
+      // source is a free-floating node emitted as a prelude const, not visited.
       if (node.child) visit(node.child);
     } else if (node.type === 'repeat') {
       for (const c of node.children ?? []) visit(c);

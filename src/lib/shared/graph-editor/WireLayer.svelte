@@ -10,7 +10,7 @@
   import {
     bezier, paramSocketPos, nodeSize, exprOutputSockY, exprInputSockY,
     polySockR, polySockZ, polySockRef, sketchSockR, sketchSockZ, sketchSockVal,
-    rootOutputSockY, extractParamRefs,
+    rootOutputSockY, extractParamRefs, WARP_PATH_CY,
   } from './geom';
   import { exprBlockMember } from '$lib/cad/graph-exprs';
 
@@ -442,6 +442,42 @@
                         {@const srcSize = nodeSize(graph, exn)}
                         {@const srcPos = nodePos(exn.id)}
                         <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), spos.x, tgtY)}/>
+                      {/if}
+                    {/each}
+                  {/if}
+                {/each}
+              {/if}
+            {:else if n.type === 'warp'}
+              <!-- Warp modifier (#36): the `solid` child wire (child output →
+                   left child socket, same as mv/rot) + the `path` wire (a wired
+                   spline / expr output → the lower-left path socket at
+                   WARP_PATH_CY). -->
+              {#if (n as any).child && graph.nodes[(n as any).child]}
+                {@const src = outSock((n as any).child)}
+                {@const tgt = inSock(n.id, 'child')}
+                <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+              {/if}
+              {@const wpath = (n as any).path}
+              {#if wpath?.kind === 'expr'}
+                {@const wpos = nodePos(n.id)}
+                {@const ptgtY = wpos.y + WARP_PATH_CY}
+                <!-- SPLINE path source → warp path socket. -->
+                {#each allNodes as sn (sn.id)}
+                  {#if sn.type === 'spline' && String(wpath.expr ?? '').includes(exprBlockMember(sn.id, 'path'))}
+                    {@const srcSize = nodeSize(graph, sn)}
+                    {@const srcPos = nodePos(sn.id)}
+                    <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + srcSize.h / 2, wpos.x, ptgtY)}/>
+                  {/if}
+                {/each}
+                <!-- EXPR-OUTPUT path source → warp path socket. -->
+                {#each allNodes as exn (exn.id)}
+                  {#if exn.type === 'expr'}
+                    {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (exn as any).defId)}
+                    {#each ((exDef as any)?.outputs ?? []) as eo, eoIdx (eo.name)}
+                      {#if String(wpath.expr ?? '').includes(exprBlockMember(exn.id, eo.name))}
+                        {@const srcSize = nodeSize(graph, exn)}
+                        {@const srcPos = nodePos(exn.id)}
+                        <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), wpos.x, ptgtY)}/>
                       {/if}
                     {/each}
                   {/if}

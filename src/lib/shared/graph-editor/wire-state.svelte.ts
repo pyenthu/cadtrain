@@ -40,6 +40,7 @@ import {
   setRepeatChildAt,
   setExprInputBinding,
   setSplinePointsExpr,
+  setWarpPath,
   type Graph,
   type NodeId,
   type MvNode,
@@ -267,6 +268,23 @@ export class WireState {
     const feed = checkOutputFeeds(g, from.nodeId, from.outName, SPLINE_POINTS);
     if (!feed.ok) { this.lastReject = feed.reason; this.from = null; this.mouse = null; return; }
     this.#setGraph(setSplinePointsExpr(g, splineId, asExpr(exprBlockMember(from.nodeId, from.outName))));
+    this.from = null; this.mouse = null;
+  };
+
+  /** Drop a wire onto a warp node's PATH input socket (#36). The source is a
+   *  SplineNode's `path` output (or an expr instance's `list<point>` output); its
+   *  emitted const (`_x_<id>_<out>` = exprBlockMember) becomes the warp's `path`
+   *  arg, so `warpSpline(child, _x_<id>_path, …)` bends the child along it.
+   *  Param-chip drops set the path to `p.<name>`. */
+  endWireOnWarpPath = (ev: PointerEvent, warpId: NodeId) => {
+    ev.stopPropagation();
+    const from = this.from;
+    if (!from) return;
+    if (from.kind === 'param-out') {
+      this.#setGraph(setWarpPath(this.#getGraph(), warpId, asParam(from.paramName)));
+    } else if (from.kind === 'out' && from.outName != null && from.nodeId !== warpId) {
+      this.#setGraph(setWarpPath(this.#getGraph(), warpId, asExpr(exprBlockMember(from.nodeId, from.outName))));
+    }
     this.from = null; this.mouse = null;
   };
 
