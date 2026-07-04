@@ -357,7 +357,7 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
   // output socket. Width fits the label; fixed short height.
   if (node.type === 'material') {
     const label = String(node.name ?? 'material');
-    return { w: Math.max(116, 64 + label.length * 8.5), h: 30 };
+    return { w: Math.max(128, 88 + label.length * 7.5), h: 30 };
   }
   // txfmn = combined ROT (3 rows) + MV (3 rows) table, each with a section
   // label. Fixed height matches the card render's block layout below.
