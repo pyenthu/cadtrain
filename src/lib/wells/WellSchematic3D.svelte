@@ -107,6 +107,13 @@
   onDestroy(() => { if (scene.background === _white) scene.background = null; });
 
   const cutActive = $derived(cutaway && manifoldReady);
+  // Cutaway is REQUESTED but Manifold is still initialising. In this window we
+  // must NOT fall back to the plain (un-cut) solid builders — that renders a
+  // full SOLID tube and reports "0 CSG", which looks exactly like a broken
+  // cutaway (worst on heavy deviated/horizontal wells, whose throwaway-solid
+  // pass is the most expensive so the mislead is most visible). Skip building
+  // until the cut can actually run; the derived re-fires when manifoldReady flips.
+  const cutPending = $derived(cutaway && !manifoldReady);
 
   const rawTd = $derived(wson?.meta?.td ?? 1000);
 
@@ -223,7 +230,7 @@
       const top = remap(o.top), bot = remap(o.bot), r = (o.bitSize * diaScale) / 2;
       const geom = cutActive
         ? safe(() => cutCylinder(top, bot, r, cutAxis, COL_OH, {}, wellDir, cutAzimuth))
-        : solidTubeForRange(top, bot, r);
+        : cutPending ? null : solidTubeForRange(top, bot, r);
       return { geom, label: `${o.bitSize}" OH` };
     }).filter((g) => g.geom);
 
@@ -234,7 +241,7 @@
       const innerR = (id * diaScale) / 2, outerR = (od * diaScale) / 2;
       const geom = cutActive
         ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_CH, {}, wellDir, cutAzimuth))
-        : shellForRange(top, bot, innerR, outerR);
+        : cutPending ? null : shellForRange(top, bot, innerR, outerR);
       return { geom, label: `${c.od}" ${c.grade ?? ''}` };
     }).filter((g) => g.geom);
 
@@ -247,7 +254,7 @@
       const innerR = (inner * diaScale) / 2, outerR = (outer * diaScale) / 2;
       const geom = cutActive
         ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_CEMENT, STYLE_CEMENT_CUT, wellDir, cutAzimuth))
-        : shellForRange(top, bot, innerR, outerR);
+        : cutPending ? null : shellForRange(top, bot, innerR, outerR);
       return { geom, label: `Cement` };
     }).filter((g) => g.geom);
 
@@ -260,7 +267,7 @@
       const innerR = (id * diaScale) / 2, outerR = (od * diaScale) / 2;
       tubing = cutActive
         ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_TUBING, {}, wellDir, cutAzimuth))
-        : shellForRange(top, bot, innerR, outerR);
+        : cutPending ? null : shellForRange(top, bot, innerR, outerR);
     }
 
     // Perforation markers — spheres at perf midpoints (world-placed, not warped).

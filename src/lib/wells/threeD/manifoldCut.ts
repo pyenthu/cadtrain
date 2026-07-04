@@ -357,12 +357,18 @@ export function cutCylinder(
   // it directly. The flat side of the half-disc becomes the cut face; every
   // X=0 vertex maps to the wellbore centerline under warpGeometry so the cut
   // face follows the tangent automatically.
+  // The half-section 2D intersect IS the cutaway (it carves the flat section
+  // face); charge it to `cutaway` — like the vertical-path cutterBox subtract —
+  // so the diagnostic badge honestly reflects that a cut ran on deviated wells
+  // (otherwise a deviated cutaway misreports "cutaway 0ms").
   let t = _now();
   const halfCircle = CrossSection.circle(radius, 64).intersect(
     CrossSection.square([radius * 3, radius * 3], true).translate([-radius * 1.5, 0])
   );
+  _timing.cutaway += _now() - t; _timing.csgOps++; // half-section = 1 CSG cut
+  t = _now();
   const cyl = Manifold.extrude(halfCircle, len, boreNDivisions(len)).translate([0, 0, top]);
-  _timing.solid += _now() - t; _timing.builds++; _timing.csgOps++; // half-section = 1 CSG intersect
+  _timing.solid += _now() - t; _timing.builds++;
   t = _now();
   const geo = manifoldToColoredGeo(cyl, 'x', mainColor, style.cutColor, style.cutVariance);
   _timing.extract += _now() - t;
@@ -414,8 +420,12 @@ export function cutTube(
   } else {
     halfRingCs = outerHalf;
   }
+  // The half-annulus 2D booleans ARE the cutaway (they carve the flat section
+  // face) — charge them to `cutaway`, not `solid`, so the badge is honest.
+  _timing.cutaway += _now() - t; _timing.csgOps += ops;
+  t = _now();
   const ring = Manifold.extrude(halfRingCs, len, boreNDivisions(len)).translate([0, 0, top]);
-  _timing.solid += _now() - t; _timing.builds++; _timing.csgOps += ops;
+  _timing.solid += _now() - t; _timing.builds++;
   t = _now();
   const geo = manifoldToColoredGeo(ring, 'x', mainColor, style.cutColor, style.cutVariance);
   _timing.extract += _now() - t;
