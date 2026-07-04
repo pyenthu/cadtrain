@@ -7,6 +7,7 @@ import {
   nodeAt,
   isPathAtOrUnder,
   folderMoveInto,
+  resolveDropTargetFolder,
 } from './primitives-tree';
 
 /** Minimal tree: root → basic (+ basic/spirals), completions/svtc, archive. */
@@ -91,6 +92,17 @@ describe('folderMoveInto', () => {
     expect(folderMoveInto('', 'basic').ok).toBe(false);
     expect(folderMoveInto('basic/spirals', '').ok).toBe(false);
     expect(folderMoveInto('Bad Name', 'basic').ok).toBe(false);
+  });
+});
+
+describe('resolveDropTargetFolder', () => {
+  it('a file row targets its ENCLOSING folder (Explorer-style body drop)', () => {
+    expect(resolveDropTargetFolder({ kind: 'file', parentPath: 'basic' })).toBe('basic');
+    expect(resolveDropTargetFolder({ kind: 'file', parentPath: 'completions/svtc' })).toBe('completions/svtc');
+  });
+  it('a folder row targets the folder itself — most specific folder wins', () => {
+    expect(resolveDropTargetFolder({ kind: 'folder', path: 'basic/spirals' })).toBe('basic/spirals');
+    expect(resolveDropTargetFolder({ kind: 'folder', path: 'completions' })).toBe('completions');
   });
 });
 

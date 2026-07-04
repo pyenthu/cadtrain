@@ -28,7 +28,7 @@
     type Entry, type FolderNode, MOVE_TARGET_RE,
     tabLabel, subtreeCount, subtreeMatches, sortFolders, nodeAt, findPartDir,
     isMoveTarget, topLevelOf, ensureFolderPath,
-    folderMoveInto, FOLDER_PROTECTED_ROOTS,
+    folderMoveInto, FOLDER_PROTECTED_ROOTS, resolveDropTargetFolder,
   } from './primitives-tree';
 
   /** Same regex the server uses for primitive ids — keep them in sync.
@@ -1271,7 +1271,18 @@
     {#snippet partRow(e: Entry, depth: number, kind: 'volume' | 'archive' | 'stdlib' | 'stdstale', dir: string)}
       {@const tag = kind === 'archive' ? 'arch' : kind === 'stdlib' ? 'src' : kind === 'stdstale' ? 'stale' : 'vol'}
       {@const canRename = kind === 'volume'}
-      <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)} class:renaming={renamingId === e.id}>
+      <!-- Windows-Explorer drop: a drag over a FILE row resolves to the file's
+           ENCLOSING folder (`dir`), so dropping anywhere in an open folder's
+           body — not just its name row — moves the item into that folder. The
+           handlers are shared with the folder-row drop; `kind`/target self-gate
+           (isDropTarget rejects stdlib/stdstale + illegal paths). -->
+      {@const dropDir = resolveDropTargetFolder({ kind: 'file', parentPath: dir })}
+      <div class="prim-row-wrap" class:active={tabs.some((t) => t.id === e.id)} class:renaming={renamingId === e.id}
+        class:drop-into={dragOverPath === dropDir && dragOverPath !== ''}
+        ondragover={(ev) => onFolderDragOver(ev, dropDir, kind)}
+        ondragleave={() => onFolderDragLeave(dropDir)}
+        ondrop={(ev) => onFolderDrop(ev, dropDir, kind)}
+        role="presentation">
         {#if renamingId === e.id}
           <div class="prim-row prim-row-rename" style="padding-left: {12 + depth * 14}px">
             <input class="prim-rename-input" type="text" use:focusRenameInput
@@ -1982,6 +1993,11 @@
   .prim-folder-row[draggable="true"]:active { cursor: grabbing; }
   .prim-folder-row.dragging { opacity: 0.55; }
   .prim-tabbtn.drop-target { background: #166534; color: #fff; border-color: #166534; }
+  /* Dropping over a FILE row lands in its enclosing folder (Explorer-style):
+     the folder header lights up (.drop-target above), and every file row in
+     that folder gets a subtle wash so the whole folder body reads as the
+     landing zone. Lighter than the header so the container still dominates. */
+  .prim-row-wrap.drop-into { background: #f0fdf4; box-shadow: inset 2px 0 0 #86efac; }
 
   /* ⛁ Cache footer row — amber tint so the inspector reads as a distinct
      utility surface, not a part folder; inverts to amber when active. */

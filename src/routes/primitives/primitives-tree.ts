@@ -148,6 +148,22 @@ export function folderMoveInto(from: string, to: string): { ok: boolean; dest: s
   return { ok: true, dest };
 }
 
+/** A sidebar row that a part/folder was dropped ONTO. A `folder` row targets
+ *  the folder itself; a `file` row targets the file's ENCLOSING folder — the
+ *  Windows-Explorer rule where dropping onto any item inside an open folder
+ *  lands in that folder. "Most specific folder wins": a nested subfolder row
+ *  still resolves to the subfolder, only a file row resolves to its parent. */
+export type DropRow =
+  | { kind: 'folder'; path: string }
+  | { kind: 'file'; parentPath: string };
+
+/** Resolve the folder a drop should target from the row it landed on:
+ *  folder-row → that folder; file-row → its parent folder. Pure so the
+ *  resolution rule is unit-tested away from the DnD event plumbing. */
+export function resolveDropTargetFolder(row: DropRow): string {
+  return row.kind === 'folder' ? row.path : row.parentPath;
+}
+
 /** Insert an (empty) folder at `path` into `tree`, creating any missing
  *  intermediate nodes. Returns true when the tree actually gained a node (the
  *  path was absent); false when every segment already existed. MUTATES `tree`
