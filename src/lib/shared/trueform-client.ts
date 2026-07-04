@@ -353,6 +353,12 @@ export interface TfDemoResult {
   data: TfMeshData;
   stats: TfMeshStats;
   cutPlanes?: TfCutPlane[];
+  /** PER-PART meshes (per-part-texture TF render) — one entry per top-level
+   *  recipe part, each its own mesh + appearance (colour · opacity · texture).
+   *  Present only on the per-part display path (cutaway OFF); the merged `data`
+   *  above stays the single-mesh / cutaway fallback. The scene renders each part
+   *  with its own material when this is set. */
+  parts?: { data: TfMeshData; appearance?: import('$lib/cad/graph-to-tf').TfAppearance }[];
 }
 
 /**

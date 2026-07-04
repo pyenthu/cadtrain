@@ -41,7 +41,7 @@ import type {
   ExprNode,
   SplineNode,
 } from './composition-graph-types';
-import { STACK_REF_PARAM } from './composition-graph-mutate';
+import { STACK_REF_PARAM, resolveEffectiveAppearance } from './composition-graph-mutate';
 
 /** Resolve a COMPOSITE Call's `src` id → its own composition graph (+ optional
  *  default params), so `graphToTf` can recurse into a sub-part and inline it. The
@@ -72,12 +72,26 @@ export type TfInstr =
   | { op: 'profile'; profile: ProfilePt[]; note?: string }
   | { op: 'UNSUPPORTED'; nodeType: string; detail?: string };
 
+/** One part's render appearance (per-part-mesh TF path). colour + opacity +
+ *  texture, resolved from the output Call's effective appearance (wired material
+ *  ▸ per-part override). Undefined per entry ⇒ that part uses the scene default. */
+export interface TfAppearance {
+  colorOuter?: string;
+  colorInner?: string;
+  texture?: string;
+  opacity?: number;
+}
+
 /** The full recipe: the ordered list of TF instructions the graph's ROOT
  *  produces (its unconsumed outputs), plus any coverage notes gathered
  *  during the walk. */
 export interface TfRecipe {
   id?: string;
   instrs: TfInstr[];
+  /** Per-PART appearance, aligned 1:1 with `instrs` (each top-level instr is a
+   *  part). Drives the per-part-mesh TF render (each part its own textured mesh).
+   *  Sparse: an entry is undefined when that output has no explicit appearance. */
+  partAppearance?: (TfAppearance | undefined)[];
   /** Human-readable notes — approximations + unsupported nodes hit. */
   notes: string[];
 }
@@ -649,7 +663,21 @@ function graphToTfInner(
   }
 
   const instrs = outputs.map((id) => lowerNode(graph.nodes[id], graph, scope, notes, resolve, seen, depth));
-  return { instrs, notes };
+  // Per-part appearance (aligned with instrs) — each output part's effective
+  // appearance (wired material ▸ per-part override) for the per-part-mesh TF
+  // render. Only Call outputs carry appearance today; other output shapes → none.
+  const partAppearance = outputs.map((id) => {
+    const n = graph.nodes[id];
+    if (n?.type !== 'call') return undefined;
+    const eff = resolveEffectiveAppearance(graph, id);
+    const a: TfAppearance = {};
+    if (eff.colorOuter) a.colorOuter = eff.colorOuter;
+    if (eff.colorInner) a.colorInner = eff.colorInner;
+    if (eff.texture) a.texture = eff.texture;
+    if (typeof eff.opacity === 'number' && eff.opacity > 0 && eff.opacity < 1) a.opacity = eff.opacity;
+    return Object.keys(a).length ? a : undefined;
+  });
+  return { instrs, notes, ...(partAppearance.some(Boolean) ? { partAppearance } : {}) };
 }
 
 // ─── pretty-printer ──────────────────────────────────────────────────────────
