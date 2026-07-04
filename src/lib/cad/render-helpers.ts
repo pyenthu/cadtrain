@@ -245,25 +245,53 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
     const inst = tryInstanceFinalize(scaled, cutBox, maxOD, material, lut, override, opts?.skipCutaway, opts?.warp, crease);
     if (inst) return inst;
   }
+  // Bake the warp into the geometry (after z-scale, before meshing). Warp does
+  // NOT change topology (tri/body counts unchanged), so the skip decision below
+  // works on `warped` directly; we mesh + cut the warped result so both the
+  // surface mesh and the cross-section follow the bend. `opts.warp` absent →
+  // `warped === scaled` → byte-identical to the pre-warp bake.
+  const warped = applyWarp(scaled, opts?.warp);
   // Auto-skip the cutaway only as a far-out safety valve. The cutVC step used
   // to do ONE pass (subtract + calculateNormals + getMesh) over the WHOLE
   // composed manifold; calculateNormals scales super-linearly (30k→204ms,
   // 100k→3776ms), forcing a 15k-tri skip → long stacks / big assemblies showed
-  // NO cross-section ("cutaway off (perf)"). `cutawayVC` now decomposes into
-  // bodies and cuts each (small) body, distributing that ~linearly, so a normal
-  // long string (g_dp_stand ~47k tris) computes its cutaway by default. The
-  // threshold is raised 15k → 120k so only a genuinely huge SINGLE connected
-  // body (where the per-body win can't apply) still skips. `opts.skipCutaway
-  // ===false` still force-computes regardless; ===true still force-skips.
-  const skipCutaway = opts?.skipCutaway === true ? true
-    : opts?.skipCutaway === false ? false
-    : (typeof scaled.numTri === 'function' ? scaled.numTri() > 120_000 : false);
-  // Bake the warp into the geometry LAST (after z-scale, before meshing). The
-  // tri count is unchanged by warp, so the skip threshold above is judged on
-  // `scaled`; we mesh + cut the warped result so both the surface mesh and the
-  // cross-section follow the bend. `opts.warp` absent → `warped === scaled` →
-  // byte-identical to the pre-warp bake.
-  const warped = applyWarp(scaled, opts?.warp);
+  // NO cross-section ("cutaway off (perf)"). `cutawayVC` now DECOMPOSES into
+  // connected bodies and cuts each (small) body, distributing that ~linearly
+  // (measured 3.5× on a 3-body well string; the gap widens super-linearly with
+  // size), so a multi-body assembly's cutaway cost is governed by its LARGEST
+  // body — NOT the monolith total. Judging the skip on the total therefore
+  // WRONGLY dropped the cutaway for a many-body assembly (a long stack / a
+  // multi-string well — each body small) whose SUM crosses 120k, even though the
+  // per-body cut is cheap. So decide on the LARGEST connected body: only a
+  // genuinely huge SINGLE connected body (where the per-body win can't apply —
+  // Tier-2/clip-plane territory, docs/plans/svtc-section-cutaway.md) still skips.
+  // The decompose runs ONCE here, gated behind the cheap total>120k guard, and
+  // is REUSED by cutawayVC below (no second decompose). `opts.skipCutaway===false`
+  // force-computes; `===true` force-skips. For a SINGLE body largest==total, so
+  // the decision is byte-identical to the old `numTri() > 120_000` check.
+  let cutBodies: any[] | undefined;
+  let skipCutaway: boolean;
+  if (opts?.skipCutaway === true) skipCutaway = true;
+  else if (opts?.skipCutaway === false) skipCutaway = false;
+  else {
+    const total = typeof warped.numTri === 'function' ? warped.numTri() : 0;
+    if (total <= 120_000) {
+      skipCutaway = false; // small enough — the cutaway is cheap; no decompose needed
+    } else {
+      try {
+        cutBodies = typeof warped.decompose === 'function' ? warped.decompose() : undefined;
+        if (Array.isArray(cutBodies) && cutBodies.length > 1) {
+          let maxBody = 0;
+          for (const b of cutBodies) { const t = typeof b.numTri === 'function' ? b.numTri() : 0; if (t > maxBody) maxBody = t; }
+          skipCutaway = maxBody > 120_000; // per-body cost is governed by the biggest body
+        } else {
+          skipCutaway = true; // one huge connected body → the monolithic super-linear case
+        }
+      } catch {
+        skipCutaway = true; // decompose unavailable / threw on a huge mesh → play safe
+      }
+    }
+  }
   // Timing breakdown (perf instrumentation): full-mesh extraction vs the
   // cutaway CSG. Attached as `timings` (callers ignore it) + logged when
   // globalThis.__bakeTimings is truthy. The cutaway is the known super-linear
@@ -271,7 +299,7 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   const _t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const full = manifoldToGeo(warped, material, lut, override, crease);
   const _t1 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
-  const cutVC = skipCutaway ? new THREE.BufferGeometry() : cutawayVC(warped, cutBox, maxOD, material, lut, override, crease);
+  const cutVC = skipCutaway ? new THREE.BufferGeometry() : cutawayVC(warped, cutBox, maxOD, material, lut, override, crease, cutBodies);
   const _t2 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const timings = { full: _t1 - _t0, cut: skipCutaway ? 0 : _t2 - _t1 };
   if ((globalThis as any).__bakeTimings) { try { console.log(`[bake-finalize] mesh=${timings.full.toFixed(1)}ms · cutaway=${timings.cut.toFixed(1)}ms${skipCutaway ? ' (skipped)' : ''}`); } catch {} }
@@ -792,16 +820,20 @@ function cutawayVC(
   parts?: PartColorLUT,
   override?: ColorOverride,
   crease: number = DEFAULT_CREASE_ANGLE,
+  // Optional already-decomposed bodies from finalizeManifold's skip decision —
+  // reused verbatim to avoid a SECOND `warped.decompose()` on the big-assembly
+  // path. Absent → decompose here exactly as before (byte-identical).
+  preBodies?: any[],
 ): THREE.BufferGeometry {
   try {
-    if (typeof scaled.decompose === 'function') {
-      const bodies = scaled.decompose();
-      if (Array.isArray(bodies) && bodies.length > 1) {
-        const geos = bodies.map((b: any) =>
-          manifoldToCutVC(b.subtract(cutBox), maxOD, material, parts, override, crease),
-        );
-        return mergeBufferGeometries(geos);
-      }
+    const bodies = (Array.isArray(preBodies) && preBodies.length > 1)
+      ? preBodies
+      : (typeof scaled.decompose === 'function' ? scaled.decompose() : null);
+    if (Array.isArray(bodies) && bodies.length > 1) {
+      const geos = bodies.map((b: any) =>
+        manifoldToCutVC(b.subtract(cutBox), maxOD, material, parts, override, crease),
+      );
+      return mergeBufferGeometries(geos);
     }
   } catch {
     // decompose missing / threw / per-body cut failed → monolithic fallback.
