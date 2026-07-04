@@ -30,6 +30,9 @@
   function clampNum(v: number, min: number, max: number, fallback: number) {
     return Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
   }
+
+  // Cutaway dials are 3D-only — dim + disable them in the 2D track view.
+  const cutDisabled = $derived(!settings.cutaway || settings.viewMode === '2d');
 </script>
 
 <div
@@ -54,10 +57,23 @@
   </button>
 
   {#if open}
+    <!-- 2D | 3D surface toggle. 2D = fast pure-SVG track (default); 3D lazy-
+         mounts the Manifold cutaway only when first selected. -->
+    <div class="wvc-seg" role="group" aria-label="View mode">
+      <button type="button" class="wvc-seg-btn" class:on={settings.viewMode === '2d'}
+        title="2D SVG track schematic (fast)" aria-pressed={settings.viewMode === '2d'}
+        onclick={() => (settings.viewMode = '2d')}>2D</button>
+      <button type="button" class="wvc-seg-btn" class:on={settings.viewMode === '3d'}
+        title="3D Manifold cutaway" aria-pressed={settings.viewMode === '3d'}
+        onclick={() => (settings.viewMode = '3d')}>3D</button>
+    </div>
+
+    <span class="wvc-sep"></span>
+
     <!-- View toggles -->
     <div class="wvc-group" aria-label="View">
-      <button type="button" class="wvc-chip" class:on={settings.cutaway}
-        title="Half-section cutaway" aria-pressed={settings.cutaway}
+      <button type="button" class="wvc-chip" class:on={settings.cutaway} class:dim={settings.viewMode === '2d'}
+        title="Half-section cutaway (3D only)" aria-pressed={settings.cutaway}
         onclick={() => (settings.cutaway = !settings.cutaway)}>◑ Cutaway</button>
       <button type="button" class="wvc-chip" class:on={settings.directional}
         title="Follow the deviation survey" aria-pressed={settings.directional}
@@ -77,10 +93,10 @@
 
     <!-- Dials — slider + numeric entry (both mutate the shared settings). -->
     <div class="wvc-group wvc-dials" aria-label="Scale">
-      <label class="wvc-dial" class:dim={!settings.cutaway} title="Cutaway plane rotation">
+      <label class="wvc-dial" class:dim={cutDisabled} title="Cutaway plane rotation (3D only)">
         <span class="wvc-dial-lbl">Cut az</span>
-        <input type="range" min="0" max="360" step="5" bind:value={settings.cutAzimuth} disabled={!settings.cutaway} />
-        <input class="wvc-num" type="number" min="0" max="360" step="5" value={settings.cutAzimuth} disabled={!settings.cutaway}
+        <input type="range" min="0" max="360" step="5" bind:value={settings.cutAzimuth} disabled={cutDisabled} />
+        <input class="wvc-num" type="number" min="0" max="360" step="5" value={settings.cutAzimuth} disabled={cutDisabled}
           onchange={(e) => (settings.cutAzimuth = clampNum(+e.currentTarget.value, 0, 360, settings.cutAzimuth))} />
       </label>
       <label class="wvc-dial" title="Radial exaggeration (inches → scene units)">
@@ -159,6 +175,28 @@
   .wvc-chip.on {
     background: #232340;
     border-color: #cc3333;
+    color: #fff;
+  }
+  .wvc-chip.dim { opacity: 0.4; }
+
+  /* 2D | 3D segmented control. */
+  .wvc-seg {
+    display: inline-flex;
+    border: 1px solid #34345a;
+    border-radius: 9999px;
+    overflow: hidden;
+  }
+  .wvc-seg-btn {
+    background: #1a1a2a;
+    border: none;
+    color: #889;
+    cursor: pointer;
+    padding: 3px 12px;
+    font: 700 11px Arial;
+  }
+  .wvc-seg-btn:hover { color: #fff; }
+  .wvc-seg-btn.on {
+    background: #cc3333;
     color: #fff;
   }
   .wvc-sep {
