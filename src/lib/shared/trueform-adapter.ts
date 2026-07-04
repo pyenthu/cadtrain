@@ -133,17 +133,95 @@ export function triangulateFaces(faces: ArrayLike<number>, stride = 3): Uint32Ar
 const DEFAULT_CREASE_ANGLE = 60;
 
 /**
+ * Weld a mesh's vertices for NORMAL ADJACENCY by a spatial TOLERANCE (not exact
+ * position). Returns `weldOf[i]` = the representative vertex index of `i`'s weld
+ * group. Merges any two verts within `tol` via union-find over a spatial hash
+ * (cell = `tol`, 27-neighbour scan) so it is ROBUST to grid-boundary straddling
+ * (which plain position-rounding is not).
+ *
+ * WHY A TOLERANCE, not exact welding: an EXACT-kernel boolean (TrueForm / OCCT)
+ * that merges coaxial/coplanar solids leaves the union seam with near-coincident
+ * but NOT equal vertices + T-junctions — verts up to a few % of an edge length
+ * apart (measured ~0.02 on a demo drill-pipe joint). Exact / 1e-4 welding leaves
+ * those unmerged, so adjacent wall facets across the seam share no vertex → each
+ * keeps its own facet normal → the composite reads FLAT even though a standalone
+ * (un-booleaned) part of the same geometry shades smooth. Welding within a small
+ * fraction of the local edge length reconnects them; over-welding is harmless
+ * because the caller's crease-angle test still refuses to average across genuine
+ * hard edges (a box corner, a pipe rim).
+ */
+export function toleranceWeldMap(pos: ArrayLike<number>, tri: ArrayLike<number>, tol: number): Int32Array {
+  const nv = (pos.length / 3) | 0;
+  const parent = new Int32Array(nv);
+  for (let i = 0; i < nv; i++) parent[i] = i;
+  const find = (x: number): number => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+  const uni = (a: number, b: number) => { a = find(a); b = find(b); if (a !== b) parent[a] = b; };
+  const cell = tol > 0 ? tol : 1e-9;
+  const grid = new Map<string, number[]>();
+  const gk = (x: number, y: number, z: number) => `${Math.floor(x / cell)},${Math.floor(y / cell)},${Math.floor(z / cell)}`;
+  for (let i = 0; i < nv; i++) {
+    const k = gk(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2]);
+    (grid.get(k) ?? grid.set(k, []).get(k)!).push(i);
+  }
+  const e2 = tol * tol;
+  for (let i = 0; i < nv; i++) {
+    const x = pos[i * 3], y = pos[i * 3 + 1], z = pos[i * 3 + 2];
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) for (let dz = -1; dz <= 1; dz++) {
+      const nb = grid.get(`${Math.floor(x / cell) + dx},${Math.floor(y / cell) + dy},${Math.floor(z / cell) + dz}`);
+      if (!nb) continue;
+      for (const j of nb) {
+        if (j <= i) continue;
+        const ddx = pos[j * 3] - x, ddy = pos[j * 3 + 1] - y, ddz = pos[j * 3 + 2] - z;
+        if (ddx * ddx + ddy * ddy + ddz * ddz <= e2) uni(i, j);
+      }
+    }
+  }
+  const weldOf = new Int32Array(nv);
+  for (let i = 0; i < nv; i++) weldOf[i] = find(i);
+  return weldOf;
+}
+
+/** MEDIAN triangle edge length — the local feature scale the weld tolerance is
+ *  derived from (so the tolerance auto-scales with part size AND mesh resolution;
+ *  proven scale-invariant on a ×0.01 shrink). Sampled (stride) so the sort stays
+ *  cheap on large meshes. Returns 0 for a mesh with no non-degenerate edges. */
+export function medianEdgeLength(pos: ArrayLike<number>, tri: ArrayLike<number>): number {
+  const nt = (tri.length / 3) | 0;
+  if (nt === 0) return 0;
+  const stride = Math.max(1, Math.floor(nt / 20000)); // cap the sample at ~60k edges
+  const lens: number[] = [];
+  for (let t = 0; t < nt; t += stride) {
+    const a = tri[t * 3], b = tri[t * 3 + 1], c = tri[t * 3 + 2];
+    for (const [x, y] of [[a, b], [b, c], [c, a]] as const) {
+      const d = Math.hypot(pos[x * 3] - pos[y * 3], pos[x * 3 + 1] - pos[y * 3 + 1], pos[x * 3 + 2] - pos[y * 3 + 2]);
+      if (d > 0) lens.push(d);
+    }
+  }
+  if (lens.length === 0) return 0;
+  lens.sort((p, q) => p - q);
+  return lens[lens.length >> 1];
+}
+
+/** Weld tolerance as a fraction of the median edge — 0.25 recovers a booleaned
+ *  composite's smooth walls (58% → 97% of side-wall corners on the demo joint,
+ *  1.00 on a ×0.01 shrink) while leaving a clean standalone part at 1.00 and
+ *  staying well below the ~0.5× point where genuine ring verts start to merge. */
+const WELD_TOL_FRACTION = 0.25;
+
+/**
  * Crease-aware per-corner normals for a welded indexed triangle mesh.
  *
  * `pos` is the welded [V*3] position buffer, `tri` the flat [F*3] index buffer.
  * Returns a NON-INDEXED [F*9] normal buffer (one normal per triangle corner) to
- * pair with a non-indexed position buffer. Adjacency is by WELDED POSITION (not
- * raw index) so coincident-but-distinct seam indices still share a smooth band;
- * a corner only averages incident faces within `creaseDeg` of its own face, so
- * sharp edges (pipe rims, box corners) stay hard. Mirrors the canonical
- * `render-helpers.ts:creaseAwareCornerNormals` (pure math, no THREE/Manifold).
+ * pair with a non-indexed position buffer. Adjacency is by TOLERANCE-WELDED
+ * POSITION ({@link toleranceWeldMap}, ~0.25× the median edge) so an exact
+ * boolean's near-coincident seam / T-junction verts still share a smooth band —
+ * fixing the "composite shades FLAT" bug; a corner only averages incident faces
+ * within `creaseDeg` of its own face, so sharp edges (pipe rims, box corners)
+ * stay hard. Mirrors the canonical `render-helpers.ts:creaseAwareCornerNormals`
+ * (pure math, no THREE/Manifold). `weldTol` overrides the auto-derived tolerance.
  */
-function creaseAwareCornerNormals(pos: ArrayLike<number>, tri: ArrayLike<number>, creaseDeg: number): Float32Array {
+export function creaseAwareCornerNormals(pos: ArrayLike<number>, tri: ArrayLike<number>, creaseDeg: number, weldTol?: number): Float32Array {
   const nt = (tri.length / 3) | 0;
   const nv = (pos.length / 3) | 0;
   // Per-face area-weighted normal (raw cross, |·| = 2·area) + its unit direction.
@@ -161,17 +239,11 @@ function creaseAwareCornerNormals(pos: ArrayLike<number>, tri: ArrayLike<number>
     const l = Math.hypot(nx, ny, nz) || 1;
     faceU[t * 3] = nx / l; faceU[t * 3 + 1] = ny / l; faceU[t * 3 + 2] = nz / l;
   }
-  // Weld corners by quantised position so a smooth band averages across its
-  // facets even when the boolean left coincident-but-distinct seam indices.
-  const weldOf = new Int32Array(nv);
-  const weldMap = new Map<string, number>();
-  const q = (x: number) => Math.round(x * 1e4);
-  for (let i = 0; i < nv; i++) {
-    const key = `${q(pos[i * 3])},${q(pos[i * 3 + 1])},${q(pos[i * 3 + 2])}`;
-    let rep = weldMap.get(key);
-    if (rep === undefined) { rep = i; weldMap.set(key, i); }
-    weldOf[i] = rep;
-  }
+  // Weld corners by a spatial TOLERANCE (~0.25× the median edge) so a smooth band
+  // averages across its facets even when an exact boolean left near-coincident
+  // (not equal) seam verts — the composite-flat-shading fix (see toleranceWeldMap).
+  const tol = weldTol != null ? weldTol : WELD_TOL_FRACTION * medianEdgeLength(pos, tri);
+  const weldOf = toleranceWeldMap(pos, tri, tol);
   const inc: number[][] = new Array(nv);
   for (let t = 0; t < nt; t++) {
     for (let k = 0; k < 3; k++) {
