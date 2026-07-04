@@ -34,6 +34,7 @@
   import { buildWellDirection, sampleCentreline, type WellDirection } from './threeD';
   import {
     initManifold, cutCylinder, cutTube, cutSphere, warpGeometry,
+    beginWellTiming, readWellTiming, type WellBuildTiming,
   } from './threeD/manifoldCut';
   import { getBuilder, buildCached } from './threeD/parametric';
   import { autoNodes, lerpDTX, type DtxNode } from './dtx';
@@ -51,6 +52,7 @@
     whiteBg = false,
     onCameraMove,
     onDepthMap,
+    onBuildTiming,
   }: {
     wson: Wson;
     /** Radial exaggeration (inches → scene units). Optional view dial. */
@@ -76,6 +78,9 @@
     /** Share the SINGLE depth-scale (raw MD → display depth) so an overlay
      *  ruler stays in lockstep with the shells — never re-derive it. */
     onDepthMap?: (info: { remap: (md: number) => number; rawTd: number; td: number }) => void;
+    /** DIAGNOSTIC — per-rebuild phase timing for the flash badge (see the
+     *  `WellBuildTiming` shape). Fired on every geometry rebuild. */
+    onBuildTiming?: (t: WellBuildTiming) => void;
   } = $props();
 
   const { camera, scene, invalidate } = useThrelte();
@@ -198,30 +203,42 @@
   }
   const EPS_IN = 0.02;
 
-  // ── Display geometry per layer ─────────────────────────────────────────────
-  const ohGeoms = $derived.by(() =>
-    (wson?.oh ?? []).map((oh) => {
-      const top = remap(oh.top), bot = remap(oh.bot), r = (oh.bitSize * diaScale) / 2;
+  // ── Display geometry per layer — built as ONE timed pass ────────────────────
+  // The whole shell/solid + cutaway-boolean + warp + mesh-extraction build is
+  // the /wells perf hot path. Compute every layer inside a single derived so we
+  // can bracket a coherent build pass with the manifoldCut phase accumulator and
+  // surface a flash badge (pure diagnostic — no behaviour change; the geometry
+  // and template outputs are identical to the previous per-layer deriveds).
+  function triCount(g: THREE.BufferGeometry | null | undefined): number {
+    if (!g) return 0;
+    return g.index ? g.index.count / 3 : (g.attributes.position?.count ?? 0) / 3;
+  }
+  const _now3d = () => (typeof performance !== 'undefined' ? performance.now() : 0);
+
+  const buildBundle = $derived.by(() => {
+    beginWellTiming();
+    const t0 = _now3d();
+
+    const oh = (wson?.oh ?? []).map((o) => {
+      const top = remap(o.top), bot = remap(o.bot), r = (o.bitSize * diaScale) / 2;
       const geom = cutActive
         ? safe(() => cutCylinder(top, bot, r, cutAxis, COL_OH, {}, wellDir, cutAzimuth))
         : solidTubeForRange(top, bot, r);
-      return { geom, label: `${oh.bitSize}" OH` };
-    }).filter((g) => g.geom));
+      return { geom, label: `${o.bitSize}" OH` };
+    }).filter((g) => g.geom);
 
-  const chGeoms = $derived.by(() =>
-    (wson?.ch ?? []).filter((c) => c.type !== 'tubing').map((ch) => {
-      const od = ch.od;
-      const id = (typeof ch.id === 'number' && ch.id > 0 && ch.id < od) ? ch.id : od * 0.92;
-      const top = remap(ch.top), bot = remap(ch.bot);
+    const ch = (wson?.ch ?? []).filter((c) => c.type !== 'tubing').map((c) => {
+      const od = c.od;
+      const id = (typeof c.id === 'number' && c.id > 0 && c.id < od) ? c.id : od * 0.92;
+      const top = remap(c.top), bot = remap(c.bot);
       const innerR = (id * diaScale) / 2, outerR = (od * diaScale) / 2;
       const geom = cutActive
         ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_CH, {}, wellDir, cutAzimuth))
         : shellForRange(top, bot, innerR, outerR);
-      return { geom, label: `${ch.od}" ${ch.grade ?? ''}` };
-    }).filter((g) => g.geom));
+      return { geom, label: `${c.od}" ${c.grade ?? ''}` };
+    }).filter((g) => g.geom);
 
-  const cementGeoms = $derived.by(() =>
-    (wson?.cementing ?? []).map((cm) => {
+    const cement = (wson?.cementing ?? []).map((cm) => {
       const top = remap(cm.top), bot = remap(cm.bot);
       const bit = outerBitAtDepth((top + bot) / 2);
       const outer = (bit != null ? bit : cm.od * 1.15) - EPS_IN;
@@ -232,23 +249,22 @@
         ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_CEMENT, STYLE_CEMENT_CUT, wellDir, cutAzimuth))
         : shellForRange(top, bot, innerR, outerR);
       return { geom, label: `Cement` };
-    }).filter((g) => g.geom));
+    }).filter((g) => g.geom);
 
-  // Tubing joints — a completion, rendered as a gold tube.
-  const tubingGeom = $derived.by(() => {
+    // Tubing joints — a completion, rendered as a gold tube.
+    let tubing: THREE.BufferGeometry | null = null;
     const tb = (wson?.completions ?? []).find((c) => /tubing/i.test(c.description ?? '') && /joints/i.test(c.description ?? ''));
-    if (!tb || tb.top == null || tb.bot == null) return null;
-    const od = tb.od ?? 2.875, id = od * 0.85;
-    const top = remap(tb.top), bot = remap(tb.bot);
-    const innerR = (id * diaScale) / 2, outerR = (od * diaScale) / 2;
-    return cutActive
-      ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_TUBING, {}, wellDir, cutAzimuth))
-      : shellForRange(top, bot, innerR, outerR);
-  });
+    if (tb && tb.top != null && tb.bot != null) {
+      const od = tb.od ?? 2.875, id = od * 0.85;
+      const top = remap(tb.top), bot = remap(tb.bot);
+      const innerR = (id * diaScale) / 2, outerR = (od * diaScale) / 2;
+      tubing = cutActive
+        ? safe(() => cutTube(top, bot, innerR, outerR, cutAxis, COL_TUBING, {}, wellDir, cutAzimuth))
+        : shellForRange(top, bot, innerR, outerR);
+    }
 
-  // Perforation markers — spheres at perf midpoints (world-placed, not warped).
-  const perfMarkers = $derived.by(() =>
-    (wson?.perforations ?? []).map((p) => {
+    // Perforation markers — spheres at perf midpoints (world-placed, not warped).
+    const perfs = (wson?.perforations ?? []).map((p) => {
       const midMd = remap((p.top + p.bot) / 2);
       const node = wellDir.getInterNode(midMd);
       if (!node) return null;
@@ -256,7 +272,49 @@
       const position = new THREE.Vector3(node.pt[0], node.pt[1], node.pt[2]);
       const geom = cutActive ? safe(() => cutSphere(position, radius, cutAxis, COL_PERF)) : null;
       return { position, radius, geom, label: p.label ?? 'Perf' };
-    }).filter(Boolean) as Array<{ position: THREE.Vector3; radius: number; geom: THREE.BufferGeometry | null; label: string }>);
+    }).filter(Boolean) as Array<{ position: THREE.Vector3; radius: number; geom: THREE.BufferGeometry | null; label: string }>;
+
+    // ── Assemble the diagnostic timing summary for the flash badge ──────────
+    const phases = readWellTiming();
+    let tris = 0;
+    for (const g of oh) tris += triCount(g.geom);
+    for (const g of ch) tris += triCount(g.geom);
+    for (const g of cement) tris += triCount(g.geom);
+    tris += triCount(tubing);
+    for (const g of perfs) tris += triCount(g.geom);
+    const compCount = (wson?.completions ?? [])
+      .filter((c) => !/tubing joints/i.test(c.description ?? '')).length;
+    const strings = oh.length + ch.length + cement.length + (tubing ? 1 : 0) + perfs.length + compCount;
+    const timing: WellBuildTiming = {
+      ...phases,
+      total: _now3d() - t0,
+      strings,
+      tris: Math.round(tris),
+      cutActive,
+    };
+    return { oh, ch, cement, tubing, perfs, timing };
+  });
+
+  // Thin aliases so the template reads the same names as before.
+  const ohGeoms = $derived(buildBundle.oh);
+  const chGeoms = $derived(buildBundle.ch);
+  const cementGeoms = $derived(buildBundle.cement);
+  const tubingGeom = $derived(buildBundle.tubing);
+  const perfMarkers = $derived(buildBundle.perfs);
+
+  // Publish + log the diagnostic timing on every rebuild (dial changes recompute
+  // buildBundle → this fires, flashing the badge with the fresh cost).
+  $effect(() => {
+    const t = buildBundle.timing;
+    onBuildTiming?.(t);
+    try {
+      console.log('[wells-3d]',
+        `total ${t.total.toFixed(0)}ms · shell ${t.solid.toFixed(0)} · cutaway ${t.cutaway.toFixed(0)} · ` +
+        `warp ${t.warp.toFixed(0)} · mesh ${t.extract.toFixed(0)} · ${t.strings} strings · ` +
+        `${t.csgOps} CSG · ${t.builds} solids · ${t.tris.toLocaleString()} tris · cut ${t.cutActive ? 'on' : 'off'}`,
+        t);
+    } catch {}
+  });
 
   // ── Completion component markers (non-tubing-joints) ───────────────────────
   const CATEGORY_COLOR: Record<string, string> = {
