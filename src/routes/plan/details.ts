@@ -118,4 +118,102 @@ export const details: Record<number, PlanDetail> = {
     ],
     recorded: false,
   },
+
+  // ───── /wells — editing + 3D-fast build architecture (design 2026-07-04) ─────
+
+  951: {
+    summary:
+      'W-B1 · Editing — mutation + undo layer (the viewer→editor foundation).\n\n' +
+      'ewells.app (= SVTC) is a VIEWER; the differentiator for /wells is turning ' +
+      'the schematic into an EDITOR. This task builds the substrate every editor ' +
+      'panel writes through:\n\n' +
+      ' - A single `commit(mutation)` choke point that applies a structured edit ' +
+      'to the open .wson (add/remove/edit casing·tubing·cement·completion strings, ' +
+      'survey stations, perfs) and produces a new immutable well state.\n' +
+      ' - A per-workspace undo/redo history stack over those commits.\n' +
+      ' - Change notification that triggers the 3D re-bake (via the WellBakePool, ' +
+      '#957) + the 2D SVG re-render, both already reactive.\n\n' +
+      'Prereq for CompletionsEditor (#960), SurveyEditor (#961), inspector-on-select ' +
+      '(#962). SSR-safe.',
+    acceptance: [
+      'An edit to a string OD updates both the 2D SVG and the 3D view',
+      'Undo/redo restores prior well state exactly',
+      'No panel mutates the .wson directly — everything goes through commit()',
+    ],
+    refs: [
+      'docs/plans/wells-ewells-gaps.md (§B editing)',
+      'src/lib/wells/ (engine — mutation helpers)',
+      'src/routes/wells/+page.svelte (workspace + undo history)',
+    ],
+    recorded: false,
+  },
+
+  957: {
+    summary:
+      'W-H1 · 3D-fast build — WellBakePool.\n\n' +
+      'ROOT CAUSE (docs/research/wells-perf-ewells-vs-cadtrain.md): ewells draws an ' +
+      'instant 2D SVG; /wells built real watertight Manifold CSG shells + a ' +
+      'per-element half-section cutaway SYNCHRONOUSLY on the MAIN THREAD, then bent ' +
+      'each along the survey in a per-vertex JS loop → the UI janked on long/multi-' +
+      'string wells. Shipping the 2D-SVG-default (#953) hid this for tab-open; this ' +
+      'task fixes the 3D path itself.\n\n' +
+      'Move the per-element build into a POOL of N Web-Workers, each owning its OWN ' +
+      'Manifold instance (crucially NOT the /primitives editor\'s single latest-wins ' +
+      'worker — wells needs ALL elements built in parallel, cached, and rendered ' +
+      'progressively). Rides the existing bake-worker / bake-client pipeline ' +
+      '(client_side_execution).',
+    acceptance: [
+      'Opening a long multi-string well in 3D no longer blocks the UI thread',
+      'Elements appear progressively as their workers finish',
+      'Per-element bake results are cached (no rebuild on unrelated edits)',
+    ],
+    refs: [
+      'docs/plans/wells-build-architecture.md (P1–P3, WellBakePool)',
+      'src/lib/cad/bake-worker.ts + bake-client.ts (reused pipeline)',
+      'src/lib/wells/WellSchematic3D.svelte (the main-thread $derived.by stack to move off-thread)',
+    ],
+    recorded: false,
+  },
+
+  958: {
+    summary:
+      'W-H2 · 3D-fast — clip-plane cutaway (drop the boolean).\n\n' +
+      'The half-section cutaway is currently a per-element Manifold `.cut()` boolean. ' +
+      'CSG cutaway scales super-linearly (memory stack_cutaway_perf_root_cause) and ' +
+      're-triggers a full rebuild on every azimuth / toggle change. Replace it with a ' +
+      'GPU clip plane: THREE material `clippingPlanes` + a stencil-pass to cap the ' +
+      'cut faces. Then the cutaway is free at render time and never touches the CSG ' +
+      'kernel — azimuth becomes a live slider.',
+    acceptance: [
+      'Toggling cutaway / rotating the cut azimuth is instant (no rebake)',
+      'Cut faces are capped (not hollow) via the stencil pass',
+      'Matches the current boolean cutaway visually',
+    ],
+    refs: [
+      'docs/plans/wells-build-architecture.md (clip-plane cutaway)',
+      'src/lib/wells/WellSchematic3D.svelte (current .cut() half-section)',
+    ],
+    recorded: false,
+  },
+
+  959: {
+    summary:
+      'W-H3 · Parametric element libraries.\n\n' +
+      'The well elements (open-hole / casing / tubing / cement / perf) become ' +
+      'PARAMETRIC LIBRARY parts the wells engine CALLS procedurally, and completions ' +
+      'become the g_* jewelry parts baked via compile + worker. Register the g_* ' +
+      'parts into the parametric registry with ParamSpec dials — this is what the ' +
+      'W-B4 inspector (#962) reads to build its editing UI. Adds auto-scale/fit.',
+    acceptance: [
+      'Each element type resolves to a parametric library part with a ParamSpec',
+      'g_* completions are registered + selectable + bakeable via the worker',
+      'Auto-scale fits the whole string to the viewport',
+    ],
+    refs: [
+      'docs/plans/wells-build-architecture.md (§A2 element libraries)',
+      'docs/plans/wells-ewells-gaps.md (§A2)',
+      'src/lib/wells/ (engine registry)',
+    ],
+    recorded: false,
+  },
 };
