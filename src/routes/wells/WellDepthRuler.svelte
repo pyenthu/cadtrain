@@ -17,18 +17,22 @@
    * stays legible on the white schematic background.
    */
   import type { WsonDoc } from './wson-summary';
+  import { spreadLabels } from './label-layout';
 
   let {
     wson,
     remap,
     rawTd,
     whiteBg = false,
+    leftInset = 0,
   }: {
     wson: WsonDoc | null;
     /** raw MD → display depth — the SAME fn WellSchematic3D uses. */
     remap: (md: number) => number;
     rawTd: number;
     whiteBg?: boolean;
+    /** px offset from the stage's left edge (clears the element rail). */
+    leftInset?: number;
   } = $props();
 
   // Measured drawable height (below the control bar → bottom inset).
@@ -84,16 +88,15 @@
     return out.sort((a, b) => a.md - b.md);
   });
 
-  // Vertical anti-overlap: nudge labels apart in pixel space (top-down).
+  // Vertical anti-overlap: a FORCE de-overlap (labella "simple" parity, pure
+  // `spreadLabels`) that centres clustered labels on their anchors instead of
+  // only nudging downward — dense zones read cleanly. Anchors stay put; only
+  // the label boxes + their leaders move. Clamped into the drawable band.
   const LABEL_GAP = 15;
   const placedLabels = $derived.by(() => {
-    let lastY = -Infinity;
-    return labels.map((l) => {
-      const anchorY = yOf(l.md);
-      const y = Math.max(anchorY, lastY + LABEL_GAP);
-      lastY = y;
-      return { ...l, anchorY, y };
-    });
+    const anchors = labels.map((l) => yOf(l.md));
+    const ys = spreadLabels(anchors, { gap: LABEL_GAP, min: 6, max: Math.max(6, h - 6) });
+    return labels.map((l, i) => ({ ...l, anchorY: anchors[i], y: ys[i] }));
   });
 
   // Palette (dark chrome vs. dark-on-white for the schematic background).
@@ -107,7 +110,7 @@
   const LABEL_X = 58; // where leader labels start
 </script>
 
-<div class="wdr" bind:clientHeight={h} aria-hidden="true">
+<div class="wdr" style="left:{leftInset}px" bind:clientHeight={h} aria-hidden="true">
   {#if h > 0 && rawTd > 0}
     <svg width="100%" height={h} class="wdr-svg">
       <!-- vertical axis -->
@@ -141,7 +144,7 @@
 <style>
   .wdr {
     position: absolute;
-    left: 0;
+    left: 0; /* overridden inline by leftInset (clears the element rail) */
     top: 56px; /* clear the control bar */
     bottom: 10px;
     width: 220px;

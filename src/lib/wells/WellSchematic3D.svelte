@@ -48,6 +48,7 @@
     cutAzimuth = 0,
     directional = true,
     layers = { showOpenHole: true, showCasing: true, showCement: true, showTubing: true, showCompletions: true, showPerforations: true },
+    whiteBg = false,
     onCameraMove,
     onDepthMap,
   }: {
@@ -67,19 +68,38 @@
       showOpenHole?: boolean; showCasing?: boolean; showCement?: boolean;
       showTubing?: boolean; showCompletions?: boolean; showPerforations?: boolean;
     };
+    /** Render the 3D scene itself on WHITE (schematic-on-paper look). When
+     *  false the scene background stays transparent so the CSS stage gradient
+     *  shows through — the dark aesthetic. */
+    whiteBg?: boolean;
     onCameraMove?: (pos: { x: number; y: number; z: number }) => void;
     /** Share the SINGLE depth-scale (raw MD → display depth) so an overlay
      *  ruler stays in lockstep with the shells — never re-derive it. */
     onDepthMap?: (info: { remap: (md: number) => number; rawTd: number; td: number }) => void;
   } = $props();
 
-  const { camera } = useThrelte();
+  const { camera, scene, invalidate } = useThrelte();
 
   let manifoldReady = $state(false);
   onMount(async () => {
     try { await initManifold(); manifoldReady = true; }
     catch (e) { console.error('[WellSchematic3D] manifold init failed', e); }
   });
+
+  // White SCENE background — set the Three scene's clear background to white so
+  // the schematic reads as a drawing on paper (the black <Edges> stay legible).
+  // null → transparent, letting the route's dark CSS gradient show through.
+  let _white: THREE.Color | null = null;
+  $effect(() => {
+    if (whiteBg) {
+      _white ??= new THREE.Color('#ffffff');
+      scene.background = _white;
+    } else if (scene.background === _white) {
+      scene.background = null;
+    }
+    invalidate();
+  });
+  onDestroy(() => { if (scene.background === _white) scene.background = null; });
 
   const cutActive = $derived(cutaway && manifoldReady);
 

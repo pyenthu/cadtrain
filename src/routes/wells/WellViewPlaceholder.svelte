@@ -13,6 +13,7 @@
   import { Canvas } from '@threlte/core';
   import WellSchematic3D from '$lib/wells/WellSchematic3D.svelte';
   import WellViewControls from './WellViewControls.svelte';
+  import WellElementRail from './WellElementRail.svelte';
   import WellDepthRuler from './WellDepthRuler.svelte';
   import { summarise, type WsonDoc } from './wson-summary';
   import { defaultViewSettings, type WellViewSettings } from './view-settings';
@@ -66,13 +67,17 @@
           dtx={view.dtx}
           diaScale={view.diaScale}
           zScale={view.zScale}
+          whiteBg={view.whiteBg}
           {onDepthMap}
         />
       </Canvas>
 
+      <!-- Top view/scale bar + left element rail (both mutate `view`). -->
       <WellViewControls settings={view} />
+      <WellElementRail settings={view} {wson} />
       {#if view.showRuler}
-        <WellDepthRuler {wson} {remap} {rawTd} whiteBg={view.whiteBg} />
+        <!-- Ruler starts right of the 44px element rail (8px inset + gap). -->
+        <WellDepthRuler {wson} {remap} {rawTd} whiteBg={view.whiteBg} leftInset={60} />
       {/if}
     </section>
   {:else}
