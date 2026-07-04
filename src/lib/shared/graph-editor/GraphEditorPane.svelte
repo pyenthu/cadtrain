@@ -73,6 +73,7 @@
     addExprDef,
     addExprInstance,
     addSpline,
+    addWarpPlaceholder,
     removeExprDef,
     addStackPlaceholder,
     addRepeatPlaceholder,
@@ -1359,7 +1360,8 @@
     return c.type === 'call' ? `${c.alias} · ${c.src}`
       : c.type === 'method' ? `${c.op}(…)`
       : c.type === 'repeat' ? `repeat × ${c.count?.kind === 'literal' ? c.count.value : '…'}`
-      : c.type === 'sketch' ? '✐ sketch' : c.type;
+      : c.type === 'sketch' ? '✐ sketch'
+      : c.type === 'warp' ? '≈ warp' : c.type;
   }
   // endWireOnInput / endWireOnCallArg / endWireOnPolygonCoord /
   // endWireOnPolyRepeatCount / endWireOnPolygonRepeatRef / endWireOnTransformAxis
@@ -1728,6 +1730,10 @@
   function dropRot() { closePicker(); graph = addRotPlaceholder(graph).graph; }
   function dropTxfmn() { closePicker(); graph = addTxfmnPlaceholder(graph).graph; }
   function dropStack(){ closePicker(); graph = addStackPlaceholder(graph).graph; }
+  /** Drop a `warp` bend MODIFIER (#36) — bends a built solid along a spline.
+   *  Wire the SOLID into the top-left socket + a SPLINE's path into the lower-
+   *  left socket; emits warpSpline(solid, path, opts). */
+  function dropWarp() { closePicker(); graph = addWarpPlaceholder(graph).graph; }
 
   /** Profile-mode "pen" nodes — turtle-graphics-style polygon authoring.
    *  Each pen node lands as a Call with a synthetic src tag (`pen_mv`,
@@ -3322,6 +3328,10 @@
         </button>
         <button class="ge-pick-item" type="button" onclick={() => { dropRot(); submenuKey = null; }}>
           <span class="ge-pick-icon">↻</span><span class="ge-pick-name">rot</span><span class="ge-pick-hint">rx ry rz</span>
+        </button>
+        <!-- Warp / bend a built solid along a spline (#36). -->
+        <button class="ge-pick-item" type="button" onclick={() => { dropWarp(); submenuKey = null; }}>
+          <span class="ge-pick-icon">≈</span><span class="ge-pick-name">warp</span><span class="ge-pick-hint">bend on path</span>
         </button>
       </div>
     {:else if submenuKey === 'container'}

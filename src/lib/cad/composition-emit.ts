@@ -195,6 +195,15 @@ export function validateGraph(graph: Graph): GraphValidationError[] {
           checkArg(id, `bindings.${inName}`, v as ArgValue);
         }
         break;
+      case 'warp':
+        // The bent solid (child) must be wired; the path + refine ArgValues are
+        // checked so a wired-then-deleted param surfaces as missing-param.
+        if (node.child == null || !has(node.child)) {
+          errs.push({ nodeId: id, slot: 'child', badRef: String(node.child ?? ''), kind: 'missing-node' });
+        }
+        checkArg(id, 'path', node.path);
+        if (node.refine != null) checkArg(id, 'refine', node.refine);
+        break;
     }
   }
   return errs;
@@ -760,6 +769,24 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
       // Spline path producers emit a prelude const (see emitSplineBlocks), not a
       // geometry value — nothing in this node-expression pass.
       return null;
+    case 'warp': {
+      // Bend the built child solid along the spline path (#36):
+      //   warpSpline(<child>, <path>, { refine, stretch, validate })
+      // `warpSpline` = the sandbox-injected `warpManifoldAlongSpline`
+      // (primitive-sandbox.ts). The path is normally an `expr` referencing a
+      // wired SplineNode's prelude const (`_x_<id>_path`), so it resolves to the
+      // resampled control-point array warpManifoldAlongSpline re-splines. The
+      // opts object is emitted only when a non-default lever is set, so the
+      // common case stays the terse `warpSpline(child, path)`.
+      const child = ref(node.child ?? '', 'child');
+      const pathExpr = emitValueExpr(node.path);
+      const optParts: string[] = [];
+      if (node.refine != null) optParts.push(`refine: ${emitValueExpr(node.refine)}`);
+      if (node.stretch) optParts.push(`stretch: true`);
+      if (node.validate) optParts.push(`validate: true`);
+      const opts = optParts.length ? `, { ${optParts.join(', ')} }` : '';
+      return `warpSpline(${child}, ${pathExpr}${opts})`;
+    }
   }
 }
 
@@ -961,6 +988,10 @@ function computeConsumedSet(graph: Graph): Set<NodeId> {
       if (n.arg) consumed.add(n.arg);
     } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn') {
       if (n.child) consumed.add(n.child);
+    } else if (n.type === 'warp') {
+      // The warp's bent solid is an INPUT — consumed so it doesn't double-emit
+      // as an Output + its × delete button greys (mirrors mv/rot child).
+      if (n.child) consumed.add(n.child);
     } else if (n.type === 'repeat') {
       // Every wired PART is an input to the repeat — consumed so it doesn't
       // double-emit as an Output and its delete button greys.
@@ -1030,6 +1061,7 @@ function assignVarNames(graph: Graph, order: NodeId[]): Map<NodeId, string> {
         node.type === 'txfmn'   ? 'txfmn_obj' :
         node.type === 'polygon' ? 'poly' :
         node.type === 'sketch'  ? 'sketch' :
+        node.type === 'warp'    ? 'warp_obj' :
                                    'rot_obj';
       counters[prefix] = (counters[prefix] ?? 0) + 1;
       name = `_${prefix}_${counters[prefix]}`;

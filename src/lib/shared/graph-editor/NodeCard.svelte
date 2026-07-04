@@ -43,6 +43,9 @@
     removeSketchOp,
     removeNode,
     setSplinePlot,
+    setWarpRefine,
+    setWarpStretch,
+    setWarpValidate,
     asLiteral,
     STACK_REF_PARAM,
     type Graph,
@@ -56,6 +59,7 @@
     exprInputSockY, exprOutputSockY,
     containerSlotY, rootOutputSockY,
     OUTPUT_ARROW_W,
+    WARP_CHILD_CY, WARP_PATH_CY,
   } from './geom';
   import { isCallDrifted, refreshCallArgs } from './graph-editor-bake.svelte';
   import { portType, listOf, structColor } from '$lib/cad/port-types';
@@ -1602,6 +1606,71 @@
                   cx={sw} cy={sh / 2} r="6"
                   data-tip={`path: ${splinePort?.label ?? 'list of 3D points'} — drag onto a sweep’s path arg`}
                   onpointerdown={(ev) => wire.startExprOutWire(ev, n.id, 'path')}/>
+
+              {:else if n.type === 'warp'}
+                {@const w = n as any}
+                {@const childWired = typeof w.child === 'string' && !!w.child && !!graph.nodes[w.child]}
+                {@const pathWired = (w.path?.kind === 'expr' && String(w.path.expr) !== '[]' && String(w.path.expr).trim() !== '')
+                  || w.path?.kind === 'param'}
+                {@const refineVal = w.refine?.kind === 'literal' ? Number(w.refine.value) : (w.refine ? NaN : 0)}
+                <!-- Warp / bend MODIFIER (#36) — bends the wired `solid` (child)
+                     along the wired spline `path`, emitting warpSpline(child,path,
+                     opts). solid + path wire in on the LEFT, bent result out the
+                     RIGHT; refine / stretch / validate opts in the body row. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg warp"
+                  width={size.w} height={size.h} rx="6"
+                  data-tip="Warp: bend a built solid along a spline. Wire the SOLID into the top-left socket + a SPLINE'S path into the lower-left socket. refine = build-time subdivision (smoother bend); stretch = span the whole spline; validate = warn on an inverted/self-intersecting bend."
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <text x="12" y="20" class="ge-node-title">≈ warp</text>
+                <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
+                <!-- delete × (top-right) -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 18} y="20" class="ge-node-x"
+                  class:armed={del.isArmed(n.id)}
+                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
+                <!-- SOLID (child) input — LEFT, WARP_CHILD_CY -->
+                <text x="14" y={WARP_CHILD_CY + 4} class="ge-warp-lbl" class:wired={childWired}>solid</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock in child" class:wired={childWired}
+                  cx="0" cy={WARP_CHILD_CY} r="6"
+                  data-tip="solid: wire the built part to bend (any node's output)"
+                  onpointerup={(ev) => wire.endWireOnInput(ev, n.id, 'child')}/>
+                <!-- PATH input — LEFT, WARP_PATH_CY -->
+                <text x="14" y={WARP_PATH_CY + 4} class="ge-warp-lbl" class:wired={pathWired}>path</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock in expr-in list" class:wired={pathWired}
+                  cx="0" cy={WARP_PATH_CY} r="6"
+                  data-tip={pathWired ? 'path: wired to a spline — drop another to repoint' : 'path: wire a spline’s output (list of points) here'}
+                  onpointerup={(ev) => wire.endWireOnWarpPath(ev, n.id)}/>
+                <!-- OPTS row: refine number + stretch / validate toggles -->
+                <foreignObject x="10" y={WARP_PATH_CY + 12} width={size.w - 16} height="34">
+                  <div class="ge-warp-opts" xmlns="http://www.w3.org/1999/xhtml">
+                    <label class="ge-warp-refine" title="Build-time subdivision so flat walls bend as arcs (0 = adaptive)">
+                      ref
+                      <input class="ge-arg-input" type="number" min="0" step="1"
+                        value={Number.isFinite(refineVal) ? refineVal : 0}
+                        oninput={(e) => {
+                          const v = Number((e.target as HTMLInputElement).value);
+                          setGraph(setWarpRefine(graph, n.id, v > 0 ? asLiteral(v) : null));
+                        }}/>
+                    </label>
+                    <button class="ge-warp-tog" class:on={w.stretch === true} type="button"
+                      title="Stretch the part to span the whole spline (else keep its own length)"
+                      onclick={() => setGraph(setWarpStretch(graph, n.id, w.stretch !== true))}>str</button>
+                    <button class="ge-warp-tog" class:on={w.validate === true} type="button"
+                      title="Warn on an inverted / self-intersecting bend (genus/volume check)"
+                      onclick={() => setGraph(setWarpValidate(graph, n.id, w.validate !== true))}>val</button>
+                  </div>
+                </foreignObject>
+                <!-- OUTPUT — RIGHT edge, vertically centred -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                  data-tip="the bent solid — wire into Output, a CSG op, or another modifier"
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
               {/if}
               <!-- ─── Bottom-right corner resize grip ─────────────────────
                    Diagonal handle in the card's bottom-right corner —
@@ -1656,6 +1725,18 @@
   /* Compact mv/rot icon glyph (mirrors ge-csg-glyph but in transform-purple). */
   .ge-xform-glyph { fill: #6d28d9; font: 700 20px Arial; cursor: pointer; user-select: none; }
   .ge-xform-glyph:hover { fill: #4c1d95; }
+  /* Warp / bend modifier card (#36) — teal, distinct from transform-purple. */
+  .ge-node-bg.warp { fill: #ecfeff; stroke: #0e7490; stroke-width: 2; }
+  .ge-warp-lbl { fill: #0e7490; font: 600 11px Arial; pointer-events: none; user-select: none; }
+  .ge-warp-lbl.wired { fill: #0369a1; font-weight: 700; }
+  .ge-warp-opts { display: flex; align-items: center; gap: 4px; font: 10px Arial; }
+  .ge-warp-refine { display: flex; align-items: center; gap: 2px; color: #0e7490; font-weight: 600; }
+  .ge-warp-refine .ge-arg-input { width: 34px; }
+  .ge-warp-tog {
+    border: 1px solid #67e8f9; background: #fff; color: #0e7490; border-radius: 4px;
+    padding: 1px 5px; font: 600 10px Arial; cursor: pointer;
+  }
+  .ge-warp-tog.on { background: #0e7490; color: #fff; border-color: #0e7490; }
   .ge-node-bg.container { fill: #ecfdf5; stroke: #047857; stroke-width: 2; }
   /* Polygon card — warm peach background (matches the `.prvl` tag in the
      sidebar + the +Add Vertex CTA). Stroke amber to differentiate from

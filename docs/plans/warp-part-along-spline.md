@@ -64,13 +64,32 @@ parts + the future node both call it).
   RMF (`sweepFrames`, double-reflection) carried along the 3D curve. A planar path
   (`Pt2[]`, or `Pt3[]` with ~constant y) stays on the proven world-Y frame,
   byte-identical to before. Tests: `src/lib/cad/warp-spline.test.ts`.
-- **LEFT — items 1 & 5 (the node + card):** a `warp`/bend MODIFIER node (analogous to
-  `TxfmnNode`) wrapping an upstream solid + a wired `SplineNode`, emitting
-  `warpSpline(...)`. Touches composition-graph types/mutate/hydrate + composition-emit
-  (new `case`) + composition-layout/geom (card sizes) + `NodeCard.svelte` (render arm)
-  + `GraphEditorPane` (add-menu + handlers, spline sub-editor popover) +
-  `recognize-composite.ts` (already detects the `warpSpline(inner, path, opts)` wrap
-  spans). Sizable, GEP-touching — schedule as its own step.
+## Progress (2026-07-04) — items 1 & 5 (the NODE + card) SHIPPED
+The `warp` bend MODIFIER node is now first-class:
+- **Model** — `WarpNode { child, path, refine?, stretch?, validate? }` in
+  `composition-graph-types.ts` (union member); `addWarp`/`addWarpPlaceholder` +
+  `setWarpChild`/`setWarpPath`/`setWarpRefine`/`setWarpStretch`/`setWarpValidate`
+  mutators; `setTransformChild`/`removeNode`/`topoOrder`/`collectEdges`/
+  `defaultCallPosition` extended for it; hydrate normalises the fields.
+- **Emit** — `composition-emit.ts` `case 'warp'` →
+  `warpSpline(<child>, <path>, { refine, stretch, validate })` (opts object only
+  when a lever is set). The `path` is normally an `expr` referencing a wired
+  `SplineNode`'s prelude const (`_x_<id>_path`), so the SAME spline machinery
+  drives it. `warpSpline` is already the sandbox-injected
+  `warpManifoldAlongSpline`, so the bake bends the solid with no new plumbing.
+  Consumed-set marks `warp.child` so it doesn't double-return.
+- **Card** — a teal NodeCard arm (`≈ warp`): a `solid` child socket + a `path`
+  socket on the LEFT, the bent solid out the RIGHT, and a refine/stretch/validate
+  opts row. Wired via `wire.endWireOnWarpPath` (path) + the shared
+  `endWireOnInput('child')` (solid). Dropped from the picker `position ▸ warp`
+  item. `WireLayer` draws both the child + path wires; `geom.ts` sizes the card.
+- **Verify** — `src/lib/cad/warp-node.test.ts` (model → emit → hydrate round-trip,
+  opts, validation, cascade-delete); the geometry bend itself stays covered by
+  `warp-spline.test.ts`. `bun run build` green.
+- **LEFT for the parent to eyeball on :3333:** drop a Call (e.g. g_shaft) → drop a
+  spline → drop `warp`, wire the part into `solid` + the spline into `path`, and
+  confirm the bake bends. `recognize-composite.ts` already detects the emitted
+  `warpSpline(inner, path, opts)` wrap.
 
 ## Why it's attractive
 - Reuses existing warp logic → small build. Bends ANY part (not just tubes): pipes,

@@ -228,8 +228,17 @@ export function cardMinWidth(node: any): number {
   if (node.type === 'polygon') return 180; // input + chrome fits at 180
   if (node.type === 'expr') return 200;    // input-col + output-row (name=formula)
   if (node.type === 'spline') return 92;   // min width — inline row (+20%, bigger click targets)
+  if (node.type === 'warp') return 150;    // title + solid/path sockets + opts
   return 130;
 }
+
+// ─── Warp / bend node card geometry (#36) ───────────────────────────────────
+// A small card: title row + a `solid` child input + a `path` input on the LEFT,
+// the bent solid out the RIGHT, and a compact opts row. The two left-socket Y's
+// are shared by the NodeCard render AND the WireLayer wire endpoints so they
+// can't drift.
+export const WARP_CHILD_CY = 40;   // `solid` (child) input socket cy
+export const WARP_PATH_CY = 64;    // `path` input socket cy
 
 /** Auto-fit width from the card's content (title + longest arg key + value
  *  footprint). The DEFAULT width when no user override is set. */
@@ -252,6 +261,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
   if (node.type === 'polygon') return 200; // narrowed for the vertical-stack layout
   if (node.type === 'expr') return 260;    // input gutter + name=formula row
   if (node.type === 'spline') return 110;  // inline row: edit | curve | x | socket (+20%)
+  if (node.type === 'warp') return 172;    // solid/path labels + opts row
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
     const labels: string[] = [];
     for (const cid of (node as any).children ?? []) {
@@ -263,6 +273,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
         child.type === 'mv'     ? 'mv(…)' :
         child.type === 'rot'    ? 'rot(…)' :
         child.type === 'txfmn'  ? 'xform(…)' :
+        child.type === 'warp'   ? 'warp(…)' :
         child.type === 'stack'  ? 'stack(…)' :
         child.type === 'repeat' ? `repeat × ${(child as any).count?.kind === 'literal' ? (child as any).count.value : '…'}` :
         '(missing)',
@@ -406,6 +417,7 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
     return { w, h: EXPR_BODY_TOP + rows * EXPR_ROW_H + 30 };
   }
   if (node.type === 'spline') return { w, h: 40 }; // +20% height for click targets
+  if (node.type === 'warp') return { w, h: 112 };  // title + 2 sockets + opts row
   return { w, h: 80 };
 }
 
@@ -479,6 +491,11 @@ export function inputSocketAt(graph: Graph, id: NodeId, slot: 'obj' | 'arg' | 'c
   // txfmn keeps its full card: child socket aligned with the title row (y=16).
   if (slot === 'child' && node.type === 'txfmn') {
     return { x: p.x, y: p.y + 16 };
+  }
+  // warp: the `solid` (child) input sits on the LEFT edge at WARP_CHILD_CY (the
+  // `path` input is a separate socket WireLayer positions directly).
+  if (slot === 'child' && node.type === 'warp') {
+    return { x: p.x, y: p.y + WARP_CHILD_CY };
   }
   /* child (legacy left-edge for method/repeat) */
   return { x: p.x, y: p.y + 50 };

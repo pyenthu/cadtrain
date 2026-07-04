@@ -456,7 +456,39 @@ export type SplineNode = {
   plotColor?: string;
 };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode;
+/** Warp / bend MODIFIER node (#36, plan docs/plans/warp-part-along-spline.md
+ *  items 1 & 5) — takes a BUILT solid (`child`) and BENDS it along a spline
+ *  `path`, emitting `warpSpline(<child>, <path>, opts)` (the sandbox-injected
+ *  `warpManifoldAlongSpline`). Distinct from the warp_along_spline / r_sweep
+ *  PRIMITIVES, which GENERATE a swept surface from a cross-section; this DEFORMS
+ *  an already-composed solid by displacing its vertices (`Manifold.warp`).
+ *
+ *  MODE is AUTO-selected inside `warpManifoldAlongSpline` by the path's arity —
+ *  a planar (x,z) path stays on the world-Y frame, a genuinely 3D path routes
+ *  through the rotation-minimizing frame (RMF); the node does not carry a mode.
+ *  The tunable opts are `refine` (build-time subdivision so flat walls bend as
+ *  arcs, not chords — self-limited on already-dense meshes), `stretch` (elongate
+ *  the part to span the whole spline vs keep its own length), and `validate`
+ *  (opt-in genus/volume sanity WARN on an inverted / self-intersecting bend).
+ *
+ *  `child` is nullable for an unwired placeholder drop (mirrors TxfmnNode).
+ *  `path` is an ArgValue — normally an `expr` referencing a wired SplineNode's
+ *  output const (`_x_<splineId>_path`, exprBlockMember(id,'path')), exactly like
+ *  an r_sweep `path` arg — but it can also be a literal/expr point array.
+ *  `refine` is an ArgValue so it can be param/expr-driven; `stretch`/`validate`
+ *  are sparse booleans (absent ⇒ false ⇒ the minimal `warpSpline(child, path)`
+ *  emit). */
+export type WarpNode = {
+  id: NodeId;
+  type: 'warp';
+  child: NodeId | null;
+  path: ArgValue;
+  refine?: ArgValue;
+  stretch?: boolean;
+  validate?: boolean;
+};
+
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 
