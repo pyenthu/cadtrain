@@ -18,6 +18,7 @@ import { WellProfile } from './threeD/profile';
 import { buildWellDirection, sampleCentreline } from './threeD';
 import {
   initManifold, cutCylinder, cutTube, cutSphere, warpGeometry,
+  beginWellTiming, readWellTiming,
 } from './threeD/manifoldCut';
 import { bakerPacker } from './threeD/parametric/bakerPacker';
 import { buildCached, getBuilder } from './threeD/parametric';
@@ -174,6 +175,40 @@ describe('manifold geometry — sample WSON features', () => {
     let maxOff = 0;
     for (let i = 0; i < pos.count; i++) maxOff = Math.max(maxOff, Math.hypot(pos.getX(i), pos.getY(i)));
     expect(maxOff, 'warp lateral departure').toBeGreaterThan(20);
+  }, 30000);
+
+  it('deviated + cutaway builds a HALF-SECTION cut (Strategy E), attributed to the cutaway phase', () => {
+    // Regression: a deviated well with cutaway ON must still produce a
+    // cross-section (the half cross-section extrude), NOT a full solid — and the
+    // diagnostic must charge that CSG to `cutaway`, not `solid`, so the badge
+    // does not misreport "cutaway 0ms · 0 CSG" for deviated wells.
+    const ch = sample9.wson.ch!.find((c) => c.type === 'production')!;
+    const dir = buildWellDirection(sample9.wson.profile, sample9.wson.meta.td!);
+    const id = ch.id ?? ch.od * 0.92;
+
+    // Distinct RED main color so the grey cut-face triangles are unambiguous
+    // (default cutColor ≈ [0.62,0.62,0.66]).
+    beginWellTiming();
+    const geo = cutTube(3100, 3600, (id * diaScale) / 2, (ch.od * diaScale) / 2, 'x', [0.9, 0.1, 0.1], {}, dir, 0);
+    const timing = readWellTiming();
+    assertSaneGeo(geo, 'deviated cutaway cutTube');
+
+    // The half-section CSG must be COUNTED and TIMED under `cutaway` (not solid),
+    // so the diagnostic badge does not misreport "cutaway 0ms · 0 CSG".
+    expect(timing.csgOps, 'deviated cutaway CSG op count').toBeGreaterThan(0);
+    expect(timing.cutaway, 'deviated cutaway phase ms').toBeGreaterThan(0);
+
+    // A genuine half-section has a GREY cut FACE (per-vertex cutColor) — a full
+    // (un-cut) solid tube would carry only the RED main color. Count grey verts.
+    const col = geo!.getAttribute('color');
+    let grey = 0, red = 0;
+    for (let i = 0; i < col.count; i++) {
+      const r = col.getX(i), g = col.getY(i), b = col.getZ(i);
+      if (r > 0.7 && g < 0.3 && b < 0.3) red++;
+      else if (Math.abs(r - g) < 0.15 && Math.abs(g - b) < 0.15 && r > 0.4 && r < 0.8) grey++;
+    }
+    expect(red, 'main (wall) color present').toBeGreaterThan(0);
+    expect(grey, 'grey cut-face triangles present (cross-section, not a solid)').toBeGreaterThan(0);
   }, 30000);
 
   it('builds a perforation cutSphere at the perf midpoint', () => {
