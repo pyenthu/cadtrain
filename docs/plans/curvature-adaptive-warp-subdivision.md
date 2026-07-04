@@ -4,6 +4,47 @@
 **Rule:** extends project **Rule 25** (warp/segmentation resolution is a BUILD-TIME
 axial-Z concern, never a post-bake MeshGL rewrite).
 
+## ✅ CHOSEN APPROACH (decided WITH the user, 2026-07-05)
+
+> **Warp step (PURE JS): curvature-adaptive axial subdivision → bend positions by
+> the frame → bend the NORMALS by the same frame → smooth shading preserved, no
+> slivers, no faceting.**
+
+The refinement lives in **the warp step**, not the revolve — because the warp is
+the only stage that knows the spline's curvature, and it must work for ANY solid
+(not just revolves). It is done in **pure JS on the extracted mesh** (SVTC's
+model), NOT via `Manifold.warp` + `refine`:
+
+1. **Extract** the solid's `position` + `normal` arrays (plain typed arrays).
+2. **Curvature-adaptive axial subdivision** — insert rings ONLY along Z, denser
+   where the spline's local curvature is high (see the math below). This replaces
+   Manifold's uniform `refine(n)` (the n² bloat + inside-bend slivers).
+3. **Bend positions** by the local frame: `p = at(z) + x·N + y·B`.
+4. **Bend normals** by the SAME frame rotation (the orthonormal `[N,B,T]` basis).
+   This is the "interpolation of normals" — the pre-warp SMOOTH normals stay
+   smooth AND the pre-warp SHARP edges stay sharp; they just rotate along the
+   bend. NO `calculateNormals(crease)` re-derive (which crease-SPLITS the coarse
+   axial chords → the faceting the user saw), NO `computeVertexNormals` smooth-all
+   (which would flatten intentional creases).
+
+**Why pure JS is forced:** `Manifold.warp` moves POSITIONS ONLY, then the pipeline
+always ends in `calculateNormals(3, 60)` — the 60° crease splits the warp's axial
+chords → faceted. You cannot carry normals through the Manifold path. SVTC proves
+the JS path is fast (it warps a `THREE.BufferGeometry` vertex array directly).
+(SVTC ends with `computeVertexNormals()` — smooth-all, fine for plain tubes; we do
+the frame-rotate variant to preserve intentional creases.)
+
+**Downstream implication — the cutaway.** If the warp returns a PLAIN mesh (not a
+Manifold), the half-section cutaway can no longer be a Manifold CSG boolean → it
+becomes a **clip-plane** (the wells-plan `svtc-section-cutaway.md` direction). So:
+**warp → plain mesh with frame-bent normals; cutaway → clip-plane, not boolean.**
+
+**Secondary/legacy:** the `r_revolve axisPath` path (below) builds a deviated tube
+with axial rings at BUILD time and is still the right thing for a *directly*
+deviated well tube (no separate warp node). The two could later unify by lowering
+a warp-node-over-a-revolve into `r_revolve(axisPath)`. But the CHOSEN general fix
+for the warp NODE (bend an arbitrary solid) is the pure-JS warp step above.
+
 ## The idea (one line)
 
 Subdivide a part **along the spline** in proportion to the spline's **local
