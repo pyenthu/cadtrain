@@ -57,6 +57,22 @@ export const meta = {
     // denser. Existing consumers call r_revolve(profile, segments) with no third
     // arg → 0 → output is byte-identical (Rule 21: 12 consumers, back-compat).
     zSegments: { label: 'z-segments', min: 0, max: 256, step: 1, default: 0 },
+    // OPT-IN DEVIATION PATH — the "deviated well tube". A control-point path
+    // that bends the revolved tube's AXIS laterally so it follows a curved
+    // trajectory (vertical then kick-off, etc.) while KEEPING the circular
+    // cross-section (radius preserved). Points are `[x, y, z]` (offset x,y at
+    // depth z) or bare `[x, y]` (spread evenly across the profile's Z-span).
+    // For each axial ring at height z we translate its whole center by the
+    // path's interpolated [x,y] at that z — a PLANAR per-Z shift, NOT a rotated
+    // frame, so the caps stay axis-perpendicular (dodges the tilted-coincident-
+    // cap "defect-2" class that curved sweep − sweep hits). A fully general
+    // curved-FRAME sweep (rings rotate to stay normal to the tangent) is still
+    // r_sweep's job; this is the pragmatic deviated revolve for wells. A
+    // straight / absent path → NO offset → identical to the plain revolve.
+    // Giving a path implies axial resolution: if zSegments is 0 we auto-pick a
+    // sensible ring density (~path length / 1 unit, floor 32) so the bend is
+    // smooth, not faceted. default:null keeps every existing consumer untouched.
+    axisPath: { label: 'deviation path', type: 'expr', default: null },
   },
   material: {
     outer: { color: '#5f7d8a', metallic: 0.6, roughness: 0.4 },
@@ -64,7 +80,7 @@ export const meta = {
   },
 };
 
-export function r_revolve(profile: any, segments: number, zSegments?: number): any {
+export function r_revolve(profile: any, segments: number, zSegments?: number, axisPath?: any): any {
   // GUI passes the resolved profile as a JSON points string; direct/programmatic
   // callers may pass a { kind, params } descriptor, a { points } object, or a
   // raw [[r,z]] array — resolveProfile handles all of those (and passes raw
@@ -72,6 +88,56 @@ export function r_revolve(profile: any, segments: number, zSegments?: number): a
   const pts: [number, number][] =
     typeof profile === 'string' ? JSON.parse(profile) : resolveProfile(profile);
   const seg = Math.max(3, Math.floor(segments) || 64); // 3 = triangular prism (was floored at 8 → "4 showed 8")
+
+  // ── DEVIATION PATH (the deviated well tube) ─────────────────────────────────
+  // Parse the opt-in axisPath into a z-sorted list of [z,dx,dy] knots. `null` /
+  // undefined / empty / a degenerate single point → no deviation (dev === null),
+  // so back-compat callers (r_revolve(profile, segments[, zSegments])) are byte-
+  // identical. A knot is either [x,y,z] (offset at depth z) or [x,y] (spread
+  // evenly across the profile's Z-span). We offset each ring's CENTER by the
+  // path's interpolated [dx,dy] at that ring's z — a planar shear that preserves
+  // the circular cross-section (radius) and keeps caps axis-perpendicular.
+  let dev: { zs: number[]; xs: number[]; ys: number[] } | null = null;
+  {
+    let raw: any = axisPath;
+    if (typeof raw === 'string') { const t = raw.trim(); raw = t ? JSON.parse(t) : null; }
+    if (Array.isArray(raw) && raw.length >= 2 && Array.isArray(pts) && pts.length >= 2) {
+      let zmin = Infinity, zmax = -Infinity;
+      for (const p of pts) { const z = p[1]; if (z < zmin) zmin = z; if (z > zmax) zmax = z; }
+      const zspan = zmax - zmin;
+      const knots: [number, number, number][] = raw.map((c: any, i: number): [number, number, number] => {
+        const arr = Array.isArray(c) ? c : [0, 0];
+        const x = Number(arr[0]) || 0;
+        const y = Number(arr[1]) || 0;
+        // 3-tuple → z is explicit; 2-tuple → spread evenly over the profile's Z-span.
+        const z = arr.length >= 3 && Number.isFinite(Number(arr[2]))
+          ? Number(arr[2])
+          : zmin + (zspan * i) / (raw.length - 1);
+        return [z, x, y];
+      });
+      knots.sort((a, b) => a[0] - b[0]);
+      // A path that never actually moves laterally is a no-op → skip (identical output).
+      const moves = knots.some((k) => Math.abs(k[1]) > 1e-9 || Math.abs(k[2]) > 1e-9);
+      if (moves) {
+        dev = { zs: knots.map((k) => k[0]), xs: knots.map((k) => k[1]), ys: knots.map((k) => k[2]) };
+      }
+    }
+  }
+  // A deviation path IMPLIES axial resolution: with only top+bottom rings a bend
+  // would be a single faceted chord. If the caller left zSegments at 0, auto-pick
+  // a ring count from the path's own length (~1 unit/segment, floored at 32,
+  // capped at 256) so the trajectory reads as a smooth curve.
+  let zSegEff = zSegments;
+  if (dev && (!zSegEff || zSegEff < 1)) {
+    let len = 0;
+    for (let i = 1; i < dev.zs.length; i++) {
+      const dz = dev.zs[i] - dev.zs[i - 1];
+      const dx = dev.xs[i] - dev.xs[i - 1];
+      const dy = dev.ys[i] - dev.ys[i - 1];
+      len += Math.hypot(dx, dy, dz);
+    }
+    zSegEff = Math.max(32, Math.min(256, Math.ceil(len)));
+  }
 
   // OPT-IN axial (Z) segmentation (Rule 25 — build-time, on the 2D profile,
   // NEVER a post-bake MeshGL rewrite). When zSegments ≥ 1, densify the (r,z)
@@ -89,7 +155,7 @@ export function r_revolve(profile: any, segments: number, zSegments?: number): a
   // closure. zSegments falsy / undefined / < 1 → `pts` passes through untouched
   // → byte-identical to the pre-change revolve (Rule 21: 12 consumers).
   let prof = pts;
-  const zn = Math.floor(Number(zSegments) || 0);
+  const zn = Math.floor(Number(zSegEff) || 0);
   if (zn >= 1 && Array.isArray(pts) && pts.length >= 2) {
     let zmin = Infinity, zmax = -Infinity;
     for (const p of pts) { const z = p[1]; if (z < zmin) zmin = z; if (z > zmax) zmax = z; }
@@ -112,5 +178,34 @@ export function r_revolve(profile: any, segments: number, zSegments?: number): a
       prof = dense;
     }
   }
-  return weldAndBuild([revolveProfile(prof, seg)]);
+  const patch = revolveProfile(prof, seg);
+
+  // ── Apply the deviation: shift every vertex's [x,y] by the path offset at its
+  // own z. Because the offset is a pure function of z, all verts sharing a ring
+  // (same r,θ,z) move together → the circular section is rigidly translated, not
+  // scaled (radius preserved), and weld-by-position still coalesces coincident
+  // ring verts. No deviation → patch is returned untouched (byte-identical). ────
+  if (dev) {
+    const v = patch.verts; // Float32Array, [x,y,z, x,y,z, …]
+    const { zs, xs, ys } = dev;
+    const last = zs.length - 1;
+    for (let i = 0; i < v.length; i += 3) {
+      const z = v[i + 2];
+      let dx: number, dy: number;
+      if (z <= zs[0]) { dx = xs[0]; dy = ys[0]; }         // clamp below the path
+      else if (z >= zs[last]) { dx = xs[last]; dy = ys[last]; } // clamp above
+      else {
+        // linear interpolation in z between the bracketing knots
+        let j = 1;
+        while (j <= last && zs[j] < z) j++;
+        const t = (z - zs[j - 1]) / (zs[j] - zs[j - 1] || 1);
+        dx = xs[j - 1] + (xs[j] - xs[j - 1]) * t;
+        dy = ys[j - 1] + (ys[j] - ys[j - 1]) * t;
+      }
+      v[i] += dx;
+      v[i + 1] += dy;
+    }
+  }
+
+  return weldAndBuild([patch]);
 }
