@@ -5,13 +5,12 @@
 - **#7 Wells `/wells`** — LIVE (SVTC engine + ewells shell + wired 3D + sidenav + local workspace). NEXT: register `g_*` completion parts into the parametric registry; long-string perf; real wells store. (`well-schematic.md`)
 - **#42 Wells interface (SVTC WsonApp)** — W-A view/layer control bar · W-B editor/inspector dock · W-C depth ruler + labels · W-D dual 3D/2D canvas (2D = SVG track, white bg) · W-E left toolbar rail · W-F workspace cache · W-G shell polish (collapsible SVTC header · trim canvas padding). (`wells-interface.md`)
 - **#39 Multi-engine matrix** — Manifold (client+server) ✓ · BREP (server; **client TODO**) · TrueForm (native compiler + composites + defect-2 bore-extend fixed). NEXT: TF r_weld_extrude native (#51); BREP client-side. (`docs/architecture/geometry-engines.md`)
-- **#42b Wells → ewells.app PARITY gaps** (shell/controls/ruler/labella/cache SHIPPED; enhance list: `docs/plans/wells-ewells-gaps.md`):
-  - [ ] G1 editing (VIEWER→EDITOR): mutation+undo · CompletionsEditor · SurveyEditor · inspector-on-select (SVTC deep-dive's #1)
-  - [ ] G2 3D schematic layout (narrow/off-center → width/center/fit + auto-scale)
-  - [ ] G3 labels split left+right banks (currently one bank)
-  - [ ] G4 white SCENE bg actually applies (materials legible)
-  - [ ] G5 element-rail icons/labels + select→filter/inspect
-  - [ ] G6 anchored element/param popovers · G7 2D track view (W-D, wson-2d.ts) · G8 toolbar actions (W-E) · G9 depth-ruler polish (MD/TVD) · G10 <ewells specifics — user to add>
+- **#42b Wells → ewells.app (= SVTC) PARITY** — full plan `docs/plans/wells-ewells-gaps.md`; ref `docs/research/svtc-wson-deep-dive.md`. Shell/controls/ruler/labella/cache SHIPPED. Priority order:
+  - [ ] **A · BUILD ARCH (first)** — A1 multi-threaded build via cadtrain's Web-Worker bake API (`bake-worker`/`bake-client`) — the 3D schematic is slow (main-thread CSG) vs ewells' 2D SVG · A2 well elements (OH/casing/tubing/cement/completions/perf) as PARAMETRIC LIBRARY parts the engine CALLS (+ register `g_*` jewelry into the registry) · A3 auto-scale/fit
+  - [ ] **B · EDITING** (viewer→editor, deep-dive #1) — mutation+undo · CompletionsEditor · SurveyEditor · inspector-on-select · edit-diagram popovers
+  - [ ] **C · RENDER** — 3D center/fill · labels left+right banks + **anchor option (diagram vs depth-rail)** · white SCENE bg (only CSS-wired today)
+  - [ ] **D · CHROME** — element-rail icons/select · toolbar actions (W-E) · ruler MD/TVD · camera presets
+  - [ ] **E · 2D track view** (W-D, wson-2d.ts) · **F · <user: ewells specifics>**
 
 ### Open — TrueForm
 - **#46 Graph→TF compiler** — SHIPPED: native render, composite dep-resolution, bore-extend hollow sweeps. LEFT: make TF tab render the actual part by DEFAULT (retire the "actual" toggle); two-tier recompile driven by a STRUCTURAL hash (topology + param names/count, NOT values) so param edits stay real-time.
