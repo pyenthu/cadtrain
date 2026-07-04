@@ -41,6 +41,7 @@ import {
   setExprInputBinding,
   setSplinePointsExpr,
   setWarpPath,
+  bindMaterial,
   type Graph,
   type NodeId,
   type MvNode,
@@ -57,7 +58,11 @@ import { releaseImplicitCapture } from './pointer-capture';
  *  consumer can reference the matching `<blockvar>_<outName>` emitted const. */
 export type WireSource =
   | { kind: 'out'; nodeId: NodeId; outName?: string }
-  | { kind: 'param-out'; paramName: string };
+  | { kind: 'param-out'; paramName: string }
+  /** A MATERIAL node's output (G-MAT-CARD) — a dedicated kind so a material wire
+   *  dropped on a normal arg/socket is silently ignored (no cross-talk with the
+   *  expr/geometry `out` channel). Only endWireOnMaterial accepts it. */
+  | { kind: 'material-out'; nodeId: NodeId };
 
 export class WireState {
   /** The armed source socket (node output or param output), or null. */
@@ -131,6 +136,28 @@ export class WireState {
     this.from = { kind: 'out', nodeId, outName };
     this.mouse = this.#clientToGraph(ev.clientX, ev.clientY);
     this.armWire(ev);
+  };
+
+  /** Start a wire from a MATERIAL node's output socket (G-MAT-CARD). Drop it on
+   *  a part's ◑ material socket (endWireOnMaterial) to assign the appearance. */
+  startMaterialWire = (ev: PointerEvent, nodeId: NodeId) => {
+    ev.stopPropagation();
+    releaseImplicitCapture(ev);
+    this.from = { kind: 'material-out', nodeId };
+    this.mouse = this.#clientToGraph(ev.clientX, ev.clientY);
+    this.armWire(ev);
+  };
+
+  /** Drop a material wire onto a Call node's ◑ material input socket → bind that
+   *  material to the part. Only a `material-out` source binds; anything else is
+   *  ignored (a geometry/expr wire can't feed a material slot). */
+  endWireOnMaterial = (ev: PointerEvent, callId: NodeId) => {
+    ev.stopPropagation();
+    const from = this.from;
+    if (from?.kind === 'material-out' && from.nodeId !== callId) {
+      this.#setGraph(bindMaterial(this.#getGraph(), callId, from.nodeId));
+    }
+    this.from = null; this.mouse = null;
   };
 
   endWireOnInput = (ev: PointerEvent, targetId: NodeId, slot: 'obj' | 'arg' | 'child') => {

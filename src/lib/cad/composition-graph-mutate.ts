@@ -1306,7 +1306,7 @@ export function addMaterialNode(graph: Graph, at?: LayoutXY): { graph: Graph; id
     name: `mat${existing + 1}`,
     colorOuter: '#cc2222',
   };
-  const xy: LayoutXY = at ?? { x: 120 + (existing % 4) * 200, y: 480 + existing * 40 };
+  const xy: LayoutXY = at ?? { x: 120 + (existing % 3) * 200, y: 300 + Math.floor(existing / 3) * 130 };
   const g = finalize({
     ...graph,
     nodes: { ...graph.nodes, [id]: node },

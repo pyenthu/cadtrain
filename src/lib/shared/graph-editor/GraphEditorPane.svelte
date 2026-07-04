@@ -75,6 +75,7 @@
     addSpline,
     addWarpPlaceholder,
     addMaterialNode,
+    resolveEffectiveAppearance,
     removeExprDef,
     addStackPlaceholder,
     addRepeatPlaceholder,
@@ -2408,7 +2409,9 @@
       // 2D profile producers (consumed by a Call via __POLY__), not parts.
       if (n.type !== 'call' && n.type !== 'method') return;
       const label = n.type === 'call' ? (n.alias || n.src) : `${n.op}(…)`;
-      out.push({ id, label, appearance: (graph.partAppearance?.[id] ?? {}) });
+      // A wired material node (G-MAT-CARD) resolves ahead of the per-part
+      // partAppearance override, so the table reflects what's wired.
+      out.push({ id, label, appearance: resolveEffectiveAppearance(graph, id) });
     };
     visit(graph.root);
     return out;

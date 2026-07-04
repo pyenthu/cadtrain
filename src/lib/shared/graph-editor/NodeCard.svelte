@@ -213,6 +213,7 @@
                 {@const call = n as any}
                 {@const inlineMv  = inlineTransformOf(graph, n.id, 'mv')}
                 {@const inlineRot = inlineTransformOf(graph, n.id, 'rot')}
+                {@const matBound = !!graph.materialBindings?.[n.id]}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg call" width={size.w} height={size.h} rx="6"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
@@ -268,6 +269,16 @@
                   class:armed={del.isArmed(n.id)}
                   data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
                   onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
+                <!-- MATERIAL input socket (◑, left edge of the header) — drop a
+                     material node's output here to assign its appearance
+                     (colour/texture/opacity) to this part, replacing the
+                     Properties per-part assignment. `wired` = a material is bound. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock in material-in" class:wired={matBound}
+                  cx="0" cy="16" r="6"
+                  data-tip={matBound ? 'material: wired — drop another material to reassign (delete the material node to unwire)' : 'material: wire a ◑ material node here to set this part’s colour · texture · opacity'}
+                  onpointerup={(ev) => wire.endWireOnMaterial(ev, n.id)}/>
+                {#if matBound}<text x="9" y="20" class="ge-mat-bound" style="pointer-events:none">◑</text>{/if}
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
                 <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
                   <div class="ge-args" xmlns="http://www.w3.org/1999/xhtml">
@@ -1649,7 +1660,7 @@
                 <circle role="button" tabindex="-1" class="ge-sock out material-out"
                   cx={mw} cy={mh / 2} r="6"
                   data-tip="material out — drag onto a part's ◑ material socket to assign this appearance"
-                  onpointerdown={(ev) => (wire as any).startMaterialWire?.(ev, n.id)}/>
+                  onpointerdown={(ev) => wire.startMaterialWire(ev, n.id)}/>
 
               {:else if n.type === 'warp'}
                 {@const w = n as any}
@@ -1809,6 +1820,9 @@
   .ge-mat-title { cursor: pointer; }
   .ge-mat-tex { font: 9px ui-monospace, monospace; fill: #6b7280; }
   .ge-sock.out.material-out { fill: #10b981; stroke: #059669; stroke-width: 2; }
+  .ge-sock.in.material-in { fill: #fff; stroke: #10b981; stroke-width: 1.5; }
+  .ge-sock.in.material-in.wired { fill: #10b981; stroke: #059669; stroke-width: 2; }
+  .ge-mat-bound { font-size: 9px; fill: #fff; }
   /* Wired-points state (#26) — a deeper fill so it reads as "expression-driven". */
   .ge-node-bg.spline.wired { fill: #ede9fe; stroke: #6d28d9; }
   .ge-sp-wired-badge { font: 700 9px ui-monospace, monospace; fill: #6d28d9; pointer-events: none; }
