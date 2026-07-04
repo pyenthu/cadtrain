@@ -34,6 +34,7 @@
 - **#0** registry → cloud schema/prompt + local CFG → multishot loop → feedback corpus → WebLLM (#1/#2/#27/#28/#29 are its phases).
 - **#29** complete + document the AI fn library (one registry, CI sync test) · **#1** RAG/assist (engine + panel shipped; LEFT `route`/`selectedId` in ctx) · **#27** feedback/RL DB (👍/👎 → `turns.jsonl`) · **#2** web-llm (Qwen2.5 + XGrammar, default-off) · **#28** synthetic fn-call data → few-shot/LoRA.
 
-### Parked
+### Parked / tooling
+- **#DX page-agent** (github.com/alibaba/page-agent) — evaluate/integrate an IN-BROWSER agent for live inspection + semantic UI driving: read the live Three scene / Svelte `$state` / console and click by semantic target (not coordinates). Motivation: the WASM/reactivity bugs in the **wells 3D** (cutaway not applying, re-bake loop) + graph editor are hard to diagnose from outside. **Back-pocket** — current approach (console reads + Playwright `getByRole`/`getByText` + headless tests) already covers most of it; adopt only if we need interactive in-page Three/state inspection. User-suggested 2026-07-04.
 - #PMP pmp-library (github.com/pmp-library) — C++ mesh-processing (MIT); redundant with TrueForm's remesh/smooth, no JS/TS bindings → DON'T adopt as a 3rd WASM kernel. Keep as a REFERENCE for SUBDIVISION (Loop/Catmull-Clark) if TF taubin/remesh proves insufficient for #51 NURBS-style smoothing.
 - #4 CAD-gen research (arxiv 2606.05515) · #4b Blender fields for nodes · #5 units repo · #7b r_weld_extrude phase angle · #8b expression library · #16 `src/lib` reorg · #17b first-bake-slow profiling · #18b repeat-builder simplify · #19 BUG `casing_schematic` "BREP is deleted".
