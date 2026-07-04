@@ -3275,18 +3275,8 @@
            right-anchored flyout submenu on hover. Cuts the top-level
            row count nearly in half so the picker reads like a real
            nav menu instead of a long directory. -->
-      <button class="ge-pick-item" type="button" onclick={dropPolygon}>
-        <span class="ge-pick-icon">◇</span><span class="ge-pick-name">polygon</span><span class="ge-pick-hint">2D pts</span>
-      </button>
-      <button class="ge-pick-item" type="button" onclick={dropSketch}>
-        <span class="ge-pick-icon">✐</span><span class="ge-pick-name">sketch</span><span class="ge-pick-hint">line·arc·fillet</span>
-      </button>
       <button class="ge-pick-item" type="button" onclick={dropExpr}>
         <span class="ge-pick-icon">ƒ</span><span class="ge-pick-name">expr</span><span class="ge-pick-hint">calc block</span>
-      </button>
-      <!-- Spline PATH (TODO #15) — 3D control points → list<point3> → r_sweep.path. -->
-      <button class="ge-pick-item" type="button" onclick={dropSpline}>
-        <span class="ge-pick-icon">⌇</span><span class="ge-pick-name">spline</span><span class="ge-pick-hint">3D path</span>
       </button>
       <!-- Material CARD (G-MAT-CARD) — reusable appearance bundle; wire into a
            part's material socket to replace the Properties assignment. -->
@@ -3300,6 +3290,20 @@
         <span class="ge-pick-icon">⟳</span><span class="ge-pick-name">Loop</span><span class="ge-pick-hint">× N</span>
       </button>
       <div class="ge-cm-sep"></div>
+      <!-- line — 2D/path producers (polygon · sketch · spline), grouped as a
+           submenu like solids. -->
+      <button class="ge-pick-item parent" type="button"
+        class:on={submenuKey === 'line'}
+        onmouseenter={(ev) => openSubmenu(ev as any, 'line')}
+        onclick={(ev) => openSubmenu(ev as any, 'line')}>
+        <span class="ge-pick-icon">∿</span><span class="ge-pick-name">line</span><span class="ge-pick-chev">›</span>
+      </button>
+      <!-- surface — PLACEHOLDER for the planned surface-producer family
+           (docs/plans/parametric-geometry-slots.md). Disabled until implemented. -->
+      <button class="ge-pick-item parent placeholder" type="button" disabled
+        data-tip="Surface producers — planned (not implemented yet)">
+        <span class="ge-pick-icon">▱</span><span class="ge-pick-name">surface</span><span class="ge-pick-hint">soon</span>
+      </button>
       <button class="ge-pick-item parent" type="button"
         class:on={submenuKey === 'solids'}
         onmouseenter={(ev) => openSubmenu(ev as any, 'solids')}
@@ -3328,7 +3332,21 @@
 
     <!-- Submenu flyouts — anchored right of the picker at the parent's
          y. One renders at a time based on submenuKey. Mouse-leave closes. -->
-    {#if submenuKey === 'solids'}
+    {#if submenuKey === 'line'}
+      <div class="ge-picker ge-picker-flyout"
+        style="left: {pickerPos.left + 200}px; top: {submenuTopY}px"
+        onmouseleave={() => (submenuKey = null)}>
+        <button class="ge-pick-item" type="button" onclick={() => { dropPolygon(); submenuKey = null; }}>
+          <span class="ge-pick-icon">◇</span><span class="ge-pick-name">polygon</span><span class="ge-pick-hint">2D pts</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => { dropSketch(); submenuKey = null; }}>
+          <span class="ge-pick-icon">✐</span><span class="ge-pick-name">sketch</span><span class="ge-pick-hint">line·arc·fillet</span>
+        </button>
+        <button class="ge-pick-item" type="button" onclick={() => { dropSpline(); submenuKey = null; }}>
+          <span class="ge-pick-icon">⌇</span><span class="ge-pick-name">spline</span><span class="ge-pick-hint">3D path</span>
+        </button>
+      </div>
+    {:else if submenuKey === 'solids'}
       <div class="ge-picker ge-picker-flyout"
         style="left: {pickerPos.left + 200}px; top: {submenuTopY}px"
         onmouseleave={() => (submenuKey = null)}>
@@ -4390,6 +4408,9 @@
     text-align: left;
   }
   .ge-pick-item:hover { background: #f3f4f6; color: #0c4a6e; }
+  /* Placeholder (planned, not implemented) — greyed + non-interactive. */
+  .ge-pick-item.placeholder { opacity: 0.42; cursor: default; }
+  .ge-pick-item.placeholder:hover { background: transparent; color: inherit; }
   .ge-pick-icon {
     flex: 0 0 16px; width: 16px;
     font-size: 13px; color: #64748b; text-align: center; line-height: 1;
