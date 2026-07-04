@@ -25,7 +25,7 @@
   panes → NO module singletons).
 -->
 <script lang="ts">
-  import { clampToViewport } from '../popover-clamp';
+  import { clampToViewport, clampDragPos } from '../popover-clamp';
   import { isIdentSafe, ALLOWED_FUNCTIONS, ALLOWED_CONSTANTS } from '$lib/cad/expr-schema';
   import { parseAndValidateBare } from '$lib/cad/graph-exprs';
   import { inferStructure, structLabel } from '$lib/cad/struct-type';
@@ -227,7 +227,7 @@
   }
   function onHeadPointerMove(ev: PointerEvent) {
     if (!dragging) return;
-    pos = { x: ev.clientX - dragOff.x, y: ev.clientY - dragOff.y };
+    pos = clampDragPos(popEl, ev.clientX - dragOff.x, ev.clientY - dragOff.y);
   }
   function onHeadPointerUp(ev: PointerEvent) {
     if (!dragging) return;

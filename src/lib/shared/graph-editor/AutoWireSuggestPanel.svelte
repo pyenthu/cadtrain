@@ -9,6 +9,7 @@
   import { autoWireSuggestions } from '$lib/cad/port-suggest';
   import { addPolygonExprListRef } from '$lib/cad/composition-graph';
   import { portType } from '$lib/cad/port-types';
+  import { clampDragPos } from './popover-clamp';
 
   let { graph, setGraph, onClose }: {
     graph: any;
@@ -51,7 +52,7 @@
     drag = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   }
-  function onHeadMove(e: PointerEvent) { if (drag) pos = { x: e.clientX - drag.dx, y: e.clientY - drag.dy }; }
+  function onHeadMove(e: PointerEvent) { if (drag) pos = clampDragPos(popEl, e.clientX - drag.dx, e.clientY - drag.dy); }
   function onHeadUp(e: PointerEvent) { drag = null; try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* */ } }
 </script>
 

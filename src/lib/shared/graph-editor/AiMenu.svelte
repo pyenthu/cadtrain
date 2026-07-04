@@ -17,6 +17,7 @@
 <script lang="ts">
   import { onMount, tick } from 'svelte';
 
+  import { clampDragPos } from './popover-clamp';
   import type { AssistSession } from './ge-assist.svelte';
 
   let {
@@ -63,7 +64,7 @@
   }
   function onHeadPointerMove(ev: PointerEvent) {
     if (!dragging) return;
-    dragPos = { x: ev.clientX - dragOff.x, y: ev.clientY - dragOff.y };
+    dragPos = clampDragPos(aiPanelEl, ev.clientX - dragOff.x, ev.clientY - dragOff.y);
   }
   function onHeadPointerUp() { dragging = false; }
 
