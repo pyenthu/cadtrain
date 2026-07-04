@@ -99,6 +99,7 @@
     setPartColorOuter,
     setPartColorInner,
     setPartMaterial,
+    setPartOpacity,
     setPartAppearance,
     setStackChildRef,
     setStackChildCount,
@@ -2370,8 +2371,10 @@
   function onPartColorOuter(hex: string | null) { graph = setPartColorOuter(graph, hex); }
   function onPartColorInner(hex: string | null) { graph = setPartColorInner(graph, hex); }
   function onPartMaterial(mat: string | null) { graph = setPartMaterial(graph, mat); }
-  /** Per-part appearance patch (OUT/IN colour + material), keyed by part id. */
-  function onPartAppearance(id: string, patch: { colorOuter?: string | null; colorInner?: string | null; material?: string | null }) {
+  /** Part-level render OPACITY (0–1). null/≥1 clears (opaque). */
+  function onPartOpacity(value: number | null) { graph = setPartOpacity(graph, value); }
+  /** Per-part appearance patch (OUT/IN colour + material + opacity), keyed by part id. */
+  function onPartAppearance(id: string, patch: { colorOuter?: string | null; colorInner?: string | null; material?: string | null; opacity?: number | null }) {
     graph = setPartAppearance(graph, id, patch);
   }
   /** The LEAF parts of the Output (A/B/C…) shown as rows in the PROPERTIES
@@ -2923,6 +2926,7 @@
             onColorOuter={onPartColorOuter}
             onColorInner={onPartColorInner}
             onMaterial={onPartMaterial}
+            onOpacity={onPartOpacity}
             onPartAppearance={onPartAppearance} />
         {/if}
 

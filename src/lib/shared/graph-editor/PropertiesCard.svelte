@@ -24,18 +24,21 @@
     onColorOuter,
     onColorInner,
     onMaterial,
+    onOpacity,
     onPartAppearance,
   }: {
     x: number; y: number; w: number; h: number;
     graph: Graph;
     zOffsetVal: number;
-    /** Output parts (A/B/C…) — {id, label, appearance:{colorOuter?,colorInner?,material?}}. */
-    parts: { id: string; label: string; appearance: { colorOuter?: string; colorInner?: string; material?: string } }[];
+    /** Output parts (A/B/C…) — {id, label, appearance:{colorOuter?,colorInner?,material?,opacity?}}. */
+    parts: { id: string; label: string; appearance: { colorOuter?: string; colorInner?: string; material?: string; opacity?: number } }[];
     onZOffset: (value: number) => void;
     onColorOuter: (hex: string | null) => void;
     onColorInner: (hex: string | null) => void;
     onMaterial: (mat: string | null) => void;
-    onPartAppearance: (id: string, patch: { colorOuter?: string | null; colorInner?: string | null; material?: string | null }) => void;
+    /** Part-level render opacity (0–1). null/≥1 clears (fully opaque). */
+    onOpacity: (value: number | null) => void;
+    onPartAppearance: (id: string, patch: { colorOuter?: string | null; colorInner?: string | null; material?: string | null; opacity?: number | null }) => void;
   } = $props();
 
   const DEFAULT_OUTER = '#cc2222';
@@ -46,6 +49,15 @@
   const outerOf = (a: any) => a.colorOuter ?? graph.colorOuter ?? DEFAULT_OUTER;
   const innerOf = (a: any) => a.colorInner ?? graph.colorInner ?? DEFAULT_INNER;
   const matOf = (a: any) => a.material ?? graph.material ?? 'none';
+  const opacityOf = (a: any) => a.opacity ?? partOpacity;
+  // Part-level opacity (graph.opacity) — undefined means fully opaque.
+  const partOpacity = $derived((graph as any).opacity ?? 1);
+  // Range 0.05–1 → value; ≥1 (or >0.98 after rounding) clears the override.
+  const asOpacity = (raw: string): number | null => {
+    const v = Number(raw);
+    if (!Number.isFinite(v) || v >= 0.99) return null;
+    return Math.max(0.05, v);
+  };
   // Show only ONE part row if there's a single part (the table still reads well).
 </script>
 
@@ -68,9 +80,11 @@
     <!-- Per-part appearance table: PART · OUT · IN · Matl. -->
     <div class="ge-props-table">
       <div class="row head">
-        <span class="c-part">PART</span><span class="c-sw">OUT</span><span class="c-sw">IN</span><span class="c-mat">Matl</span>
+        <span class="c-part">PART</span><span class="c-sw">OUT</span><span class="c-sw">IN</span><span class="c-mat">Matl</span><span class="c-op" title="Render opacity (0–1) — &lt;1 = see-through">Op</span>
       </div>
-      <!-- Default (part-level) row — fallback for parts without an override. -->
+      <!-- Default (part-level) row — fallback for parts without an override. The
+           Op slider drives the PART-level opacity (rendered today); a &lt;1 value
+           makes the whole part see-through. -->
       <div class="row">
         <span class="c-part def" title="Default for parts with no override">Default</span>
         <input class="c-sw sw" type="color" value={graph.colorOuter ?? DEFAULT_OUTER}
@@ -81,6 +95,10 @@
           onchange={(e) => onMaterial((e.currentTarget as HTMLSelectElement).value)}>
           {#each MATERIALS as m}<option value={m}>{m}</option>{/each}
         </select>
+        <input class="c-op op" type="range" min="0.05" max="1" step="0.05" value={partOpacity}
+          class:override={partOpacity < 1}
+          title={`Part opacity ${partOpacity.toFixed(2)} — drag left to make the part see-through`}
+          oninput={(e) => onOpacity(asOpacity((e.currentTarget as HTMLInputElement).value))}/>
       </div>
       {#each parts as p (p.id)}
         <div class="row">
@@ -97,6 +115,10 @@
             onchange={(e) => onPartAppearance(p.id, { material: (e.currentTarget as HTMLSelectElement).value })}>
             {#each MATERIALS as m}<option value={m}>{m}</option>{/each}
           </select>
+          <input class="c-op op" type="range" min="0.05" max="1" step="0.05" value={opacityOf(p.appearance)}
+            class:override={p.appearance.opacity != null}
+            title={`${p.label} opacity ${opacityOf(p.appearance).toFixed(2)}${p.appearance.opacity != null ? '' : ' (inherits Default; per-subpart alpha renders with stretch C)'}`}
+            oninput={(e) => onPartAppearance(p.id, { opacity: asOpacity((e.currentTarget as HTMLInputElement).value) })}/>
         </div>
       {/each}
     </div>
@@ -122,10 +144,10 @@
   .ge-props-zoff .num:focus { outline: 1px solid #d97706; background: #fff; }
   .ge-props-zoff .zoff-hint { font: 400 9px ui-monospace, monospace; color: #b45309; opacity: 0.7; margin-left: auto; }
 
-  /* Table: PART (flex) · OUT (28px) · IN (28px) · Matl (flex). */
+  /* Table: PART (flex) · OUT (28px) · IN (28px) · Matl (flex) · Op (44px range). */
   .ge-props-table { display: flex; flex-direction: column; gap: 3px; }
   .ge-props-table .row {
-    display: grid; grid-template-columns: 1fr 30px 30px 1.3fr;
+    display: grid; grid-template-columns: 1fr 28px 28px 1.1fr 46px;
     gap: 5px; align-items: center;
   }
   .ge-props-table .row.head span {
@@ -142,6 +164,10 @@
     background: #fff; cursor: pointer; box-sizing: border-box;
   }
   .sw.override { border-color: #d97706; border-width: 2px; }
+  /* Opacity range slider — compact, in the last column. */
+  .op { width: 46px; height: 14px; min-width: 0; padding: 0; cursor: pointer; accent-color: #b45309; }
+  .op.override { accent-color: #d97706; }
+  .ge-props-table .row.head .c-op { text-align: center; }
   .mat {
     width: 100%; min-width: 0; height: 18px; padding: 0 2px;
     font: 10px ui-monospace, monospace; color: #92400e;

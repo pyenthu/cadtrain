@@ -281,6 +281,11 @@ export function hydrateGraph(serialised: any): Graph {
     (typeof v === 'number' && Number.isFinite(v) && v > 0) ? v : undefined;
   const savedViewZScale = posNumOrUndef(serialised.viewZScale);
   const savedViewXScale = posNumOrUndef(serialised.viewXScale);
+  // Render OPACITY (0–1, VIEW-ONLY). Sparse: restore only a finite value < 1 so
+  // legacy/opaque files stay undefined (= fully opaque). Clamped to (0, 1].
+  const opacityOrUndef = (v: any) =>
+    (typeof v === 'number' && Number.isFinite(v) && v > 0 && v < 1) ? v : undefined;
+  const savedOpacity = opacityOrUndef((serialised as any).opacity);
   // Per-part appearance overrides (sparse, keyed by node id). Sanitise each
   // entry's fields the same way as the part-level colours.
   const savedPartAppearance = (() => {
@@ -294,6 +299,7 @@ export function hydrateGraph(serialised: any): Graph {
       const ci = hexOrUndef(v.colorInner); if (ci) e.colorInner = ci;
       const m = typeof v.material === 'string' ? v.material.trim() : '';
       if (m && m !== 'none') e.material = m;
+      if (typeof v.opacity === 'number' && Number.isFinite(v.opacity) && v.opacity > 0 && v.opacity < 1) e.opacity = v.opacity;
       if (Object.keys(e).length) out[id] = e;
     }
     return Object.keys(out).length ? out : undefined;
@@ -392,6 +398,7 @@ export function hydrateGraph(serialised: any): Graph {
     ...(savedColorOuter ? { colorOuter: savedColorOuter } : {}),
     ...(savedColorInner ? { colorInner: savedColorInner } : {}),
     ...(savedMaterial ? { material: savedMaterial } : {}),
+    ...(savedOpacity != null ? { opacity: savedOpacity } : {}),
     ...(savedViewZScale != null ? { viewZScale: savedViewZScale } : {}),
     ...(savedViewXScale != null ? { viewXScale: savedViewXScale } : {}),
     ...(savedPartAppearance ? { partAppearance: savedPartAppearance } : {}),

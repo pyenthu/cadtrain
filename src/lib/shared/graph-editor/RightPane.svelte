@@ -383,7 +383,7 @@
         <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
           args={displayBake.args ?? paramDefaults}
           source={displayBake.source}
-          colorOuter={graph.colorOuter} colorInner={graph.colorInner}
+          colorOuter={graph.colorOuter} colorInner={graph.colorInner} opacity={graph.opacity}
           viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
           bakeGlb={false}
           overlays={splineOverlays}
@@ -514,7 +514,7 @@
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
             args={bake.args ?? paramDefaults}
             source={bake.source}
-            colorOuter={graph.colorOuter} colorInner={graph.colorInner}
+            colorOuter={graph.colorOuter} colorInner={graph.colorInner} opacity={graph.opacity}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             bakeMesh={false}
             autoScaleOwner={active && rightTab === 'glb'}
@@ -537,6 +537,7 @@
             backend="brep"
             brepSource={bake.source}
             brepParams={brepParamValues}
+            opacity={graph.opacity}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             onBakeMeta={(m) => (brepMeta = m)}
             autoScaleOwner={active && rightTab === 'brep'}
@@ -591,6 +592,7 @@
             tfRecipe={tfRecipe}
             brepSource={bake.source}
             brepParams={brepParamValues}
+            opacity={graph.opacity}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             onBakeMeta={(m) => (tfMeta = m)}
             autoScaleOwner={active && rightTab === 'tf'}

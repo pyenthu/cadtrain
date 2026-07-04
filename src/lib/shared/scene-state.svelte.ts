@@ -171,6 +171,13 @@ export const scene = $state({
    *  (cube corners, cylinder caps) stay hard; below it shade smooth. Lower it to
    *  keep designed shallow chamfers hard; raise it to smooth a coarse mesh more. */
   creaseAngle: 60,
+  /** Scene-level "x-ray" OPACITY multiplier (0–1) — VIEW ONLY. Multiplies EVERY
+   *  part's own render opacity so any part can be made see-through without
+   *  editing it (a well-schematic essential: peer through the outer casing to
+   *  the inner strings). 1 = no change (opaque parts stay byte-identical); drag
+   *  it down to fade the whole scene. Applied in PrimitiveDualScene as
+   *  `effOpacity = partOpacity × xrayOpacity`. UI in SceneControls. */
+  xrayOpacity: 1,
   /** "True round silhouette" — BUILD-TIME geometry smoothing (NOT shading). When
    *  on, finalizeManifold lifts the faceted welded/revolved mesh onto a smooth
    *  (near-NURBS) surface via `smoothOut(creaseAngle).refineToTolerance(...)`:
