@@ -41,6 +41,7 @@ import type {
   ExprNode,
   SplineNode,
 } from './composition-graph-types';
+import { STACK_REF_PARAM } from './composition-graph-mutate';
 
 /** Resolve a COMPOSITE Call's `src` id → its own composition graph (+ optional
  *  default params), so `graphToTf` can recurse into a sub-part and inline it. The
@@ -64,10 +65,10 @@ export type TfInstr =
   | { op: 'booleanDifference'; obj: TfInstr; arg: TfInstr }
   | { op: 'booleanUnion'; obj: TfInstr; arg: TfInstr }
   | { op: 'booleanIntersection'; obj: TfInstr; arg: TfInstr }
-  | { op: 'union'; children: TfInstr[]; mated?: boolean }
+  | { op: 'union'; children: TfInstr[]; mated?: boolean; offsets?: (number | null)[] }
   | { op: 'translate'; offset: Vec3; child: TfInstr }
   | { op: 'rotate'; deg: Vec3; child: TfInstr }
-  | { op: 'repeat'; count: number; child: TfInstr; mode?: string }
+  | { op: 'repeat'; count: number; child: TfInstr; mode?: string; stackRef?: number | null }
   | { op: 'profile'; profile: ProfilePt[]; note?: string }
   | { op: 'UNSUPPORTED'; nodeType: string; detail?: string };
 
@@ -351,6 +352,50 @@ function computeConsumed(graph: Graph): Set<NodeId> {
  *  chain; the cycle guard already stops true loops). */
 const MAX_COMPOSITE_DEPTH = 12;
 
+/**
+ * The effective per-child STACK MATE OFFSET (the value Manifold's `stack()` reads
+ * as a child's `_stackRef`), resolved with the SAME precedence the emit path uses:
+ *   1. the stack's `childRefs[cid]` OVERRIDE (a finite number — `withStackRef`), else
+ *   2. the child PART's own `stack_ref` param default (what its emitted geom stamps
+ *      as `_stackRef`) — found by unwrapping any mv/rot/txfmn wrapper down to the
+ *      underlying composite Call and reading its resolved `graph.params.stack_ref`, else
+ *   3. `null` — unauthored; the executor then uses its small weld-overlap nudge.
+ * Pure: the composite lookup goes through the injected `resolve` (guarded by `seen`
+ * + `depth`, like the Call recursion) and never touches WASM.
+ */
+function effectiveStackRef(
+  cid: NodeId,
+  childRefs: Record<NodeId, number> | undefined,
+  graph: Graph,
+  resolve: ResolveComposite | undefined,
+  seen: Set<string>,
+  depth: number,
+): number | null {
+  // 1. explicit per-child override on this stack.
+  if (childRefs && Object.prototype.hasOwnProperty.call(childRefs, cid)) {
+    const ov = Number(childRefs[cid]);
+    if (Number.isFinite(ov)) return ov;
+  }
+  // 2. the child part's own stack_ref default — unwrap transform wrappers to the
+  //    underlying Call (mv/rot/txfmn propagate _stackRef in manifold-helpers).
+  let node = graph.nodes[cid] as GraphNode | undefined;
+  const guard = new Set<NodeId>();
+  while (node && (node.type === 'mv' || node.type === 'rot' || node.type === 'txfmn')) {
+    if (guard.has(node.id)) break;
+    guard.add(node.id);
+    node = graph.nodes[(node as any).child];
+  }
+  if (node && node.type === 'call') {
+    const src = (node as any).src as string;
+    if (!isEngineSrc(src) && resolve && !seen.has(src) && depth < MAX_COMPOSITE_DEPTH) {
+      const resolved = resolve(src);
+      const def = (resolved?.graph?.params as any)?.[STACK_REF_PARAM]?.default;
+      if (def != null && Number.isFinite(Number(def))) return Number(def);
+    }
+  }
+  return null;
+}
+
 /** Lower a single node → its TfInstr, recursing into referenced children. The
  *  `resolve`/`seen`/`depth` context threads composite-Call recursion state. */
 function lowerNode(
@@ -495,15 +540,32 @@ function lowerNode(
       // them all at the shared local origin (the g_dp_stand overlap-at-origin bug).
       // A count of 1 (or an absent entry) lowers the child directly, unchanged.
       const childCounts = (node as any).childCounts as Record<NodeId, ArgValue> | undefined;
+      // PER-CHILD MATE OFFSET (#stack_ref). A stack advances its Z-cursor past each
+      // child by (child length + stackRef), NOT flush — matching Manifold's
+      // `stack()`: `cursor = tail(placed) + _stackRef` (graded delta: 0 = flush,
+      // + = gap, − = OVERLAP). The effective ref is the stack's `childRefs`
+      // override, else the child part's own `stack_ref` default, else null (=
+      // unauthored → the executor's 0.1 weld nudge). Only a STACK container mates;
+      // a list/group leaves children where they sit.
+      const childRefs = (node as { childRefs?: Record<NodeId, number> }).childRefs;
+      const offsets: (number | null)[] = [];
       const children = childIds.map((cid) => {
         const inst = ref(cid);
+        const stackRef = isStack
+          ? effectiveStackRef(cid, childRefs, graph, resolve, seen, depth)
+          : null;
+        offsets.push(stackRef);
         const count = childCounts ? evalInt(childCounts[cid], scope, 1) : 1;
         if (count > 1) {
-          return { op: 'repeat' as const, count, child: inst, ...(isStack ? { mode: 'stack' } : {}) };
+          return { op: 'repeat' as const, count, child: inst, ...(isStack ? { mode: 'stack', stackRef } : {}) };
         }
         return inst;
       });
-      return { op: 'union', children, ...(isStack ? { mated: true } : {}) };
+      return {
+        op: 'union',
+        children,
+        ...(isStack ? { mated: true, offsets } : {}),
+      };
     }
 
     case 'mv': {
@@ -628,7 +690,10 @@ function fmtInstr(inst: TfInstr, indent: number): string {
         `${fmtInstr(inst.arg, indent + 1)}\n` +
         `${pad})`;
     case 'union': {
-      const label = inst.mated ? 'stack/union (mated end-to-end)' : 'booleanUnion (fold)';
+      const refs = inst.offsets?.some((o) => o != null)
+        ? ` mate-offsets=[${inst.offsets.map((o) => (o == null ? '·' : fmtNum(o))).join(', ')}]`
+        : '';
+      const label = (inst.mated ? 'stack/union (mated end-to-end)' : 'booleanUnion (fold)') + refs;
       if (inst.children.length === 1) return fmtInstr(inst.children[0]!, indent);
       return `${pad}${label} [\n` +
         inst.children.map((c) => fmtInstr(c, indent + 1)).join(',\n') +
@@ -641,7 +706,7 @@ function fmtInstr(inst: TfInstr, indent: number): string {
       return `${pad}makeRotation(${fmtVec(inst.deg)}°) applied to\n` +
         `${fmtInstr(inst.child, indent + 1)}`;
     case 'repeat':
-      return `${pad}repeat ×${inst.count}${inst.mode ? ` (${inst.mode})` : ''} of\n` +
+      return `${pad}repeat ×${inst.count}${inst.mode ? ` (${inst.mode})` : ''}${inst.stackRef != null ? ` mate-offset=${fmtNum(inst.stackRef)}` : ''} of\n` +
         `${fmtInstr(inst.child, indent + 1)}`;
     case 'profile':
       return `${pad}profile ${fmtProfile(inst.profile)}${inst.note ? `  // ${inst.note}` : ''}`;

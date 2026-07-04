@@ -153,29 +153,41 @@ const STACK_OVERLAP = 0.1;
  *
  * Z-DOWN (top = LOWER z, downhole = +z): a running `cursor` marks where the NEXT
  * mesh's TOP (its min z) goes. The first mesh's top sits at z=0; each subsequent
- * mesh's top meets the previous mesh's bottom, tucked up by {@link STACK_OVERLAP}
- * so the union welds cleanly. Each mesh is slid with a `makeTranslation([0,0,dz])`
- * (composed via {@link applyTransform}, respecting any transform it already
- * carries), then unioned. Extents come from each mesh's LOCAL point buffer
- * ({@link localZExtent}), so a mesh authored at its own origin lands correctly.
+ * mesh's top meets the previous mesh's bottom, adjusted by that child's STACK MATE
+ * OFFSET (`offsets[i]` — Manifold's `_stackRef`: 0 = flush, + = gap, − = overlap).
+ * When a child has no authored offset (`null`) the cursor tucks up by {@link
+ * STACK_OVERLAP} instead so the union still welds cleanly. Each mesh is slid with a
+ * `makeTranslation([0,0,dz])` (composed via {@link applyTransform}, respecting any
+ * transform it already carries), then unioned. Extents come from each mesh's LOCAL
+ * point buffer ({@link localZExtent}), so a mesh authored at its own origin lands
+ * correctly.
  */
-function placeEndToEnd(t: any, meshes: any[]): any {
+function placeEndToEnd(t: any, meshes: any[], offsets?: (number | null)[]): any {
   let acc: any = null;
   let cursor = 0; // world z where the NEXT mesh's TOP (min z) lands
-  for (const child of meshes) {
+  for (let i = 0; i < meshes.length; i++) {
+    const child = meshes[i];
     const { min: zMin, max: zMax } = localZExtent(child);
     const dz = cursor - zMin; // slide this mesh's TOP onto the cursor
     if (Math.abs(dz) > 1e-9) applyTransform(t, child, t.makeTranslation(0, 0, dz));
-    // Advance past this mesh's length, minus the overlap so the next one tucks in.
-    cursor += Math.max(0, zMax - zMin) - STACK_OVERLAP;
+    // Advance past this mesh's length, then apply the per-child STACK MATE OFFSET
+    // (the value the graph carried through as this child's `stack_ref` — matches
+    // Manifold's `stack()`: `cursor = tail(placed) + _stackRef`, a graded delta:
+    // 0 = flush, + = gap, − = OVERLAP the next child by |ref|, e.g. a tool-joint
+    // pin threading into the next box). When no ref was authored (`null`) we keep
+    // the small {@link STACK_OVERLAP} weld nudge so adjacent solids interpenetrate
+    // and the boolean welds cleanly instead of kissing at a coincident face.
+    const ref = offsets?.[i];
+    const advance = ref != null && Number.isFinite(ref) ? ref : -STACK_OVERLAP;
+    cursor += Math.max(0, zMax - zMin) + advance;
     acc = acc == null ? child : t.booleanUnion(acc, child).mesh;
   }
   if (acc == null) throw new TfUnsupportedError('placeEndToEnd(empty)');
   return acc;
 }
 
-function buildMatedStack(t: any, kids: TfInstr[]): any {
-  return placeEndToEnd(t, kids.map((k) => buildInstr(t, k)));
+function buildMatedStack(t: any, kids: TfInstr[], offsets?: (number | null)[]): any {
+  return placeEndToEnd(t, kids.map((k) => buildInstr(t, k)), offsets);
 }
 
 /**
@@ -222,7 +234,7 @@ function buildInstr(t: any, instr: TfInstr): any {
       // down +Z (each is authored at its own local origin, so a plain fold would
       // pile them at z=0 — the g_dp_joint overlap-at-origin bug). A plain (group/
       // list) union leaves the children where they already sit.
-      if (instr.mated) return buildMatedStack(t, kids);
+      if (instr.mated) return buildMatedStack(t, kids, instr.offsets);
       let acc = buildInstr(t, kids[0]);
       for (let i = 1; i < kids.length; i++) acc = t.booleanUnion(acc, buildInstr(t, kids[i])).mesh;
       return acc;
@@ -254,7 +266,14 @@ function buildInstr(t: any, instr: TfInstr): any {
       // the origin, the faithful approximation until graph-to-tf carries a stride.
       const n = Math.max(1, Math.floor(instr.count));
       const copies = Array.from({ length: n }, () => buildInstr(t, instr.child));
-      if (instr.mode === 'stack') return placeEndToEnd(t, copies);
+      if (instr.mode === 'stack') {
+        // Every copy is the SAME child, so it mates with the same per-copy stack
+        // offset (g_dp_stand: each joint overlaps the previous by |stackRef|).
+        const ref = instr.stackRef;
+        const offsets =
+          ref != null && Number.isFinite(ref) ? (new Array(n).fill(ref) as number[]) : undefined;
+        return placeEndToEnd(t, copies, offsets);
+      }
       let acc = copies[0];
       for (let i = 1; i < copies.length; i++) acc = t.booleanUnion(acc, copies[i]).mesh;
       return acc;
