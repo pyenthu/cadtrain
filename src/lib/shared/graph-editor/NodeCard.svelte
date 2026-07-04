@@ -1636,7 +1636,7 @@
                 <!-- Pill body — DRAG to move (like any node). -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg material"
-                  width={mw} height={mh} rx="13"
+                  width={mw} height={mh} rx={mh / 2}
                   data-tip="Material — drag to move · click the colour badge to edit · drag the RIGHT socket into a part's ◑ socket to assign it."
                   style="width: {mw}px; height: {mh}px"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
@@ -1645,14 +1645,14 @@
                 <!-- colour badge — CLICK to open the editor (the edit affordance). -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-mat-badge"
-                  x="7" y={mh / 2 - 6} width="12" height="12" rx="2" style={`fill: ${swatch}`}
+                  x="11" y={mh / 2 - 6} width="12" height="12" rx="2" style={`fill: ${swatch}`}
                   data-tip="Edit this material (colour · inner · material · opacity · texture)"
                   onpointerdown={(ev) => { ev.stopPropagation(); onOpenMaterialEditor?.(ev, n.id); }}/>
                 <!-- ◑ name label (display; drag falls through to the body) -->
-                <text x="24" y={mh / 2 + 4} class="ge-mat-label" pointer-events="none">◑ {m.name ?? 'material'}</text>
+                <text x="30" y={mh / 2 + 4} class="ge-mat-label" pointer-events="none">◑ {m.name ?? 'material'}</text>
                 <!-- × delete -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={mw - 12} y={mh / 2 + 4} class="ge-node-x ge-mat-del"
+                <text role="button" tabindex="-1" x={mw - 24} y={mh / 2 + 4} class="ge-node-x ge-mat-del"
                   data-tip="Delete this material node (also unwires any parts using it)"
                   onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeMaterialNode(graph, n.id)); }}>×</text>
                 <!-- OUTPUT socket (right edge, centered) — material channel. -->
