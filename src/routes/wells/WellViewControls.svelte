@@ -23,14 +23,13 @@
   // eats the stage when the user wants a clean view.
   let open = $state(true);
 
-  const LAYERS: Array<{ key: keyof WellViewSettings['layers']; label: string; dot: string }> = [
-    { key: 'showOpenHole', label: 'Open hole', dot: '#c084fc' },
-    { key: 'showCasing', label: 'Casing', dot: '#94a3b8' },
-    { key: 'showCement', label: 'Cement', dot: '#d6c7a1' },
-    { key: 'showTubing', label: 'Tubing', dot: '#eab308' },
-    { key: 'showCompletions', label: 'Completions', dot: '#f59e0b' },
-    { key: 'showPerforations', label: 'Perfs', dot: '#ef4444' },
-  ];
+  // Layer/element toggles live on the LEFT element rail now (WellElementRail —
+  // SVTC's main element switch). This bar keeps the VIEW toggles + scale dials.
+
+  // Clamp a typed numeric-entry value on commit.
+  function clampNum(v: number, min: number, max: number, fallback: number) {
+    return Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
+  }
 </script>
 
 <div
@@ -55,24 +54,6 @@
   </button>
 
   {#if open}
-    <!-- Layers -->
-    <div class="wvc-group" aria-label="Layers">
-      {#each LAYERS as l}
-        <button
-          type="button"
-          class="wvc-chip"
-          class:on={settings.layers[l.key]}
-          title="Toggle {l.label}"
-          aria-pressed={settings.layers[l.key]}
-          onclick={() => (settings.layers[l.key] = !settings.layers[l.key])}
-        >
-          <span class="wvc-dot" style="background:{l.dot}"></span>{l.label}
-        </button>
-      {/each}
-    </div>
-
-    <span class="wvc-sep"></span>
-
     <!-- View toggles -->
     <div class="wvc-group" aria-label="View">
       <button type="button" class="wvc-chip" class:on={settings.cutaway}
@@ -94,22 +75,25 @@
 
     <span class="wvc-sep"></span>
 
-    <!-- Dials -->
+    <!-- Dials — slider + numeric entry (both mutate the shared settings). -->
     <div class="wvc-group wvc-dials" aria-label="Scale">
       <label class="wvc-dial" class:dim={!settings.cutaway} title="Cutaway plane rotation">
         <span class="wvc-dial-lbl">Cut az</span>
         <input type="range" min="0" max="360" step="5" bind:value={settings.cutAzimuth} disabled={!settings.cutaway} />
-        <span class="wvc-dial-val">{settings.cutAzimuth}°</span>
+        <input class="wvc-num" type="number" min="0" max="360" step="5" value={settings.cutAzimuth} disabled={!settings.cutaway}
+          onchange={(e) => (settings.cutAzimuth = clampNum(+e.currentTarget.value, 0, 360, settings.cutAzimuth))} />
       </label>
       <label class="wvc-dial" title="Radial exaggeration (inches → scene units)">
         <span class="wvc-dial-lbl">Dia ×</span>
         <input type="range" min="1" max="20" step="0.5" bind:value={settings.diaScale} />
-        <span class="wvc-dial-val">{settings.diaScale}</span>
+        <input class="wvc-num" type="number" min="1" max="20" step="0.5" value={settings.diaScale}
+          onchange={(e) => (settings.diaScale = clampNum(+e.currentTarget.value, 1, 20, settings.diaScale))} />
       </label>
       <label class="wvc-dial" title="Depth stretch (applied after DTX)">
         <span class="wvc-dial-lbl">Depth ×</span>
         <input type="range" min="0.25" max="4" step="0.25" bind:value={settings.zScale} />
-        <span class="wvc-dial-val">{settings.zScale}</span>
+        <input class="wvc-num" type="number" min="0.25" max="4" step="0.25" value={settings.zScale}
+          onchange={(e) => (settings.zScale = clampNum(+e.currentTarget.value, 0.25, 4, settings.zScale))} />
       </label>
     </div>
   {/if}
@@ -177,12 +161,6 @@
     border-color: #cc3333;
     color: #fff;
   }
-  .wvc-dot {
-    width: 9px; height: 9px; border-radius: 50%;
-    display: inline-block; flex: none;
-    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.4);
-  }
-
   .wvc-sep {
     width: 1px;
     align-self: stretch;
@@ -204,10 +182,16 @@
     accent-color: #cc3333;
     cursor: pointer;
   }
-  .wvc-dial-val {
-    min-width: 30px;
-    text-align: right;
+  .wvc-num {
+    width: 48px;
+    background: #12121e;
+    border: 1px solid #34345a;
+    border-radius: 5px;
     color: #fff;
+    font: 11px ui-monospace, monospace;
+    padding: 2px 4px;
+    text-align: right;
     font-variant-numeric: tabular-nums;
   }
+  .wvc-num:disabled { opacity: 0.5; }
 </style>
