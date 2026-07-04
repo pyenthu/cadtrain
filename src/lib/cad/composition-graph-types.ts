@@ -521,6 +521,13 @@ export type Graph = {
   colorOuter?: string;
   colorInner?: string;
   material?: string;
+  /** Part-level render OPACITY (0–1) — surfaced by the Properties card + the
+   *  scene x-ray slider. <1 renders the part semi-transparent (well-schematic
+   *  essential: see the inner strings through casing). SPARSE/optional: absent
+   *  (or 1) ⇒ fully opaque, byte-identical to today. Round-trips through emit
+   *  (`meta.opacity` + the serialised graph block) and `hydrateGraph`. VIEW-ONLY
+   *  (a material property) — never touches geometry/bake. */
+  opacity?: number;
   /** PER-PART editor VIEW scale (VIEW-ONLY exaggeration — never geometry/bake).
    *  `viewZScale` = Z/length exaggeration, `viewXScale` = X/diameter ("xDia")
    *  exaggeration; they mirror `scene.zScale` / `scene.xScale`. SPARSE/optional:
@@ -554,8 +561,10 @@ export type Graph = {
   exprDefs?: ExprDef[];
 };
 
-/** One part's appearance overrides (all sparse/optional). */
-export type PartAppearance = { colorOuter?: string; colorInner?: string; material?: string };
+/** One part's appearance overrides (all sparse/optional). `opacity` (0–1) is
+ *  reserved for the per-SUBPART alpha path (stretch C); the part-level
+ *  `Graph.opacity` above is what stage A/B render today. */
+export type PartAppearance = { colorOuter?: string; colorInner?: string; material?: string; opacity?: number };
 
 /** One CALCULATED expression (B.6 / id 914 — the expression builder).
  *  `name` is the `e.<name>` output identifier (must be a unique, ident-safe

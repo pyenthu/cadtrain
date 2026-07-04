@@ -80,6 +80,17 @@
         Normals
       </label>
     </div>
+    <!-- X-ray: scene-level opacity multiplier (VIEW-ONLY). Fades EVERY part so
+         nested strings show through the outer casing without editing any part.
+         1.0 = opaque (no change); drag left for see-through. -->
+    <div class="sv-row sv-xray" title="X-ray — fade the whole scene so inner parts show through (view-only)">
+      <span class="sv-label">X-ray</span>
+      <input class="sv-range" type="range" min="0.1" max="1" step="0.05" bind:value={scene.xrayOpacity} />
+      <span class="sv-sub-val">{scene.xrayOpacity.toFixed(2)}</span>
+      {#if scene.xrayOpacity < 1}
+        <button class="sv-mini" type="button" title="Reset to opaque" onclick={() => (scene.xrayOpacity = 1)}>reset</button>
+      {/if}
+    </div>
     <!-- Smooth-shading: render-time flatShading flip (free, no re-bake).
          Auto = the per-part heuristic (curved engines smooth, cubes/hex flat);
          Smooth / Flat force it. Crease = the BUILD-TIME minSharpAngle baked into
@@ -171,6 +182,12 @@
      reset sets appearance:none on form controls, which strips the checkmark
      (and makes accent-color a no-op) so toggles looked like they never switched. */
   .sv-check input[type='checkbox'] { appearance: auto; -webkit-appearance: auto; accent-color: #cc2222; cursor: pointer; width: 14px; height: 14px; }
+  /* X-ray opacity row */
+  .sv-xray { gap: 6px; margin-top: 2px; }
+  .sv-xray .sv-range { flex: 1; min-width: 0; accent-color: #cc2222; height: 14px; }
+  .sv-sub-val { min-width: 30px; text-align: right; opacity: 0.8; font-variant-numeric: tabular-nums; }
+  .sv-mini { padding: 1px 6px; background: rgba(255,255,255,0.1); color: #ddd; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font: 10px Arial; }
+  .sv-mini:hover { background: rgba(255,255,255,0.2); color: #fff; }
   /* Z-axis light strip row */
   .sv-zlight { gap: 4px; flex-wrap: wrap; }
   .sv-zlight-master { margin-right: 4px; }

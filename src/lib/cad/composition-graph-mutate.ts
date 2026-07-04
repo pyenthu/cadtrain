@@ -1892,6 +1892,22 @@ export function setPartMaterial(graph: Graph, mat: string | null | undefined): G
   return { ...graph, material: v };
 }
 
+/** Set (or clear) the part-level render OPACITY (0–1) — surfaced by the
+ *  editor's Properties card + the scene x-ray slider, and applied as a material
+ *  property in the viewer (VIEW-ONLY, never geometry/bake). A finite value in
+ *  (0, 1) stores; `null`/undefined/non-finite/≥1 CLEARS the field (drops the key
+ *  → "unset" = fully opaque). Sparse by design. Round-trips via serialiseGraph +
+ *  meta.opacity. */
+export function setPartOpacity(graph: Graph, value: number | null | undefined): Graph {
+  const v = typeof value === 'number' && Number.isFinite(value) ? value : NaN;
+  if (!(v > 0 && v < 1)) {
+    if (graph.opacity === undefined) return graph; // already unset (opaque)
+    const { opacity: _drop, ...rest } = graph;
+    return rest;
+  }
+  return { ...graph, opacity: v };
+}
+
 /** Patch ONE output part's appearance override (keyed by node id). Pass a
  *  field as a hex/material string to set it, or `null` to clear that field.
  *  Empty entries are pruned so `partAppearance` stays sparse (and the whole
@@ -1899,7 +1915,7 @@ export function setPartMaterial(graph: Graph, mat: string | null | undefined): G
  *  deferred #86; this stores + round-trips the data. */
 export function setPartAppearance(
   graph: Graph, nodeId: NodeId,
-  patch: { colorOuter?: string | null; colorInner?: string | null; material?: string | null },
+  patch: { colorOuter?: string | null; colorInner?: string | null; material?: string | null; opacity?: number | null },
 ): Graph {
   const isHex = (h: any) => typeof h === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(h.trim());
   const all: Record<NodeId, any> = { ...(graph.partAppearance ?? {}) };
@@ -1909,6 +1925,10 @@ export function setPartAppearance(
   if ('material' in patch) {
     const m = typeof patch.material === 'string' ? patch.material.trim() : '';
     if (m && m !== 'none') cur.material = m; else delete cur.material;
+  }
+  if ('opacity' in patch) {
+    const o = typeof patch.opacity === 'number' && Number.isFinite(patch.opacity) ? patch.opacity : NaN;
+    if (o > 0 && o < 1) cur.opacity = o; else delete cur.opacity;
   }
   if (Object.keys(cur).length) all[nodeId] = cur; else delete all[nodeId];
   const hasAny = Object.keys(all).length > 0;

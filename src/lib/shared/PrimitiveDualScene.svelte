@@ -56,6 +56,7 @@
     stackAxis = 'x',
     overlays = [],
     smoothShade = false,
+    opacity = 1,
   }: {
     geo?: any;            // { full, cutVC } from /api/primitives/preview
     geoVersion?: number;
@@ -74,6 +75,12 @@
      *  live-mesh group so they align with (and scale with) the baked geometry.
      *  VIEW-ONLY; empty ⇒ nothing drawn, zero cost. */
     overlays?: SplineOverlay[];
+    /** Part-level render OPACITY (0–1, VIEW-ONLY). <1 renders the whole part
+     *  semi-transparent (transparent + depthWrite off) so nested strings show
+     *  through the outer casing. Multiplied by the scene-level x-ray slider
+     *  (`scene.xrayOpacity`) into `effOpacity` below. 1 × 1 = opaque, byte-
+     *  identical to the pre-opacity render. */
+    opacity?: number;
     smoothShade?: boolean;  // EXPERIMENT: smooth-shade the LIVE mesh (use baked
     // calculateNormals(3, 60) vertex normals instead of flatShading face-derived
     // normals). Gated per-primitive at the canvas layer (currently r_weld_extrude
@@ -90,6 +97,26 @@
   // the child under each transform instead of the merged N-copy mesh. Absent →
   // the existing single-Mesh path runs unchanged.
   let instanced = $derived(geo?.instanced ?? null);
+
+  // Effective render opacity = the part's own opacity × the scene x-ray slider,
+  // clamped to (0.02, 1]. 1×1 = 1 → the material stays fully opaque + byte-
+  // identical to the pre-opacity render. Read by makeLitMaterial (instanced +
+  // GLB) and by the in-place material effects for the single live mesh.
+  let effOpacity = $derived(
+    Math.max(0.02, Math.min(1, (Number.isFinite(opacity) ? (opacity as number) : 1) * (scene.xrayOpacity ?? 1))),
+  );
+  // Apply an opacity onto a THREE material IN PLACE: <1 → transparent + no
+  // depth-write (so overlapping transparent shells blend instead of z-fighting
+  // / occluding); =1 → the opaque defaults (transparent:false, depthWrite:true).
+  function applyOpacity(mat: any, op: number) {
+    if (!mat) return;
+    const t = op < 1;
+    if (mat.transparent !== t) mat.transparent = t;
+    if (mat.opacity !== op) mat.opacity = op;
+    const dw = !t;
+    if (mat.depthWrite !== dw) mat.depthWrite = dw;
+    mat.needsUpdate = true;
+  }
 
   // Build the InstancedMesh imperatively (Threlte mounts it via `<T is>`).
   // - Picks the canonical CHILD geo: cutVC under cutaway, else full — so the
@@ -110,7 +137,7 @@
     if (!childGeo) return null;
     const useStd = scene.zRectLight;
     const hasColor = !!childGeo.getAttribute?.('color');
-    const mat = makeLitMaterial(hasColor, useStd, !smoothShade);
+    const mat = makeLitMaterial(hasColor, useStd, !smoothShade, effOpacity);
     // (Warp is now baked into childGeo server-side — no render-time shader.)
     const count = instanced.count;
     const mesh = new THREE.InstancedMesh(childGeo, mat, count);
@@ -175,16 +202,22 @@
   // specular / shininess / flatShading / DoubleSide) so the render is
   // unchanged. The red-outer / grey-bore vertexColors + the solid-mesh
   // `#cc2222` convention are preserved on BOTH materials.
-  function makeLitMaterial(hasColor: boolean, useStd: boolean, flat: boolean): THREE.Material {
+  // `op` (0–1) = the effective opacity. <1 → transparent + depthWrite:false so
+  // overlapping transparent shells (e.g. casing over tubing) blend instead of
+  // z-fighting / occluding. =1 → THREE's opaque defaults (transparent:false,
+  // depthWrite:true) → byte-identical to the pre-opacity material.
+  function makeLitMaterial(hasColor: boolean, useStd: boolean, flat: boolean, op = 1): THREE.Material {
+    const t = op < 1;
+    const alpha = t ? { transparent: true, opacity: op, depthWrite: false } : {};
     if (useStd) {
       return new THREE.MeshStandardMaterial({
         color: hasColor ? '#ffffff' : '#cc2222', vertexColors: hasColor,
-        roughness: 0.5, metalness: 0.0, flatShading: flat, side: THREE.DoubleSide,
+        roughness: 0.5, metalness: 0.0, flatShading: flat, side: THREE.DoubleSide, ...alpha,
       });
     }
     return new THREE.MeshPhongMaterial({
       color: hasColor ? '#ffffff' : '#cc2222', vertexColors: hasColor,
-      specular: '#666666', shininess: 120, flatShading: flat, side: THREE.DoubleSide,
+      specular: '#666666', shininess: 120, flatShading: flat, side: THREE.DoubleSide, ...alpha,
     });
   }
 
@@ -227,7 +260,7 @@
       if (!obj.isMesh) return;
       const hasColor = !!(obj.geometry as THREE.BufferGeometry).attributes.color;
       if (obj.material?.dispose) obj.material.dispose();
-      obj.material = makeLitMaterial(hasColor, useStd, true);
+      obj.material = makeLitMaterial(hasColor, useStd, true, effOpacity);
       attachWarpShader(obj.material as any);
     });
     glbMatMode = want;
@@ -480,7 +513,17 @@
   $effect(() => {
     const flat = !smoothShade;         // tracked
     const wire = scene.wireframe;      // tracked — VIEW-ONLY wireframe diagnostic
-    if (liveMat) { liveMat.flatShading = flat; liveMat.wireframe = wire; liveMat.needsUpdate = true; invalidate(); }
+    const op = effOpacity;             // tracked — part opacity × scene x-ray
+    if (liveMat) { liveMat.flatShading = flat; liveMat.wireframe = wire; applyOpacity(liveMat, op); invalidate(); }
+  });
+  // Fade the baked GLB meshes to match `effOpacity` IN PLACE — the GLB material
+  // effect above only re-dresses on a Phong↔Standard family swap, so an opacity-
+  // only change (x-ray slider / part opacity) would otherwise not reach it.
+  $effect(() => {
+    const op = effOpacity; // tracked
+    if (!loaded) return;
+    loaded.traverse((obj: any) => { if (obj.isMesh) applyOpacity(obj.material, op); });
+    invalidate();
   });
   // Wireframe for the GPU-INSTANCED path: instMesh's material comes from
   // makeLitMaterial (not the liveMat ref), so drive its `wireframe` flag here so
