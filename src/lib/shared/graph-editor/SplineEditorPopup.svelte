@@ -15,6 +15,7 @@
   import { onMount, tick } from 'svelte';
   import { Canvas } from '@threlte/core';
   import SplineScene from './SplineScene.svelte';
+  import { clampDragPos } from './popover-clamp';
   import type { Vec3 } from '$lib/cad/spline-resample';
 
   let {
@@ -113,7 +114,7 @@
   }
   function onHeadPointerMove(ev: PointerEvent) {
     if (!dragging) return;
-    dragPos = { x: ev.clientX - dragOff.x, y: ev.clientY - dragOff.y };
+    dragPos = clampDragPos(panelEl, ev.clientX - dragOff.x, ev.clientY - dragOff.y);
   }
   function onHeadPointerUp() { dragging = false; }
 
