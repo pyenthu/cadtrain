@@ -1628,31 +1628,31 @@
                 {@const mw = size.w}
                 {@const mh = size.h}
                 {@const swatch = m.colorOuter ?? '#cc2222'}
-                <!-- MATERIAL card (G-MAT-CARD) — a floating, reusable appearance
-                     bundle. Compact card: ◑ + name + colour swatch + a material
-                     OUTPUT socket on the right. Click ◑/name to edit the bundle
-                     (colour · inner · material · opacity · texture) in a popover;
-                     drag the RIGHT socket onto a part's material socket to assign
-                     it, replacing the Properties per-part assignment. -->
+                <!-- MATERIAL node (G-MAT-CARD) — a COMPACT pill: a colour badge +
+                     "◑ name" label + the material OUTPUT socket. Click the badge/
+                     label to edit (colour · inner · material · opacity · texture)
+                     in a popover; drag the RIGHT socket onto a part's ◑ socket to
+                     assign it, replacing the Properties per-part assignment. -->
+                <!-- Pill body — DRAG to move (like any node). -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg material"
-                  width={mw} height={mh} rx="6"
-                  data-tip="Material — reusable appearance (colour · texture · opacity). Click to edit; drag the RIGHT socket into a part's material socket to assign it."
+                  width={mw} height={mh} rx="13"
+                  data-tip="Material — drag to move · click the colour badge to edit · drag the RIGHT socket into a part's ◑ socket to assign it."
                   style="width: {mw}px; height: {mh}px"
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
-                <!-- ◑ + name — click opens the material editor popover -->
+                <!-- colour badge — CLICK to open the editor (the edit affordance). -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x="12" y="20" class="ge-node-title ge-mat-title"
+                <rect role="button" tabindex="-1" class="ge-mat-badge"
+                  x="7" y={mh / 2 - 6} width="12" height="12" rx="2" style={`fill: ${swatch}`}
                   data-tip="Edit this material (colour · inner · material · opacity · texture)"
-                  onpointerdown={(ev) => { ev.stopPropagation(); onOpenMaterialEditor?.(ev, n.id); }}>◑ {m.name ?? 'material'}</text>
-                <!-- colour swatch preview -->
-                <rect x="12" y={mh - 22} width="20" height="12" rx="2" style={`fill: ${swatch}`} stroke="#555" stroke-width="0.75"/>
-                {#if m.texture}<text x="38" y={mh - 12} class="ge-mat-tex">{m.texture}</text>{/if}
+                  onpointerdown={(ev) => { ev.stopPropagation(); onOpenMaterialEditor?.(ev, n.id); }}/>
+                <!-- ◑ name label (display; drag falls through to the body) -->
+                <text x="24" y={mh / 2 + 4} class="ge-mat-label" pointer-events="none">◑ {m.name ?? 'material'}</text>
                 <!-- × delete -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={mw - 20} y="19" class="ge-node-x"
+                <text role="button" tabindex="-1" x={mw - 12} y={mh / 2 + 4} class="ge-node-x ge-mat-del"
                   data-tip="Delete this material node (also unwires any parts using it)"
                   onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeMaterialNode(graph, n.id)); }}>×</text>
                 <!-- OUTPUT socket (right edge, centered) — material channel. -->
@@ -1816,9 +1816,10 @@
   /* Spline PATH producer (TODO #15) — violet family, matches list<point3>. */
   .ge-node-bg.spline { fill: #f5f3ff; stroke: #7c3aed; stroke-width: 2; }
   /* Material card (G-MAT-CARD) — emerald producer, matches the material-out socket. */
-  .ge-node-bg.material { fill: #ecfdf5; stroke: #10b981; stroke-width: 1.5; }
-  .ge-mat-title { cursor: pointer; }
-  .ge-mat-tex { font: 9px ui-monospace, monospace; fill: #6b7280; }
+  .ge-node-bg.material { fill: #ecfdf5; stroke: #10b981; stroke-width: 1.5; cursor: pointer; }
+  .ge-mat-label { font: 700 11px ui-monospace, monospace; fill: #065f46; user-select: none; }
+  .ge-mat-badge { stroke: #555; stroke-width: 0.75; cursor: pointer; }
+  .ge-mat-del { font-size: 13px; }
   .ge-sock.out.material-out { fill: #10b981; stroke: #059669; stroke-width: 2; }
   .ge-sock.in.material-in { fill: #fff; stroke: #10b981; stroke-width: 1.5; }
   .ge-sock.in.material-in.wired { fill: #10b981; stroke: #059669; stroke-width: 2; }

@@ -387,6 +387,17 @@
             {/if}
           {/each}
 
+          <!-- MATERIAL binding wires (G-MAT-CARD) — from a material node's output
+               socket to the bound part's ◑ input socket (header-left, cy=16).
+               Emerald dashed so it reads as a "material" channel, not geometry. -->
+          {#each Object.entries((graph as any).materialBindings ?? {}) as [partId, matId] (partId + ':' + matId)}
+            {#if graph.nodes[partId] && graph.nodes[matId as string]}
+              {@const src = outSock(matId as string)}
+              {@const tp = nodePos(partId)}
+              <path class="ge-wire material" d={bezier(cardObstacles, src.x, src.y, tp.x, tp.y + 16)} fill="none"/>
+            {/if}
+          {/each}
+
           <!-- WIRES: render method.obj/arg + transform.child as bezier paths. -->
           {#each allNodes as n (n.id)}
             {#if n.type === 'method'}
@@ -516,6 +527,7 @@
   .ge-wire.obj { stroke: #b91c1c; }
   .ge-wire.arg { stroke: #d97706; }
   .ge-wire.child { stroke: #6d28d9; }
+  .ge-wire.material { stroke: #10b981; stroke-width: 2.4; stroke-dasharray: 6 3; opacity: 0.9; }
   .ge-wire.param { stroke: #d97706; stroke-dasharray: 2 2; opacity: 0.85; }
   /* Expression wires — multi-source. Same color as direct-param wires
      but a longer dash so it reads as "composed via expression" not

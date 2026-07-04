@@ -353,6 +353,12 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
   // output), x/y/z edited in a click popover — mirror the method icon's fixed
   // size, ignore auto-width. (Was a full ~92×110 inline-xyz card.)
   if (node.type === 'mv' || node.type === 'rot') return { w: 40, h: 40 };
+  // material (G-MAT-CARD) — a COMPACT pill: just "◑ name" + a colour badge + the
+  // output socket. Width fits the label; fixed short height.
+  if (node.type === 'material') {
+    const label = String(node.name ?? 'material');
+    return { w: Math.max(74, 34 + label.length * 8), h: 26 };
+  }
   // txfmn = combined ROT (3 rows) + MV (3 rows) table, each with a section
   // label. Fixed height matches the card render's block layout below.
   if (node.type === 'txfmn') return { w, h: 226 };
