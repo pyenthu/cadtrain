@@ -58,6 +58,34 @@ function maxRadius(m: any): number {
   return r;
 }
 
+/**
+ * For a DEVIATED (bent) tube, the plain hypot(x,y) mixes the lateral bend with
+ * the section radius. To prove the SECTION radius is preserved, measure the
+ * cross-section at a single z-ring: the spread of the ring's x-values about its
+ * OWN center should still ≈ the tube radius (a collapse would shrink it to 0).
+ */
+function ringDiameterAtZ(m: any, zTarget: number): number {
+  const mesh = m.getMesh();
+  const vp = mesh.vertProperties as Float32Array;
+  const np = mesh.numProp;
+  let xmin = Infinity, xmax = -Infinity;
+  for (let i = 0; i < vp.length / np; i++) {
+    const z = vp[i * np + 2];
+    if (Math.abs(z - zTarget) < 0.25) {
+      const x = vp[i * np];
+      if (x < xmin) xmin = x;
+      if (x > xmax) xmax = x;
+    }
+  }
+  return xmax - xmin;
+}
+
+/** World-space X extent of all verts — the lateral bend of a deviated tube. */
+function xExtent(m: any): number {
+  const b = m.boundingBox();
+  return b.max[0] - b.min[0];
+}
+
 describe('r_revolve — zSegments back-compat', () => {
   it('no third arg → byte-identical to zSegments:0 (default OFF)', () => {
     setAxialMaxZSpan(null);
@@ -133,5 +161,61 @@ describe('r_revolve — zSegments makes a straight wall WARPABLE (no collapse)',
     expect(warped.volume()).toBeCloseTo(dense.volume(), 1);
     // And the mesh still spans a real radius band (not collapsed to the axis).
     expect(maxRadius(warped)).toBeGreaterThan(r0 * 0.5);
+  });
+});
+
+describe('r_revolve — axisPath deviation (the deviated well tube)', () => {
+  it('no axisPath (or null) → byte-identical to the plain revolve (back-compat)', () => {
+    setAxialMaxZSpan(null);
+    const plain = r_revolve(CYL(1.2, 3), 96);
+    const nullPath = r_revolve(CYL(1.2, 3), 96, 0, null);
+    expect(nullPath.numVert()).toBe(plain.numVert());
+    expect(nullPath.numTri()).toBe(plain.numTri());
+    expect(nullPath.volume()).toBeCloseTo(plain.volume(), 9);
+    // A straight (all-zero) path is also a no-op → identical.
+    const zeroPath = r_revolve(CYL(1.2, 3), 96, 0, [[0, 0, 0], [0, 0, 3]]);
+    expect(zeroPath.numVert()).toBe(plain.numVert());
+    expect(zeroPath.volume()).toBeCloseTo(plain.volume(), 9);
+  });
+
+  it('a kick-off path bends the axis laterally while preserving the section radius', () => {
+    setAxialMaxZSpan(null);
+    const R = 3.5, H = 30; // OD 7 tube (matches the w_dev_revolve demo)
+    const straight = r_revolve(CYL(R, H), 96, 40);
+    // vertical to z=12, then kicks off in +X out to x=9 at the bottom.
+    const path: [number, number, number][] = [[0, 0, 0], [0, 0, 12], [3, 0, 22], [9, 0, 30]];
+    const dev = r_revolve(CYL(R, H), 96, 0 /* auto */, path);
+
+    expect(dev.volume()).toBeGreaterThan(0);
+    // Same volume — a lateral shear preserves the solid's volume.
+    expect(dev.volume()).toBeCloseTo(straight.volume(), 1);
+    // LATERAL BEND: the straight tube spans x∈[-R,R] (7); the deviated tube's
+    // bottom center shifts to x≈9 → x extent ≈ 9 + 2R.
+    expect(xExtent(straight)).toBeCloseTo(2 * R, 1);
+    expect(xExtent(dev)).toBeGreaterThan(9 + R); // the +9 kick shows up
+    // RADIUS PRESERVED: the section at the TOP (z≈0, un-offset) still ≈ OD 7.
+    expect(ringDiameterAtZ(dev, 0)).toBeCloseTo(2 * R, 0);
+    // …and at the deviated BOTTOM the section is still ≈ OD 7 (not collapsed).
+    expect(ringDiameterAtZ(dev, H)).toBeCloseTo(2 * R, 0);
+  });
+
+  it('bare [x,y] knots spread evenly across the profile Z-span', () => {
+    setAxialMaxZSpan(null);
+    const R = 1.2, H = 10;
+    // 3 knots, no z → z spread as 0, H/2, H. Bottom offset x=4.
+    const dev = r_revolve(CYL(R, H), 96, 0, [[0, 0], [2, 0], [4, 0]]);
+    expect(dev.volume()).toBeGreaterThan(0);
+    // top ring un-offset, bottom ring shifted +4 → x extent ≈ 4 + 2R.
+    expect(xExtent(dev)).toBeCloseTo(4 + 2 * R, 0);
+    expect(ringDiameterAtZ(dev, 0)).toBeCloseTo(2 * R, 0);
+  });
+
+  it('a deviation path auto-picks axial rings when zSegments is 0 (smooth, not faceted)', () => {
+    setAxialMaxZSpan(null);
+    const R = 1.2, H = 30;
+    const path: [number, number, number][] = [[0, 0, 0], [0, 0, 12], [3, 0, 22], [9, 0, 30]];
+    const dev = r_revolve(CYL(R, H), 96, 0 /* auto */, path);
+    // auto density from path length (~32) ⇒ many interior z-rings, not just 2.
+    expect(distinctZ(dev)).toBeGreaterThanOrEqual(32);
   });
 });
