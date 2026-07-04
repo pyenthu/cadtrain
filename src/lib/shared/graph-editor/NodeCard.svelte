@@ -1652,7 +1652,7 @@
                 <!-- material colour BADGE (after the name) — click to edit too. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-mat-badge"
-                  x={mw - 46} y={mh / 2 - 6} width="12" height="12" rx="2" style={`fill: ${swatch}`}
+                  x={mw - 50} y={mh / 2 - 6} width="18" height="12" rx="2" style={`fill: ${swatch}`}
                   data-tip="Edit this material (colour · inner · material · opacity · texture)"
                   onpointerdown={(ev) => { ev.stopPropagation(); onOpenMaterialEditor?.(ev, n.id); }}/>
                 <!-- × delete -->

@@ -219,17 +219,32 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
       scaled = z === 1.0 ? manifold : manifold.scale([1, 1, z]);
     }
   }
-  const lut = parts?.active ? parts : undefined;
+  // When a per-part LUT is ACTIVE, the caller's single colorOuter/colorInner is
+  // the assembly DEFAULT — i.e. the FALLBACK for parts that carry no colour of
+  // their own — NOT a global override. #86: per-part entries (authored colours +
+  // wired-material / Properties overrides, folded into the LUT via emit's
+  // meta.instanceColors) MUST win over the Default. So fold the Default into the
+  // LUT's body/fallback colours and DON'T build a global `override` (a global
+  // override short-circuits color-by-source at manifoldToGeo/CutVC, which is
+  // exactly what made "Default overrides the part").
+  let lut = parts?.active ? parts : undefined;
+  if (lut && (opts?.colorOuter || opts?.colorInner)) {
+    lut = {
+      ...lut,
+      ...(opts.colorOuter ? { bodyColor: opts.colorOuter } : {}),
+      ...(opts.colorInner ? { bodyInner: opts.colorInner } : {}),
+    };
+  }
   // Tag the cut-box with SECTION_ID so the new cross-section faces it
   // creates are distinguishable (→ inner/section color) from the part
   // surfaces it reveals. Only matters on the color-by-source path.
   const _cutBB = scaled.boundingBox();
   const cutBox = lut ? tagManifold(getCutBox(_cutBB), SECTION_ID) : getCutBox(_cutBB);
-  // Per-part colour override — present only when the caller passed at least
-  // one of colorOuter/colorInner. Fills the unset side with the historical
-  // default so a one-sided pick still renders the other side sanely. When
-  // BOTH are absent → undefined → byte-identical legacy red/grey output.
-  const override: ColorOverride | undefined = (opts?.colorOuter || opts?.colorInner)
+  // Global per-part override — ONLY when there is NO active LUT (a single-body
+  // part, or a leaf with no color-by-source table). When a LUT is active the
+  // Default was folded into it above, so no override here (per-part wins). When
+  // BOTH colours are absent → undefined → byte-identical legacy red/grey output.
+  const override: ColorOverride | undefined = (!lut && (opts?.colorOuter || opts?.colorInner))
     ? { outer: opts?.colorOuter ?? DEFAULT_OUTER_HEX, inner: opts?.colorInner ?? DEFAULT_INNER_HEX }
     : undefined;
   // ─── GPU instancing (opt-in) ────────────────────────────────────────────
