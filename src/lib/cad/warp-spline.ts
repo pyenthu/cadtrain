@@ -228,3 +228,69 @@ export function warpManifoldAlongSpline(
   }
   return out;
 }
+
+// ── PURE-JS warp (positions + normals) — the chosen warp-step approach ─────────
+// docs/plans/curvature-adaptive-warp-subdivision.md. Unlike warpManifoldAlongSpline
+// (Manifold.warp → moves POSITIONS only → the pipeline re-derives normals via
+// calculateNormals(crease) → the coarse axial chords crease-SPLIT → faceted), this
+// bends BOTH the position AND the normal by the SAME local frame [N,B,T]. So the
+// pre-warp SMOOTH normals stay smooth and pre-warp SHARP edges stay sharp — they
+// just rotate along the bend (interpolation of normals, task #5). No WASM, no
+// calculateNormals re-derive → smoother shading AND faster. Curvature-adaptive
+// axial subdivision (task #4) is a SEPARATE step that densifies the arrays BEFORE
+// this bend; this function is agnostic to how dense the input is.
+//
+// Local part axes map to the spline frame: x → N (side), y → B (up), z → T
+// (tangent; z is consumed as the arc-length parameter). Operates on flat
+// non-indexed typed arrays (THREE BufferGeometry `position`/`normal` layout).
+export function warpMeshJS(
+  positions: Float32Array,
+  normals: Float32Array | null,
+  cp: Pt2[] | Pt3[],
+  opts: { stretch?: boolean } = {},
+): { positions: Float32Array; normals: Float32Array | null } {
+  if (!positions || positions.length < 3 || !Array.isArray(cp) || cp.length < 2) {
+    return { positions, normals };
+  }
+  // Z-range for the z → arc-length map (mirrors warpManifoldAlongSpline).
+  let z0 = Infinity, z1 = -Infinity;
+  for (let i = 2; i < positions.length; i += 3) {
+    const z = positions[i]; if (z < z0) z0 = z; if (z > z1) z1 = z;
+  }
+  const zLen = (z1 - z0) || 1;
+
+  const use3D = is3DPath(cp as number[][]);
+  const s3 = use3D ? spline3DFrames(cp as Pt3[]) : null;
+  const sP = use3D ? null
+    : splineSampler((cp as number[][]).map((p) => (p.length >= 3 ? [p[0], p[2]] : (p as Pt2))));
+  const total = use3D ? s3!.total : sP!.total;
+
+  const outP = new Float32Array(positions.length);
+  const outN = normals ? new Float32Array(normals.length) : null;
+
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+    const s = opts.stretch ? ((z - z0) / zLen) * total : (z - z0);
+
+    let N: V3, B: V3, T: V3, pos: V3;
+    if (use3D) {
+      const r = s3!.at(s); pos = r.pos; N = r.N; B = r.B; T = r.tan;
+    } else {
+      const r = sP!.sampleAt(s); pos = r.pos; N = frameN(r.tan); B = [0, 1, 0]; T = r.tan;
+    }
+
+    // position: pos(s) + x·N + y·B   (planar B = world-Y ⇒ matches the legacy warp)
+    outP[i]     = pos[0] + x * N[0] + y * B[0];
+    outP[i + 1] = pos[1] + x * N[1] + y * B[1];
+    outP[i + 2] = pos[2] + x * N[2] + y * B[2];
+
+    // normal: rotate by the SAME orthonormal basis (local x→N, y→B, z→T).
+    if (normals && outN) {
+      const nx = normals[i], ny = normals[i + 1], nz = normals[i + 2];
+      outN[i]     = nx * N[0] + ny * B[0] + nz * T[0];
+      outN[i + 1] = nx * N[1] + ny * B[1] + nz * T[1];
+      outN[i + 2] = nx * N[2] + ny * B[2] + nz * T[2];
+    }
+  }
+  return { positions: outP, normals: outN };
+}
