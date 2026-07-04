@@ -21,6 +21,7 @@
 
 ### Open — editor
 - **#52 Modularize RightPane** — large component → Vite HMR silently skips it (stale-dev-server masks fixes). Extract per-tab bodies (SVG/GLB/TF-recipe).
+- **#61 Material system + MATERIAL CARD** (extends #86; plan `docs/plans/wells-ewells-gaps.md` §G-MAT): (a) opacity/transparency — `makeLitMaterial` transparent/opacity/depthWrite, per-part `meta.opacity` + scene x-ray [IN PROGRESS]; (b) textures via `meta.texture` (cement hatch/aggregate · steel · rock); (c) a **Material Card** in the graph editor (sibling to Properties/Params) to author color · opacity · texture · preset · finish per PART + SUBPART, writing to `meta`. Applies to all primitives.
 - **#20 Typed expression outputs** — A/B/D on main. LEFT: C explicit annotation · E consumers (`r_sweep.path`, `r_surface_grid`) + ObjectNode emit. (`typed-expression-outputs.md`)
 - **#11 Expression-as-builder** — unify the 3 repeats (list<op>→sketch, list<transform>→repeat); lacing; 2D preview. (`expression-list-builder.md`)
 - **#31 Visual expression editor** — finish `ExprImperativeBlocks` + `if`; text-DSL mirror. **#32 Undo/redo** — per-instance history + one `commit()` choke point.
