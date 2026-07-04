@@ -27,6 +27,9 @@
 
 import * as THREE from 'three';
 import { initManifold as cadInitManifold } from '$lib/cad/manifold-helpers';
+// Vite emits manifold.wasm as a build asset + rewrites this to its served (same-
+// origin) URL — the CORP-clean URL Emscripten's locateFile needs under COEP.
+import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url';
 import type { WellDirection } from './direction';
 
 let _wasm: any = null;
@@ -85,7 +88,12 @@ export function readWellTiming(): WellPhaseTiming { return { ..._timing }; }
  *  Returns the wasm module exposing `{ Manifold, CrossSection, ... }`. */
 export async function initManifold(): Promise<any> {
   if (_wasm) return _wasm;
-  await cadInitManifold();
+  // COEP require-corp (set app-wide for TrueForm pthreads) blocks the default
+  // main-thread `new URL('manifold.wasm', import.meta.url)` fetch → init throws →
+  // the /wells 3D never gets manifoldReady → blank cutaway. Point Emscripten at
+  // the Vite-served asset URL (same proven locateFile the client-bake worker uses,
+  // bake-worker.ts) so the wasm loads same-origin under COEP.
+  await cadInitManifold({ locateFile: (p: string) => (p.endsWith('.wasm') ? manifoldWasmUrl : p) });
   const G = globalThis as any;
   _wasm = G.__cadtrain_manifold__?.wasm ?? null;
   if (!_wasm) throw new Error('[wells/manifoldCut] cadtrain Manifold singleton unavailable after initManifold()');
