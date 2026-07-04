@@ -31,6 +31,8 @@
   import { summarise, type WsonDoc } from './wson-summary';
   import { defaultViewSettings, type WellViewSettings } from './view-settings';
 
+  import type { CompletionPatch } from '$lib/wells/wson-mutate';
+
   let {
     wson = null,
     error = null,
@@ -38,11 +40,17 @@
     // The shell passes a shared settings object; fall back to a per-view
     // default so the component still works standalone.
     view = defaultViewSettings(),
+    onUpdateCompletion,
+    onDeleteCompletion,
   }: {
     wson?: WsonDoc | null;
     error?: string | null;
     fileName?: string;
     view?: WellViewSettings;
+    /** Edit-the-diagram hooks — forwarded to the 2D view's double-click editor.
+     *  Pure prop forwarding: does NOT touch the 3D scene / its reactivity. */
+    onUpdateCompletion?: (srcIndex: number, patch: CompletionPatch) => void;
+    onDeleteCompletion?: (srcIndex: number) => void;
   } = $props();
 
   const summary = $derived(summarise(wson));
@@ -97,7 +105,7 @@
     <section class="wv-stage" class:white={view.viewMode === '2d' || view.whiteBg}>
       <!-- 2D track schematic — always mounted (cheap). Hidden when in 3D. -->
       <div class="wv-surface" class:hidden={view.viewMode !== '2d'}>
-        <WellSchematic2D {wson} {view} remap={remap2d} />
+        <WellSchematic2D {wson} {view} remap={remap2d} {onUpdateCompletion} {onDeleteCompletion} />
       </div>
 
       <!-- 3D cutaway — mounted only after first 3D selection. Hidden in 2D. -->

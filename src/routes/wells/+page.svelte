@@ -25,9 +25,10 @@
   import WellSideNav, { type LoadedFile, type LoadMeta } from '$lib/shared/WellSideNav.svelte';
   import WellToolbar from './WellToolbar.svelte';
   import WellViewPlaceholder from './WellViewPlaceholder.svelte';
-  import { wsonFiles, parseWsonFile, summarise, type WsonFile } from './wson-summary';
+  import { wsonFiles, parseWsonFile, summarise, type WsonFile, type WsonDoc } from './wson-summary';
   import * as wsCache from './workspace-cache';
   import { defaultViewSettings } from './view-settings';
+  import { applyCompletionPatch, removeCompletion, type CompletionPatch } from '$lib/wells/wson-mutate';
 
   // Far-left placement-tool rail state (scaffold — see WellToolbar).
   let activeTool = $state('select');
@@ -211,8 +212,50 @@
   // Active file + its condensed summary — drive the workspace header (well
   // name + type chips) at the top of the main area, WsonApp-style.
   const activeFile = $derived(activeId ? fileById(activeId) : undefined);
-  const activeSummary = $derived(activeFile && !activeFile.error ? summarise(activeFile.doc) : null);
+  const activeSummary = $derived(
+    activeFile && !activeFile.error ? summarise(activeId ? docForTab(activeId) : activeFile.doc) : null,
+  );
   const fmtM = (v: number | null) => (v == null ? '—' : `${v} m`);
+
+  // ── Edit-the-diagram mutation layer (in-session, per tab) ────────────────────
+  // The parsed `file.doc`s are module-level plain objects (shared, non-reactive).
+  // For "double-click → edit → re-render" we keep a MUTABLE `$state` working copy
+  // per open tab: a deep clone that Svelte proxies, so field/array writes trip
+  // deep reactivity and the derived 2D scene recomputes. The SAME proxy ref is
+  // passed to both the 2D and 3D surfaces (mutated in place, never re-assigned),
+  // so no changing-identity prop remounts the 3D scene (avoids the re-bake loop).
+  // No file write — edits live for the session only; undo is deferred.
+  let workingDocs = $state<Record<string, WsonDoc>>({});
+
+  // Lazily seed a working copy for each open tab once its file has parsed. The
+  // `=== undefined` guard makes this a one-shot per id — it writes once then
+  // settles, so it can't loop (memory `fresh_array_props_effect_loops`).
+  $effect(() => {
+    for (const t of tabs) {
+      const f = fileById(t.id);
+      if (f?.doc && workingDocs[t.id] === undefined) {
+        workingDocs[t.id] = structuredClone(f.doc);
+      }
+    }
+  });
+
+  /** The doc actually rendered for a tab — the mutable working copy once seeded,
+   *  else the read-only parsed doc (shown for the tick before the effect runs). */
+  function docForTab(id: string): WsonDoc | null {
+    return workingDocs[id] ?? fileById(id)?.doc ?? null;
+  }
+
+  /** Apply a completion patch to the ACTIVE well's working doc (mutates in place
+   *  → the 2D scene re-derives). `srcIndex` = index into `doc.completions[]`. */
+  function updateComponent(srcIndex: number, patch: CompletionPatch) {
+    const doc = activeId ? workingDocs[activeId] : null;
+    if (doc) applyCompletionPatch(doc, srcIndex, patch);
+  }
+  /** Remove a completion from the ACTIVE well's working doc (in place). */
+  function deleteComponent(srcIndex: number) {
+    const doc = activeId ? workingDocs[activeId] : null;
+    if (doc) removeCompletion(doc, srcIndex);
+  }
 
   function openTab(id: string) {
     const existing = tabs.find((t) => t.id === id);
@@ -433,7 +476,14 @@
         {#each tabs as t (t.key)}
           {@const file = fileById(t.id)}
           <div class="wells-pane" class:visible={activeKey === t.key}>
-            <WellViewPlaceholder wson={file?.doc ?? null} error={file?.error ?? null} fileName={file?.name ?? tabLabel(t.id)} {view} />
+            <WellViewPlaceholder
+              wson={docForTab(t.id)}
+              error={file?.error ?? null}
+              fileName={file?.name ?? tabLabel(t.id)}
+              {view}
+              onUpdateCompletion={updateComponent}
+              onDeleteCompletion={deleteComponent}
+            />
           </div>
         {/each}
       {/if}
