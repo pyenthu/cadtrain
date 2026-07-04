@@ -48,6 +48,10 @@ cache (folder + tabs restore).
 ## E. SECONDARY VIEW
 - [ ] **E1 · 2D derived track view (W-D)** — the classic 2D SVG schematic readout on the white surface. Port SVTC `wsonRender.js` → `wson-2d.ts` + `WellSchematic2D.svelte`; shares the depth scale.
 
+## G. MATERIALS (source feature — primitives render)
+- [~] **G-MAT1 · Opacity/transparency** (IN PROGRESS) — `makeLitMaterial` gains `transparent`+`opacity`+`depthWrite=false`; per-part `meta.opacity` + Properties-card slider + a scene "x-ray" control; per-subpart alpha via the #86 color-by-source LUT (RGBA). Well defaults: **open-hole ~0.15 (transparent viz shaft), casing/cement/tubing/hanger opaque** — you look INTO the well through the OH boundary, NOT through the casing.
+- [ ] **G-MAT2 · Textures** — named material textures in `makeLitMaterial` (a `meta.texture`: `cement` = hatched/aggregate · `steel` = casing/tubing · `rock` = open-hole face · …), procedural canvas-texture or asset maps. **Cement especially** (hatched aggregate is the schematic convention). Applies to primitives generally, not just wells. Do AFTER G-MAT1 (same material code path).
+
 ## F. <user: add ewells-specific gaps>
 - [ ] F1 · …
 
