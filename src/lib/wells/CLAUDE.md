@@ -19,6 +19,14 @@ surface. Inverts SVTC/Visio-WBD's 2D-first stance.
   depth (z-DOWN). Vertical = straight; deviated = average-angle survey walk.
 - `WellScene.svelte` — Threlte scene (primitive cylinders; the SIMPLE assembler
   view). Camera `up=[0,0,-1]`.
+- `wson-2d.ts` — **PURE 2D-schematic geometry builder** (no DOM/Svelte/Three).
+  `computeWson2D(wson, opts)` → primitive SPECS (mirrored casing/oh/tubing rects,
+  cement annulus rects, perf arrow polys, a deviated centreline/body polyline,
+  ruler ticks, banked label anchors). `buildRemap` = the SAME raw-MD→display-depth
+  formula `WellSchematic3D` uses (DTX×zScale), so 2D+3D agree on depth. Rendered
+  by `routes/wells/WellSchematic2D.svelte` (the FAST DEFAULT view — no Manifold
+  CSG; ewells parity, `docs/research/wells-perf-ewells-vs-cadtrain.md`). Ported
+  from SVTC `wsonRender.js`. Tested headless: `wson-2d.test.ts`.
 
 ## Ported SVTC 3D engine (`threeD/` + `dtx.ts` + `WellSchematic3D.svelte`)
 A high-fidelity PORT of SVTC's real well-diagram engine (`~/code/SVTC/src/lib/

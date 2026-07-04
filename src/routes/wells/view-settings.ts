@@ -21,6 +21,10 @@ export interface WellLayerFlags {
 }
 
 export interface WellViewSettings {
+  /** Which surface renders. `'2d'` = fast pure-SVG track schematic (DEFAULT —
+   *  the #1 perf lever: opening a tab does NO Manifold CSG); `'3d'` = the
+   *  Manifold half-section cutaway (lazy-mounted only when first selected). */
+  viewMode: '2d' | '3d';
   /** Per-layer show/hide. */
   layers: WellLayerFlags;
   /** Half-section CSG cutaway. */
@@ -45,6 +49,7 @@ export interface WellViewSettings {
 /** Fresh default settings (all layers on, cutaway + survey + DTX on). */
 export function defaultViewSettings(): WellViewSettings {
   return {
+    viewMode: '2d',
     layers: {
       showOpenHole: true,
       showCasing: true,
