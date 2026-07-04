@@ -41,6 +41,7 @@
   // warp toggle works in the combined canvas too (was dropped in the rewrite).
   import { attachWarpShader, subdivideAlongZ } from '$lib/shared/warp';
   import { getMaterialTexture } from '$lib/shared/material-textures';
+  import { partitionTrianglesByAlpha } from '$lib/shared/vertex-alpha-partition';
 
   let {
     geo = null,
@@ -163,10 +164,22 @@
     const colAttr = childGeo.getAttribute?.('color');
     const hasColor = !!colAttr;
     const childVertexAlpha = !!colAttr && (colAttr as any).itemSize === 4;
-    const mat = makeLitMaterial(hasColor, useStd, !smoothShade, effOpacity, childVertexAlpha, texture);
+    // MIXED-alpha child → 2-group split so the opaque subparts stay solid (same
+    // fix as the single mesh). InstancedMesh honours geometry groups + a material
+    // array (each instance draws both groups), so per-instance the opaque tris
+    // write depth and only the transparent tris blend. Non-mixed → single material
+    // (unchanged). The transparent group's material carries the per-vertex alpha.
+    const flat = !smoothShade;
+    const split = childVertexAlpha ? buildAlphaSplitGeometry(childGeo) : null;
+    const drawGeo = split ? split.geo : childGeo;
+    const mat = split
+      ? [makeLitMaterial(true, useStd, flat, effOpacity, false, texture),
+         makeLitMaterial(true, useStd, flat, effOpacity, true, texture)]
+      : makeLitMaterial(hasColor, useStd, flat, effOpacity, childVertexAlpha, texture);
     // (Warp is now baked into childGeo server-side — no render-time shader.)
     const count = instanced.count;
-    const mesh = new THREE.InstancedMesh(childGeo, mat, count);
+    const mesh = new THREE.InstancedMesh(drawGeo, mat, count);
+    if (split) mesh.userData.ownSplitGeo = true; // disposer frees its index-only geo
     const m = new THREE.Matrix4();
     for (let i = 0; i < count; i++) {
       m.fromArray(instanced.instances[i]);
@@ -179,7 +192,16 @@
   // shared child geometry is NOT disposed — the single-mesh path still uses it).
   $effect(() => {
     const m = instMesh;
-    return () => { try { m?.dispose?.(); (m?.material as any)?.dispose?.(); } catch { /* already gone */ } };
+    return () => {
+      try {
+        m?.dispose?.();
+        const mat = m?.material as any;
+        if (Array.isArray(mat)) mat.forEach((x) => x?.dispose?.()); else mat?.dispose?.();
+        // Free the index-only split geometry we allocated (its attributes are
+        // shared with the child geo, so detach them first — disposeSplitGeometry).
+        if (m?.userData?.ownSplitGeo) disposeSplitGeometry(m.geometry as THREE.BufferGeometry);
+      } catch { /* already gone */ }
+    };
   });
   // Black wire border for the INSTANCED path. A Threlte <Edges> is per-geometry
   // and can't ride an InstancedMesh's per-instance matrices, so a Stack/Repeat
@@ -253,6 +275,109 @@
     });
   }
 
+  // --- mixed-alpha 2-group split (opaque-subparts-render-solid fix) ---
+  // A composed assembly (e.g. a well) bakes ONE vertex-coloured mesh whose RGBA
+  // colour attribute carries a per-triangle alpha. If the WHOLE mesh wears one
+  // transparent + depthWrite:false material, the OPAQUE subparts (casing/cement/
+  // tubing, alpha ≈ 1) also stop writing depth → they render see-through. Split
+  // the geometry into two draw groups by per-triangle alpha (opaque first, then
+  // transparent) so group 0 gets a solid depth-writing material and only group 1
+  // blends. Returns null unless the mesh has an RGBA colour attr with BOTH opaque
+  // and transparent triangles (the "mixed" case) — a fully-opaque or fully-
+  // transparent RGBA mesh keeps its single-material path (byte-identical to
+  // today). Shares the source geometry's attribute buffers (only a new index +
+  // groups are allocated); the caller must NOT geo.dispose() this without first
+  // detaching the shared attributes (see the splitMesh disposer).
+  function buildAlphaSplitGeometry(
+    g: THREE.BufferGeometry | null,
+  ): { geo: THREE.BufferGeometry; opaqueCount: number; transparentCount: number } | null {
+    const colAttr = g?.getAttribute?.('color') as THREE.BufferAttribute | undefined;
+    if (!g || !colAttr || colAttr.itemSize !== 4) return null;
+    const idx = g.getIndex();
+    const part = partitionTrianglesByAlpha(
+      colAttr.array as ArrayLike<number>,
+      idx ? (idx.array as ArrayLike<number>) : null,
+      colAttr.count,
+    );
+    if (!part.mixed) return null;
+    const split = new THREE.BufferGeometry();
+    // Share the source attribute buffers (no vertex-data copy). Only the index
+    // buffer below is newly allocated.
+    split.setAttribute('position', g.getAttribute('position'));
+    split.setAttribute('color', colAttr);
+    const nrm = g.getAttribute('normal'); if (nrm) split.setAttribute('normal', nrm);
+    const uv = g.getAttribute('uv'); if (uv) split.setAttribute('uv', uv);
+    split.setIndex(new THREE.BufferAttribute(part.order, 1));
+    split.addGroup(0, part.opaqueCount, 0);                       // materialIndex 0 = opaque
+    split.addGroup(part.opaqueCount, part.transparentCount, 1);   // materialIndex 1 = transparent
+    return { geo: split, opaqueCount: part.opaqueCount, transparentCount: part.transparentCount };
+  }
+
+  // Detach the SHARED attribute buffers from a split geometry, then dispose it,
+  // so only the index buffer WE allocated is freed (disposing the geometry with
+  // its shared attributes still attached would free buffers the source geo — and
+  // the bbox / edges / normals-helper paths — still need).
+  function disposeSplitGeometry(geo: THREE.BufferGeometry | undefined | null) {
+    if (!geo) return;
+    try {
+      for (const name of ['position', 'color', 'normal', 'uv']) geo.deleteAttribute(name);
+      geo.dispose();
+    } catch { /* already gone */ }
+  }
+
+  // The single-live-mesh MIXED-alpha case: a self-contained THREE.Mesh with a
+  // 2-group geometry + [opaqueMat, transparentMat] material array. THREE draws
+  // group 0 (opaque, depthWrite on) before group 1 (transparent) → the opaque
+  // subparts occlude correctly + render solid, while the transparent subpart
+  // (e.g. an open hole) still blends and shows the strings inside. null when the
+  // mesh isn't mixed → the declarative single-material arm renders (unchanged).
+  // Skipped for the instanced path (instMesh builds its own split below).
+  // Mirrors the instMesh imperative pattern. Base opacity 1; the effOpacity
+  // (x-ray) is applied IN PLACE by the effect below so an x-ray drag doesn't
+  // rebuild the whole mesh.
+  let splitMesh = $derived.by(() => {
+    if (instanced) return null;
+    const g: THREE.BufferGeometry | null = (showCutaway && cutVC) ? cutVC : full;
+    const built = buildAlphaSplitGeometry(g);
+    if (!built) return null;
+    const useStd = scene.zRectLight;
+    const flat = !smoothShade;
+    const opaqueMat = makeLitMaterial(true, useStd, flat, 1, false, texture); // group 0: solid + depthWrite
+    const transMat = makeLitMaterial(true, useStd, flat, 1, true, texture);   // group 1: blend, depthWrite off
+    return new THREE.Mesh(built.geo, [opaqueMat, transMat]);
+  });
+  // Dispose the split mesh's materials + (index-only) geometry when it's replaced.
+  $effect(() => {
+    const m = splitMesh;
+    return () => {
+      try {
+        (m?.material as THREE.Material[] | undefined)?.forEach((mat) => mat?.dispose?.());
+        disposeSplitGeometry(m?.geometry as THREE.BufferGeometry);
+      } catch { /* already gone */ }
+    };
+  });
+  // Apply effOpacity (part × x-ray) + wireframe IN PLACE to the split mesh's two
+  // materials — group 0 honours the x-ray but ignores per-vertex alpha (its tris
+  // are all ≈1), group 1 always blends on the per-vertex alpha. Avoids rebuilding
+  // the mesh on every slider tick (mirrors the instanced-path wireframe effect).
+  $effect(() => {
+    const m = splitMesh;
+    const op = effOpacity;        // tracked — part opacity × scene x-ray
+    const wire = scene.wireframe; // tracked
+    const mats = m?.material as THREE.Material[] | undefined;
+    if (!mats) return;
+    applyOpacity(mats[0], op, false);
+    applyOpacity(mats[1], op, true);
+    for (const mat of mats) { (mat as any).wireframe = wire; mat.needsUpdate = true; }
+    invalidate();
+  });
+  // Point the live-mesh ref (drives the vertex-normals diagnostic) at the split
+  // mesh when it's active — the declarative <T.Mesh bind:ref> arm isn't mounted
+  // in the mixed-alpha case, so bind:ref never sets it.
+  $effect(() => {
+    if (splitMesh) liveMeshRef = splitMesh;
+  });
+
   // --- baked GLB (mirrors ComponentSceneGlb.dressGltfScene) ---
   let loaded = $state<THREE.Object3D | null>(null);
   // Tracks which material family the loaded GLB currently wears ('' = none yet)
@@ -265,8 +390,18 @@
       if (!obj.isMesh) return;
       const g = obj.geometry as THREE.BufferGeometry;
       if (g.attributes.normal) g.deleteAttribute('normal');
-      obj.userData.warpOriginalGeo = g;
+      // MIXED per-subpart alpha → 2-group split so the opaque subparts stay solid
+      // (same fix as the live mesh). GLB geometry is owned by the loaded scene, so
+      // the split geo becomes the "no-warp" base geometry + we flag the mesh for
+      // the 2-material array in the material effect. CAVEAT: the TEMP warp toggle
+      // swaps to subdivideAlongZ(g) (the UNsplit original) → the split is lost
+      // while warp is ON; acceptable for that experimental view.
+      const split = buildAlphaSplitGeometry(g);
+      const baseGeo = split ? split.geo : g;
+      obj.userData.warpOriginalGeo = baseGeo;
       obj.userData.warpSubdividedGeo = subdivideAlongZ(g);
+      obj.userData.alphaSplit = !!split;
+      if (split) obj.geometry = baseGeo;
     });
   }
   $effect(() => {
@@ -292,9 +427,18 @@
     loaded.traverse((obj: any) => {
       if (!obj.isMesh) return;
       const hasColor = !!(obj.geometry as THREE.BufferGeometry).attributes.color;
-      if (obj.material?.dispose) obj.material.dispose();
-      obj.material = makeLitMaterial(hasColor, useStd, true, effOpacity, false, texName);
-      attachWarpShader(obj.material as any);
+      const prev = obj.material as any;
+      if (Array.isArray(prev)) prev.forEach((m) => m?.dispose?.()); else prev?.dispose?.();
+      if (obj.userData.alphaSplit) {
+        // 2-group split: [opaque (solid + depthWrite), transparent (blend)].
+        const mats = [makeLitMaterial(true, useStd, true, effOpacity, false, texName),
+                      makeLitMaterial(true, useStd, true, effOpacity, true, texName)];
+        mats.forEach((m) => attachWarpShader(m as any));
+        obj.material = mats;
+      } else {
+        obj.material = makeLitMaterial(hasColor, useStd, true, effOpacity, false, texName);
+        attachWarpShader(obj.material as any);
+      }
     });
     glbMatMode = want;
   });
@@ -565,7 +709,15 @@
   $effect(() => {
     const op = effOpacity; // tracked
     if (!loaded) return;
-    loaded.traverse((obj: any) => { if (obj.isMesh) applyOpacity(obj.material, op); });
+    loaded.traverse((obj: any) => {
+      if (!obj.isMesh) return;
+      if (Array.isArray(obj.material)) {
+        applyOpacity(obj.material[0], op, false); // opaque group
+        applyOpacity(obj.material[1], op, true);  // transparent group (per-vertex alpha)
+      } else {
+        applyOpacity(obj.material, op);
+      }
+    });
     invalidate();
   });
   // Wireframe for the GPU-INSTANCED path: instMesh's material comes from
@@ -575,7 +727,10 @@
     const m = instMesh;
     const wire = scene.wireframe; // tracked
     const mat = m?.material as any;
-    if (mat) { mat.wireframe = wire; mat.needsUpdate = true; invalidate(); }
+    if (!mat) return;
+    const list = Array.isArray(mat) ? mat : [mat]; // mixed-alpha child → 2-material array
+    for (const x of list) { x.wireframe = wire; x.needsUpdate = true; }
+    invalidate();
   });
   // --- vertex-normals diagnostic (VIEW-ONLY) ---
   // A THREE.VertexNormalsHelper drawn on the live mesh so the user can SEE each
@@ -789,6 +944,14 @@
            per-instance LineSegments) since <Edges> can't follow instanceMatrix. -->
       <T is={instMesh} />
       {#if instEdges}<T is={instEdges} />{/if}
+    {:else if splitMesh}
+      <!-- MIXED per-subpart alpha: a self-contained 2-group / 2-material mesh so
+           the OPAQUE subparts write depth + render solid while only the
+           transparent subpart (e.g. an open hole) blends. Materials + opacity /
+           wireframe are driven by the splitMesh derived + its effects above. -->
+      <T is={splitMesh}>
+        {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
+      </T>
     {:else if showCutaway && cutVC}
       <!-- Geometry is pre-warped server-side; no subdivide / warp shader. -->
       <T.Mesh geometry={cutVC} bind:ref={liveMeshRef}>
