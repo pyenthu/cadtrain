@@ -145,6 +145,14 @@ export async function runCompiledManifold(
 
   const { segArg, zArg, cOuter, cInner, warpArg, creaseArg, smoothArg, instanced, cutaway } = coerceOptions(options);
 
+  // A part that bends a solid via the warp NODE emits `warpSpline(...)` into the
+  // compiled script body → the warp is baked into the Manifold, invisible to
+  // finalize's opts.warp (the SCENE warp). Detect it from the script text and
+  // pass `smoothWarp` so finalize re-derives fully-smooth (crease-free) render
+  // normals for the warped mesh instead of the 60°-crease-split faceted ones —
+  // matching the server /preview path. Absent → byte-identical non-warped bake.
+  const smoothWarp = typeof script === 'string' && script.includes('warpSpline(');
+
   // maxOD heuristic — mirror preview: first positional param * 1.5, else 6.
   const a0 = Array.isArray(params) ? params[0] : undefined;
   const maxOD = (typeof a0 === 'number' && a0 > 0) ? a0 * 1.5 : 6;
@@ -194,6 +202,7 @@ export async function runCompiledManifold(
       instanced,
       warp: warpArg,
       creaseAngle: creaseArg,
+      smoothWarp,
       smooth: smoothArg,
     },
   );

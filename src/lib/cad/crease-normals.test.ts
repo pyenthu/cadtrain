@@ -219,3 +219,63 @@ describe('finalizeManifold end-to-end — straight-Z sweep renders smooth', () =
     expect(multiNormalPos).toBe(0);
   });
 });
+
+describe('finalizeManifold smoothWarp — warped parts shade fully smooth', () => {
+  beforeAll(async () => { await initManifold(); });
+
+  /** Count side-wall positions that carry >1 distinct normal (a SHARP edge
+   *  reads per-facet → multiple normals; a fully-smoothed edge → one). Filters
+   *  to pure side verts (nz≈0) so caps don't confuse the tally. */
+  function multiNormalSidePositions(res: { full: any }): { multi: number; total: number } {
+    const P = res.full.getAttribute('position').array as Float32Array;
+    const N = res.full.getAttribute('normal').array as Float32Array;
+    const idxArr = res.full.index ? (res.full.index.array as ArrayLike<number>) : null;
+    const count = idxArr ? idxArr.length : P.length / 3;
+    const byPos = new Map<string, Set<string>>();
+    for (let i = 0; i < count; i++) {
+      const vi = idxArr ? idxArr[i] : i;
+      const px = P[vi * 3], py = P[vi * 3 + 1], pz = P[vi * 3 + 2];
+      const nx = N[vi * 3], ny = N[vi * 3 + 1], nz = N[vi * 3 + 2];
+      if (Math.hypot(px, py) < 0.5) continue;   // skip cap-centre corners
+      if (Math.abs(nz) >= 0.5) continue;        // side wall only (skip cap faces)
+      const k = `${px.toFixed(2)}|${py.toFixed(2)}|${pz.toFixed(2)}`;
+      if (!byPos.has(k)) byPos.set(k, new Set());
+      byPos.get(k)!.add(`${nx.toFixed(2)}|${ny.toFixed(2)}|${nz.toFixed(2)}`);
+    }
+    let multi = 0;
+    for (const s of byPos.values()) if (s.size > 1) multi++;
+    return { multi, total: byPos.size };
+  }
+
+  /** A square (4-gon) prism swept up a straight Z path (3 rings → a MID ring of
+   *  pure side verts). Its 90° vertical edges exceed the 60° crease → SHARP by
+   *  default; smoothWarp's 180° crease must smooth them. */
+  function squarePrism(): any {
+    const R = 2;
+    const section: [number, number][] = [[R, R], [-R, R], [-R, -R], [R, -R]];
+    return sweepAlongPath([[0, 0, 0], [0, 0, 2.5], [0, 0, 5]], section);
+  }
+
+  it('default (non-warped) keeps square-tube vertical edges SHARP', () => {
+    const res = finalizeManifold(squarePrism(), 3, undefined, undefined, { skipCutaway: true });
+    const { multi, total } = multiNormalSidePositions(res as any);
+    expect(total).toBeGreaterThan(0);
+    expect(multi).toBeGreaterThan(0); // 90° > 60° crease → per-facet, sharp
+  });
+
+  it('smoothWarp:true SMOOTHS every side-wall position (multi-normal == 0)', () => {
+    const res = finalizeManifold(squarePrism(), 3, undefined, undefined, { skipCutaway: true, smoothWarp: true });
+    const { multi, total } = multiNormalSidePositions(res as any);
+    expect(total).toBeGreaterThan(0);
+    expect(multi).toBe(0); // 180° crease → area-weighted smooth, no split
+  });
+
+  it('smoothWarp:false is BYTE-IDENTICAL to the default bake (non-warped unchanged)', () => {
+    const a = finalizeManifold(squarePrism(), 3, undefined, undefined, { skipCutaway: true });
+    const b = finalizeManifold(squarePrism(), 3, undefined, undefined, { skipCutaway: true, smoothWarp: false });
+    const an = a.full.getAttribute('normal').array as Float32Array;
+    const bn = b.full.getAttribute('normal').array as Float32Array;
+    expect(bn.length).toBe(an.length);
+    for (let i = 0; i < an.length; i++) expect(bn[i]).toBe(an[i]);
+  });
+});
