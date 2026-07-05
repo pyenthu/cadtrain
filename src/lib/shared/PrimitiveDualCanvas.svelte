@@ -16,7 +16,7 @@
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfDemo = 'r_cyl', tfActual = false, tfRecipe = undefined, tfPending = false }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, material = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfDemo = 'r_cyl', tfActual = false, tfRecipe = undefined, tfPending = false }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
     /** Spline DIAGNOSTIC overlays (TODO #24) — plotted splines' resolved curves +
      *  control points, drawn INSIDE the live-mesh group so they align with the
@@ -78,6 +78,12 @@
      *  to PrimitiveDualScene, which resolves it to a procedural map. undefined /
      *  unknown ⇒ no map (identical to today). NOT baked (a material property). */
     texture?: string;
+    /** Part-level MATL PBR PRESET ('none'|'steel'|'aluminum'|'titanium'|'brass',
+     *  VIEW-ONLY) — passed straight to PrimitiveDualScene, which resolves it
+     *  (via materialPreset) to MeshStandardMaterial metalness/roughness + a
+     *  metallic tint on the non-vertex-coloured (TF) fallback arm. undefined /
+     *  'none' ⇒ the neutral material (identical to today). NOT baked. */
+    material?: string;
     /** When false, the top 'Mesh (live)' + 'GLB (bake)' label chips are
      *  hidden — used by the typed-builder panes where the labels add
      *  visual clutter without information value (only one scene anyway). */
@@ -909,7 +915,7 @@
       : smoothShadeAuto}
     <Canvas {createRenderer}>
       <!-- Only one of mesh/GLB is baked per tab now → centre it (offset 0). -->
-      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} {autoScaleOwner} opacity={opacity ?? 1} {texture} {colorOuter} {colorInner} overlays={overlays ?? []} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} stackAxis={sceneStackAxis} />
+      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} {autoScaleOwner} opacity={opacity ?? 1} {texture} {colorOuter} {colorInner} {material} overlays={overlays ?? []} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} stackAxis={sceneStackAxis} />
     </Canvas>
     {#if showControls && SceneControls}{@const Controls = SceneControls}<Controls />{/if}
   {:else}

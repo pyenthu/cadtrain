@@ -41,6 +41,7 @@
   // warp toggle works in the combined canvas too (was dropped in the rewrite).
   import { attachWarpShader, subdivideAlongZ } from '$lib/shared/warp';
   import { getMaterialTexture } from '$lib/shared/material-textures';
+  import { materialPreset } from '$lib/shared/material-preset';
   import { partitionTrianglesByAlpha } from '$lib/shared/vertex-alpha-partition';
 
   let {
@@ -62,6 +63,7 @@
     texture = undefined,
     colorOuter = undefined,
     colorInner = undefined,
+    material = undefined,
   }: {
     geo?: any;            // { full, cutVC } from /api/primitives/preview
     geoVersion?: number;
@@ -105,6 +107,14 @@
      *  Manifold path; the single `full` solid has no revealed interior, so it is
      *  the cutVC (section) path that consumes inner. Not read in the full arm. */
     colorInner?: string;
+    /** Part-level MATL PBR PRESET ('none'|'steel'|'aluminum'|'titanium'|'brass',
+     *  VIEW-ONLY). Resolved via `materialPreset` to metalness/roughness (on the
+     *  MeshStandardMaterial arms) + a metallic tint colour (used ONLY on the
+     *  non-vertex-coloured fallback arm, i.e. the TF single mesh; a baked-VC or
+     *  explicit-colorOuter mesh ignores the tint). undefined / 'none' ⇒ the
+     *  neutral { metalness:0, roughness:0.5 } → byte-identical to the pre-preset
+     *  material, so Manifold/BREP call-sites that pass nothing are unchanged. */
+    material?: string;
     smoothShade?: boolean;  // EXPERIMENT: smooth-shade the LIVE mesh (use baked
     // calculateNormals(3, 60) vertex normals instead of flatShading face-derived
     // normals). Gated per-primitive at the canvas layer (currently r_weld_extrude
@@ -133,6 +143,10 @@
   let effOpacity = $derived(
     Math.max(0.02, Math.min(1, (Number.isFinite(opacity) ? (opacity as number) : 1) * (scene.xrayOpacity ?? 1))),
   );
+  // Part-level MATL PBR preset → { metalness, roughness, color? }. undefined /
+  // 'none' resolves to the neutral { metalness:0, roughness:0.5 } so an
+  // un-preset part renders byte-identically to before this was threaded in.
+  let matPBR = $derived(materialPreset(material));
   // Apply an opacity onto a THREE material IN PLACE: <1 → transparent + no
   // depth-write (so overlapping transparent shells blend instead of z-fighting
   // / occluding); =1 → the opaque defaults (transparent:false, depthWrite:true).
@@ -962,11 +976,12 @@
         {#if p.geo}
           {@const a = p.appearance ?? {}}
           {@const pOp = (typeof a.opacity === 'number' && a.opacity > 0 && a.opacity < 1) ? a.opacity : 1}
+          {@const aPBR = materialPreset(a.material)}
           <T.Mesh geometry={p.geo}>
             {#if scene.zRectLight}
-              <T.MeshStandardMaterial color={a.colorOuter ?? '#cc2222'} map={getMaterialTexture(a.texture)} roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+              <T.MeshStandardMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
             {:else}
-              <T.MeshPhongMaterial color={a.colorOuter ?? '#cc2222'} map={getMaterialTexture(a.texture)} specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+              <T.MeshPhongMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
             {/if}
             {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
           </T.Mesh>
@@ -992,7 +1007,7 @@
       <!-- Geometry is pre-warped server-side; no subdivide / warp shader. -->
       <T.Mesh geometry={cutVC} bind:ref={liveMeshRef}>
         {#if scene.zRectLight}
-          <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
+          <T.MeshStandardMaterial vertexColors roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {:else}
           <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {/if}
@@ -1004,14 +1019,14 @@
       <T.Mesh geometry={full} bind:ref={liveMeshRef}>
         {#if scene.zRectLight}
           {#if hasVC}
-            <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
+            <T.MeshStandardMaterial vertexColors roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
           {:else}
-            <T.MeshStandardMaterial color={colorOuter ?? '#cc2222'} map={getMaterialTexture(texture)} roughness={0.5} metalness={0} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
+            <T.MeshStandardMaterial color={colorOuter ?? matPBR.color ?? '#cc2222'} map={getMaterialTexture(texture)} roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
           {/if}
         {:else if hasVC}
           <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {:else}
-          <T.MeshPhongMaterial color={colorOuter ?? '#cc2222'} map={getMaterialTexture(texture)} specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
+          <T.MeshPhongMaterial color={colorOuter ?? matPBR.color ?? '#cc2222'} map={getMaterialTexture(texture)} specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {/if}
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>

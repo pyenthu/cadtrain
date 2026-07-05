@@ -635,7 +635,7 @@
             tfPending={tfRecipePending}
             brepSource={bake.source}
             brepParams={brepParamValues}
-            colorOuter={graph.colorOuter} colorInner={graph.colorInner} opacity={graph.opacity} texture={graph.texture}
+            colorOuter={graph.colorOuter} colorInner={graph.colorInner} opacity={graph.opacity} texture={graph.texture} material={graph.material}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             onBakeMeta={(m) => (tfMeta = m)}
             onRebuild={() => (tfRecipeBust += 1)}
