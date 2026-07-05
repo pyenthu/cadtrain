@@ -181,13 +181,12 @@ export function toleranceWeldMap(pos: ArrayLike<number>, tri: ArrayLike<number>,
   return weldOf;
 }
 
-/** MEDIAN triangle edge length — the local feature scale the weld tolerance is
- *  derived from (so the tolerance auto-scales with part size AND mesh resolution;
- *  proven scale-invariant on a ×0.01 shrink). Sampled (stride) so the sort stays
- *  cheap on large meshes. Returns 0 for a mesh with no non-degenerate edges. */
-export function medianEdgeLength(pos: ArrayLike<number>, tri: ArrayLike<number>): number {
+/** Sorted, sampled triangle-edge lengths (ascending, non-degenerate only). The
+ *  common core behind {@link medianEdgeLength} + {@link edgeLengthPercentile};
+ *  sampled (stride) so the sort stays cheap on large meshes. Empty ⇒ []. */
+function sampledEdgeLengths(pos: ArrayLike<number>, tri: ArrayLike<number>): number[] {
   const nt = (tri.length / 3) | 0;
-  if (nt === 0) return 0;
+  if (nt === 0) return [];
   const stride = Math.max(1, Math.floor(nt / 20000)); // cap the sample at ~60k edges
   const lens: number[] = [];
   for (let t = 0; t < nt; t += stride) {
@@ -197,16 +196,53 @@ export function medianEdgeLength(pos: ArrayLike<number>, tri: ArrayLike<number>)
       if (d > 0) lens.push(d);
     }
   }
-  if (lens.length === 0) return 0;
   lens.sort((p, q) => p - q);
-  return lens[lens.length >> 1];
+  return lens;
+}
+
+/** MEDIAN triangle edge length — the local feature scale the weld tolerance is
+ *  derived from (so the tolerance auto-scales with part size AND mesh resolution;
+ *  proven scale-invariant on a ×0.01 shrink). Returns 0 for a mesh with no
+ *  non-degenerate edges. */
+export function medianEdgeLength(pos: ArrayLike<number>, tri: ArrayLike<number>): number {
+  const lens = sampledEdgeLengths(pos, tri);
+  return lens.length === 0 ? 0 : lens[lens.length >> 1];
+}
+
+/** A LOW percentile (`q` in 0..1) of triangle-edge length — a robust proxy for
+ *  the mesh's SHORTEST real edges (the circumferential edges of a fine revolve /
+ *  cylinder wall), robust to a stray degenerate sliver a boolean can leave (which
+ *  a raw min would latch onto). Returns 0 for a mesh with no non-degenerate edges. */
+export function edgeLengthPercentile(pos: ArrayLike<number>, tri: ArrayLike<number>, q: number): number {
+  const lens = sampledEdgeLengths(pos, tri);
+  if (lens.length === 0) return 0;
+  const i = Math.max(0, Math.min(lens.length - 1, Math.floor(q * (lens.length - 1))));
+  return lens[i];
 }
 
 /** Weld tolerance as a fraction of the median edge — 0.25 recovers a booleaned
  *  composite's smooth walls (58% → 97% of side-wall corners on the demo joint,
- *  1.00 on a ×0.01 shrink) while leaving a clean standalone part at 1.00 and
- *  staying well below the ~0.5× point where genuine ring verts start to merge. */
+ *  1.00 on a ×0.01 shrink) while leaving a clean standalone part at 1.00. */
 const WELD_TOL_FRACTION = 0.25;
+
+/** HARD CAP on the weld tolerance as a fraction of the mesh's shortest real edges
+ *  ({@link edgeLengthPercentile} at {@link WELD_TOL_MIN_EDGE_Q}). WHY: the median
+ *  edge is a BAD scale on a mesh with anisotropic edges — a revolve's caps
+ *  contribute long radial/axial edges, so `0.25 × median` can EXCEED the SHORT
+ *  circumferential wall edges once the segment count is high enough (g_shaft: at
+ *  24 segs circ-edge 0.131 > tol 0.125 → distinct; at 32 segs circ-edge 0.098 <
+ *  tol 0.125 → union-find CHAINS the entire ring into ONE weld group → the wall's
+ *  per-vertex normals collapse to per-FACET → FLAT shading at HIGHER resolution,
+ *  the paradox). The invariant that fixes it: any two verts joined by a real edge
+ *  are GENUINELY DISTINCT and must never weld, so tol must stay strictly BELOW the
+ *  shortest real edge. Boolean-seam verts (the case the weld exists for) come from
+ *  DIFFERENT operands with NO edge between them, so they still merge under this cap.
+ *  On an ISOTROPIC composite (median ≈ shortest edge) `0.25 × median` already sits
+ *  below this cap, so the composite behaviour is unchanged. */
+const WELD_TOL_MAX_EDGE_FRACTION = 0.5;
+/** Percentile used for "shortest real edge" — a low percentile (not the raw min)
+ *  so a single boolean sliver edge doesn't shrink the tolerance to nothing. */
+const WELD_TOL_MIN_EDGE_Q = 0.05;
 
 /**
  * Crease-aware per-corner normals for a welded indexed triangle mesh.
@@ -239,10 +275,22 @@ export function creaseAwareCornerNormals(pos: ArrayLike<number>, tri: ArrayLike<
     const l = Math.hypot(nx, ny, nz) || 1;
     faceU[t * 3] = nx / l; faceU[t * 3 + 1] = ny / l; faceU[t * 3 + 2] = nz / l;
   }
-  // Weld corners by a spatial TOLERANCE (~0.25× the median edge) so a smooth band
-  // averages across its facets even when an exact boolean left near-coincident
-  // (not equal) seam verts — the composite-flat-shading fix (see toleranceWeldMap).
-  const tol = weldTol != null ? weldTol : WELD_TOL_FRACTION * medianEdgeLength(pos, tri);
+  // Weld corners by a spatial TOLERANCE so a smooth band averages across its
+  // facets even when an exact boolean left near-coincident (not equal) seam verts
+  // — the composite-flat-shading fix (see toleranceWeldMap). The tolerance is
+  // 0.25× the MEDIAN edge (part-size + resolution adaptive) but HARD-CAPPED below
+  // the mesh's SHORTEST real edges (0.5× a low edge-length percentile) so it can
+  // NEVER chain edge-adjacent verts — otherwise a fine revolve's short
+  // circumferential edges fall under the median-derived tol and the whole ring
+  // collapses to one weld group → FLAT-at-higher-resolution (see the constants).
+  // Boolean seams (different operands, no connecting edge) still merge; an
+  // isotropic composite (median ≈ shortest edge) keeps the plain 0.25× behaviour.
+  const tol = weldTol != null
+    ? weldTol
+    : Math.min(
+        WELD_TOL_FRACTION * medianEdgeLength(pos, tri),
+        WELD_TOL_MAX_EDGE_FRACTION * edgeLengthPercentile(pos, tri, WELD_TOL_MIN_EDGE_Q),
+      );
   const weldOf = toleranceWeldMap(pos, tri, tol);
   const inc: number[][] = new Array(nv);
   for (let t = 0; t < nt; t++) {

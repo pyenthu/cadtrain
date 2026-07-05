@@ -598,7 +598,7 @@
             tfRecipe={tfRecipe}
             brepSource={bake.source}
             brepParams={brepParamValues}
-            opacity={graph.opacity} texture={graph.texture}
+            colorOuter={graph.colorOuter} colorInner={graph.colorInner} opacity={graph.opacity} texture={graph.texture}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             onBakeMeta={(m) => (tfMeta = m)}
             autoScaleOwner={active && rightTab === 'tf'}

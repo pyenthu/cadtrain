@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { tfMeshToGeo, triangulateFaces, sectionFaceColors, SECTION_OUTER_RGB, SECTION_INNER_RGB } from './trueform-adapter';
+import { buildRevolveMesh } from './tf_examples/revolve';
 
 /**
  * Guards the bored-pipe shading fix (2026-07-03): the TF adapter must produce
@@ -128,6 +129,92 @@ describe('tfMeshToGeo crease-aware normals', () => {
       const dot = x * rx + y * ry + z * rz;
       expect(dot).toBeGreaterThan(0.98);
     }
+  });
+});
+
+/**
+ * Guards the 24-vs-32 flattening bug (the weld tolerance must not collapse with
+ * circular resolution). A plain revolved cylinder (g_shaft) shaded SMOOTH at 24
+ * segments but FACETED at 32: `0.25 × median-edge` (median ≈ the long cap/axial
+ * edges) exceeded the SHORT circumferential wall edge once the segment count was
+ * high enough, so `toleranceWeldMap`'s union-find CHAINED the whole ring into one
+ * weld group → the wall's per-vertex normals collapsed to per-facet → FLAT. The
+ * fix caps the tolerance below the shortest real edge, so the side wall reads
+ * smooth at BOTH counts while the genuine wall↔cap rim stays hard.
+ */
+describe('tfMeshToGeo — revolved cylinder shading is resolution-independent', () => {
+  const R = 0.5, L = 5;
+  // g_shaft's closed half-section: axis → outer-bottom → outer-top → axis.
+  const profile: [number, number][] = [[0, 0], [R, 0], [R, L], [0, L]];
+
+  // A geo triangle is a SIDE-WALL face when it touches BOTH z≈0 and z≈L (spans the
+  // wall); a cap face has all corners at one z. tfMeshToGeo is non-indexed, so
+  // corner c of triangle t sits at position/normal offset (t*3+c).
+  function wallSpreadDeg(geo: any): number {
+    const pos = geo.getAttribute('position').array as Float32Array;
+    const nrm = geo.getAttribute('normal').array as Float32Array;
+    const nt = pos.length / 9;
+    // Group side-wall corner normals by rounded ring-vertex position.
+    const byPos = new Map<string, [number, number, number][]>();
+    for (let t = 0; t < nt; t++) {
+      let lo = false, hi = false;
+      for (let c = 0; c < 3; c++) {
+        const z = pos[(t * 3 + c) * 3 + 2];
+        if (z < 1e-6) lo = true; if (z > L - 1e-6) hi = true;
+      }
+      if (!(lo && hi)) continue; // not a wall face
+      for (let c = 0; c < 3; c++) {
+        const o = (t * 3 + c) * 3;
+        const x = pos[o], y = pos[o + 1], z = pos[o + 2];
+        if (Math.hypot(x, y) < 0.4) continue; // skip any axis corner
+        const key = `${x.toFixed(4)},${y.toFixed(4)},${z.toFixed(4)}`;
+        (byPos.get(key) ?? byPos.set(key, []).get(key)!).push([nrm[o], nrm[o + 1], nrm[o + 2]]);
+      }
+    }
+    let worst = 0;
+    for (const [, ns] of byPos) {
+      for (let i = 0; i < ns.length; i++) for (let j = i + 1; j < ns.length; j++) {
+        const d = Math.max(-1, Math.min(1, ns[i][0] * ns[j][0] + ns[i][1] * ns[j][1] + ns[i][2] * ns[j][2]));
+        worst = Math.max(worst, (Math.acos(d) * 180) / Math.PI);
+      }
+    }
+    return worst;
+  }
+
+  for (const seg of [24, 32, 48, 64]) {
+    it(`side wall shades SMOOTH at ${seg} segments`, () => {
+      const g: any = tfMeshToGeo(buildRevolveMesh(profile, seg) as any);
+      // Smooth = every side-wall vertex's incident corner normals agree (< a few
+      // degrees). The bug produced ~360/seg (11.25° at 32); require well under a
+      // single facet step to prove the ring did NOT collapse to per-facet.
+      expect(wallSpreadDeg(g)).toBeLessThan(1);
+    });
+  }
+
+  it('the genuine wall↔cap rim stays HARD at 32 segments (not over-welded)', () => {
+    const g: any = tfMeshToGeo(buildRevolveMesh(profile, 32) as any);
+    const pos = g.getAttribute('position').array as Float32Array;
+    const nrm = g.getAttribute('normal').array as Float32Array;
+    const nt = pos.length / 9;
+    // Any corner on the z=0 outer ring that belongs to a WALL face must keep a
+    // radial (nz≈0) normal; a corner there on a CAP face must keep an axial
+    // (|nz|≈1) normal — the rim is a real crease, never blended to a slope.
+    let wall = 0, cap = 0;
+    for (let t = 0; t < nt; t++) {
+      let lo = false, hi = false;
+      for (let c = 0; c < 3; c++) { const z = pos[(t * 3 + c) * 3 + 2]; if (z < 1e-6) lo = true; if (z > L - 1e-6) hi = true; }
+      const isWall = lo && hi;
+      for (let c = 0; c < 3; c++) {
+        const o = (t * 3 + c) * 3;
+        const x = pos[o], y = pos[o + 1], z = pos[o + 2];
+        if (z >= 1e-6 || Math.hypot(x, y) < 0.4) continue; // z=0 outer ring only
+        const nz = Math.abs(nrm[o + 2]);
+        if (isWall) { expect(nz).toBeLessThan(0.05); wall++; }
+        else { expect(nz).toBeGreaterThan(0.95); cap++; }
+      }
+    }
+    expect(wall).toBeGreaterThan(0);
+    expect(cap).toBeGreaterThan(0);
   });
 });
 
