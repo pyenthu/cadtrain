@@ -24,7 +24,7 @@
  * {@link TfUnsupportedError} at the offending node.
  */
 import { tfRevolveProfile } from './revolve';
-import { tfResult, buildOpenCurve, capOpenEnds, runTfGuarded, type TfDemoResult } from '../trueform-client';
+import { tfResult, tfMeshData, buildOpenCurve, capOpenEnds, runTfGuarded, type TfDemoResult } from '../trueform-client';
 import type { TfRecipe, TfInstr, Vec3 } from '$lib/cad/graph-to-tf';
 
 /** Flatten a `[[x,y,z]…]` path → the `[n*3]` Float32Array `buildOpenCurve` /
@@ -312,15 +312,31 @@ export function executeTfRecipe(
   // resets the singleton on a trap (next ensureTf re-inits a clean kernel) and
   // rethrows a readable reason instead of the opaque "unreachable" + a dead kernel.
   return runTfGuarded(() => {
-    // Build each ROOT output; union multiples into one solid (the composition's
-    // unconsumed outputs, mirroring dp_joint's box+tube+pin weld).
-    let solid = buildInstr(t, instrs[0]);
-    for (let i = 1; i < instrs.length; i++) {
-      solid = t.booleanUnion(solid, buildInstr(t, instrs[i])).mesh;
+    // Build each ROOT output (= a PART) as its OWN mesh first.
+    const partMeshes = instrs.map((instr) => {
+      const m = buildInstr(t, instr);
+      try { return t.positivelyOriented(m); } catch { return m; }
+    });
+
+    // PER-PART meshes for the per-part-texture display (task #2/#3): extract each
+    // part's flat mesh data NOW — BEFORE the union below may consume the handles.
+    // Only when the recipe carries per-part appearance + cutaway is OFF (v1: the
+    // cutaway still uses the merged single mesh). One part → nothing to split.
+    const appearance = recipe.partAppearance;
+    const wantParts = !opts?.cutaway && !!appearance && appearance.some(Boolean) && partMeshes.length > 1;
+    const partData = wantParts ? partMeshes.map((m) => tfMeshData(m)) : null;
+
+    // Merged union — the single-mesh `data` + cutaway + stats (back-compat: the
+    // composition's unconsumed outputs, mirroring dp_joint's box+tube+pin weld).
+    let solid = partMeshes[0];
+    for (let i = 1; i < partMeshes.length; i++) {
+      solid = t.booleanUnion(solid, partMeshes[i]).mesh;
     }
     // Enforce one consistent outward orientation (harmless if already positive).
     try { solid = t.positivelyOriented(solid); } catch { /* keep the union as-is */ }
-    return tfResult(tf, t, solid, { cutaway: opts?.cutaway, cuttable: true });
+    const merged = tfResult(tf, t, solid, { cutaway: opts?.cutaway, cuttable: true });
+    if (partData) merged.parts = partData.map((data, i) => ({ data, appearance: appearance![i] }));
+    return merged;
   });
 }
 

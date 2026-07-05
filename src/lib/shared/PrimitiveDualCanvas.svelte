@@ -600,11 +600,19 @@
         ).build({ cutaway: scene.showCutaway });
         builtVia = 'demo';
       }
-      const { data, stats, cutPlanes } = result;
+      const { data, stats, cutPlanes, parts } = result;
       if (ac.signal.aborted) return;
       if (cutPlanes) {
         const cutVC = tfMeshToGeo(data, undefined, { planes: cutPlanes });
         geo = { cutVC };
+      } else if (parts && parts.length) {
+        // PER-PART textured meshes (TF per-part texture) — each part its own geo +
+        // appearance; keep `full` as the single-mesh fallback. The scene renders
+        // `parts` (colour/texture/opacity per part) when present.
+        geo = {
+          full: tfMeshToGeo(data),
+          parts: parts.map((p) => ({ geo: tfMeshToGeo(p.data), appearance: p.appearance })),
+        };
       } else {
         geo = { full: tfMeshToGeo(data) };
       }

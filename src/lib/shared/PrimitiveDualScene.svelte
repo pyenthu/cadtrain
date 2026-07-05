@@ -102,6 +102,10 @@
 
   let full = $derived(geo?.full ?? null);
   let cutVC = $derived(geo?.cutVC ?? null);
+  // PER-PART textured meshes (TF per-part texture, #3): [{ geo, appearance }].
+  // Present only on the TF per-part-mesh path (cutaway off); renders each part
+  // with its own colour/texture/opacity material. Absent → single-mesh path.
+  let parts = $derived(geo?.parts ?? null);
   // GPU-instancing payload (present only when the LIVE-mesh /preview detected a
   // uniform Stack/Repeat): { instances: number[][], count }. When set, `full`/
   // `cutVC` are the CANONICAL CHILD mesh and we draw a THREE.InstancedMesh of
@@ -936,7 +940,26 @@
 <!-- TOP — live mesh, stacked on the part (Z) axis. -->
 <T.Group position={meshPos}>
   {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.zRectLight ? '_r' : '')}
-    {#if instMesh}
+    {#if parts && parts.length}
+      <!-- PER-PART textured meshes (TF per-part texture, #3): each part is its
+           OWN mesh with its OWN material — colour · texture map · opacity — so a
+           multi-part assembly can show a different texture PER sub-part (which the
+           single vertex-coloured mesh can't). Cutaway OFF only (v1). -->
+      {#each parts as p, i (i)}
+        {#if p.geo}
+          {@const a = p.appearance ?? {}}
+          {@const pOp = (typeof a.opacity === 'number' && a.opacity > 0 && a.opacity < 1) ? a.opacity : 1}
+          <T.Mesh geometry={p.geo}>
+            {#if scene.zRectLight}
+              <T.MeshStandardMaterial color={a.colorOuter ?? '#cc2222'} map={getMaterialTexture(a.texture)} roughness={0.5} metalness={0} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+            {:else}
+              <T.MeshPhongMaterial color={a.colorOuter ?? '#cc2222'} map={getMaterialTexture(a.texture)} specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+            {/if}
+            {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
+          </T.Mesh>
+        {/if}
+      {/each}
+    {:else if instMesh}
       <!-- GPU-instanced Stack/Repeat: ONE child mesh drawn under N transforms.
            Material (Phong/Standard + flatShading + vertexColors) + the child's
            red/grey (or override / colour-by-source) colours come baked into

@@ -2099,7 +2099,7 @@ export function setPartOpacity(graph: Graph, value: number | null | undefined): 
  *  deferred #86; this stores + round-trips the data. */
 export function setPartAppearance(
   graph: Graph, nodeId: NodeId,
-  patch: { colorOuter?: string | null; colorInner?: string | null; material?: string | null; opacity?: number | null },
+  patch: { colorOuter?: string | null; colorInner?: string | null; material?: string | null; opacity?: number | null; texture?: string | null },
 ): Graph {
   const isHex = (h: any) => typeof h === 'string' && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(h.trim());
   const all: Record<NodeId, any> = { ...(graph.partAppearance ?? {}) };
@@ -2113,6 +2113,10 @@ export function setPartAppearance(
   if ('opacity' in patch) {
     const o = typeof patch.opacity === 'number' && Number.isFinite(patch.opacity) ? patch.opacity : NaN;
     if (o > 0 && o < 1) cur.opacity = o; else delete cur.opacity;
+  }
+  if ('texture' in patch) {
+    const t = typeof patch.texture === 'string' ? patch.texture.trim() : '';
+    if (t && t !== 'none') cur.texture = t; else delete cur.texture;
   }
   if (Object.keys(cur).length) all[nodeId] = cur; else delete all[nodeId];
   const hasAny = Object.keys(all).length > 0;
