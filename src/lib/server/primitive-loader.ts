@@ -563,7 +563,7 @@ export async function buildPrimitiveGeom(
 // change; the TTL bounds staleness (edit a dep → refreshes within the TTL).
 const DEP_TTL_MS = 30_000;
 const depSourceCache = new Map<string, { p: Promise<string>; ts: number }>();
-function fetchDepSource(id: string, fetchFn: typeof fetch): Promise<string> {
+export function fetchDepSource(id: string, fetchFn: typeof fetch): Promise<string> {
   const hit = depSourceCache.get(id);
   if (hit && Date.now() - hit.ts < DEP_TTL_MS) return hit.p;
   const p = (async () => {

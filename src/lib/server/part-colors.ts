@@ -16,7 +16,7 @@
  */
 import { recognizeComposite } from './recognize-composite';
 import { evalMetaLiteral } from './primitives-meta';
-import { usesOf } from './primitive-loader';
+import { usesOf, fetchDepSource } from './primitive-loader';
 import { colorsForInstance, DEFAULT_INNER_COLOR } from '$lib/shared/instance-colors';
 import { partHashId } from '$lib/cad/part-id';
 
@@ -74,10 +74,13 @@ export async function resolveDepColors(
   const unique = [...new Set(uses)].filter((d) => /^[a-z_][a-z0-9_]*$/i.test(d) && !seen.has(d));
   await Promise.all(unique.map(async (dep) => {
     try {
-      const r = await fetchFn(`/api/primitives/source?name=${encodeURIComponent(dep)}`, { cache: 'no-store' });
-      if (!r.ok) return;
-      const d = await r.json();
-      const s = typeof d?.source === 'string' ? d.source : '';
+      // Reuse the loader's 30s TTL dep-source cache (fetchDepSource) instead of a
+      // raw prod-proxied fetch — this ran UNCACHED on EVERY /api/primitives/compile
+      // (colours are computed outside the script cache), costing ~900 ms per
+      // composite compile (the "still being compiled" latency on the hidden 3D
+      // bake). Cached → a repeat compile pays 0 dep round-trips.
+      let s = '';
+      try { s = await fetchDepSource(dep, fetchFn); } catch { return; }
       if (!s) return;
       // EFFECTIVE-appearance inheritance (#86): resolve the dep's OWN color-by-
       // source RECURSIVELY, then hand its BODY's effective colour up — so a
