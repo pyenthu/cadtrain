@@ -151,7 +151,7 @@
   // "actual" mode: import the OPEN part's OWN baked Manifold mesh into the TF
   // kernel (instead of a demo) and show tf's independent topology verdict. When
   // ON the demo dropdown is disabled; OFF → back to the selected demo.
-  let tfActualOn = $state<boolean>(false);
+  let tfActualOn = $state<boolean>(true);
   // Param name → current value (graph.params order ↔ bake.args / paramDefaults).
   let brepParamValues = $derived.by(() => {
     const vals = (bake?.args ?? paramDefaults) as number[];
@@ -570,6 +570,9 @@
                (one file per demo). TrueForm has no revolve/loft/extrude, so these
                show what tf CAN build directly — primitives, tubeMesh sweeps, CSG —
                plus the revolved parts (dp_pin/cone) built via the tf.mesh lathe. -->
+          <!-- ACTUAL (this part built natively in TF) is the DEFAULT. The DEMO
+               button flips to the tf_examples registry; its example selector is
+               only live in demo mode. Title + selector + toggle share one row. -->
           <div class="ge-tf-demo-row">
             <span class="ge-tf-demo-label">tf demo</span>
             <select class="ge-tf-demo-select" bind:value={tfDemoKind} disabled={tfActualOn} aria-label="TrueForm demo geometry">
@@ -577,11 +580,14 @@
                 <option value={ex.name}>{ex.label}</option>
               {/each}
             </select>
-            <!-- "actual" — import THIS part's own baked mesh into TF (not a demo). -->
-            <button type="button" class="ge-tf-actual-btn" class:on={tfActualOn}
-              aria-pressed={tfActualOn}
-              title="Build THIS part natively in TrueForm from its graph (composites/sweeps resolve via the server compile); shows tf's watertight/manifold/χ verdict. Falls back to importing the Manifold mesh for ops TF can't build yet."
-              onclick={() => (tfActualOn = !tfActualOn)}>actual</button>
+            <!-- Toggle: labelled with the mode it switches TO. ACTUAL default →
+                 shows "demo"; in demo → shows "actual". -->
+            <button type="button" class="ge-tf-actual-btn" class:on={!tfActualOn}
+              aria-pressed={!tfActualOn}
+              title={tfActualOn
+                ? 'Switch to a TrueForm DEMO (pick an example from the selector) instead of this part'
+                : 'Build THIS part natively in TrueForm from its graph (composites/sweeps resolve via the server compile); shows tf’s watertight/manifold/χ verdict. Falls back to importing the Manifold mesh for ops TF can’t build yet.'}
+              onclick={() => (tfActualOn = !tfActualOn)}>{tfActualOn ? 'demo' : 'actual'}</button>
           </div>
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
             args={bake.args ?? paramDefaults}
