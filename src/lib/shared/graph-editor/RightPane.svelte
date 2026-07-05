@@ -185,14 +185,22 @@
   // The recipe the canvas uses: the server-resolved one when present (composites),
   // else the instant client one.
   let tfRecipe = $derived(tfRecipeServer ?? tfRecipeLocal);
+  // Server-compile wall time (ms) for the LAST /api/tf/compile round-trip — the
+  // composite-dependency resolve that DOMINATES a TF redraw for parts that Call
+  // other volume parts (it does serial, prod-proxied /api/primitives/source
+  // fetches per dep). 0 = the instant client recipe was used (no server hop).
+  // The badge adds this to the ~4 ms kernel build so "fresh · N ms TF" reflects
+  // the TRUE end-to-end redraw the user waits on, not just the kernel slice.
+  let tfCompileMs = $state(0);
   // When the client recipe has UNSUPPORTED nodes AND "actual" is on, fetch the
   // server-inlined recipe (composites resolved). Re-fires on graph/param change.
   $effect(() => {
     const local = tfRecipeLocal;
     const g = graph, p = brepParamValues;
-    if (!tfActualOn || !local || !recipeHasUnsupportedLocal(local)) { tfRecipeServer = undefined; return; }
+    if (!tfActualOn || !local || !recipeHasUnsupportedLocal(local)) { tfRecipeServer = undefined; tfCompileMs = 0; return; }
     let cancelled = false;
     (async () => {
+      const t0 = performance.now();
       try {
         const r = await fetch('/api/tf/compile', {
           method: 'POST', headers: { 'content-type': 'application/json' },
@@ -200,7 +208,7 @@
         });
         if (!r.ok) return;
         const data = await r.json();
-        if (!cancelled && data?.recipe) tfRecipeServer = data.recipe;
+        if (!cancelled && data?.recipe) { tfCompileMs = performance.now() - t0; tfRecipeServer = data.recipe; }
       } catch { /* keep the local recipe → mesh-import fallback */ }
     })();
     return () => { cancelled = true; };
@@ -608,7 +616,14 @@
             {#if tfMeta && tfMeta.supported === false}
               <span class="ge-cache-badge skipped" title="TrueForm could not build this part.">{tfMeta.reason ?? 'no TF path for this part'}</span>
             {:else if tfMeta}
-              <span class="ge-cache-badge fresh" title="Built client-side by the TrueForm WASM kernel (main thread)">fresh · {Math.round(tfMeta.ms)} ms TF</span>
+              {@const kernelMs = tfMeta.ms}
+              {@const totalMs = kernelMs + tfCompileMs}
+              <span class="ge-cache-badge fresh"
+                title={tfCompileMs > 0
+                  ? `end-to-end ${Math.round(totalMs)} ms = server recipe-compile ${Math.round(tfCompileMs)} ms (composite dep resolve, prod-proxied source fetches) + TrueForm kernel build ${Math.round(kernelMs)} ms (main thread)`
+                  : `TrueForm kernel build ${Math.round(kernelMs)} ms (main thread; instant client recipe, no server compile)`}>
+                fresh · {Math.round(totalMs)} ms TF{tfCompileMs > 0 ? ` (${Math.round(tfCompileMs)} compile + ${Math.round(kernelMs)} build)` : ''}
+              </span>
             {/if}
             <span class="ge-bake-meta-spacer"></span>
           </div>
