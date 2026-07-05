@@ -104,8 +104,8 @@
     /** TF "actual" mode only: the graph compiled to a `TfRecipe` (graphToTf).
      *  When present AND fully supported (no UNSUPPORTED nodes), rebuildTf builds
      *  the part NATIVELY in TrueForm from this recipe (revolve/box/cyl/boolean/
-     *  transform ops) instead of importing the baked Manifold mesh. Absent or
-     *  containing an unsupported node → the tfImportMesh fallback runs. */
+     *  transform/warp ops). Absent or containing an unsupported node → the TF tab
+     *  BLANKS with an error (no Manifold-mesh import — native-only, per user rule). */
     tfRecipe?: import('$lib/cad/graph-to-tf').TfRecipe;
   } = $props();
 
@@ -130,14 +130,9 @@
   let effBakeGlb = $derived((isBrep || isTf) ? false : bakeGlb);
   // TrueForm bake time (ms) for the current mesh — appended to the stats line.
   let tfMs = $state<number | null>(null);
-  // TF "actual" fell back to the imported Manifold mesh (recipe unsupported) →
-  // flag it so the verdict badge reads "MANIFOLD 3D BAKE" in a warning style.
-  let tfFellBack = $state(false);
-  // WHY it fell back (unsupported ops / native error) — shown in the badge so a
-  // non-native result is never silent (the user asked to see the reason).
-  let tfFellBackReason = $state('');
-  /** Collect the distinct UNSUPPORTED nodeTypes in a recipe (deep walk) — for the
-   *  fallback reason badge. */
+  /** Collect the distinct UNSUPPORTED nodeTypes in a recipe (deep walk) — names
+   *  the ops TrueForm can't build, for the native-only error message (the TF tab
+   *  never imports a Manifold mesh — no native build ⇒ blank canvas + this reason). */
   function unsupportedOpsOf(r: import('$lib/cad/graph-to-tf').TfRecipe | undefined): string[] {
     const out = new Set<string>();
     const walk = (i: any) => {
@@ -483,53 +478,11 @@
   // will run the part body through tf booleans. Errors surface the real WASM
   // message in the canvas + the parent badge (supported:false).
   let tfAc: AbortController | null = null;
-  // "actual" mode: bake the part's OWN Manifold mesh (the SAME bake the 3D-BAKE
-  // tab does) and return its flat positions + triangle indices, so the TF path
-  // can import THAT geometry rather than a demo. Prefers the client Web-Worker
-  // bake (works even if the 3D tab was never opened), falls back to the server
-  // /api/primitives/preview. Returns null if no mesh could be baked. The render
-  // geometry is often a NON-INDEXED soup (crease-aware normals split verts) — we
-  // return whatever it is; tfImportMesh welds by position so the verdict is honest.
-  async function bakeManifoldForTf(signal: AbortSignal): Promise<{ positions: Float32Array; indices: Uint32Array | null } | null> {
-    const extract = (g: any): { positions: Float32Array; indices: Uint32Array | null } | null => {
-      const pos = g?.getAttribute?.('position'); if (!pos) return null;
-      const positions = pos.array instanceof Float32Array ? pos.array : new Float32Array(pos.array as ArrayLike<number>);
-      const idxArr = g.index?.array as ArrayLike<number> | undefined;
-      const indices = idxArr ? (idxArr instanceof Uint32Array ? idxArr : new Uint32Array(idxArr)) : null;
-      return { positions, indices };
-    };
-    // CLIENT bake (preferred) — compile → worker. Cutaway OFF: we cut in TF later.
-    if (scene.clientBake && name) {
-      try {
-        const cd = await getCompiled(name, source ?? '', signal);
-        if (signal.aborted) return null;
-        if (cd?.supported && cd.script) {
-          const options = { cutaway: false, instanced: false,
-            ...(effSegments ? { segments: effSegments } : {}), colorOuter, colorInner };
-          const result = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options });
-          if (signal.aborted || isCancelled(result)) return null;
-          const got = extract((result as any).full);
-          if (got) return got;
-        }
-      } catch (e: any) {
-        if (e?.name === 'AbortError' || signal.aborted) return null;
-        console.warn('[tf-actual] client bake failed, falling back to server:', e?.message ?? e);
-      }
-    }
-    // SERVER fallback — /api/primitives/preview (the 3D-bake path).
-    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: false, colorOuter, colorInner, ...(effSegments ? { segments: effSegments } : {}) });
-    const r = await fetch('/api/primitives/preview', { method: 'POST', headers: { 'content-type': 'application/json' }, body, signal });
-    if (signal.aborted) return null;
-    if (!r.ok) throw new Error(`preview ${r.status}`);
-    const data = await r.json();
-    const geoPair = deserializeComponentResult({ full: data.full, cutVC: data.cutVC, instanced: data.instanced });
-    return extract((geoPair as any).full);
-  }
   async function rebuildTf(_bust = false) {
     meshStatus = 'building'; brepReason = null; err = null;
     tfAc?.abort(); const ac = new AbortController(); tfAc = ac;
     try {
-      const [{ getTfExample }, { tfMeshToGeo }, { ensureTf, tfImportMesh }, { executeTfRecipe, recipeHasUnsupported }] = await Promise.all([
+      const [{ getTfExample }, { tfMeshToGeo }, { ensureTf }, { executeTfRecipe, recipeHasUnsupported }] = await Promise.all([
         import('$lib/shared/tf_examples'),
         import('$lib/shared/trueform-adapter'),
         import('$lib/shared/trueform-client'),
@@ -546,12 +499,20 @@
       // fallback (bake the Manifold mesh, weld+import). Native when we have a
       // recipe with NO unsupported node (tf has no extrude/loft → those fall back).
       const useNative = tfActual && !!tfRecipe && !recipeHasUnsupported(tfRecipe);
-      // Fallback mode bakes the part's Manifold mesh BEFORE warming/timing tf —
-      // that bake (client worker / server) is the part-geometry cost, not tf's.
-      // Native mode builds from the recipe → no Manifold bake needed.
-      const actualMesh = (tfActual && !useNative) ? await bakeManifoldForTf(ac.signal) : null;
-      if (ac.signal.aborted) return;
-      if (tfActual && !useNative && !actualMesh) throw new Error('could not bake this part for TF import');
+      // STRICT NATIVE-ONLY (user rule): the TF tab NEVER imports the Manifold
+      // mesh. If TrueForm has no native builder for the part, we BLANK the canvas
+      // and surface WHY — no silent Manifold stand-in (same "no fallback = error"
+      // philosophy as /wells). "actual" mode is native-recipe-or-error.
+      if (tfActual && !useNative) {
+        const reason = tfRecipe
+          ? `TrueForm has no native builder for: ${unsupportedOpsOf(tfRecipe).join(', ') || 'unknown op(s)'}`
+          : 'no TrueForm recipe for this graph yet (composite still resolving, or no TF path)';
+        geo = {}; geoVersion++;
+        meshStatus = 'error'; err = null; tfMs = null;
+        brepReason = `TF · ${name ?? id} · ✖ not built natively — ${reason}`;
+        onBakeMeta?.({ cached: false, ms: 0, tris: 0, verts: 0, supported: false, reason });
+        return;
+      }
       const tf = await ensureTf();
       if (ac.signal.aborted) return;
       const t0 = performance.now();
@@ -562,38 +523,17 @@
       // the same `cutVC` / `vertexColors` branch as the Manifold + BREP sections.
       // The Z-slider (scene.zFocus) pans the shared camera, so it applies here
       // too — no per-backend slider wiring needed.
-      // Build dispatch:
-      //  • NATIVE — execute the graph→TF recipe (revolve/box/cyl/boolean/xfm ops)
-      //    → a real part built IN TrueForm. On an unexpected native failure, fall
-      //    back to the mesh-import path so the tab still shows the geometry.
-      //  • FALLBACK ("actual", no/unsupported recipe) — import the part's OWN baked
-      //    Manifold mesh (weld by position → tf verdict on the real geometry).
+      // Build dispatch — NATIVE-ONLY (no Manifold import anywhere):
+      //  • NATIVE ("actual") — execute the graph→TF recipe (revolve/box/cyl/
+      //    boolean/xfm/warp ops) → a real part built IN TrueForm. A native
+      //    failure THROWS to the outer catch, which blanks the canvas + shows
+      //    the reason. There is NO mesh-import fallback.
       //  • DEMO — registry dispatch (fall back to r_cyl on an unknown name).
-      let builtVia: 'native TF' | 'mesh-import fallback' | 'demo';
+      let builtVia: 'native TF' | 'demo';
       let result: import('$lib/shared/trueform-client').TfDemoResult;
-      tfFellBackReason = ''; // reset; set below when we DON'T build natively
       if (useNative) {
-        try {
-          result = executeTfRecipe(tf, tf, tfRecipe!, { cutaway: scene.showCutaway });
-          builtVia = 'native TF';
-        } catch (e: any) {
-          // Native build THREW — surface WHY in the badge, don't just silently import.
-          tfFellBackReason = `TF native build error: ${e?.message ?? e}`;
-          console.warn('[tf] native recipe build failed, falling back to mesh import:', e?.message ?? e);
-          const mesh = await bakeManifoldForTf(ac.signal);
-          if (ac.signal.aborted) return;
-          if (!mesh) throw new Error('could not bake this part for TF import');
-          result = await tfImportMesh(mesh.positions, mesh.indices, { cutaway: scene.showCutaway });
-          builtVia = 'mesh-import fallback';
-        }
-      } else if (tfActual) {
-        // Not native: either no recipe compiled, or it has ops TF can't build
-        // (extrude/loft, or an unresolved composite). Say which in the badge.
-        tfFellBackReason = tfRecipe
-          ? `TF can't build ops: ${unsupportedOpsOf(tfRecipe).join(', ') || 'unknown'}`
-          : 'no TF recipe compiled for this graph';
-        result = await tfImportMesh(actualMesh!.positions, actualMesh!.indices, { cutaway: scene.showCutaway });
-        builtVia = 'mesh-import fallback';
+        result = executeTfRecipe(tf, tf, tfRecipe!, { cutaway: scene.showCutaway });
+        builtVia = 'native TF';
       } else {
         result = await (getTfExample(tfDemo) ?? getTfExample('r_cyl') ??
           (() => { throw new Error(`unknown TF demo: ${tfDemo}`); })()
@@ -622,27 +562,24 @@
       // Surface tf's OWN topology verdict (the watertightness check) as the
       // reason line + console — the KNOWN TrueForm weakness is non-watertight
       // booleans / uncapped sweeps. A clean half-cut solid stays closed+manifold.
-      // Label carries which BUILD PATH ran so the user sees native-TF vs the
-      // mesh-import fallback (vs a demo) right in the verdict line.
-      // Lead the verdict with the ENGINE that actually produced the shown mesh so
-      // it's never misleading: native/demo = built by TrueForm → "TF BAKE"; the
-      // fallback = the imported MANIFOLD 3D-bake mesh → "MANIFOLD 3D BAKE" (flagged
-      // as a warning so it reads distinctly, not like a TF build).
-      tfFellBack = builtVia === 'mesh-import fallback';
-      const engine = tfFellBack ? 'MANIFOLD 3D BAKE' : 'TF BAKE';
-      const label = tfActual ? `${engine} · ${name ?? id}` : `${engine} · ${tfDemo}`;
+      // The mesh shown is ALWAYS built by TrueForm now (native or demo) — no
+      // Manifold import path — so the verdict always leads with "TF BAKE".
+      const label = tfActual ? `TF BAKE · ${name ?? id}` : `TF BAKE · ${tfDemo}`;
       if (stats) {
         brepReason =
           `${label}${cutPlanes ? ' · cutaway' : ''} · ${stats.closed ? 'watertight (closed)' : `open (${stats.boundaryLoops} boundary loop${stats.boundaryLoops === 1 ? '' : 's'})`}` +
           ` · ${stats.manifold ? 'manifold' : 'NON-manifold'} · χ=${stats.euler}` +
-          (stats.closed ? ` · vol=${stats.volume.toFixed(2)}` : '') +
-          (tfFellBack && tfFellBackReason ? ` · ⚠ ${tfFellBackReason}` : '');
+          (stats.closed ? ` · vol=${stats.volume.toFixed(2)}` : '');
         console.log('[tf]', builtVia, label, cutPlanes ? '(cutaway)' : '', stats);
       }
       onBakeMeta?.({ cached: false, ms: tfMs, tris, verts, supported: true });
     } catch (e: any) {
       if (e?.name === 'AbortError' || ac.signal.aborted) return;
-      err = 'TF: ' + (e?.message ?? e); meshStatus = 'error'; brepReason = 'TrueForm: ' + (e?.message ?? e);
+      // NATIVE-ONLY: a TrueForm build failure blanks the canvas (no Manifold
+      // stand-in) and shows the reason. The user must see WHY, not a fake mesh.
+      geo = {}; geoVersion++; tfMs = null;
+      err = 'TF: ' + (e?.message ?? e); meshStatus = 'error';
+      brepReason = `TF · ${name ?? id} · ✖ TrueForm build failed — ${e?.message ?? e}`;
       onBakeMeta?.({ cached: false, ms: 0, tris: 0, verts: 0, supported: false, reason: String(e?.message ?? e) });
     }
   }
@@ -957,7 +894,7 @@
   {#if err}<div class="pd-err">{err}</div>{/if}
   <!-- BREP: no OCCT-buildable solid for this part (revolve / extrude / loft / CSG only).
        TF: reuses the same centred-message chrome for its "no path" / error text. -->
-  {#if (isBrep || isTf) && brepReason}<div class="pd-brep-reason" class:pd-reason-bottom={isTf} class:pd-reason-warn={isTf && tfFellBack}>{brepReason}</div>{/if}
+  {#if (isBrep || isTf) && brepReason}<div class="pd-brep-reason" class:pd-reason-bottom={isTf} class:pd-reason-warn={isTf && meshStatus === 'error'}>{brepReason}</div>{/if}
   <!-- Part stats at the bottom: tri / vert count (instanced → child × N).
        BREP appends the OCCT bake time. -->
   {#if stats}
