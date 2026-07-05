@@ -494,23 +494,23 @@
     tfAc?.abort(); const ac = new AbortController(); tfAc = ac;
     try {
       const _tImp0 = performance.now();
-      const [{ getTfExample }, { tfMeshToGeo }, { ensureTf }, { executeTfRecipe, recipeHasUnsupported }] = await Promise.all([
-        import('$lib/shared/tf_examples'),
+      // The geometry BUILD (executeTfRecipe / demo / warpMeshJS / boolean fold)
+      // now runs OFF the main thread in `tf-worker.ts` via `tf-bake-client` — the
+      // TF tab used to jank the UI because it built inline here (like the pre-worker
+      // Manifold bake). THREE stays main-thread: the worker returns RAW mesh data,
+      // `tfMeshToGeo` runs below. The pure `recipeHasUnsupported` guard stays here
+      // (no WASM) so the native-only error path is instant + the worker only ever
+      // gets buildable work.
+      const [{ tfMeshToGeo }, { recipeHasUnsupported }, { tfBakeClient, isTfCancelled }] = await Promise.all([
         import('$lib/shared/trueform-adapter'),
-        import('$lib/shared/trueform-client'),
         import('$lib/shared/tf_examples/execute'),
+        import('$lib/shared/tf-bake-client'),
       ]);
       const importsMs = performance.now() - _tImp0; // dynamic-import cost (0 after 1st)
       if (ac.signal.aborted) return;
-      // Warm the TrueForm kernel BEFORE timing so `tfMs` reflects the pure
-      // GEOMETRY-BUILD time (revolve/boolean), NOT the one-time ~31MB WASM
-      // download + pthread worker-pool init. ensureTf() is cached/idempotent,
-      // so build()'s internal ensureTf then returns instantly — the init cost
-      // is paid here, outside the timed window.
-      // "actual" mode picks between a NATIVE TrueForm build (from the graph→TF
-      // recipe — a real part built in tf from its ops) and the mesh-IMPORT
-      // fallback (bake the Manifold mesh, weld+import). Native when we have a
-      // recipe with NO unsupported node (tf has no extrude/loft → those fall back).
+      // "actual" mode picks a NATIVE TrueForm build (from the graph→TF recipe — a
+      // real part built in tf from its ops). Native requires a recipe with NO
+      // unsupported node (tf has no extrude/loft → those aren't buildable natively).
       const useNative = tfActual && !!tfRecipe && !recipeHasUnsupported(tfRecipe);
       // STRICT NATIVE-ONLY (user rule): the TF tab NEVER imports the Manifold
       // mesh. If TrueForm has no native builder for the part, we BLANK the canvas
@@ -526,38 +526,32 @@
         onBakeMeta?.({ cached: false, ms: 0, tris: 0, verts: 0, supported: false, reason });
         return;
       }
-      const _tWarm0 = performance.now();
-      const tf = await ensureTf();
-      const warmMs = performance.now() - _tWarm0; // TF kernel init (one-time ~31MB WASM; ~0 after)
-      if (ac.signal.aborted) return;
       const t0 = performance.now();
       // Mirror the Manifold cutaway: the SAME `scene.showCutaway` toggle drives a
-      // half-quadrant boolean cut on the TF solid. The cut result carries the two
-      // exposed cut planes (`cutPlanes`); we feed them to the adapter so the
-      // revealed cross-section renders GREY (interior) and the outer skin RED —
-      // the same `cutVC` / `vertexColors` branch as the Manifold + BREP sections.
-      // The Z-slider (scene.zFocus) pans the shared camera, so it applies here
-      // too — no per-backend slider wiring needed.
-      // Build dispatch — NATIVE-ONLY (no Manifold import anywhere):
-      //  • NATIVE ("actual") — execute the graph→TF recipe (revolve/box/cyl/
-      //    boolean/xfm/warp ops) → a real part built IN TrueForm. A native
-      //    failure THROWS to the outer catch, which blanks the canvas + shows
-      //    the reason. There is NO mesh-import fallback.
-      //  • DEMO — registry dispatch (fall back to r_cyl on an unknown name).
-      let builtVia: 'native TF' | 'demo';
-      let result: import('$lib/shared/trueform-client').TfDemoResult;
-      if (useNative) {
-        result = executeTfRecipe(tf, tf, tfRecipe!, { cutaway: scene.showCutaway });
-        builtVia = 'native TF';
-      } else {
-        result = await (getTfExample(tfDemo) ?? getTfExample('r_cyl') ??
-          (() => { throw new Error(`unknown TF demo: ${tfDemo}`); })()
-        ).build({ cutaway: scene.showCutaway });
-        builtVia = 'demo';
-      }
-      const buildMs = performance.now() - t0; // TF kernel geometry build (executeTfRecipe / demo)
+      // half-quadrant boolean cut on the TF solid (in the worker). The cut result
+      // carries the two exposed cut planes (`cutPlanes`); we feed them to the
+      // adapter so the revealed cross-section renders GREY (interior) / outer skin
+      // RED — the same `cutVC` / `vertexColors` branch as Manifold + BREP. The
+      // Z-slider (scene.zFocus) pans the shared camera, so it applies here too.
+      // Build dispatch — NATIVE-ONLY (no Manifold import anywhere), OFF-THREAD:
+      //  • NATIVE ("actual") — execute the graph→TF recipe in the worker.
+      //  • DEMO — registry dispatch in the worker (falls back to r_cyl).
+      // The worker warms the kernel + builds; on a worker-TRANSPORT failure the
+      // client transparently re-runs the same build on the main thread. A genuine
+      // BUILD failure REJECTS → the outer catch blanks the canvas + shows the reason.
+      const builtVia: 'native TF' | 'demo' = useNative ? 'native TF' : 'demo';
+      const result = await tfBakeClient.run(
+        useNative
+          ? { mode: 'native', recipe: tfRecipe!, cutaway: scene.showCutaway }
+          : { mode: 'demo', tfDemo, cutaway: scene.showCutaway },
+      );
+      if (ac.signal.aborted || isTfCancelled(result)) return;
+      // Worker-reported timings: warm (one-time ~31MB WASM + pthread pool) + build
+      // (the TF geometry work). Fall back to a main-thread delta if absent.
+      const tim = (result as any).__timings as { warm: number; build: number } | undefined;
+      const warmMs = tim?.warm ?? 0;
+      const buildMs = tim?.build ?? (performance.now() - t0);
       const { data, stats, cutPlanes, parts } = result;
-      if (ac.signal.aborted) return;
       const _tMesh0 = performance.now();
       if (cutPlanes) {
         const cutVC = tfMeshToGeo(data, undefined, { planes: cutPlanes });
@@ -575,7 +569,9 @@
       }
       const meshMs = performance.now() - _tMesh0; // TF mesh → THREE.BufferGeometry (normals/weld)
       geoVersion++;
-      tfMs = performance.now() - t0; meshStatus = 'ok'; err = null;
+      // Pure geometry cost = worker build + main-thread mesh-convert (excludes the
+      // one-time kernel warm, reported separately in steps.warm).
+      tfMs = buildMs + meshMs; meshStatus = 'ok'; err = null;
       const tris = data.faces.length / 3, verts = data.points.length / 3;
       // Surface tf's OWN topology verdict (the watertightness check) as the
       // reason line + console — the KNOWN TrueForm weakness is non-watertight

@@ -73,6 +73,13 @@ export default defineConfig({
   // Required by the Flowbite-Svelte quickstart so `@import "tailwindcss"`
   // + `@source "..."` directives in src/app.css get processed.
   plugins: [trueformWorkerFix(), crossOriginIsolation(), tailwindcss(), sveltekit()],
+  // ES-module worker output. Our Web Workers are all instantiated with
+  // `{ type: 'module' }` (bake-worker + tf-worker), and the TF worker pulls in
+  // `@polydera/trueform`, whose dist has a TOP-LEVEL `await init()`. Vite's default
+  // worker format is `iife`, which cannot emit top-level await → the production
+  // build fails bundling tf-worker.ts. `format: 'es'` matches the module workers +
+  // supports TLA. (manifold-3d has no TLA, so bake-worker is unaffected.)
+  worker: { format: 'es' },
   server: {
     port: 3333,
     // Suppress the full-page error overlay. Parse / build errors still
