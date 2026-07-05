@@ -294,3 +294,257 @@ export function warpMeshJS(
   }
   return { positions: outP, normals: outN };
 }
+
+// ── CURVATURE-ADAPTIVE axial subdivision (task #4) ─────────────────────────────
+// docs/plans/curvature-adaptive-warp-subdivision.md. A PURE, headless step that
+// runs BEFORE warpMeshJS: it inserts extra vertex RINGS along Z (the part axis,
+// which the warp maps to spline arc-length) so the later bend renders as a smooth
+// arc rather than a few coarse chords. Density follows LOCAL spline curvature —
+// dense where the spline bends sharply, sparse on straight runs. Unlike Manifold's
+// uniform refine(n) (n² circumferential bloat + inside-bend slivers), this cuts
+// ONLY along Z, at curvature-adaptive z-stations. No DOM / WASM / Manifold.
+
+/** Unit tangent of the warp spline at arc-length `s` (planar OR 3D), the same
+ *  path warpMeshJS bends along. Used only to measure curvature. */
+function splineTangentSampler(cp: Pt2[] | Pt3[]): (s: number) => V3 {
+  if (is3DPath(cp as number[][])) {
+    const s3 = spline3DFrames(cp as Pt3[]);
+    return (s: number) => s3.at(s).tan;
+  }
+  const sP = splineSampler((cp as number[][]).map((p) => (p.length >= 3 ? [p[0], p[2]] : (p as Pt2))));
+  return (s: number) => sP.sampleAt(s).tan;
+}
+
+function _angleBetween(a: V3, b: V3): number {
+  let d = a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  if (d > 1) d = 1; else if (d < -1) d = -1;
+  return Math.acos(d);
+}
+
+/**
+ * Choose a sorted set of INTERIOR z-stations (planes strictly between z0 and z1)
+ * to cut the mesh at, driven by the spline's local curvature. Exported for
+ * headless testing of the station-selection rule in isolation.
+ *
+ * Rule: walk z from z0→z1 accumulating turning angle; drop a station whenever the
+ * spacing since the last one reaches the tightest sagitta bound seen
+ * (`Δz ≤ sqrt(8·ε/κ)`, clamped to [minSpacing, maxSpacing]) OR the accumulated
+ * turning angle reaches Δθmax. minSpacing = zRange/maxStations,
+ * maxSpacing = zRange/minStations, so a straight run gets ≈minStations rings and
+ * no run can demand more than maxStations. Duplicate/near-coincident stations are
+ * merged; the count is finally clamped to [minStations, maxStations].
+ */
+export function planAxialStations(
+  cp: Pt2[] | Pt3[],
+  z0: number,
+  z1: number,
+  opts: { epsilon?: number; minStations?: number; maxStations?: number; radialExtent?: number } = {},
+): number[] {
+  const zRange = z1 - z0;
+  if (!(zRange > 1e-9) || !Array.isArray(cp) || cp.length < 2) return [];
+
+  const minStations = Math.max(0, Math.floor(opts.minStations ?? 1));
+  const maxStations = Math.max(minStations + 1, Math.floor(opts.maxStations ?? 128));
+  const radial = opts.radialExtent && opts.radialExtent > 1e-9 ? opts.radialExtent : zRange;
+  const epsilon = opts.epsilon && opts.epsilon > 0 ? opts.epsilon : 0.02 * radial;
+
+  const maxSpacing = zRange / Math.max(1, minStations);
+  const minSpacing = zRange / maxStations;
+  const dThetaMax = Math.PI / 12; // 15° of turning per station (curvature gate)
+
+  const tanAt = splineTangentSampler(cp);
+
+  // Fine walk over arc-length s ∈ [0, zRange] (non-stretch: s = z - z0).
+  const NF = Math.max(64, Math.min(4096, Math.ceil(zRange / Math.max(minSpacing / 4, 1e-6))));
+  const ds = zRange / NF;
+
+  const stations: number[] = [];
+  let lastS = 0;
+  let accumAngle = 0;
+  let boundSinceLast = maxSpacing;
+  let prevTan = tanAt(0);
+
+  for (let k = 1; k <= NF; k++) {
+    const s = k * ds;
+    const tan = tanAt(s);
+    const dTheta = _angleBetween(prevTan, tan);
+    prevTan = tan;
+    accumAngle += dTheta;
+
+    // local curvature over this fine segment → sagitta spacing bound
+    const kappa = dTheta / ds;
+    let bound = kappa > 1e-9 ? Math.sqrt((8 * epsilon) / kappa) : Infinity;
+    if (bound > maxSpacing) bound = maxSpacing;
+    if (bound < minSpacing) bound = minSpacing;
+    if (bound < boundSinceLast) boundSinceLast = bound;
+
+    if (s < zRange - 1e-9 && (s - lastS >= boundSinceLast || accumAngle >= dThetaMax)) {
+      stations.push(z0 + s);
+      lastS = s;
+      accumAngle = 0;
+      boundSinceLast = maxSpacing;
+    }
+  }
+
+  // Merge near-coincident stations (tolerance a fraction of minSpacing).
+  const mergeTol = Math.max(minSpacing * 1e-3, zRange * 1e-9);
+  const merged: number[] = [];
+  for (const z of stations) {
+    if (!merged.length || z - merged[merged.length - 1] > mergeTol) merged.push(z);
+  }
+
+  // Enforce minStations: pad with uniform interior stations if under-populated.
+  if (merged.length < minStations) {
+    const need = minStations;
+    const uniform: number[] = [];
+    for (let i = 1; i <= need; i++) uniform.push(z0 + (zRange * i) / (need + 1));
+    return uniform;
+  }
+  // Enforce maxStations: evenly decimate if over-populated.
+  if (merged.length > maxStations) {
+    const thinned: number[] = [];
+    const stride = merged.length / maxStations;
+    for (let i = 0; i < maxStations; i++) thinned.push(merged[Math.floor(i * stride)]);
+    return thinned;
+  }
+  return merged;
+}
+
+type _Vtx = { p: V3; n: V3 | null };
+
+function _lerpVtx(a: _Vtx, b: _Vtx, t: number, zc: number): _Vtx {
+  const p: V3 = [a.p[0] + (b.p[0] - a.p[0]) * t, a.p[1] + (b.p[1] - a.p[1]) * t, zc];
+  let n: V3 | null = null;
+  if (a.n && b.n) {
+    let nx = a.n[0] + (b.n[0] - a.n[0]) * t;
+    let ny = a.n[1] + (b.n[1] - a.n[1]) * t;
+    let nz = a.n[2] + (b.n[2] - a.n[2]) * t;
+    const l = Math.hypot(nx, ny, nz) || 1;
+    nx /= l; ny /= l; nz /= l;
+    n = [nx, ny, nz];
+  }
+  return { p, n };
+}
+
+/** Split ONE triangle by a single z-plane `zc`. Vertices exactly on the plane go
+ *  to both halves; each crossing edge gets an interpolated vertex. Winding is
+ *  preserved (edges walked in original order, fan-triangulated). Returns the
+ *  original triangle unchanged when it does not straddle the plane. */
+function _splitTriByZ(tri: [_Vtx, _Vtx, _Vtx], zc: number, eps: number): [_Vtx, _Vtx, _Vtx][] {
+  const V = tri;
+  const d = [V[0].p[2] - zc, V[1].p[2] - zc, V[2].p[2] - zc];
+  let pos = 0, neg = 0;
+  for (const x of d) { if (x > eps) pos++; else if (x < -eps) neg++; }
+  if (pos === 0 || neg === 0) return [tri]; // no real straddle
+
+  const above: _Vtx[] = [], below: _Vtx[] = [];
+  for (let i = 0; i < 3; i++) {
+    const cur = V[i], nxt = V[(i + 1) % 3];
+    const dc = d[i], dn = d[(i + 1) % 3];
+    if (dc >= -eps) above.push(cur);
+    if (dc <= eps) below.push(cur);
+    if ((dc > eps && dn < -eps) || (dc < -eps && dn > eps)) {
+      const t = dc / (dc - dn);
+      const m = _lerpVtx(cur, nxt, t, zc);
+      above.push(m); below.push(m);
+    }
+  }
+  const out: [_Vtx, _Vtx, _Vtx][] = [];
+  const fan = (poly: _Vtx[]) => {
+    for (let i = 1; i + 1 < poly.length; i++) out.push([poly[0], poly[i], poly[i + 1]]);
+  };
+  fan(above); fan(below);
+  return out.length ? out : [tri];
+}
+
+/**
+ * Curvature-adaptive axial subdivision of a triangle mesh, ahead of warpMeshJS.
+ *
+ * Inserts extra vertex rings along Z at curvature-driven z-stations (see
+ * `planAxialStations`) by plane-splitting every straddling triangle. Normals are
+ * interpolated + renormalized at inserted vertices. A triangle crossing no
+ * station passes through unchanged; output triangle count ≥ input, winding
+ * preserved. Output is NON-INDEXED (positions/normals expanded per triangle,
+ * faces = sequential indices). Pure JS — no DOM/WASM/Manifold.
+ *
+ * A straight spline (no curvature) yields ≈minStations stations → output ≈ input.
+ */
+export function subdivideAxialAdaptive(
+  positions: Float32Array,
+  normals: Float32Array | null,
+  faces: Uint32Array | Int32Array,
+  cp: Pt2[] | Pt3[],
+  opts: { epsilon?: number; minStations?: number; maxStations?: number } = {},
+): { positions: Float32Array; normals: Float32Array | null; faces: Uint32Array } {
+  const passthrough = (): { positions: Float32Array; normals: Float32Array | null; faces: Uint32Array } => ({
+    positions,
+    normals,
+    faces: faces instanceof Uint32Array ? faces : Uint32Array.from(faces),
+  });
+  if (!positions || positions.length < 9 || !faces || faces.length < 3) return passthrough();
+  if (!Array.isArray(cp) || cp.length < 2) return passthrough();
+
+  // z-range + radial extent (drives the default epsilon = 2% of radial extent).
+  let z0 = Infinity, z1 = -Infinity, radial = 0;
+  for (let i = 0; i < positions.length; i += 3) {
+    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
+    if (z < z0) z0 = z; if (z > z1) z1 = z;
+    const r = Math.hypot(x, y); if (r > radial) radial = r;
+  }
+  const zRange = z1 - z0;
+  if (!(zRange > 1e-9)) return passthrough();
+
+  const stations = planAxialStations(cp, z0, z1, { ...opts, radialExtent: radial });
+  if (!stations.length) return passthrough();
+  stations.sort((a, b) => a - b);
+
+  const eps = Math.max(zRange * 1e-6, 1e-9);
+  const hasN = !!normals && normals.length >= positions.length;
+
+  const readVtx = (idx: number): _Vtx => ({
+    p: [positions[3 * idx], positions[3 * idx + 1], positions[3 * idx + 2]],
+    n: hasN ? [normals![3 * idx], normals![3 * idx + 1], normals![3 * idx + 2]] : null,
+  });
+
+  const outTris: [_Vtx, _Vtx, _Vtx][] = [];
+  const nTri = Math.floor(faces.length / 3);
+  for (let f = 0; f < nTri; f++) {
+    const t0 = readVtx(faces[3 * f]);
+    const t1 = readVtx(faces[3 * f + 1]);
+    const t2 = readVtx(faces[3 * f + 2]);
+    let work: [_Vtx, _Vtx, _Vtx][] = [[t0, t1, t2]];
+    for (const zc of stations) {
+      let next: [_Vtx, _Vtx, _Vtx][] | null = null;
+      for (let wi = 0; wi < work.length; wi++) {
+        const tri = work[wi];
+        const zmin = Math.min(tri[0].p[2], tri[1].p[2], tri[2].p[2]);
+        const zmax = Math.max(tri[0].p[2], tri[1].p[2], tri[2].p[2]);
+        if (zc <= zmin + eps || zc >= zmax - eps) {
+          if (next) next.push(tri);
+          continue;
+        }
+        if (!next) next = work.slice(0, wi); // lazily copy the untouched prefix
+        for (const sub of _splitTriByZ(tri, zc, eps)) next.push(sub);
+      }
+      if (next) work = next;
+    }
+    for (const tri of work) outTris.push(tri);
+  }
+
+  const outP = new Float32Array(outTris.length * 9);
+  const outN = hasN ? new Float32Array(outTris.length * 9) : null;
+  const outF = new Uint32Array(outTris.length * 3);
+  for (let f = 0; f < outTris.length; f++) {
+    const tri = outTris[f];
+    for (let v = 0; v < 3; v++) {
+      const o = f * 9 + v * 3;
+      outP[o] = tri[v].p[0]; outP[o + 1] = tri[v].p[1]; outP[o + 2] = tri[v].p[2];
+      if (outN) {
+        const n = tri[v].n ?? [0, 0, 0];
+        outN[o] = n[0]; outN[o + 1] = n[1]; outN[o + 2] = n[2];
+      }
+      outF[f * 3 + v] = f * 3 + v;
+    }
+  }
+  return { positions: outP, normals: outN, faces: outF };
+}
