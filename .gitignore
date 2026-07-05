@@ -129,3 +129,6 @@ test-results/
 # Temp/scratch scripts
 /scripts/_*tmp*.mjs
 .volume-backup/
+
+# Screenshot handoff copies (scripts/last-shots.sh) — transient, hand to Read
+.shots/
