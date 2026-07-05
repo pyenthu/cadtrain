@@ -102,7 +102,50 @@ describe('graphToTf', () => {
     expect(recipe.notes.some((n) => n.includes('fillet'))).toBe(true);
   });
 
-  it('an unmapped engine (r_weld_extrude) → UNSUPPORTED', () => {
+  it('r_weld_extrude of a polygon → a weld_extrude instr with concrete section + morph args (g_star shape)', () => {
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_call'] },
+        // A tiny centred square section (stand-in for g_star/g_cube's polygon).
+        n_poly: {
+          id: 'n_poly', type: 'polygon',
+          points: [
+            { kind: 'point', r: { kind: 'literal', value: -1 }, z: { kind: 'literal', value: -1 } },
+            { kind: 'point', r: { kind: 'literal', value: 1 }, z: { kind: 'literal', value: -1 } },
+            { kind: 'point', r: { kind: 'literal', value: 1 }, z: { kind: 'literal', value: 1 } },
+            { kind: 'point', r: { kind: 'literal', value: -1 }, z: { kind: 'literal', value: 1 } },
+          ],
+        },
+        n_call: {
+          id: 'n_call', type: 'call', src: 'r_weld_extrude', alias: 'A',
+          args: {
+            profile: { kind: 'expr', expr: '__POLY__n_poly' },
+            length: { kind: 'param', param: 'length' },
+            divs: { kind: 'literal', value: 12 },
+            twist: { kind: 'literal', value: 30 },
+            taper: { kind: 'literal', value: 0.25 },
+            segments: { kind: 'literal', value: 32 },
+          },
+        },
+      },
+      'n_root',
+      { length: { default: 4 } },
+    );
+    const recipe = graphToTf(g);
+    expect(recipe.instrs).toHaveLength(1); // polygon consumed via __POLY__, only the extrude is output
+    const inst = recipe.instrs[0] as Extract<TfInstr, { op: 'weld_extrude' }>;
+    expect(inst.op).toBe('weld_extrude');
+    expect(inst.length).toBe(4);
+    expect(inst.twist).toBe(30);
+    expect(inst.divs).toBe(12);
+    expect(inst.segments).toBe(32);
+    // taper 0.25 → scaleTop = 1 - 0.25 = 0.75 (both axes).
+    expect(inst.scaleTop).toEqual([0.75, 0.75]);
+    expect(inst.profile).toEqual([[-1, -1], [1, -1], [1, 1], [-1, 1]]);
+    expect(recipe.notes.some((n) => n.includes('UNSUPPORTED'))).toBe(false);
+  });
+
+  it('r_weld_extrude with no wired profile → falls back to the engine default ngon (still weld_extrude)', () => {
     const g = mkGraph(
       {
         n_root: { id: 'n_root', type: 'list', children: ['n_call'] },
@@ -111,8 +154,10 @@ describe('graphToTf', () => {
       'n_root',
     );
     const recipe = graphToTf(g);
-    expect(recipe.instrs[0].op).toBe('UNSUPPORTED');
-    expect(recipe.notes.length).toBeGreaterThan(0);
+    const inst = recipe.instrs[0] as Extract<TfInstr, { op: 'weld_extrude' }>;
+    expect(inst.op).toBe('weld_extrude');
+    expect(inst.profile.length).toBe(6); // default ngon hex
+    expect(inst.length).toBe(4);
   });
 
   it('r_sweep of a wired spline path + circle-expr section → a sweep instr with a concrete resampled path + radius', () => {

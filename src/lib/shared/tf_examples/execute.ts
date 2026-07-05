@@ -24,6 +24,7 @@
  * {@link TfUnsupportedError} at the offending node.
  */
 import { tfRevolveProfile } from './revolve';
+import { tfExtrudeProfile } from './extrude';
 import { tfResult, tfMeshData, buildOpenCurve, capOpenEnds, runTfGuarded, weldMeshByPosition, type TfDemoResult } from '../trueform-client';
 import type { TfRecipe, TfInstr, Vec3 } from '$lib/cad/graph-to-tf';
 import { warpMeshJS, subdivideAxialAdaptive, densifyProfileAxial } from '$lib/cad/warp-spline';
@@ -201,6 +202,18 @@ function buildInstr(t: any, instr: TfInstr): any {
     case 'revolve':
       // Lathe the closed half-section — the tf_examples/revolve.ts pattern.
       return tfRevolveProfile(t, instr.profile, instr.segments || 64);
+    case 'weld_extrude':
+      // A 2D section extruded along Z (twist + top-scale taper + intermediate
+      // rings) → the ported welded-grid extrude (tf_examples/extrude.ts), the
+      // native analogue of Manifold's r_weld_extrude. Watertight + positively
+      // oriented by the builder.
+      return tfExtrudeProfile(t, instr.profile, {
+        length: instr.length,
+        divs: instr.divs,
+        twist: instr.twist,
+        scaleTop: instr.scaleTop,
+        segments: instr.segments,
+      });
     case 'profile':
       // A bare profile (an unconsumed polygon/sketch) → lathe it at a default res.
       return tfRevolveProfile(t, instr.profile, 64);
@@ -403,6 +416,9 @@ function instrHasUnsupported(instr: TfInstr): boolean {
       return true;
     case 'revolve':
     case 'profile':
+      return (instr.profile?.length ?? 0) < MIN_PROFILE_PTS;
+    case 'weld_extrude':
+      // A section needs at least a triangle's worth of points to enclose area.
       return (instr.profile?.length ?? 0) < MIN_PROFILE_PTS;
     case 'sweep':
       // A sweep needs at least a start + end point to define a curve.

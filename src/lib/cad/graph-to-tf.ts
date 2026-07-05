@@ -42,6 +42,14 @@ import type {
   SplineNode,
 } from './composition-graph-types';
 import { STACK_REF_PARAM, resolveEffectiveAppearance } from './composition-graph-mutate';
+import { resolveProfile } from '$lib/shared/profile-presets';
+import * as mathLib from './math-lib';
+
+// The bare math names (cos/sin/tau/pi/lerp/…) the profile + poly_repeat sandboxes
+// inject, so an expanded loop expr like `R * cos(theta)` evaluates the same way
+// composition-emit-profile's generated `build(p)` does. ONE source of truth.
+const MATH_NAMES = Object.keys(mathLib);
+const MATH_VALUES = Object.values(mathLib) as unknown[];
 
 /** Resolve a COMPOSITE Call's `src` id → its own composition graph (+ optional
  *  default params), so `graphToTf` can recurse into a sub-part and inline it. The
@@ -59,6 +67,11 @@ export type ProfilePt = [number, number];
  *  / containers hold child `TfInstr`s, mirroring the graph's expression nesting. */
 export type TfInstr =
   | { op: 'revolve'; profile: ProfilePt[]; segments: number; note?: string }
+  // WELD-EXTRUDE (r_weld_extrude → tfExtrudeProfile). A 2D section polygon
+  // extruded along +Z with a linear TWIST + uniform TOP-SCALE (taper) + `divs`
+  // intermediate rings, `segments` = perimeter resample. The native analogue of
+  // Manifold's CrossSection.extrude — unlocks g_cube/g_spiral/g_star/g_barrel.
+  | { op: 'weld_extrude'; profile: ProfilePt[]; length: number; divs: number; twist: number; scaleTop: [number, number]; segments: number; note?: string }
   | { op: 'box'; w: number; h: number; d: number }
   | { op: 'cylinder'; radius: number; height: number; segments: number }
   | { op: 'sweep'; path: Vec3[]; radius: number; radialSegments: number; capped?: boolean }
@@ -157,17 +170,82 @@ function evalBool(v: ArgValue | undefined, fallback: boolean): boolean {
 
 // ─── profile resolution (polygon / sketch → [r,z] points) ───────────────────
 
+/** Evaluate a JS expr string in a scope of the bare math names + the `p` param
+ *  object + extra LOCAL vars (a loop index, `NPts`, prior bindings) — the exact
+ *  namespace composition-emit-profile's generated loop body runs in. NaN on any
+ *  failure so the caller can clamp it (mirrors resolveProfile's NaN guard). */
+function evalExprScoped(expr: string, p: Record<string, number>, locals: Record<string, number>): number {
+  try {
+    const localNames = Object.keys(locals);
+    // eslint-disable-next-line no-new-func
+    const fn = new Function('p', 'Math', ...MATH_NAMES, ...localNames, `"use strict"; return (${expr});`);
+    return Number(fn(p, Math, ...MATH_VALUES, ...localNames.map((n) => locals[n])));
+  } catch {
+    return NaN;
+  }
+}
+
+/** Evaluate an ArgValue in the LOCAL (loop-body) scope — a binding value or a
+ *  poly_repeat r/z coordinate. `param` reads the `p` scope; `expr` runs in the
+ *  full local scope; `literal` is its number. */
+function evalArgScoped(v: ArgValue | undefined, p: Record<string, number>, locals: Record<string, number>): number {
+  if (!v) return NaN;
+  if (v.kind === 'literal') return Number((v as any).value);
+  if (v.kind === 'param') return Number(p[v.param]);
+  if (v.kind === 'expr') return evalExprScoped(v.expr, p, locals);
+  return NaN;
+}
+
+/** Expand a `poly_repeat` loop (or the deprecated inline `repeat` entry) → its
+ *  concrete `[r,z]` points, numerically mirroring composition-emit-profile's
+ *  generated `Array.from({length: count}, (_, i) => { const NPts = count; const
+ *  <bindings> = …; return [r, z]; })`. `NPts` + the loop var + each binding are in
+ *  scope for later bindings and the r/z exprs, exactly like the emitted body. */
+function expandPolyRepeat(src: any, scope: Record<string, number>, notes: string[]): ProfilePt[] {
+  const countN = evalArg(src.count, scope);
+  const count = Number.isFinite(countN) ? Math.max(0, Math.round(countN)) : 0;
+  if (count <= 0) {
+    notes.push(`poly_repeat ${src.id ?? '(inline)'}: count did not evaluate to a positive integer — skipped`);
+    return [];
+  }
+  const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(src.loopVar || '')) ? String(src.loopVar) : 'i';
+  const bindings: Array<{ name: string; value: ArgValue }> = Array.isArray(src.bindings)
+    ? src.bindings.filter((b: any) => b && typeof b.name === 'string' && /^[A-Za-z_$][\w$]*$/.test(b.name))
+    : [];
+  const out: ProfilePt[] = [];
+  for (let i = 0; i < count; i++) {
+    const locals: Record<string, number> = { [loopVar]: i, NPts: count };
+    for (const b of bindings) locals[b.name] = evalArgScoped(b.value, scope, locals);
+    const r = evalArgScoped(src.r, scope, locals);
+    const z = evalArgScoped(src.z, scope, locals);
+    out.push([Number.isFinite(r) ? r : 0, Number.isFinite(z) ? z : 0]);
+  }
+  return out;
+}
+
 /** Resolve a `polygon` node's ordered vertices to concrete `[r,z]` points.
- *  Only literal-vertex entries are supported in v0 — repeat / expr-list refs are
- *  flagged (they need the loop machinery / expr blocks). */
-function resolvePolygon(node: PolygonNode, scope: Record<string, number>, notes: string[]): ProfilePt[] {
+ *  Literal `point` entries evaluate directly; `repeat-ref` entries expand their
+ *  referenced `poly_repeat` loop (g_spiral / g_star), and a deprecated inline
+ *  `repeat` entry expands in place — so a looped section resolves the same way
+ *  composition-emit-profile emits it. `expr-list-ref` entries still need the expr
+ *  block machinery and are flagged. */
+function resolvePolygon(node: PolygonNode, graph: Graph, scope: Record<string, number>, notes: string[]): ProfilePt[] {
   const pts: ProfilePt[] = [];
   for (const entry of node.points as any[]) {
     if (!entry) continue;
-    if (entry.kind === 'point' || entry.r != null) {
+    if (entry.kind === 'repeat-ref') {
+      const src = graph.nodes[entry.sourceId];
+      if (src && (src as any).type === 'poly_repeat') {
+        pts.push(...expandPolyRepeat(src, scope, notes));
+      } else {
+        notes.push(`polygon ${node.id}: repeat-ref → '${entry.sourceId}' is not a poly_repeat node`);
+      }
+    } else if (entry.kind === 'repeat') {
+      pts.push(...expandPolyRepeat(entry, scope, notes)); // deprecated inline loop
+    } else if (entry.kind === 'point' || entry.r != null) {
       pts.push([evalArg(entry.r, scope), evalArg(entry.z, scope)]);
     } else {
-      notes.push(`polygon ${node.id}: skipped a '${entry.kind}' entry (repeat/expr-ref not resolved in v0)`);
+      notes.push(`polygon ${node.id}: skipped a '${entry.kind}' entry (expr-list-ref not resolved in v0)`);
     }
   }
   return pts;
@@ -219,7 +297,7 @@ function resolveProfileArg(
   if (!m) return null;
   const src = graph.nodes[m[1]!];
   if (!src) return null;
-  if (src.type === 'polygon') return resolvePolygon(src as PolygonNode, scope, notes);
+  if (src.type === 'polygon') return resolvePolygon(src as PolygonNode, graph, scope, notes);
   if (src.type === 'sketch') return resolveSketch(src as SketchNode, scope, notes);
   return null;
 }
@@ -320,9 +398,11 @@ function sectionRadiusOf(
 
 // ─── engine vs composite classification ──────────────────────────────────────
 
-/** Engine `src` ids that have NO TrueForm generator (linear extrude / loft) — a
- *  Call to one is explicitly UNSUPPORTED (never treated as a composite). */
-const NO_TF_ENGINES = new Set(['r_loft', 'r_weld_extrude', 'r_extrude']);
+/** Engine `src` ids that have NO TrueForm generator (loft / the STALE plain
+ *  extrude) — a Call to one is explicitly UNSUPPORTED (never treated as a
+ *  composite). `r_weld_extrude` is NOT here — it now lowers to `weld_extrude`
+ *  (tfExtrudeProfile). */
+const NO_TF_ENGINES = new Set(['r_loft', 'r_extrude']);
 
 /** True when a Call `src` is an ENGINE primitive (handled directly, or explicitly
  *  UNSUPPORTED) rather than a COMPOSITE volume part. Everything NOT an engine is a
@@ -331,6 +411,7 @@ const NO_TF_ENGINES = new Set(['r_loft', 'r_weld_extrude', 'r_extrude']);
 export function isEngineSrc(src: string): boolean {
   return (
     src === 'r_revolve' ||
+    src === 'r_weld_extrude' ||
     src === 'r_cuboid' ||
     src === 'r_sweep' ||
     /cyl/i.test(src) ||
@@ -449,6 +530,44 @@ function lowerNode(
           return { op: 'revolve', profile: [], segments, note: 'profile unresolved' };
         }
         return { op: 'revolve', profile, segments };
+      }
+      if (src === 'r_weld_extrude') {
+        // A 2D section extruded along Z with a linear twist + top-scale (taper).
+        // Args mirror r_weld_extrude's signature: profile · length · divs · twist°
+        // · taper · segments. `taper` maps to CrossSection.extrude's scaleTop as
+        // `s = 1 - taper` → `[s, s]` (the drilling convention: taper > 0 narrows
+        // the bottom face). The section polygon comes from the SAME __POLY__
+        // sketch/polygon resolver the revolve path uses; a bare call (no profile
+        // wired) falls back to the engine's default ngon hex.
+        let profile = resolveProfileArg(args.profile, graph, scope, notes);
+        if (!profile || profile.length < 3) {
+          // Fall back to a literal profile descriptor, else the engine default
+          // ngon — both resolved by the shared, pure profile-preset registry.
+          try {
+            const lit = args.profile && args.profile.kind === 'literal' ? (args.profile as any).value : undefined;
+            if (lit && typeof lit === 'object') profile = resolveProfile(lit) as ProfilePt[];
+            else if (!args.profile) profile = resolveProfile({ kind: 'ngon', params: { n: 6, r: 0.6 } }) as ProfilePt[];
+          } catch { /* leave profile unresolved → UNSUPPORTED below */ }
+        }
+        const length = evalArg(args.length, scope);
+        const divs = evalInt(args.divs, scope, 12);
+        const twist = evalArg(args.twist, scope);
+        const taper = evalArg(args.taper, scope);
+        const segments = evalInt(args.segments, scope, 32);
+        if (!profile || profile.length < 3 || !Number.isFinite(length)) {
+          notes.push(`call ${node.id} (r_weld_extrude): profile arg was not a resolvable __POLY__/preset section (need ≥ 3 pts) — UNSUPPORTED`);
+          return { op: 'UNSUPPORTED', nodeType: 'call:r_weld_extrude', detail: 'section not resolvable' };
+        }
+        const s = Math.max(0.001, 1 - (Number.isFinite(taper) ? taper : 0));
+        return {
+          op: 'weld_extrude',
+          profile,
+          length,
+          divs,
+          twist: Number.isFinite(twist) ? twist : 0,
+          scaleTop: [s, s],
+          segments,
+        };
       }
       if (src === 'r_cuboid') {
         return {
@@ -644,7 +763,7 @@ function lowerNode(
     }
 
     case 'polygon':
-      return { op: 'profile', profile: resolvePolygon(node as PolygonNode, scope, notes) };
+      return { op: 'profile', profile: resolvePolygon(node as PolygonNode, graph, scope, notes) };
 
     case 'sketch':
       return { op: 'profile', profile: resolveSketch(node as SketchNode, scope, notes) };
@@ -734,6 +853,9 @@ function fmtInstr(inst: TfInstr, indent: number): string {
     case 'revolve':
       return `${pad}tfRevolveProfile(segments=${inst.segments}${inst.note ? `, ${inst.note}` : ''})\n` +
         `${pad}  profile = ${fmtProfile(inst.profile)}`;
+    case 'weld_extrude':
+      return `${pad}tfExtrudeProfile(length=${fmtNum(inst.length)}, twist=${fmtNum(inst.twist)}°, scaleTop=[${fmtNum(inst.scaleTop[0])}, ${fmtNum(inst.scaleTop[1])}], divs=${inst.divs}, segments=${inst.segments})\n` +
+        `${pad}  section = ${fmtProfile(inst.profile)}`;
     case 'box':
       return `${pad}boxMesh(w=${fmtNum(inst.w)}, h=${fmtNum(inst.h)}, d=${fmtNum(inst.d)})`;
     case 'cylinder':
