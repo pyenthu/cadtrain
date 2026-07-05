@@ -16,7 +16,7 @@
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfDemo = 'r_cyl', tfActual = false, tfRecipe = undefined }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfDemo = 'r_cyl', tfActual = false, tfRecipe = undefined, tfPending = false }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
     /** Spline DIAGNOSTIC overlays (TODO #24) — plotted splines' resolved curves +
      *  control points, drawn INSIDE the live-mesh group so they align with the
@@ -107,6 +107,15 @@
      *  transform/warp ops). Absent or containing an unsupported node → the TF tab
      *  BLANKS with an error (no Manifold-mesh import — native-only, per user rule). */
     tfRecipe?: import('$lib/cad/graph-to-tf').TfRecipe;
+    /** TF "actual" mode only: true while a COMPOSITE part's server recipe is
+     *  still resolving (RightPane's /api/tf/compile round-trip). `tfRecipe` may
+     *  transiently still hold the PREVIOUS resolved recipe (stale-but-supported),
+     *  so building now would be a throwaway on stale topology + the fresh args —
+     *  the double-build. While pending the keyed rebuild `$effect` HOLDS the
+     *  current mesh (skips the bake) and fires exactly once when the fresh recipe
+     *  lands. Distinct from "genuinely unsupported" (pending is false once ANY
+     *  server resolve for the live graph lands → that still blanks+errors). */
+    tfPending?: boolean;
   } = $props();
 
   let Scene = $state<any>(null);
@@ -677,7 +686,17 @@
       : isBrep
       ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
       : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, clientBake: scene.clientBake });
-    if (!Scene || key === lastRebuildKey) return;
+    if (!Scene) return;
+    // TF composite parts: while the server recipe is still resolving, `tfRecipe`
+    // may still expose the PREVIOUS (stale-but-supported) recipe, so an edit
+    // (args changed) would trigger a throwaway bake on stale topology before the
+    // fresh recipe lands — the double-build. Hold the current mesh; when tfPending
+    // flips false the fresh recipe has landed → this effect re-runs (tfPending is
+    // a dep) with the new `key` and bakes exactly once. Reading tfPending here is
+    // deliberate so it stays reactive. We DON'T advance lastRebuildKey while
+    // pending, so the post-resolve key comparison still fires the single bake.
+    if (isTf && tfActual && tfPending) return;
+    if (key === lastRebuildKey) return;
     lastRebuildKey = key;
     scheduleBake();
   });

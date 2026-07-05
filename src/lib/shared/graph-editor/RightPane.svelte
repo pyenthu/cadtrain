@@ -24,6 +24,7 @@
   // mode build the part NATIVELY in tf from its graph ops instead of importing
   // the baked Manifold mesh.
   import { graphToTf } from '$lib/cad/graph-to-tf';
+  import { recipeHasUnsupported as recipeHasUnsupportedLocal, tfServerKey, tfRecipePending as computeTfRecipePending } from './tf-recipe-timing';
 
   type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'tf';
 
@@ -170,21 +171,21 @@
   let tfRecipeLocal = $derived.by(() => {
     try { return graphToTf(graph, brepParamValues); } catch { return undefined; }
   });
-  /** Pure walk — does any instr (or a nested boolean/transform/union child) stay
-   *  UNSUPPORTED? Mirrors execute.ts's recipeHasUnsupported without importing it
-   *  (that would pull the TF/WASM bundle into the graph-editor chunk eagerly). */
-  function recipeHasUnsupportedLocal(r: import('$lib/cad/graph-to-tf').TfRecipe | undefined): boolean {
-    if (!r?.instrs) return false;
-    const walk = (i: any): boolean =>
-      !!i && (i.op === 'UNSUPPORTED' ||
-        walk(i.obj) || walk(i.arg) || walk(i.child) ||
-        (Array.isArray(i.children) && i.children.some(walk)));
-    return r.instrs.some(walk);
-  }
+  // recipeHasUnsupportedLocal / tfServerKey / computeTfRecipePending are pure —
+  // extracted to ./tf-recipe-timing.ts (unit-tested there).
   let tfRecipeServer = $state<import('$lib/cad/graph-to-tf').TfRecipe | undefined>(undefined);
   // The recipe the canvas uses: the server-resolved one when present (composites),
   // else the instant client one.
   let tfRecipe = $derived(tfRecipeServer ?? tfRecipeLocal);
+  // Signature (graph structure + params + bust) that the CURRENT tfRecipeServer
+  // was resolved FOR. This is the anti-double-build marker: on an edit
+  // tfRecipeLocal recomputes to a fresh UNSUPPORTED recipe, but tfRecipeServer
+  // still holds the PREVIOUS resolve → `tfRecipe` would momentarily expose a
+  // stale-but-supported recipe and the canvas would bake once on it (stale
+  // topology + the new args) BEFORE the real recipe lands. We stamp each resolve
+  // with the key it was for; the recipe is "pending" until that stamp matches the
+  // live graph, and the canvas holds its mesh until then → one bake, not two.
+  let tfServerResolvedKey = $state('');
   // Server-compile wall time (ms) for the LAST /api/tf/compile round-trip — the
   // composite-dependency resolve that DOMINATES a TF redraw for parts that Call
   // other volume parts (it does serial, prod-proxied /api/primitives/source
@@ -199,6 +200,18 @@
   // effect tell a 🔄 rebake (tfRecipeBust changed) from a param/graph change, so
   // ONLY a rebake sends bust:true (bypasses the server dep-source cache, #1).
   let lastBustCompiled = 0;
+  // True while a composite part NEEDS a server recipe but the live server recipe
+  // hasn't caught up to the current graph/params/bust yet. Passed to the canvas
+  // (tfPending) so it SKIPS the throwaway bake on the stale recipe. Note: once the
+  // server resolve LANDS for the current key — even one that is still unsupported
+  // — this flips false, so a genuinely-unsupported part still reaches the canvas
+  // and blanks+errors per the native-only rule (that contract lives in rebuildTf).
+  let tfRecipePending = $derived(computeTfRecipePending({
+    actualOn: tfActualOn,
+    local: tfRecipeLocal,
+    serverResolvedKey: tfServerResolvedKey,
+    currentKey: tfServerKey(graph, brepParamValues, tfRecipeBust),
+  }));
   // When the client recipe has UNSUPPORTED nodes AND "actual" is on, fetch the
   // server-inlined recipe (composites resolved). Re-fires on graph/param change,
   // and on a 🔄 bust (tfRecipeBust).
@@ -206,9 +219,10 @@
     const local = tfRecipeLocal;
     const g = graph, p = brepParamValues;
     const bustNow = tfRecipeBust; // dep: a 🔄 bust forces a fresh /api/tf/compile round-trip
-    if (!tfActualOn || !local || !recipeHasUnsupportedLocal(local)) { tfRecipeServer = undefined; tfCompileMs = 0; return; }
+    if (!tfActualOn || !local || !recipeHasUnsupportedLocal(local)) { tfRecipeServer = undefined; tfCompileMs = 0; tfServerResolvedKey = ''; return; }
     const forceFresh = bustNow !== lastBustCompiled; // true only when this run is a 🔄 rebake
     lastBustCompiled = bustNow;
+    const resolveKey = tfServerKey(g, p, bustNow); // stamp this resolve so tfRecipePending can tell fresh from stale
     let cancelled = false;
     (async () => {
       const t0 = performance.now();
@@ -217,10 +231,13 @@
           method: 'POST', headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ graph: g, params: p, id: exemplarId, bust: forceFresh }),
         });
-        if (!r.ok) return;
+        if (!r.ok) { if (!cancelled) tfServerResolvedKey = resolveKey; return; } // resolve pending → fall through to local (blank+error on genuine unsupported)
         const data = await r.json();
-        if (!cancelled && data?.recipe) { tfCompileMs = performance.now() - t0; tfRecipeServer = data.recipe; }
-      } catch { /* keep the local recipe → mesh-import fallback */ }
+        if (!cancelled) {
+          if (data?.recipe) { tfCompileMs = performance.now() - t0; tfRecipeServer = data.recipe; }
+          tfServerResolvedKey = resolveKey; // mark resolved for THIS graph → tfRecipePending clears → canvas bakes once
+        }
+      } catch { if (!cancelled) tfServerResolvedKey = resolveKey; } // resolve pending; keep last recipe → mesh-import fallback
     })();
     return () => { cancelled = true; };
   });
@@ -615,6 +632,7 @@
             tfDemo={tfDemoKind}
             tfActual={tfActualOn}
             tfRecipe={tfRecipe}
+            tfPending={tfRecipePending}
             brepSource={bake.source}
             brepParams={brepParamValues}
             colorOuter={graph.colorOuter} colorInner={graph.colorInner} opacity={graph.opacity} texture={graph.texture}
