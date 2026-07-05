@@ -45,7 +45,7 @@
      *  `tol` dial and is keyed into the fetch cache. Default 0.05. */
     tolerance?: number;
     /** BREP mode: surfaced bake meta after each fetch (drives the parent badge). */
-    onBakeMeta?: (m: { cached: boolean; ms: number; tris: number; verts: number; supported: boolean; reason?: string }) => void;
+    onBakeMeta?: (m: { cached: boolean; ms: number; tris: number; verts: number; supported: boolean; reason?: string; steps?: { imports: number; warm: number; build: number; mesh: number } }) => void;
     /** Draft mode: coarse circular-segment count for the live mesh bake (e.g. 64
      *  vs the 256 default). Cuts geom+finalize+serialize roughly linearly so big
      *  stacks iterate fast. undefined → full default. Keyed into the fetch cache.
@@ -482,12 +482,14 @@
     meshStatus = 'building'; brepReason = null; err = null;
     tfAc?.abort(); const ac = new AbortController(); tfAc = ac;
     try {
+      const _tImp0 = performance.now();
       const [{ getTfExample }, { tfMeshToGeo }, { ensureTf }, { executeTfRecipe, recipeHasUnsupported }] = await Promise.all([
         import('$lib/shared/tf_examples'),
         import('$lib/shared/trueform-adapter'),
         import('$lib/shared/trueform-client'),
         import('$lib/shared/tf_examples/execute'),
       ]);
+      const importsMs = performance.now() - _tImp0; // dynamic-import cost (0 after 1st)
       if (ac.signal.aborted) return;
       // Warm the TrueForm kernel BEFORE timing so `tfMs` reflects the pure
       // GEOMETRY-BUILD time (revolve/boolean), NOT the one-time ~31MB WASM
@@ -513,7 +515,9 @@
         onBakeMeta?.({ cached: false, ms: 0, tris: 0, verts: 0, supported: false, reason });
         return;
       }
+      const _tWarm0 = performance.now();
       const tf = await ensureTf();
+      const warmMs = performance.now() - _tWarm0; // TF kernel init (one-time ~31MB WASM; ~0 after)
       if (ac.signal.aborted) return;
       const t0 = performance.now();
       // Mirror the Manifold cutaway: the SAME `scene.showCutaway` toggle drives a
@@ -540,8 +544,10 @@
         ).build({ cutaway: scene.showCutaway });
         builtVia = 'demo';
       }
+      const buildMs = performance.now() - t0; // TF kernel geometry build (executeTfRecipe / demo)
       const { data, stats, cutPlanes, parts } = result;
       if (ac.signal.aborted) return;
+      const _tMesh0 = performance.now();
       if (cutPlanes) {
         const cutVC = tfMeshToGeo(data, undefined, { planes: cutPlanes });
         geo = { cutVC };
@@ -556,6 +562,7 @@
       } else {
         geo = { full: tfMeshToGeo(data) };
       }
+      const meshMs = performance.now() - _tMesh0; // TF mesh → THREE.BufferGeometry (normals/weld)
       geoVersion++;
       tfMs = performance.now() - t0; meshStatus = 'ok'; err = null;
       const tris = data.faces.length / 3, verts = data.points.length / 3;
@@ -572,7 +579,8 @@
           (stats.closed ? ` · vol=${stats.volume.toFixed(2)}` : '');
         console.log('[tf]', builtVia, label, cutPlanes ? '(cutaway)' : '', stats);
       }
-      onBakeMeta?.({ cached: false, ms: tfMs, tris, verts, supported: true });
+      onBakeMeta?.({ cached: false, ms: tfMs, tris, verts, supported: true,
+        steps: { imports: importsMs, warm: warmMs, build: buildMs, mesh: meshMs } });
     } catch (e: any) {
       if (e?.name === 'AbortError' || ac.signal.aborted) return;
       // NATIVE-ONLY: a TrueForm build failure blanks the canvas (no Manifold

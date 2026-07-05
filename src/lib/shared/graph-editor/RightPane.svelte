@@ -594,7 +594,7 @@
               aria-pressed={!tfActualOn}
               title={tfActualOn
                 ? 'Switch to a TrueForm DEMO (pick an example from the selector) instead of this part'
-                : 'Build THIS part natively in TrueForm from its graph (composites/sweeps resolve via the server compile); shows tf’s watertight/manifold/χ verdict. Falls back to importing the Manifold mesh for ops TF can’t build yet.'}
+                : 'Build THIS part natively in TrueForm from its graph (composites/sweeps resolve via the server compile); shows tf’s watertight/manifold/χ verdict. Native-only — if TF can’t build an op, the canvas blanks with the reason (no Manifold-mesh fallback).'}
               onclick={() => (tfActualOn = !tfActualOn)}>{tfActualOn ? 'demo' : 'actual'}</button>
           </div>
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
@@ -617,12 +617,15 @@
               <span class="ge-cache-badge skipped" title="TrueForm could not build this part.">{tfMeta.reason ?? 'no TF path for this part'}</span>
             {:else if tfMeta}
               {@const kernelMs = tfMeta.ms}
+              {@const s = tfMeta.steps}
               {@const totalMs = kernelMs + tfCompileMs}
+              {@const seg = (lbl, v) => `${lbl} ${Math.round(v)}`}
               <span class="ge-cache-badge fresh"
-                title={tfCompileMs > 0
-                  ? `end-to-end ${Math.round(totalMs)} ms = server recipe-compile ${Math.round(tfCompileMs)} ms (composite dep resolve, prod-proxied source fetches) + TrueForm kernel build ${Math.round(kernelMs)} ms (main thread)`
-                  : `TrueForm kernel build ${Math.round(kernelMs)} ms (main thread; instant client recipe, no server compile)`}>
-                fresh · {Math.round(totalMs)} ms TF{tfCompileMs > 0 ? ` (${Math.round(tfCompileMs)} compile + ${Math.round(kernelMs)} build)` : ''}
+                title={`TF redraw ${Math.round(totalMs)} ms end-to-end` +
+                  (tfCompileMs > 0 ? `\n• server recipe-compile: ${Math.round(tfCompileMs)} ms (composite dep resolve — serial prod-proxied /api/primitives/source fetches; main cost)` : '\n• server recipe-compile: 0 (instant client recipe, no server hop)') +
+                  (s ? `\n• dynamic imports: ${Math.round(s.imports)} ms (0 after first)\n• kernel warm (ensureTf): ${Math.round(s.warm)} ms (one-time ~31MB WASM; 0 after)\n• geometry build (executeTfRecipe): ${Math.round(s.build)} ms (main thread)\n• mesh→THREE (normals/weld): ${Math.round(s.mesh)} ms` : '')}>
+                fresh · {Math.round(totalMs)} ms TF
+                <span class="ge-tf-steps">= {seg('compile', tfCompileMs)}{s ? ` + ${seg('imp', s.imports)} + ${seg('warm', s.warm)} + ${seg('build', s.build)} + ${seg('mesh', s.mesh)}` : ` + ${seg('build', kernelMs)}`} ms</span>
               </span>
             {/if}
             <span class="ge-bake-meta-spacer"></span>
@@ -719,12 +722,12 @@
   /* Bake cache status row + Rebuild button */
   .ge-bake-meta { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #fafaf9; border-top: 1px solid #e7e5e4; font: 11px Arial; }
   .ge-bake-meta-spacer { flex: 1 1 auto; }
-  .ge-tf-demo-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 5px 8px; background: #faf9f8; border-bottom: 1px solid #e7e5e4; font: 600 11px Arial; color: #57534e; }
-  .ge-tf-demo-row .ge-tf-demo-label { text-transform: uppercase; letter-spacing: 0.5px; color: #a8a29e; }
-  .ge-tf-demo-row .ge-tf-demo-select { font: 600 11px Arial; color: #57534e; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; padding: 3px 6px; cursor: pointer; accent-color: #7c3aed; }
+  .ge-tf-demo-row { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; padding: 5px 8px; background: #faf9f8; border-bottom: 1px solid #e7e5e4; font: 600 11px Arial; color: #57534e; }
+  .ge-tf-demo-row .ge-tf-demo-label { text-transform: uppercase; letter-spacing: 0.5px; color: #a8a29e; flex: 0 0 auto; white-space: nowrap; }
+  .ge-tf-demo-row .ge-tf-demo-select { font: 600 11px Arial; color: #57534e; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; padding: 3px 6px; cursor: pointer; accent-color: #7c3aed; flex: 1 1 auto; min-width: 0; }
   .ge-tf-demo-row .ge-tf-demo-select:focus { outline: none; border-color: #7c3aed; }
   .ge-tf-demo-row .ge-tf-demo-select:disabled { opacity: 0.5; cursor: not-allowed; }
-  .ge-tf-demo-row .ge-tf-actual-btn { font: 600 11px Arial; color: #57534e; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; padding: 3px 10px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; }
+  .ge-tf-demo-row .ge-tf-actual-btn { font: 600 11px Arial; color: #57534e; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; padding: 3px 10px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; flex: 0 0 auto; white-space: nowrap; }
   .ge-tf-demo-row .ge-tf-actual-btn:hover { border-color: #7c3aed; color: #6d28d9; }
   .ge-tf-demo-row .ge-tf-actual-btn.on { background: #7c3aed; border-color: #7c3aed; color: #fff; }
   .ge-draft-toggle { display: inline-flex; align-items: center; gap: 3px; font: 600 11px Arial; color: #57534e; cursor: pointer; user-select: none; }
@@ -732,6 +735,7 @@
   .ge-cache-badge { padding: 2px 8px; border-radius: 12px; font: 600 10px ui-monospace, monospace; }
   .ge-cache-badge.cached { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
   .ge-cache-badge.fresh { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+  .ge-tf-steps { font-weight: 500; opacity: 0.72; margin-left: 2px; }
   .ge-cache-badge.skipped { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
   .ge-rebuild-btn { font: 600 11px Arial; color: #1c1917; background: #fff; border: 1px solid #d6d3d1; border-radius: 4px; padding: 3px 10px; cursor: pointer; transition: background 0.12s; }
   .ge-rebuild-btn:hover:not(:disabled) { background: #f5f5f4; }
