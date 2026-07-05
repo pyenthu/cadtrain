@@ -60,6 +60,8 @@
     smoothShade = false,
     opacity = 1,
     texture = undefined,
+    colorOuter = undefined,
+    colorInner = undefined,
   }: {
     geo?: any;            // { full, cutVC } from /api/primitives/preview
     geoVersion?: number;
@@ -92,6 +94,17 @@
      *  a PER-PART property: a composed assembly is one vertex-coloured mesh
      *  with no per-subpart UVs, so the single map covers the whole part. */
     texture?: string;
+    /** Part-level OUTER-skin colour (the SAME value the Manifold bake bakes into
+     *  its vertex-colour attribute). Used ONLY for a `full` mesh that carries NO
+     *  vertex-colour attribute — the TF single-mesh path (`tfMeshToGeo` emits
+     *  position+normal only). The Manifold/BREP `full` already carries baked
+     *  vertex colours (hasVC → unchanged). undefined ⇒ the historical `#cc2222`
+     *  default, so pre-TF call-sites render byte-identically. */
+    colorOuter?: string;
+    /** Part-level INNER/cut colour — retained for call-site parity with the
+     *  Manifold path; the single `full` solid has no revealed interior, so it is
+     *  the cutVC (section) path that consumes inner. Not read in the full arm. */
+    colorInner?: string;
     smoothShade?: boolean;  // EXPERIMENT: smooth-shade the LIVE mesh (use baked
     // calculateNormals(3, 60) vertex normals instead of flatShading face-derived
     // normals). Gated per-primitive at the canvas layer (currently r_weld_extrude
@@ -993,12 +1006,12 @@
           {#if hasVC}
             <T.MeshStandardMaterial vertexColors roughness={0.5} metalness={0} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
           {:else}
-            <T.MeshStandardMaterial color="#cc2222" roughness={0.5} metalness={0} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
+            <T.MeshStandardMaterial color={colorOuter ?? '#cc2222'} map={getMaterialTexture(texture)} roughness={0.5} metalness={0} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
           {/if}
         {:else if hasVC}
           <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {:else}
-          <T.MeshPhongMaterial color="#cc2222" specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
+          <T.MeshPhongMaterial color={colorOuter ?? '#cc2222'} map={getMaterialTexture(texture)} specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {/if}
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>
