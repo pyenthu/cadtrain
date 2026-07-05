@@ -84,6 +84,13 @@ export const POST = async ({ request, fetch }) => {
   // so a server bake and a client bake key + behave the same. Absent → undefined
   // → byte-identical default bake.
   const smoothArg = coerceSmooth(smooth);
+  // A part whose source bends a solid via the warp NODE (`warpSpline(...)`) is
+  // WARPED — the warp is baked into the manifold, so finalize can't see it from
+  // opts.warp (that's only the SCENE warp). Detect it from the source text and
+  // pass `smoothWarp` so finalize re-derives fully-smooth (crease-free) normals
+  // for the warped mesh instead of the 60°-crease-split faceted ones. Absent →
+  // undefined → byte-identical non-warped bake.
+  const warpedSrc = typeof source === 'string' && source.includes('warpSpline(');
   if (typeof source !== 'string') throw error(400, 'source required');
   if (typeof name !== 'string') throw error(400, 'name required (the function to call)');
   // Args may be mixed number | string (string carries JSON-encoded
@@ -191,7 +198,7 @@ export const POST = async ({ request, fetch }) => {
     if (!manifold || typeof manifold.getMesh !== 'function') {
       throw error(400, 'primitive did not return a Manifold');
     }
-    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material, undefined, { zScale: zArg, colorOuter: cOuter, colorInner: cInner, warp: warpArg, creaseAngle: creaseArg, smooth: smoothArg });
+    const r = finalizeManifold(manifold, args[0] && args[0] > 0 ? args[0] * 1.5 : 6, material, undefined, { zScale: zArg, colorOuter: cOuter, colorInner: cInner, warp: warpArg, creaseAngle: creaseArg, smoothWarp: warpedSrc, smooth: smoothArg });
     const s = serializeComponentResult(r);
     return json({ ok: true, full: s.full, cutVC: s.cutVC });
   }
@@ -321,7 +328,7 @@ export const POST = async ({ request, fetch }) => {
       args[0] && args[0] > 0 ? args[0] * 1.5 : 6,
       material,
       parts,
-      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto', zScale: zArg, colorOuter: cOuter, colorInner: cInner, instanced: instancedReq, warp: warpArg, creaseAngle: creaseArg, smooth: smoothArg },
+      { skipCutaway: typeof cutaway === 'boolean' ? !cutaway : 'auto', zScale: zArg, colorOuter: cOuter, colorInner: cInner, instanced: instancedReq, warp: warpArg, creaseAngle: creaseArg, smoothWarp: warpedSrc, smooth: smoothArg },
     );
     mark('finalize', t); t = performance.now();
     serialized = serializeComponentResult(result);

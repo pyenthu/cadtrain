@@ -175,7 +175,7 @@ function clampCrease(a?: number): number {
  *  normals is a genuinely huge mesh (perf) — logged when it happens. */
 const CREASE_AWARE_MAX_VERTS = 60_000;
 
-export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string; instanced?: boolean; warp?: WarpSpec; creaseAngle?: number; smooth?: { minSharpAngle?: number; tolerance?: number } }): ComponentResult {
+export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string; instanced?: boolean; warp?: WarpSpec; creaseAngle?: number; smoothWarp?: boolean; smooth?: { minSharpAngle?: number; tolerance?: number } }): ComponentResult {
   // Reject an EMPTY result — a CSG op (subtract/intersect) that removed all
   // geometry, e.g. subtracting two identically-dimensioned solids. Left
   // unguarded it serialises as a successful 0-triangle mesh; the client then
@@ -255,7 +255,23 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   // IDENTICAL) when bodies are not all identical / there's only one body.
   // Crease angle for calculateNormals — build-time, baked into the vertex
   // split, so it MUST be applied here (not a render-time flip). Default 60.
-  const crease = clampCrease(opts?.creaseAngle);
+  //
+  // WARPED parts shade SMOOTH: `Manifold.warp` moves POSITIONS only (it can't
+  // carry normals), and the mesh path then re-derives normals with a 60° crease
+  // — but the warp's COARSE axial chords exceed 60°, so the crease SPLITS them
+  // and the wall reads FACETED (smooth before the warp, blocky after). The
+  // fully-correct fix (rotate each normal by the warp's local frame) needs the
+  // warp to run on a MESH — out of scope here. Pragmatic contained fix: when
+  // this bake is warped — either the SCENE warp (opts.warp, baked in below) OR
+  // the warp NODE baked into the incoming manifold (opts.smoothWarp, set by
+  // callers that saw `warpSpline(` in the source/script) — use a fully-smooth
+  // 180° crease so the crease-aware normal pass (and calculateNormals on huge
+  // meshes) AREA-WEIGHT AVERAGES across every welded vertex like THREE's
+  // computeVertexNormals (which SVTC uses), with no crease-split → smooth
+  // shading. NON-warped bakes keep clampCrease(opts?.creaseAngle) unchanged
+  // (BYTE-IDENTICAL — cubes/hex stay crease-sharp).
+  const warpedForShading = !!opts?.warp || opts?.smoothWarp === true;
+  const crease = warpedForShading ? 180 : clampCrease(opts?.creaseAngle);
   if (opts?.instanced) {
     const inst = tryInstanceFinalize(scaled, cutBox, maxOD, material, lut, override, opts?.skipCutaway, opts?.warp, crease);
     if (inst) return inst;
