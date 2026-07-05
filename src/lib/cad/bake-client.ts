@@ -48,6 +48,10 @@ export interface BakeRunArgs {
   /** Positional args (number | string) OR a single object. */
   params: Array<number | string> | Record<string, unknown>;
   options?: BakeOptions;
+  /** 🔄 force-refresh: skip the IndexedDB cache READ so the worker re-bakes from
+   *  scratch. The fresh result still WRITES to the cache (so later identical
+   *  requests are instant again). Default false = cache-first (byte-identical). */
+  bust?: boolean;
 }
 
 // ── Worker reply protocol (mirrors bake-worker.ts postMessage) ──────────────
@@ -166,7 +170,9 @@ async function dispatch(): Promise<void> {
   waiting = null;
   try {
     let cached: TransferableComponentResult | null = null;
-    try { cached = await idbGet(job.key); } catch { /* cache miss / unavailable */ }
+    // 🔄 bust skips the cache READ → a genuine fresh worker bake (the result is
+    // still idbPut below, so the next non-bust request is instant again).
+    if (!job.args.bust) { try { cached = await idbGet(job.key); } catch { /* cache miss / unavailable */ } }
     if (job.settled) return;                       // superseded during the await
     if (cached) {
       settle(job, deserializeComponentResult(cached as any) as BakeGeo);

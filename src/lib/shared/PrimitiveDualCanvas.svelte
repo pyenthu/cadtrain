@@ -308,9 +308,11 @@
   type CompiledEntry = { supported: boolean; script?: string; scriptHash?: string; reason?: string; partColors?: any };
   const compileCache = new Map<string, CompiledEntry>();
   const COMPILE_CACHE_MAX = 24;
-  async function getCompiled(name: string, src: string, signal: AbortSignal): Promise<CompiledEntry> {
+  async function getCompiled(name: string, src: string, signal: AbortSignal, bust = false): Promise<CompiledEntry> {
     const key = `${name}|${src}`;
-    const hit = compileCache.get(key);
+    // 🔄 force-refresh (bust) skips the cache READ so /compile is re-hit — the
+    // fresh entry still overwrites the cache below. Otherwise LRU-touch + reuse.
+    const hit = bust ? undefined : compileCache.get(key);
     if (hit) { compileCache.delete(key); compileCache.set(key, hit); return hit; } // LRU touch
     const cr = await fetch('/api/primitives/compile', {
       method: 'POST', headers: { 'content-type': 'application/json' },
@@ -375,7 +377,7 @@
       try {
         // Cached compile (skips the /compile fetch on param scrubs — same source).
         const _tc0 = performance.now();
-        const cd = await getCompiled(name, source ?? '', ac.signal);
+        const cd = await getCompiled(name, source ?? '', ac.signal, bust);
         const _tCompile = performance.now() - _tc0;
         if (ac.signal.aborted) return;
         if (cd?.supported && cd.script) {
@@ -386,7 +388,7 @@
             // subpart in its own colour (a single override still wins in finalize).
             ...(cd.partColors ? { parts: cd.partColors } : {}) };
           const _tb0 = performance.now();
-          const result = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options });
+          const result = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options, bust });
           const _tBake = performance.now() - _tb0;
           if (ac.signal.aborted || isCancelled(result)) return;
           geo = result; geoVersion++; meshStatus = 'ok'; err = null; meshBackend = 'client';

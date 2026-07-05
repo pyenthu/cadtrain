@@ -192,11 +192,16 @@
   // The badge adds this to the ~4 ms kernel build so "fresh · N ms TF" reflects
   // the TRUE end-to-end redraw the user waits on, not just the kernel slice.
   let tfCompileMs = $state(0);
+  // 🔄 on the TF canvas bumps this → the compile effect re-runs and RE-FETCHES the
+  // server recipe (re-resolves composite deps), not just the client-cached recipe.
+  let tfRecipeBust = $state(0);
   // When the client recipe has UNSUPPORTED nodes AND "actual" is on, fetch the
-  // server-inlined recipe (composites resolved). Re-fires on graph/param change.
+  // server-inlined recipe (composites resolved). Re-fires on graph/param change,
+  // and on a 🔄 bust (tfRecipeBust).
   $effect(() => {
     const local = tfRecipeLocal;
     const g = graph, p = brepParamValues;
+    tfRecipeBust; // dep: a 🔄 bust forces a fresh /api/tf/compile round-trip
     if (!tfActualOn || !local || !recipeHasUnsupportedLocal(local)) { tfRecipeServer = undefined; tfCompileMs = 0; return; }
     let cancelled = false;
     (async () => {
@@ -609,6 +614,7 @@
             colorOuter={graph.colorOuter} colorInner={graph.colorInner} opacity={graph.opacity} texture={graph.texture}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             onBakeMeta={(m) => (tfMeta = m)}
+            onRebuild={() => (tfRecipeBust += 1)}
             autoScaleOwner={active && rightTab === 'tf'}
             showControls={true} showLabels={false}/>
           <!-- Cache/fresh badge row — mirrors the BREP .ge-bake-meta. -->
