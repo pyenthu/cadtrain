@@ -70,6 +70,10 @@ export type TfInstr =
   | { op: 'rotate'; deg: Vec3; child: TfInstr }
   | { op: 'repeat'; count: number; child: TfInstr; mode?: string; stackRef?: number | null }
   | { op: 'profile'; profile: ProfilePt[]; note?: string }
+  // WARP (#6) — bend the CHILD solid along a spline `path` (control points), in
+  // PURE JS (warpMeshJS: positions + normals by the local frame). Unlocks TF warp
+  // ('TF can't build ops: warp') — TF builds the child mesh, warpMeshJS bends it.
+  | { op: 'warp'; child: TfInstr; path: Vec3[]; stretch?: boolean }
   | { op: 'UNSUPPORTED'; nodeType: string; detail?: string };
 
 /** One part's render appearance (per-part-mesh TF path). colour + opacity +
@@ -612,6 +616,22 @@ function lowerNode(
         ? ref(children[0]!)
         : { op: 'union' as const, children: children.map(ref) };
       return { op: 'repeat', count, child, ...(( node as any).op ? { mode: (node as any).op } : {}) };
+    }
+
+    case 'warp': {
+      // Bend the child along the wired spline PATH (#6). Reuse resolveSplineNode
+      // (as the sweep does): the spline's control points drive warpMeshJS in the
+      // executor. No spline / <2 points → UNSUPPORTED (keep the child un-warped
+      // would be misleading).
+      const w = node as any;
+      const childInst = ref(w.child ?? '');
+      const spline = resolveSplineNode(w.path, graph);
+      const cp = ((spline?.points ?? []) as Vec3[]).filter((p) => Array.isArray(p) && p.length >= 2);
+      if (cp.length < 2) {
+        notes.push(`warp ${node.id}: no resolvable spline path (needs a wired spline with ≥2 points) — UNSUPPORTED`);
+        return { op: 'UNSUPPORTED', nodeType: 'warp', detail: 'no spline path' };
+      }
+      return { op: 'warp', child: childInst, path: cp, ...(w.stretch ? { stretch: true } : {}) };
     }
 
     case 'polygon':

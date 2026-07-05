@@ -26,6 +26,7 @@
 import { tfRevolveProfile } from './revolve';
 import { tfResult, tfMeshData, buildOpenCurve, capOpenEnds, runTfGuarded, type TfDemoResult } from '../trueform-client';
 import type { TfRecipe, TfInstr, Vec3 } from '$lib/cad/graph-to-tf';
+import { warpMeshJS } from '$lib/cad/warp-spline';
 
 /** Flatten a `[[x,y,z]…]` path → the `[n*3]` Float32Array `buildOpenCurve` /
  *  `tubeMesh` sweep along. */
@@ -278,6 +279,16 @@ function buildInstr(t: any, instr: TfInstr): any {
       for (let i = 1; i < copies.length; i++) acc = t.booleanUnion(acc, copies[i]).mesh;
       return acc;
     }
+    case 'warp': {
+      // TF WARP (#6): build the child mesh IN TrueForm, then bend it in PURE JS
+      // (warpMeshJS: positions along the spline frame) and rebuild a TF mesh from
+      // the warped points. Same engine-agnostic warp the Manifold path will use.
+      const child = buildInstr(t, instr.child);
+      const md = tfMeshData(child); // { points: Float(32|64)Array, faces: Int32Array }
+      const src = md.points instanceof Float32Array ? md.points : new Float32Array(md.points);
+      const { positions } = warpMeshJS(src, null, instr.path as any, { stretch: instr.stretch });
+      return t.mesh(md.faces, positions);
+    }
     case 'UNSUPPORTED':
       throw new TfUnsupportedError(instr.nodeType);
     default:
@@ -367,6 +378,7 @@ function instrHasUnsupported(instr: TfInstr): boolean {
     case 'translate':
     case 'rotate':
     case 'repeat':
+    case 'warp':
       return instrHasUnsupported(instr.child);
     default:
       return false;
