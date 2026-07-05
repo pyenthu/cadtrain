@@ -24,9 +24,9 @@
  * {@link TfUnsupportedError} at the offending node.
  */
 import { tfRevolveProfile } from './revolve';
-import { tfResult, tfMeshData, buildOpenCurve, capOpenEnds, runTfGuarded, type TfDemoResult } from '../trueform-client';
+import { tfResult, tfMeshData, buildOpenCurve, capOpenEnds, runTfGuarded, weldMeshByPosition, type TfDemoResult } from '../trueform-client';
 import type { TfRecipe, TfInstr, Vec3 } from '$lib/cad/graph-to-tf';
-import { warpMeshJS } from '$lib/cad/warp-spline';
+import { warpMeshJS, subdivideAxialAdaptive } from '$lib/cad/warp-spline';
 
 /** Flatten a `[[x,y,z]…]` path → the `[n*3]` Float32Array `buildOpenCurve` /
  *  `tubeMesh` sweep along. */
@@ -282,12 +282,27 @@ function buildInstr(t: any, instr: TfInstr): any {
     case 'warp': {
       // TF WARP (#6): build the child mesh IN TrueForm, then bend it in PURE JS
       // (warpMeshJS: positions along the spline frame) and rebuild a TF mesh from
-      // the warped points. Same engine-agnostic warp the Manifold path will use.
+      // the warped points. Same engine-agnostic warp the Manifold path uses.
       const child = buildInstr(t, instr.child);
       const md = tfMeshData(child); // { points: Float(32|64)Array, faces: Int32Array }
       const src = md.points instanceof Float32Array ? md.points : new Float32Array(md.points);
-      const { positions } = warpMeshJS(src, null, instr.path as any, { stretch: instr.stretch });
-      return t.mesh(md.faces, positions);
+      // DENSIFY ALONG Z FIRST. A TF revolve/box builds the child with almost NO
+      // interior axial rings (a lathe has only its profile's 2 z-levels ⇒ ~978
+      // verts for bw_open_hole), so warpMeshJS would have just those ~2 rings to
+      // lay on the spline → the bend collapses to 1-2 chords (a straight tube with
+      // a sharp kink at one end), NOT a smooth arc. The Manifold path reaches a
+      // smooth ~25k-vert S-curve because its warp refines first; do the equivalent
+      // for TF via curvature-adaptive axial subdivision — insert extra vertex rings
+      // along Z where the spline bends (NOT a uniform giant refine). On a straight
+      // path this is ≈minStations rings ⇒ a near no-op, so non-curved warps are
+      // unchanged. subdivideAxialAdaptive returns a NON-INDEXED soup; re-weld by
+      // position so t.mesh recovers shared-edge connectivity → smooth normals
+      // (matching the indexed Manifold build) instead of a faceted per-triangle
+      // cylinder.
+      const dense = subdivideAxialAdaptive(src, null, md.faces, instr.path as any, {});
+      const welded = weldMeshByPosition(dense.positions, dense.faces);
+      const { positions } = warpMeshJS(welded.points, null, instr.path as any, { stretch: instr.stretch });
+      return t.mesh(welded.faces, positions);
     }
     case 'UNSUPPORTED':
       throw new TfUnsupportedError(instr.nodeType);
