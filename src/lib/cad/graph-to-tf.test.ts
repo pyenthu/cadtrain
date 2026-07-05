@@ -276,6 +276,44 @@ describe('graphToTf', () => {
     ]);
   });
 
+  it('per-part MATL preset flows to recipe.partAppearance[i].material (steel), absent for none', () => {
+    // bw_open_hole-shaped: a SINGLE output Call carrying a per-part material
+    // override. The recipe must carry `material:'steel'` on partAppearance[0] so
+    // the TF per-part-mesh render can apply materialPreset(steel). A part with no
+    // material (or 'none') must leave partAppearance[i].material ABSENT.
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_a', 'n_b'] },
+        n_a: { id: 'n_a', type: 'call', src: 'r_cuboid', alias: 'A', args: { w: { kind: 'literal', value: 4 }, h: { kind: 'literal', value: 4 }, d: { kind: 'literal', value: 4 } } },
+        n_b: { id: 'n_b', type: 'call', src: 'r_cuboid', alias: 'B', args: { w: { kind: 'literal', value: 2 }, h: { kind: 'literal', value: 2 }, d: { kind: 'literal', value: 2 } } },
+      },
+      'n_root',
+    );
+    // A = steel (per-part override); B = none (explicit 'none' ⇒ dropped).
+    (g as any).partAppearance = { n_a: { material: 'steel' }, n_b: { material: 'none' } };
+
+    const recipe = graphToTf(g);
+    expect(recipe.instrs).toHaveLength(2);
+    expect(recipe.partAppearance).toBeDefined();
+    expect(recipe.partAppearance![0]).toEqual({ material: 'steel' });
+    // B's 'none' ⇒ no appearance fields ⇒ the whole entry stays undefined.
+    expect(recipe.partAppearance![1]).toBeUndefined();
+  });
+
+  it('a lone steel output part still emits partAppearance[0].material (single-output case)', () => {
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_a'] },
+        n_a: { id: 'n_a', type: 'call', src: 'r_cuboid', alias: 'A', args: { w: { kind: 'literal', value: 4 }, h: { kind: 'literal', value: 4 }, d: { kind: 'literal', value: 4 } } },
+      },
+      'n_root',
+    );
+    (g as any).partAppearance = { n_a: { material: 'steel' } };
+    const recipe = graphToTf(g);
+    expect(recipe.instrs).toHaveLength(1);
+    expect(recipe.partAppearance![0]).toEqual({ material: 'steel' });
+  });
+
   it('tfRecipeText renders a readable plan without throwing', () => {
     const g = mkGraph(
       {

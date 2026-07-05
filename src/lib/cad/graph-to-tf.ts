@@ -84,6 +84,11 @@ export interface TfAppearance {
   colorInner?: string;
   texture?: string;
   opacity?: number;
+  /** MATL preset name ('steel' | 'aluminum' | 'titanium' | 'brass'). Resolved
+   *  from the output Call's effective appearance and rendered per-part via
+   *  `materialPreset(material)` (metalness/roughness + a metallic tint when the
+   *  TF mesh has no baked vertex colour). 'none'/undefined ⇒ absent (neutral). */
+  material?: string;
 }
 
 /** The full recipe: the ordered list of TF instructions the graph's ROOT
@@ -698,6 +703,7 @@ function graphToTfInner(
     if (eff.colorOuter) a.colorOuter = eff.colorOuter;
     if (eff.colorInner) a.colorInner = eff.colorInner;
     if (eff.texture) a.texture = eff.texture;
+    if (eff.material && eff.material !== 'none') a.material = eff.material;
     if (typeof eff.opacity === 'number' && eff.opacity > 0 && eff.opacity < 1) a.opacity = eff.opacity;
     return Object.keys(a).length ? a : undefined;
   });
