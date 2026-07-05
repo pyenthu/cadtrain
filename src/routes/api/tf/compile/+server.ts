@@ -48,13 +48,56 @@ function compositeSrcsOf(graph: any): string[] {
   return out;
 }
 
+type DepEntry = { graph: any; params: Record<string, number> } | null;
+
+/** #1 — module-level composite-dep SOURCE cache (id → resolved graph/params).
+ *  A dep's SOURCE is invariant to the top-level part's param values (only the
+ *  numbers you scrub change; the sub-part's graph doesn't), yet /api/tf/compile
+ *  re-fetched every dep on EVERY edit — and each fetch is prod-proxied
+ *  (`/api/primitives/source` ∈ VOLUME_PROXY_PATHS), so a spline drag paid one
+ *  network round-trip per dep every tick (the ~302 ms "compile" for bw_open_hole).
+ *  Caching by id makes a repeat resolve ~0. TTL bounds staleness after a dep is
+ *  edited+saved; a 🔄 `bust` bypasses the cache read for an immediate fresh resolve.
+ *  NEGATIVE entries (null) are cached too so a missing/broken dep isn't re-fetched
+ *  every tick. Keyed by id only (source is the same regardless of caller).
+ *  TODO #2 — parallelize the BFS frontier with Promise.all (level-parallel:
+ *  independent within a level, ordered across depth) so a COLD multi-dep resolve
+ *  costs depth×latency not N×latency; add a small concurrency cap for wide fan-out.
+ *  #1 (this) kills the hot repeat-resolve cost; #2 is the cold-start win. */
+const SRC_CACHE = new Map<string, { entry: DepEntry; at: number }>();
+const SRC_TTL_MS = 60_000; // 60s — dep edits show within a minute (or instantly via 🔄 bust)
+
+/** Fetch + parse ONE composite dep's source, honouring the module cache. */
+async function fetchDep(id: string, fetch: typeof globalThis.fetch, bust: boolean): Promise<DepEntry> {
+  if (!bust) {
+    const hit = SRC_CACHE.get(id);
+    if (hit && Date.now() - hit.at < SRC_TTL_MS) return hit.entry; // fresh (incl. cached null)
+  }
+  let entry: DepEntry = null;
+  try {
+    const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`, { cache: 'no-store' });
+    if (r.ok) {
+      const data = await r.json();
+      const src = typeof data?.source === 'string' ? data.source : '';
+      const meta = src ? extractMetaFromSource(src) : null;
+      if (meta?.graph) entry = { graph: meta.graph, params: numericDefaults(meta.params) };
+    }
+  } catch {
+    /* leave entry null — the Call stays UNSUPPORTED */
+  }
+  SRC_CACHE.set(id, { entry, at: Date.now() });
+  return entry;
+}
+
 /** Recursively fetch every composite dep reachable from `rootGraph` → a sync map
  *  `id → { graph, params }`. BFS over Call srcs; each fetched part's OWN composite
  *  Calls are queued too. Fully tolerant — a missing / unparseable dep is skipped
- *  (that Call then stays UNSUPPORTED). */
+ *  (that Call then stays UNSUPPORTED). Reads through SRC_CACHE (#1); `bust` forces
+ *  a fresh fetch for every dep. Still SERIAL per dep — see #2. */
 async function buildCompositeMap(
   rootGraph: any,
   fetch: typeof globalThis.fetch,
+  bust = false,
 ): Promise<Map<string, { graph: any; params: Record<string, number> }>> {
   const map = new Map<string, { graph: any; params: Record<string, number> }>();
   const seen = new Set<string>();
@@ -64,25 +107,16 @@ async function buildCompositeMap(
     const id = pending.pop()!;
     if (seen.has(id) || !NAME_RE.test(id)) continue;
     seen.add(id);
-    try {
-      const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`, { cache: 'no-store' });
-      if (!r.ok) continue;
-      const data = await r.json();
-      const src = typeof data?.source === 'string' ? data.source : '';
-      if (!src) continue;
-      const meta = extractMetaFromSource(src);
-      if (!meta?.graph) continue;
-      map.set(id, { graph: meta.graph, params: numericDefaults(meta.params) });
-      for (const s of compositeSrcsOf(meta.graph)) if (!seen.has(s)) pending.push(s);
-    } catch {
-      /* skip — the Call stays UNSUPPORTED */
-    }
+    const entry = await fetchDep(id, fetch, bust);
+    if (!entry) continue; // missing / unparseable → Call stays UNSUPPORTED
+    map.set(id, entry);
+    for (const s of compositeSrcsOf(entry.graph)) if (!seen.has(s)) pending.push(s);
   }
   return map;
 }
 
 export async function POST({ request, fetch }) {
-  let body: { graph?: unknown; params?: Record<string, number>; id?: string };
+  let body: { graph?: unknown; params?: Record<string, number>; id?: string; bust?: boolean };
   try {
     body = await request.json();
   } catch {
@@ -93,9 +127,10 @@ export async function POST({ request, fetch }) {
   }
 
   // Pre-fetch composite deps so the pure, synchronous compiler can inline them.
+  // `bust` (from a 🔄 rebake) bypasses the dep SOURCE cache for a fresh resolve.
   let resolveComposite: ResolveComposite | undefined;
   try {
-    const compositeMap = await buildCompositeMap(body.graph, fetch);
+    const compositeMap = await buildCompositeMap(body.graph, fetch, body.bust === true);
     resolveComposite = (id: string) => compositeMap.get(id) ?? null;
   } catch {
     resolveComposite = undefined; // degrade — composites stay UNSUPPORTED

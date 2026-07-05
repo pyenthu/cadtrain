@@ -195,21 +195,27 @@
   // 🔄 on the TF canvas bumps this → the compile effect re-runs and RE-FETCHES the
   // server recipe (re-resolves composite deps), not just the client-cached recipe.
   let tfRecipeBust = $state(0);
+  // Non-reactive marker of the last bust value we've compiled with — lets the
+  // effect tell a 🔄 rebake (tfRecipeBust changed) from a param/graph change, so
+  // ONLY a rebake sends bust:true (bypasses the server dep-source cache, #1).
+  let lastBustCompiled = 0;
   // When the client recipe has UNSUPPORTED nodes AND "actual" is on, fetch the
   // server-inlined recipe (composites resolved). Re-fires on graph/param change,
   // and on a 🔄 bust (tfRecipeBust).
   $effect(() => {
     const local = tfRecipeLocal;
     const g = graph, p = brepParamValues;
-    tfRecipeBust; // dep: a 🔄 bust forces a fresh /api/tf/compile round-trip
+    const bustNow = tfRecipeBust; // dep: a 🔄 bust forces a fresh /api/tf/compile round-trip
     if (!tfActualOn || !local || !recipeHasUnsupportedLocal(local)) { tfRecipeServer = undefined; tfCompileMs = 0; return; }
+    const forceFresh = bustNow !== lastBustCompiled; // true only when this run is a 🔄 rebake
+    lastBustCompiled = bustNow;
     let cancelled = false;
     (async () => {
       const t0 = performance.now();
       try {
         const r = await fetch('/api/tf/compile', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ graph: g, params: p, id: exemplarId }),
+          body: JSON.stringify({ graph: g, params: p, id: exemplarId, bust: forceFresh }),
         });
         if (!r.ok) return;
         const data = await r.json();
