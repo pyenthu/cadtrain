@@ -344,7 +344,11 @@ function computeConsumed(graph: Graph): Set<NodeId> {
     if (n.type === 'method') {
       if ((n as any).obj) consumed.add((n as any).obj);
       if ((n as any).arg) consumed.add((n as any).arg);
-    } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn') {
+    } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'warp') {
+      // warp's bent solid is an INPUT — consume it so the un-warped child does
+      // NOT double-emit as its own root output (mirrors composition-emit's
+      // computeConsumedSet; without this the TF view shows the straight tube
+      // AND the warped tube as two parts).
       if ((n as any).child) consumed.add((n as any).child);
     } else if (n.type === 'repeat') {
       for (const c of (n as any).children ?? []) consumed.add(c);
