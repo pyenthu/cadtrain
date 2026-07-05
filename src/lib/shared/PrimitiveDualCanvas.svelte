@@ -918,7 +918,7 @@
          these engines (its meta.uses / body references the id) so spline-sweep parts
          smooth too — not just the bare engine preview. -->
     {@const usesWeldedCurve =
-      typeof source === 'string' && /\br_(sweep|loft|surface|helical_surface)\b/.test(source)}
+      typeof source === 'string' && /\br_(sweep|loft|surface|helical_surface|revolve)\b/.test(source)}
     <!-- BREP carries OCCT exact-surface normals → smooth-shade the solid so the
          true curvature reads (the cut half-section is faceted regardless).
          TrueForm (tf) is an exact-kernel boolean/generator: its output carries
@@ -930,6 +930,12 @@
       isTf ||
       id === 'r_weld_extrude' ||
       id === 'r_sweep' || id === 'r_loft' || id === 'r_surface' || id === 'r_helical_surface' ||
+      // r_revolve is a welded surface-of-revolution — its curved side wall (≤60°
+      // facets) should shade smooth in the Manifold tab too (matching TF). The
+      // 60° crease keeps genuine sharp edges (cap rims, profile steps) hard, so a
+      // revolve reads round while a cube unioned in stays faceted. Composed parts
+      // that call r_revolve (g_shaft/g_collar/g_dp_*) match via usesWeldedCurve.
+      id === 'r_revolve' ||
       usesWeldedCurve ||
       (id === 'r_extrude' && Math.abs(twistArg) > 0.001)}
     <!-- The user's SceneControls "Shading" override wins over the per-part
