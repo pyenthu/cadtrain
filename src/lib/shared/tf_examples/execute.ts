@@ -26,7 +26,7 @@
 import { tfRevolveProfile } from './revolve';
 import { tfResult, tfMeshData, buildOpenCurve, capOpenEnds, runTfGuarded, weldMeshByPosition, type TfDemoResult } from '../trueform-client';
 import type { TfRecipe, TfInstr, Vec3 } from '$lib/cad/graph-to-tf';
-import { warpMeshJS, subdivideAxialAdaptive } from '$lib/cad/warp-spline';
+import { warpMeshJS, subdivideAxialAdaptive, densifyProfileAxial } from '$lib/cad/warp-spline';
 
 /** Flatten a `[[x,y,z]…]` path → the `[n*3]` Float32Array `buildOpenCurve` /
  *  `tubeMesh` sweep along. */
@@ -283,22 +283,41 @@ function buildInstr(t: any, instr: TfInstr): any {
       // TF WARP (#6): build the child mesh IN TrueForm, then bend it in PURE JS
       // (warpMeshJS: positions along the spline frame) and rebuild a TF mesh from
       // the warped points. Same engine-agnostic warp the Manifold path uses.
+      //
+      // The child MUST carry enough axial rings for warpMeshJS to lay a smooth arc:
+      // a TF revolve/box has almost NONE (a lathe = its profile's 2 z-levels only),
+      // so a bare warp collapses to 1-2 chords. There are TWO ways to densify:
+      //
+      //  • BUILD-TIME (revolve child, the common case incl. bw_open_hole): subdivide
+      //    the half-section PROFILE along Z and re-lathe → a CLEAN ring×segment grid
+      //    (buildRevolveMesh stitches perfect quads, matching Manifold's r_revolve
+      //    zSegments + refine). This is the durable fix (root CLAUDE.md Rule 25).
+      //    subdivideAxialAdaptive CANNOT do this for a tube: every wall quad's two
+      //    tris share a DIAGONAL edge spanning both z AND the circumference, and a
+      //    z-plane always cuts that diagonal → an off-ring vertex at an intermediate
+      //    angle → the "strange circumferential subdivisions" / long spanning tris.
+      //
+      //  • POST-BUILD (non-revolve child — box/sweep/boolean): fall back to the
+      //    generic curvature-adaptive triangle-split (imperfect but keeps working).
+      const childInstr = instr.child as any;
+      const isRevolve =
+        childInstr && (childInstr.op === 'revolve' || childInstr.op === 'profile') &&
+        Array.isArray(childInstr.profile) && childInstr.profile.length >= 3;
+
+      if (isRevolve) {
+        const denseProfile = densifyProfileAxial(childInstr.profile, instr.path as any, {});
+        const child = tfRevolveProfile(t, denseProfile, childInstr.segments || 64);
+        const md = tfMeshData(child); // buildRevolveMesh shares verts already — no weld needed
+        const src = md.points instanceof Float32Array ? md.points : new Float32Array(md.points);
+        const { positions } = warpMeshJS(src, null, instr.path as any, { stretch: instr.stretch });
+        return t.mesh(md.faces, positions);
+      }
+
       const child = buildInstr(t, instr.child);
       const md = tfMeshData(child); // { points: Float(32|64)Array, faces: Int32Array }
       const src = md.points instanceof Float32Array ? md.points : new Float32Array(md.points);
-      // DENSIFY ALONG Z FIRST. A TF revolve/box builds the child with almost NO
-      // interior axial rings (a lathe has only its profile's 2 z-levels ⇒ ~978
-      // verts for bw_open_hole), so warpMeshJS would have just those ~2 rings to
-      // lay on the spline → the bend collapses to 1-2 chords (a straight tube with
-      // a sharp kink at one end), NOT a smooth arc. The Manifold path reaches a
-      // smooth ~25k-vert S-curve because its warp refines first; do the equivalent
-      // for TF via curvature-adaptive axial subdivision — insert extra vertex rings
-      // along Z where the spline bends (NOT a uniform giant refine). On a straight
-      // path this is ≈minStations rings ⇒ a near no-op, so non-curved warps are
-      // unchanged. subdivideAxialAdaptive returns a NON-INDEXED soup; re-weld by
-      // position so t.mesh recovers shared-edge connectivity → smooth normals
-      // (matching the indexed Manifold build) instead of a faceted per-triangle
-      // cylinder.
+      // Generic densify: insert curvature-adaptive z-stations, then re-weld by
+      // position so t.mesh recovers shared-edge connectivity → smooth normals.
       const dense = subdivideAxialAdaptive(src, null, md.faces, instr.path as any, {});
       const welded = weldMeshByPosition(dense.positions, dense.faces);
       const { positions } = warpMeshJS(welded.points, null, instr.path as any, { stretch: instr.stretch });

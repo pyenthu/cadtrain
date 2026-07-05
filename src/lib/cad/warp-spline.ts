@@ -548,3 +548,78 @@ export function subdivideAxialAdaptive(
   }
   return { positions: outP, normals: outN, faces: outF };
 }
+
+// ── BUILD-TIME axial densification of a REVOLVE profile (the durable warp fix) ──
+// docs/plans/curvature-adaptive-warp-subdivision.md + root CLAUDE.md Rule 25
+// ("segmentation belongs at BUILD time, never as a post-bake mesh rewrite").
+//
+// subdivideAxialAdaptive (above) plane-splits an already-built triangle mesh. For a
+// TUBE that is FATAL: every wall quad is two triangles sharing a DIAGONAL edge that
+// spans BOTH z and the circumference, and a z-plane always crosses that diagonal —
+// so each inserted "ring" gets an off-ring vertex at an intermediate angle (and a
+// chord-shrunk radius). Those interleaved off-ring points are the "strange
+// circumferential subdivisions" / long spanning triangles seen on the TF warp.
+//
+// A revolve, though, has a clean fix upstream of the lathe: subdivide the half-
+// section PROFILE along Z FIRST, then revolve — buildRevolveMesh stitches a perfect
+// ring×segment grid with NO diagonal artifact (matching Manifold's r_revolve
+// zSegments + refine). This densifier inserts z-samples on the profile's AXIAL edges
+// (edges whose z changes) at the SAME curvature-adaptive stations planAxialStations
+// picks — dense where the spline bends, sparse on straight runs. Constant-z edges
+// (annular caps) pass through untouched. Pure JS.
+
+type RZ = readonly [number, number];
+
+/**
+ * Densify a revolve half-section profile `[r,z][]` along Z ahead of a lathe→warp, so
+ * the revolved solid has enough axial rings to bend into a smooth arc. Inserts
+ * curvature-adaptive z-stations (see {@link planAxialStations}) onto each profile edge
+ * that spans z, interpolating r linearly; constant-z edges are left alone. The profile
+ * is treated as a CLOSED loop (last→first). Returns a NEW `[r,z][]` (the input when
+ * there is nothing to do — <2 points, no z-range, or no stations). Pure, headless.
+ */
+export function densifyProfileAxial(
+  profile: readonly RZ[],
+  cp: Pt2[] | Pt3[],
+  opts: { minStations?: number; maxStations?: number; epsilon?: number } = {},
+): [number, number][] {
+  const P: [number, number][] = profile.map((p) => [p[0], p[1]]);
+  if (P.length < 2 || !Array.isArray(cp) || cp.length < 2) return P;
+
+  let z0 = Infinity, z1 = -Infinity, rMax = 0;
+  for (const [r, z] of P) {
+    if (z < z0) z0 = z; if (z > z1) z1 = z;
+    if (Math.abs(r) > rMax) rMax = Math.abs(r);
+  }
+  const zRange = z1 - z0;
+  if (!(zRange > 1e-9)) return P;
+
+  // A baseline of interior rings (minStations) guarantees a smooth grid even on the
+  // straight run; curvature adds more where the spline bends, capped at maxStations.
+  const stations = planAxialStations(cp, z0, z1, {
+    radialExtent: rMax > 1e-9 ? rMax : zRange,
+    minStations: Math.max(1, Math.floor(opts.minStations ?? 8)),
+    maxStations: Math.max(2, Math.floor(opts.maxStations ?? 96)),
+    ...(opts.epsilon ? { epsilon: opts.epsilon } : {}),
+  });
+  if (!stations.length) return P;
+  const sorted = [...stations].sort((a, b) => a - b);
+  const eps = Math.max(zRange * 1e-6, 1e-9);
+
+  const out: [number, number][] = [];
+  const n = P.length;
+  for (let k = 0; k < n; k++) {
+    const [r0, za] = P[k];
+    const [r1, zb] = P[(k + 1) % n];
+    out.push([r0, za]);
+    if (Math.abs(zb - za) <= eps) continue; // constant-z edge (cap) — nothing to insert
+    const lo = Math.min(za, zb), hi = Math.max(za, zb);
+    const inside = sorted.filter((z) => z > lo + eps && z < hi - eps);
+    if (za > zb) inside.reverse(); // walk the edge in its OWN direction (keep winding)
+    for (const z of inside) {
+      const t = (z - za) / (zb - za);
+      out.push([r0 + (r1 - r0) * t, z]);
+    }
+  }
+  return out;
+}
