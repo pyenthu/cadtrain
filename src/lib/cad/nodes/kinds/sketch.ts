@@ -11,7 +11,7 @@
  * are ctx bindings (passed in to avoid a cycle). `sketchColLayout` is a cad-layer
  * import (allowed), reproducing the sketchCols column-count from the layout slot.
  */
-import type { SketchNode } from '../../composition-graph-types';
+import type { SketchNode, NodeId } from '../../composition-graph-types';
 import { type NodeKind, type ValidationError, checkArg } from '../node-kind';
 import { sketchColLayout } from '../../sketch-layout';
 
@@ -99,7 +99,12 @@ export const SketchKind: NodeKind<SketchNode> = {
     if ((node as any).segments) errs.push(...checkArg(node.id, 'segments', (node as any).segments, g));
     return errs;
   },
-  inputRefs: () => [],
+  // ← computeConsumedSet's `sketch` arm: a repeat-ref op consumes its
+  // SketchRepeatNode source so it never double-emits as an Output + its × greys.
+  inputRefs: (node) =>
+    (((node as any).ops as any[]) ?? [])
+      .filter((o) => o?.op === 'repeat-ref' && o.sourceId)
+      .map((o) => o.sourceId as NodeId),
   size: (node, ctx) => {
     const cols = (ctx.layout?.cols === 2 || ctx.layout?.cols === 3) ? ctx.layout.cols : 1;
     const cl = sketchColLayout((node as any).ops ?? [], cols as 1 | 2 | 3);

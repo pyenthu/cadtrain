@@ -354,12 +354,12 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
   const savedW = graph.layout[node.id]?.w;
   const baseW = typeof savedW === 'number' ? savedW : cardAutoWidth(graph, node);
   const w = Math.max(cardMinWidth(node), baseW);
-  // Phase 0/1 registry (docs/plans/hierarchical-class-design.md §6a): registered
-  // kinds size through their descriptor — byte-identical to the if-chain below
-  // (pinned by geom.test.ts). The graph-dependent kinds (container root branch,
-  // polygon/sketch persisted h + cols, expr def row-count) read their inputs
-  // from the INJECTED ctx (layout slot / exprDefs / geom-owned SizeConsts) so
-  // the cad-layer descriptor never imports this shared module.
+  // Registry (docs/plans/hierarchical-class-design.md): every node type sizes
+  // through its descriptor — byte-identical to the old per-type if-chain
+  // (pinned by geom.test.ts), now collapsed away (Phase 2). The graph-dependent
+  // kinds (container root branch, polygon/sketch persisted h + cols, expr def
+  // row-count) read their inputs from the INJECTED ctx (layout slot / exprDefs /
+  // geom-owned SizeConsts) so the cad-layer descriptor never imports this module.
   const k = kindOf(node as any);
   if (k) return k.size(node as any, {
     width: w,
@@ -368,88 +368,8 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
     exprDefs: graph.exprDefs,
     consts: SIZE_CONSTS,
   });
-  if (node.type === 'call') {
-    const argCount = Object.keys(node.args ?? {}).length;
-    return { w, h: Math.max(80, 50 + argCount * 22) };
-  }
-  // CSG method (subtract/add/intersect) renders as a COMPACT CIRCLE operator
-  // (glyph + A-top/B-bottom inputs + right output) — fixed size, ignore auto-width.
-  if (node.type === 'method') return { w: 40, h: 40 };
-  // mv / rot now render as a COMPACT ICON (glyph + left child input + right
-  // output), x/y/z edited in a click popover — mirror the method icon's fixed
-  // size, ignore auto-width. (Was a full ~92×110 inline-xyz card.)
-  if (node.type === 'mv' || node.type === 'rot') return { w: 40, h: 40 };
-  // material (G-MAT-CARD) — a COMPACT pill: just "◑ name" + a colour badge + the
-  // output socket. Width fits the label; fixed short height.
-  if (node.type === 'material') {
-    const label = String(node.name ?? 'material');
-    return { w: Math.max(128, 88 + label.length * 7.5), h: 30 };
-  }
-  // txfmn = combined ROT (3 rows) + MV (3 rows) table, each with a section
-  // label. Fixed height matches the card render's block layout below.
-  if (node.type === 'txfmn') return { w, h: 226 };
-  if (node.type === 'repeat') {
-    // Header (title + "builds a list of N ×") + one row per PART + a "+ part"
-    // row. Single-part repeats keep the historical 110px height.
-    const parts = (node.children?.length ?? 0);
-    return { w, h: Math.max(110, 64 + (parts + 1) * 24) };
-  }
-  if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
-    const slots = (node.children?.length ?? 0) + 1;
-    // The ROOT container is the ▶ Output node — a MINIMAL input-box + big arrow
-    // (#13). No labels / title / reorder / cog, so the box is just the socket
-    // column: as narrow as possible (OUTPUT_BOX_MIN_W) + the fixed arrow head.
-    if (node.id === (graph as any).root) {
-      return { w: OUTPUT_BOX_MIN_W + OUTPUT_ARROW_W, h: Math.max(OUTPUT_MIN_H, 22 + slots * 22) };
-    }
-    return { w, h: Math.max(60, 40 + slots * 22) };
-  }
-  if (node.type === 'polygon') {
-    const MAX_VISIBLE = 8;
-    const pts: any[] = (node as any).points ?? [];
-    const rows = pts.slice(0, MAX_VISIBLE);
-    const savedH = graph.layout[node.id]?.h;
-    const rowsH = rows.length
-      ? rows.reduce((a, pt) => a + polyEntryH(pt), 0)
-      : POLY_VTX_PITCH;
-    const autoH = 36 + rowsH + 30;
-    const h = typeof savedH === 'number' ? Math.max(120, savedH) : autoH;
-    return { w, h };
-  }
-  if (node.type === 'sketch') {
-    const cols = sketchCols(graph, node);
-    const cl = sketchColLayout((node as any).ops ?? [], cols);
-    const savedH = graph.layout[node.id]?.h;
-    const autoH = 36 + Math.max(44, cl.tallestH) + 62;
-    const h = typeof savedH === 'number' ? Math.max(140, savedH) : autoH;
-    const autoW = 12 + cl.innerW; // 12 = foreignObject 6px insets
-    return { w: Math.max(w, 210, autoW, cols * 80), h };
-  }
-  if (node.type === 'poly_repeat') {
-    const bindings = (node as any).bindings ?? [];
-    const bindingsH = 28 + bindings.length * 22 + 24; // hdr + rows + add btn
-    return { w: 240, h: 154 + bindingsH - 24 };
-  }
-  if (node.type === 'sketch_repeat') {
-    // header + Params head + 2 param rows + bindings (head + rows) +
-    // Prototype-ops head + one row per op + footer + pad (#805).
-    const bindings = (node as any).bindings ?? [];
-    const ops = (node as any).ops ?? [];
-    const h = 28 + 18 + 56 + (24 + bindings.length * 22) + 18 + ops.length * 24 + 30 + 14;
-    return { w: 252, h };
-  }
-  if (node.type === 'expr') {
-    // Height = the taller of {input sockets = def.params, output rows =
-    // def.outputs} so neither column clips, + trailing pad. Reads THROUGH the
-    // instance's def (v3); a dangling defId falls back to a 1-row card.
-    const def = (graph.exprDefs ?? []).find((d: any) => d.id === (node as any).defId);
-    const ins = def?.params ?? [];
-    const outs = def?.outputs ?? [];
-    const rows = Math.max(1, outs.length, ins.length);
-    return { w, h: EXPR_BODY_TOP + rows * EXPR_ROW_H + 30 };
-  }
-  if (node.type === 'spline') return { w, h: 40 }; // +20% height for click targets
-  if (node.type === 'warp') return { w, h: 112 };  // title + 2 sockets + opts row
+  // All 17 node types are registered — the descriptor above returns for every
+  // one. This default only guards an unknown/unmigrated type (Phase 2).
   return { w, h: 80 };
 }
 

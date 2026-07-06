@@ -5,6 +5,7 @@ import type { Graph, CallNode, ArgValue } from '../../composition-graph-types';
 
 const lit = (v: number): ArgValue => ({ kind: 'literal', value: v });
 const par = (p: string): ArgValue => ({ kind: 'param', param: p });
+const ex = (e: string): ArgValue => ({ kind: 'expr', expr: e } as any);
 const node = (args: Record<string, ArgValue>): CallNode => ({ id: 'c1', type: 'call', src: 'r_revolve', alias: 'A', args });
 const ctx = (): EmitCtx => ({
   ref: (id) => id,
@@ -28,6 +29,13 @@ describe('CallKind', () => {
     expect(CallKind.size(node({ a: lit(1), b: lit(2), c: lit(3) }), { width: 168, root: 'r' }))
       .toEqual({ w: 168, h: 50 + 3 * 22 }); // 116
     expect(CallKind.size(node({}), { width: 168, root: 'r' })).toEqual({ w: 168, h: 80 }); // floor
+  });
+  it('inputRefs: scans __POLY__<id> sentinels out of expr args (← computeConsumedSet)', () => {
+    expect(CallKind.inputRefs(node({ od: lit(2) }))).toEqual([]); // no expr args
+    expect(CallKind.inputRefs(node({ profile: ex('__POLY__n_abc123') }))).toEqual(['n_abc123']);
+    // multiple sentinels across args, plain expr ignored
+    expect(CallKind.inputRefs(node({ p: ex('__POLY__n_aa'), q: ex('od*2'), r: ex('__POLY__n_bb') })))
+      .toEqual(['n_aa', 'n_bb']);
   });
   it('sockets: inputs = arg keys, output true', () => {
     expect(CallKind.sockets(node({ profile: lit(1), segments: lit(2) }))).toEqual({ inputs: ['profile', 'segments'], output: true });
