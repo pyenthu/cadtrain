@@ -2468,37 +2468,12 @@
    *  Used by the ▶ Output card slot rendering — consumed children stay in
    *  root.children for data integrity but aren't shown as Output slots
    *  (they aren't in the function's return either). */
-  let consumedSet = $derived.by(() => {
-    const set = new Set<string>();
-    for (const n of Object.values(graph.nodes)) {
-      if (n.type === 'method') {
-        if ((n as any).obj) set.add((n as any).obj);
-        if ((n as any).arg) set.add((n as any).arg);
-      } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'repeat' || n.type === 'warp') {
-        // warp consumes its child (the bent solid is an INPUT, not a second
-        // Output) — MUST mirror the server's computeConsumedSet (composition-
-        // emit.ts:1032), else the editor shows the child as a phantom Output
-        // socket while the bake correctly drops it (editor/bake disagree).
-        if ((n as any).child) set.add((n as any).child);
-      } else if (n.type === 'stack' || n.type === 'group') {
-        for (const c of (n as any).children) set.add(c);
-      } else if (n.type === 'list' && n.id !== graph.root) {
-        for (const c of (n as any).children) set.add(c);
-      } else if (n.type === 'call') {
-        // Call args carrying a __POLY__<sourceId> expr consume the source.
-        // Without this, the polygon shows up as an Output child alongside
-        // the revolve that's USING it — two outputs visible when there's
-        // only one actual return value (the revolve's solid).
-        for (const v of Object.values((n as any).args ?? {})) {
-          if ((v as any).kind !== 'expr') continue;
-          const matches = String((v as any).expr ?? '').match(/__POLY__(n_[a-z0-9_]+)/gi);
-          if (!matches) continue;
-          for (const m of matches) set.add(m.slice('__POLY__'.length));
-        }
-      }
-    }
-    return set;
-  });
+  // ONE source of truth — the server's computeConsumedSet (via the exported
+  // consumedByCall). This editor used to hand-roll a DUPLICATE of it, which
+  // drifted (it was missing the warp + sketch-repeat-ref arms), so a consumed
+  // child showed as a phantom Output socket the bake correctly dropped. Using
+  // the shared fn keeps editor greying + the render's Output filter in lockstep.
+  let consumedSet = $derived.by(() => consumedByCall(graph));
   // The reserved stack-reference param is EXCLUDED from the chip list — its
   // z-offset now lives in the Properties card above the Params card, not as a
   // duplicate chip. (The model keeps it reserved/undeletable.) paramEntries is
