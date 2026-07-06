@@ -14,14 +14,15 @@
   import ArchGraph from './ArchGraph.svelte';
   import C4View from './C4View.svelte';
   import GepModuleGraph from './GepModuleGraph.svelte';
+  import FolderTreemap from './FolderTreemap.svelte';
 
-  // ── Architecture view tabs: "Tree" | "C4 model" | "GEP module" ──
+  // ── Architecture view tabs: "Tree" | "C4 model" | "GEP module" | "Folder tree" ──
   const LS_ARCH_TAB = 'design-arch-tab';
-  type ArchTab = 'tree' | 'c4' | 'gep';
+  type ArchTab = 'tree' | 'c4' | 'gep' | 'folder';
   let archTab = $state<ArchTab>('tree');
   if (typeof localStorage !== 'undefined') {
     const t = localStorage.getItem(LS_ARCH_TAB);
-    if (t === 'tree' || t === 'c4' || t === 'gep') archTab = t;
+    if (t === 'tree' || t === 'c4' || t === 'gep' || t === 'folder') archTab = t;
   }
   function setArchTab(t: ArchTab) {
     archTab = t;
@@ -176,6 +177,15 @@
       >
         GEP&nbsp;module
       </button>
+      <button
+        class="arch-tab"
+        class:active={archTab === 'folder'}
+        role="tab"
+        aria-selected={archTab === 'folder'}
+        onclick={() => setArchTab('folder')}
+      >
+        Folder&nbsp;tree
+      </button>
     </div>
 
     {#if archTab === 'tree'}
@@ -184,8 +194,10 @@
       </SvelteFlowProvider>
     {:else if archTab === 'c4'}
       <C4View />
-    {:else}
+    {:else if archTab === 'gep'}
       <GepModuleGraph />
+    {:else}
+      <FolderTreemap />
     {/if}
   </section>
 
