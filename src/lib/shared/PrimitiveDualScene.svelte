@@ -987,11 +987,16 @@
           {@const a = p.appearance ?? {}}
           {@const pOp = (typeof a.opacity === 'number' && a.opacity > 0 && a.opacity < 1) ? a.opacity : 1}
           {@const aPBR = materialPreset(a.material)}
-          <T.Mesh geometry={p.geo}>
+          <!-- renderOrder: OPAQUE parts (pOp>=1) render FIRST (0) so they write
+               depth + occlude the background; TRANSPARENT parts (pOp<1) render
+               AFTER (1) with depthWrite off but depthTest ON, so they blend over
+               the opaque geometry behind them instead of showing the background
+               through the overlap (TODO #37). -->
+          <T.Mesh geometry={p.geo} renderOrder={pOp < 1 ? 1 : 0}>
             {#if scene.zRectLight}
-              <T.MeshStandardMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+              <T.MeshStandardMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} depthTest={true} />
             {:else}
-              <T.MeshPhongMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+              <T.MeshPhongMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} depthTest={true} />
             {/if}
             {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
           </T.Mesh>
@@ -1009,11 +1014,15 @@
           {@const a = p.appearance ?? {}}
           {@const pOp = (typeof a.opacity === 'number' && a.opacity > 0 && a.opacity < 1) ? a.opacity : 1}
           {@const aPBR = materialPreset(a.material)}
-          <T.Mesh geometry={p.geo}>
+          <!-- renderOrder: OPAQUE cut parts render FIRST (0, depth-writing) so they
+               occlude the background; TRANSPARENT cut parts render AFTER (1) with
+               depthWrite off but depthTest ON so they blend over the section behind
+               them rather than showing the background at the overlap (TODO #37). -->
+          <T.Mesh geometry={p.geo} renderOrder={pOp < 1 ? 1 : 0}>
             {#if scene.zRectLight}
-              <T.MeshStandardMaterial vertexColors roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+              <T.MeshStandardMaterial vertexColors roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} depthTest={true} />
             {:else}
-              <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+              <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} depthTest={true} />
             {/if}
             {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
           </T.Mesh>
