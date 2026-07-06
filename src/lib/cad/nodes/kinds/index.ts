@@ -10,3 +10,4 @@ export { SplineKind } from './spline';
 export { WarpKind } from './warp';
 export { ContainerKind, containerSize } from './container';
 export { StackKind } from './stack';
+export { RepeatKind } from './repeat';
