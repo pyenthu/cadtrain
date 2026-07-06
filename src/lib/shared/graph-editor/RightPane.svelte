@@ -545,7 +545,7 @@
          runs ONLY when this tab is open, and ONLY bakes the GLB (no mesh).
          Mounted on demand so iteration on the 3D-bake tab never waits on it. -->
     <div class="ge-glb-body" class:hidden={rightTab !== 'glb'}>
-      {#if rightTab === 'glb'}
+      {#if rightTab === 'glb' && (active ?? true)}
         {#if PrimitiveDualCanvas && bake && typeof bake === 'object' && bake.source}
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
             args={bake.args ?? paramDefaults}
@@ -565,7 +565,7 @@
          camera/lights/orbit, ⚙ scale gear, SceneControls, Z-pan, stats + 🔄.
          Posts the emitted source + current param values to /api/brep/preview. -->
     <div class="ge-glb-body" class:hidden={rightTab !== 'brep'}>
-      {#if rightTab === 'brep'}
+      {#if rightTab === 'brep' && (active ?? true)}
         {#if PrimitiveDualCanvas && bake && typeof bake === 'object' && bake.source}
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
             args={bake.args ?? paramDefaults}
@@ -600,7 +600,13 @@
          lazy-loaded only when this tab first opens. The demo is chosen from the
          tf_examples registry dropdown (default r_cyl). -->
     <div class="ge-glb-body" class:hidden={rightTab !== 'tf'}>
-      {#if rightTab === 'tf'}
+      <!-- Gate on `active` (the /primitives current-tab flag): /primitives mounts
+           EVERY tab's pane, and `ge-right-tab` is a SHARED localStorage key, so
+           without this ALL panes would have rightTab==='tf' and bake concurrently
+           through the ONE shared TF worker → its global latest-wins supersede
+           CANCELS all but the last → every pane but one blanks. Only the visible
+           pane bakes. (active ?? true) keeps single /graph-editor unchanged. -->
+      {#if rightTab === 'tf' && (active ?? true)}
         {#if PrimitiveDualCanvas && bake && typeof bake === 'object' && bake.source}
           <!-- Demo selector: populated from the $lib/shared/tf_examples registry
                (one file per demo). TrueForm has no revolve/loft/extrude, so these
