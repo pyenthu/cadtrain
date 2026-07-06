@@ -994,9 +994,9 @@
                through the overlap (TODO #37). -->
           <T.Mesh geometry={p.geo} renderOrder={pOp < 1 ? 1 : 0}>
             {#if scene.zRectLight}
-              <T.MeshStandardMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} depthTest={true} />
+              <T.MeshStandardMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} wireframe={scene.wireframe} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} depthTest={true} />
             {:else}
-              <T.MeshPhongMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} depthTest={true} />
+              <T.MeshPhongMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} specular="#666666" shininess={120} flatShading={!smoothShade} wireframe={scene.wireframe} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} depthTest={true} />
             {/if}
             {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
           </T.Mesh>
@@ -1020,9 +1020,9 @@
                them rather than showing the background at the overlap (TODO #37). -->
           <T.Mesh geometry={p.geo} renderOrder={pOp < 1 ? 1 : 0}>
             {#if scene.zRectLight}
-              <T.MeshStandardMaterial vertexColors roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} depthTest={true} />
+              <T.MeshStandardMaterial vertexColors roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} wireframe={scene.wireframe} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} depthTest={true} />
             {:else}
-              <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} depthTest={true} />
+              <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} wireframe={scene.wireframe} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} depthTest={true} />
             {/if}
             {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
           </T.Mesh>
