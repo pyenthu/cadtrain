@@ -88,6 +88,33 @@ describe('packTfResult (transferable pack)', () => {
     expect(payload.cutPlanes).toEqual([{ axis: 0, coord: 0 }, { axis: 1, coord: 0 }]);
   });
 
+  it('carries the uncut fullData mesh through on its OWN transferable buffer', () => {
+    const result: TfDemoResult = {
+      data: { points: new Float32Array([1, 1, 1, 2, 2, 2]), faces: new Int32Array([0, 1, 2]) },
+      stats: { tris: 1, verts: 2, closed: true, manifold: true, euler: 2, boundaryLoops: 0, signedVolume: 1, volume: 1 },
+      cutPlanes: [{ axis: 0, coord: 0 }, { axis: 1, coord: 0 }],
+      fullData: { points: new Float32Array([9, 9, 9, 8, 8, 8]), faces: new Int32Array([0, 1, 2]) },
+    };
+    const { payload, transfer } = packTfResult(result);
+    expect(Array.from(payload.fullData!.points)).toEqual([9, 9, 9, 8, 8, 8]);
+    // Fresh (owned) buffers + in the transfer list, distinct from the source.
+    expect(transfer).toContain(payload.fullData!.points.buffer);
+    expect(transfer).toContain(payload.fullData!.faces.buffer);
+    expect(payload.fullData!.points.buffer).not.toBe(result.fullData!.points.buffer);
+    // cut `data` + `fullData` = 4 transferable buffers (points+faces each).
+    expect(transfer.length).toBe(4);
+  });
+
+  it('omits fullData when the result carries none (non-cutaway path)', () => {
+    const result: TfDemoResult = {
+      data: { points: new Float32Array([0, 0, 0]), faces: new Int32Array([0]) },
+      stats: { tris: 0, verts: 1, closed: true, manifold: true, euler: 2, boundaryLoops: 0, signedVolume: 1, volume: 1 },
+    };
+    const { payload, transfer } = packTfResult(result);
+    expect(payload.fullData).toBeUndefined();
+    expect(transfer.length).toBe(2);
+  });
+
   it('packs per-part meshes + appearance, each on its own transferable buffer', () => {
     const result: TfDemoResult = {
       data: { points: new Float32Array([0, 0, 0]), faces: new Int32Array([0]) },

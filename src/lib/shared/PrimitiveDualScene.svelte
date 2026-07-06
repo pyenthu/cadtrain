@@ -967,11 +967,14 @@
 <!-- TOP — live mesh, stacked on the part (Z) axis. -->
 <T.Group position={meshPos}>
   {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.zRectLight ? '_r' : '')}
-    {#if parts && parts.length}
+    {#if parts && parts.length && !(showCutaway && cutVC)}
       <!-- PER-PART textured meshes (TF per-part texture, #3): each part is its
            OWN mesh with its OWN material — colour · texture map · opacity — so a
            multi-part assembly can show a different texture PER sub-part (which the
-           single vertex-coloured mesh can't). Cutaway OFF only (v1). -->
+           single vertex-coloured mesh can't). FULL VIEW only: `parts` now rides on
+           `geo` regardless of cutaway (so material shows however the toggle got
+           there), so the cut view must yield to the merged grey/red `cutVC` section
+           below (per-part material ON the cut section is out of scope, v1). -->
       {#each parts as p, i (i)}
         {#if p.geo}
           {@const a = p.appearance ?? {}}

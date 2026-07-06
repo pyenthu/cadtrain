@@ -353,11 +353,18 @@ export interface TfDemoResult {
   data: TfMeshData;
   stats: TfMeshStats;
   cutPlanes?: TfCutPlane[];
+  /** The UNCUT full-solid mesh, present ONLY when a cutaway was applied (then
+   *  `data` above is the CUT section + `cutPlanes`). Carrying both lets the
+   *  cross-section toggle be a pure VIEW-SWITCH (full ↔ cut) with NO re-bake —
+   *  mirrors Manifold's `{full, cutVC}`. When no cutaway ran, `data` already IS
+   *  the full mesh and this is absent. */
+  fullData?: TfMeshData;
   /** PER-PART meshes (per-part-texture TF render) — one entry per top-level
    *  recipe part, each its own mesh + appearance (colour · opacity · texture).
-   *  Present only on the per-part display path (cutaway OFF); the merged `data`
-   *  above stays the single-mesh / cutaway fallback. The scene renders each part
-   *  with its own material when this is set. */
+   *  Built whenever the recipe carries per-part appearance, REGARDLESS of cutaway
+   *  (the material must show on the full view irrespective of how the cut toggle
+   *  got there). Rendered on the full view only — the cut section stays the merged
+   *  grey/red `data` (per-part material on the cut section is out of scope, v1). */
   parts?: { data: TfMeshData; appearance?: import('$lib/cad/graph-to-tf').TfAppearance }[];
 }
 
@@ -428,10 +435,14 @@ export function tfResult(
   opts: { cutaway?: boolean; cuttable?: boolean } = {},
 ): TfDemoResult {
   if (opts.cutaway && opts.cuttable) {
+    // Extract the UNCUT full mesh FIRST (before the boolean below consumes/derives
+    // from `solid`), then cut. Returning BOTH lets the cross-section toggle switch
+    // full ↔ cut with no re-bake (mirrors Manifold's finalizeManifold {full,cutVC}).
+    const fullData = tfMeshData(solid);
     const { mesh: cut, planes } = applyTfCutaway(t, solid);
     if (planes) {
       // Analyse the CUT solid — a clean half-cut is still closed + manifold.
-      return { data: tfMeshData(cut), stats: tfAnalyze(tf, cut), cutPlanes: planes };
+      return { data: tfMeshData(cut), stats: tfAnalyze(tf, cut), cutPlanes: planes, fullData };
     }
   }
   return { data: tfMeshData(solid), stats: tfAnalyze(tf, solid) };

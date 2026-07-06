@@ -83,6 +83,9 @@ export interface TfTransferable {
   data: { points: Float32Array; faces: Int32Array };
   stats: TfMeshStats;
   cutPlanes?: TfCutPlane[];
+  /** The UNCUT full mesh, present only when a cutaway ran (then `data` is the cut
+   *  section). Lets the cross-section toggle be a pure view-switch, no re-bake. */
+  fullData?: { points: Float32Array; faces: Int32Array };
   parts?: { data: { points: Float32Array; faces: Int32Array }; appearance?: TfAppearance }[];
 }
 
@@ -110,6 +113,11 @@ export function packTfResult(r: TfDemoResult): { payload: TfTransferable; transf
   transfer.push(data.points.buffer, data.faces.buffer);
   const payload: TfTransferable = { data, stats: r.stats };
   if (r.cutPlanes) payload.cutPlanes = r.cutPlanes;
+  if (r.fullData) {
+    const fd = copyMesh(r.fullData);
+    transfer.push(fd.points.buffer, fd.faces.buffer);
+    payload.fullData = fd;
+  }
   if (r.parts && r.parts.length) {
     payload.parts = r.parts.map((p) => {
       const pd = copyMesh(p.data);

@@ -333,6 +333,56 @@ describe('executeTfRecipe — stack-mode repeat (g_dp_stand bug)', () => {
   });
 });
 
+describe('executeTfRecipe — cutaway returns BOTH full + cut, and parts regardless of cutaway', () => {
+  // BUG-1 fix: a cutaway build must carry the UNCUT `fullData` alongside the CUT
+  // `data`/`cutPlanes` so the cross-section toggle is a pure view-switch (no
+  // re-bake, no blank on ON→OFF). BUG-2 fix: per-part `parts` (material) must be
+  // built REGARDLESS of cutaway so the full view always shows its material.
+  const appearanceRecipe: TfRecipe = {
+    instrs: [{ op: 'box', w: 4, h: 4, d: 4 }],
+    notes: [],
+    partAppearance: [{ material: 'steel' }],
+  } as any;
+
+  it('a cutaway build returns BOTH the uncut full mesh AND the cut section (+ planes)', () => {
+    const t = makeMockTf();
+    const out = executeTfRecipe(t, t, recipe([{ op: 'box', w: 4, h: 4, d: 4 }]), { cutaway: true });
+    // Cut section + the two exposed planes (x=0, y=0) — the merged grey/red view.
+    expect(out.cutPlanes).toEqual([{ axis: 0, coord: 0 }, { axis: 1, coord: 0 }]);
+    expect(out.data.points.length).toBeGreaterThan(0);
+    // AND the uncut full mesh, so the toggle can switch full ↔ cut with no re-bake.
+    expect(out.fullData).toBeDefined();
+    expect(out.fullData!.points.length).toBeGreaterThan(0);
+    // The cut actually ran (booleanDifference), proving `data` != `fullData` handle.
+    expect(t.calls.filter((c: any) => c.fn === 'booleanDifference')).toHaveLength(1);
+  });
+
+  it('a non-cutaway build has NO fullData (data already IS the full mesh)', () => {
+    const t = makeMockTf();
+    const out = executeTfRecipe(t, t, recipe([{ op: 'box', w: 4, h: 4, d: 4 }]), { cutaway: false });
+    expect(out.cutPlanes).toBeUndefined();
+    expect(out.fullData).toBeUndefined();
+    expect(out.data.points.length).toBeGreaterThan(0);
+  });
+
+  it('builds per-part meshes even with cutaway ON when the recipe has per-part appearance', () => {
+    const t = makeMockTf();
+    const out = executeTfRecipe(t, t, appearanceRecipe, { cutaway: true });
+    expect(out.parts).toBeDefined();
+    expect(out.parts).toHaveLength(1);
+    expect(out.parts![0].appearance).toEqual({ material: 'steel' });
+    // and the cutaway still produced both the uncut full mesh + the cut section.
+    expect(out.fullData).toBeDefined();
+    expect(out.cutPlanes).toEqual([{ axis: 0, coord: 0 }, { axis: 1, coord: 0 }]);
+  });
+
+  it('a recipe with NO appearance stays on the merged single-mesh path (no parts)', () => {
+    const t = makeMockTf();
+    const out = executeTfRecipe(t, t, recipe([{ op: 'box', w: 4, h: 4, d: 4 }]), { cutaway: false });
+    expect(out.parts).toBeUndefined();
+  });
+});
+
 describe('recipeHasUnsupported', () => {
   it('is false for a clean revolve/boolean recipe', () => {
     expect(recipeHasUnsupported(recipe([

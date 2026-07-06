@@ -378,14 +378,16 @@ export function executeTfRecipe(
 
     // PER-PART meshes for the per-part-texture display (task #2/#3): extract each
     // part's flat mesh data NOW — BEFORE the union below may consume the handles.
-    // Only when the recipe carries per-part appearance + cutaway is OFF (v1: the
-    // cutaway still uses the merged single mesh). A SINGLE output part with its own
-    // appearance (e.g. a `material` preset — bw_open_hole = one steel g_shaft) must
-    // still render per-part so its metalness/tint lands; `appearance.some(Boolean)`
-    // already gates to appearance-bearing recipes, so parts with NO appearance stay
-    // on the merged single-mesh path (byte-identical).
+    // Built REGARDLESS of cutaway (BUG 2 fix): the per-part material (steel/etc.)
+    // must show on the FULL view whether or not the cut toggle is on — the scene
+    // renders `parts` on the full view and the merged grey/red section on the cut
+    // view (per-part material ON the cut section is out of scope, v1). A SINGLE
+    // output part with its own appearance (e.g. a `material` preset — bw_open_hole =
+    // one steel g_shaft) must still render per-part so its metalness/tint lands;
+    // `appearance.some(Boolean)` gates to appearance-bearing recipes, so parts with
+    // NO appearance stay on the merged single-mesh path (byte-identical).
     const appearance = recipe.partAppearance;
-    const wantParts = !opts?.cutaway && !!appearance && appearance.some(Boolean) && partMeshes.length >= 1;
+    const wantParts = !!appearance && appearance.some(Boolean) && partMeshes.length >= 1;
     const partData = wantParts ? partMeshes.map((m) => tfMeshData(m)) : null;
 
     // Merged union — the single-mesh `data` + cutaway + stats (back-compat: the

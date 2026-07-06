@@ -557,22 +557,25 @@
       const tim = (result as any).__timings as { warm: number; build: number } | undefined;
       const warmMs = tim?.warm ?? 0;
       const buildMs = tim?.build ?? (performance.now() - t0);
-      const { data, stats, cutPlanes, parts } = result;
+      const { data, stats, cutPlanes, fullData, parts } = result;
       const _tMesh0 = performance.now();
-      if (cutPlanes) {
-        const cutVC = tfMeshToGeo(data, undefined, { planes: cutPlanes });
-        geo = { cutVC };
-      } else if (parts && parts.length) {
-        // PER-PART textured meshes (TF per-part texture) — each part its own geo +
-        // appearance; keep `full` as the single-mesh fallback. The scene renders
-        // `parts` (colour/texture/opacity per part) when present.
-        geo = {
-          full: tfMeshToGeo(data),
-          parts: parts.map((p) => ({ geo: tfMeshToGeo(p.data), appearance: p.appearance })),
-        };
-      } else {
-        geo = { full: tfMeshToGeo(data) };
-      }
+      // Assemble BOTH meshes + parts TOGETHER (mirrors Manifold's {full,cutVC}) so
+      // the cross-section toggle is a pure VIEW-SWITCH with NO re-bake and never
+      // blanks (BUG 1). When a cutaway ran, `data` is the CUT section (+cutPlanes)
+      // and `fullData` is the UNCUT solid; otherwise `data` IS the full solid and
+      // `fullData` is absent → `full` falls back to `data`. `parts` (per-part
+      // material) is built regardless of cutaway (BUG 2) and rides on `geo` so the
+      // full view always shows its material; the scene shows the merged grey/red
+      // section on the cut view (per-part material on the cut is out of scope, v1).
+      const full = tfMeshToGeo(fullData ?? data);
+      const cutVC = cutPlanes ? tfMeshToGeo(data, undefined, { planes: cutPlanes }) : undefined;
+      geo = {
+        full,
+        ...(cutVC ? { cutVC } : {}),
+        ...(parts && parts.length
+          ? { parts: parts.map((p) => ({ geo: tfMeshToGeo(p.data), appearance: p.appearance })) }
+          : {}),
+      };
       const meshMs = performance.now() - _tMesh0; // TF mesh → THREE.BufferGeometry (normals/weld)
       geoVersion++;
       // Pure geometry cost = worker build + main-thread mesh-convert (excludes the
