@@ -2474,7 +2474,11 @@
       if (n.type === 'method') {
         if ((n as any).obj) set.add((n as any).obj);
         if ((n as any).arg) set.add((n as any).arg);
-      } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'repeat') {
+      } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'repeat' || n.type === 'warp') {
+        // warp consumes its child (the bent solid is an INPUT, not a second
+        // Output) — MUST mirror the server's computeConsumedSet (composition-
+        // emit.ts:1032), else the editor shows the child as a phantom Output
+        // socket while the bake correctly drops it (editor/bake disagree).
         if ((n as any).child) set.add((n as any).child);
       } else if (n.type === 'stack' || n.type === 'group') {
         for (const c of (n as any).children) set.add(c);
