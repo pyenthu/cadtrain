@@ -11,3 +11,5 @@ export { WarpKind } from './warp';
 export { ContainerKind, containerSize } from './container';
 export { StackKind } from './stack';
 export { RepeatKind } from './repeat';
+export { PolygonKind } from './polygon';
+export { PolyRepeatKind } from './poly-repeat';
