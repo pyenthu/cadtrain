@@ -23,6 +23,7 @@ import {
   type RotNode,
 } from '$lib/cad/composition-graph';
 import { sketchColLayout, SKETCH_COL_W, SKETCH_COL_GAP } from '$lib/cad/sketch-layout';
+import { kindOf } from '$lib/cad/nodes/registry';
 
 // ─── Params-card geometry constants ────────────────────────────────────────
 // Outer card sits at (CARD_X0, CARD_Y0); the title bar takes CARD_TITLE_H;
@@ -342,6 +343,11 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
   const savedW = graph.layout[node.id]?.w;
   const baseW = typeof savedW === 'number' ? savedW : cardAutoWidth(graph, node);
   const w = Math.max(cardMinWidth(node), baseW);
+  // Phase 0 registry (docs/plans/hierarchical-class-design.md §6a): registered
+  // kinds (method/txfmn/material) size through their descriptor — byte-identical
+  // to the if-chain below (pinned by geom.test.ts). Others fall through.
+  const k = kindOf(node as any);
+  if (k) return k.size(node as any, { width: w, root: (graph as any).root });
   if (node.type === 'call') {
     const argCount = Object.keys(node.args ?? {}).length;
     return { w, h: Math.max(80, 50 + argCount * 22) };

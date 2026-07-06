@@ -46,6 +46,7 @@ import {
 } from './graph-exprs';
 import { isImperative, compileImperative } from './expr-imperative';
 import { inferStructure } from './struct-type';
+import { kindOf } from './nodes/registry';
 
 export interface EmitOptions {
   /** The assembly id (becomes meta.id + the export function name). */
@@ -115,6 +116,12 @@ export function validateGraph(graph: Graph): GraphValidationError[] {
   };
   for (const [id, node] of Object.entries(graph.nodes)) {
     if (!node) continue;
+    // Phase 0 registry (docs/plans/hierarchical-class-design.md §6a): registered
+    // kinds validate through their descriptor; the legacy switch handles the rest.
+    // The descriptor output is byte-identical to the arm it replaces (unit-tested),
+    // so the switch's now-dead method/txfmn arms stay put until Phase 2.
+    const k = kindOf(node);
+    if (k) { errs.push(...k.validate(node, graph)); continue; }
     switch (node.type) {
       case 'call':
         for (const [k, v] of Object.entries(node.args)) checkArg(id, `args.${k}`, v);
