@@ -9,7 +9,7 @@
  */
 import type { GraphNode } from '../composition-graph-types';
 import type { NodeKind } from './node-kind';
-import { CallKind, MethodKind, TxfmnKind, MaterialKind, MvKind, RotKind } from './kinds';
+import { CallKind, MethodKind, TxfmnKind, MaterialKind, MvKind, RotKind, SplineKind, WarpKind } from './kinds';
 
 const KINDS: Partial<Record<GraphNode['type'], NodeKind>> = {
   call: CallKind as NodeKind,
@@ -18,6 +18,8 @@ const KINDS: Partial<Record<GraphNode['type'], NodeKind>> = {
   material: MaterialKind as NodeKind,
   mv: MvKind as NodeKind,
   rot: RotKind as NodeKind,
+  spline: SplineKind as NodeKind,
+  warp: WarpKind as NodeKind,
 };
 
 /** undefined for not-yet-migrated kinds → the call-site keeps its legacy arm. */

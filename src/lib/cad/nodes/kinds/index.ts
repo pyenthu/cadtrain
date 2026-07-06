@@ -6,3 +6,5 @@ export { TxfmnKind } from './txfmn';
 export { MaterialKind } from './material';
 export { MvKind } from './mv';
 export { RotKind } from './rot';
+export { SplineKind } from './spline';
+export { WarpKind } from './warp';
