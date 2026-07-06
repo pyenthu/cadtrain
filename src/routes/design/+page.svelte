@@ -13,14 +13,15 @@
   import { SvelteFlowProvider } from '@xyflow/svelte';
   import ArchGraph from './ArchGraph.svelte';
   import C4View from './C4View.svelte';
+  import GepModuleGraph from './GepModuleGraph.svelte';
 
-  // ── Architecture view tabs: "Tree" (existing ArchGraph) | "C4 model" (new) ──
+  // ── Architecture view tabs: "Tree" | "C4 model" | "GEP module" ──
   const LS_ARCH_TAB = 'design-arch-tab';
-  type ArchTab = 'tree' | 'c4';
+  type ArchTab = 'tree' | 'c4' | 'gep';
   let archTab = $state<ArchTab>('tree');
   if (typeof localStorage !== 'undefined') {
     const t = localStorage.getItem(LS_ARCH_TAB);
-    if (t === 'tree' || t === 'c4') archTab = t;
+    if (t === 'tree' || t === 'c4' || t === 'gep') archTab = t;
   }
   function setArchTab(t: ArchTab) {
     archTab = t;
@@ -166,14 +167,25 @@
       >
         C4&nbsp;model
       </button>
+      <button
+        class="arch-tab"
+        class:active={archTab === 'gep'}
+        role="tab"
+        aria-selected={archTab === 'gep'}
+        onclick={() => setArchTab('gep')}
+      >
+        GEP&nbsp;module
+      </button>
     </div>
 
     {#if archTab === 'tree'}
       <SvelteFlowProvider>
         <ArchGraph />
       </SvelteFlowProvider>
-    {:else}
+    {:else if archTab === 'c4'}
       <C4View />
+    {:else}
+      <GepModuleGraph />
     {/if}
   </section>
 
