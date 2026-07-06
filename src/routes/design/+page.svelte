@@ -14,7 +14,7 @@
   import ArchGraph from './ArchGraph.svelte';
   import C4View from './C4View.svelte';
   import GepModuleGraph from './GepModuleGraph.svelte';
-  import FolderTreemap from './FolderTreemap.svelte';
+  import FolderHierarchy from './FolderHierarchy.svelte';
   import UmlClassDiagram from './UmlClassDiagram.svelte';
 
   // ── Architecture view tabs: Tree | C4 | GEP module | Folder tree | Class model ──
@@ -241,7 +241,7 @@
     {:else if archTab === 'gep'}
       <GepModuleGraph />
     {:else if archTab === 'folder'}
-      <FolderTreemap />
+      <FolderHierarchy />
     {:else}
       <UmlClassDiagram />
     {/if}
