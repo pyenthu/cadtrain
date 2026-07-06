@@ -108,112 +108,12 @@ export interface GraphValidationError {
  *    2. param ArgValues that name a param no longer in graph.params */
 export function validateGraph(graph: Graph): GraphValidationError[] {
   const errs: GraphValidationError[] = [];
-  const has = (id: NodeId) => Object.prototype.hasOwnProperty.call(graph.nodes, id);
-  const hasParam = (name: string) => Object.prototype.hasOwnProperty.call(graph.params, name);
-  const checkArg = (nodeId: NodeId, slot: string, v: ArgValue) => {
-    if (v.kind === 'param' && !hasParam(v.param)) {
-      errs.push({ nodeId, slot, badRef: v.param, kind: 'missing-param' });
-    }
-  };
-  for (const [id, node] of Object.entries(graph.nodes)) {
+  // Every node type is registered — its descriptor's validate() reproduces the
+  // arm that used to live in a per-type switch here (Phase 2). Output is
+  // byte-identical (unit-tested) and splices straight into errs.
+  for (const node of Object.values(graph.nodes)) {
     if (!node) continue;
-    // Phase 0 registry (docs/plans/hierarchical-class-design.md §6a): registered
-    // kinds validate through their descriptor; the legacy switch handles the rest.
-    // The descriptor output is byte-identical to the arm it replaces (unit-tested),
-    // so the switch's now-dead method/txfmn arms stay put until Phase 2.
-    const k = kindOf(node);
-    if (k) { errs.push(...k.validate(node, graph)); continue; }
-    switch (node.type) {
-      case 'call':
-        for (const [k, v] of Object.entries(node.args)) checkArg(id, `args.${k}`, v);
-        break;
-      case 'list':
-      case 'stack':
-      case 'group':
-        node.children.forEach((c, i) => {
-          if (!has(c)) errs.push({ nodeId: id, slot: `children[${i}]`, badRef: c, kind: 'missing-node' });
-        });
-        break;
-      case 'method':
-        if (!has(node.obj)) errs.push({ nodeId: id, slot: 'obj', badRef: node.obj, kind: 'missing-node' });
-        if (!has(node.arg)) errs.push({ nodeId: id, slot: 'arg', badRef: node.arg, kind: 'missing-node' });
-        break;
-      case 'mv':
-        if (!has(node.child)) errs.push({ nodeId: id, slot: 'child', badRef: node.child, kind: 'missing-node' });
-        node.offset.forEach((v, i) => checkArg(id, `offset[${i}]`, v));
-        break;
-      case 'rot':
-        if (!has(node.child)) errs.push({ nodeId: id, slot: 'child', badRef: node.child, kind: 'missing-node' });
-        node.rot.forEach((v, i) => checkArg(id, `rot[${i}]`, v));
-        break;
-      case 'txfmn':
-        // Both triples are checked so a wired-then-deleted param surfaces as
-        // `missing-param`; child resolves like mv/rot (null/unwired = missing).
-        if (node.child == null || !has(node.child)) {
-          errs.push({ nodeId: id, slot: 'child', badRef: String(node.child ?? ''), kind: 'missing-node' });
-        }
-        node.rot.forEach((v, i) => checkArg(id, `rot[${i}]`, v));
-        node.offset.forEach((v, i) => checkArg(id, `offset[${i}]`, v));
-        break;
-      case 'repeat': {
-        // A bodyExpr (code mode) supplies the body without wired parts, so an
-        // empty PARTS list is only an error when there is no code override.
-        const hasBody = typeof (node as any).bodyExpr === 'string' && (node as any).bodyExpr.trim().length > 0;
-        const kids = node.children ?? [];
-        if (kids.length === 0 && !hasBody) {
-          errs.push({ nodeId: id, slot: 'child', badRef: '', kind: 'missing-node' });
-        }
-        kids.forEach((c, i) => {
-          if (!has(c)) errs.push({ nodeId: id, slot: `children[${i}]`, badRef: c, kind: 'missing-node' });
-        });
-        checkArg(id, 'count', node.count);
-      }
-        // Patterned-repeat modifier/binding ArgValues (#7) — same as poly_repeat.
-        ((node as any).modifiers as any[] ?? []).forEach((m, k) =>
-          (m?.vec ?? []).forEach((v: any, ax: number) => checkArg(id, `modifiers[${k}].vec[${ax}]`, v)));
-        ((node as any).bindings as any[] ?? []).forEach((b, k) =>
-          checkArg(id, `bindings[${k}].value`, b?.value));
-        break;
-      case 'sketch':
-        // Mirror the polygon path: every per-op ArgValue component is checked
-        // so a wired-then-deleted param surfaces as `missing-param`.
-        (node.ops as any[]).forEach((o, i) => {
-          if (o.op === 'line' || o.op === 'spline') {
-            checkArg(id, `ops[${i}].r`, o.r);
-            checkArg(id, `ops[${i}].z`, o.z);
-          }
-          if (o.op === 'spline') {
-            (o.pts ?? []).forEach((pt: any, k: number) => {
-              if (pt?.[0]) checkArg(id, `ops[${i}].pts[${k}].u`, pt[0]);
-              if (pt?.[1]) checkArg(id, `ops[${i}].pts[${k}].v`, pt[1]);
-            });
-            if (o.h0?.[0]) checkArg(id, `ops[${i}].h0.u`, o.h0[0]);
-            if (o.h0?.[1]) checkArg(id, `ops[${i}].h0.v`, o.h0[1]);
-            if (o.h1?.[0]) checkArg(id, `ops[${i}].h1.u`, o.h1[0]);
-            if (o.h1?.[1]) checkArg(id, `ops[${i}].h1.v`, o.h1[1]);
-          }
-          if (o.op === 'fillet')  checkArg(id, `ops[${i}].radius`, o.radius);
-          if (o.op === 'chamfer') checkArg(id, `ops[${i}].dist`, o.dist);
-        });
-        if ((node as any).segments) checkArg(id, 'segments', (node as any).segments);
-        break;
-      case 'expr':
-        // An input binding wired to a since-deleted param surfaces as
-        // missing-param (same treatment as every other ArgValue slot).
-        for (const [inName, v] of Object.entries((node as any).bindings ?? {})) {
-          checkArg(id, `bindings.${inName}`, v as ArgValue);
-        }
-        break;
-      case 'warp':
-        // The bent solid (child) must be wired; the path + refine ArgValues are
-        // checked so a wired-then-deleted param surfaces as missing-param.
-        if (node.child == null || !has(node.child)) {
-          errs.push({ nodeId: id, slot: 'child', badRef: String(node.child ?? ''), kind: 'missing-node' });
-        }
-        checkArg(id, 'path', node.path);
-        if (node.refine != null) checkArg(id, 'refine', node.refine);
-        break;
-    }
+    errs.push(...(kindOf(node)?.validate(node, graph) ?? []));
   }
   return errs;
 }
