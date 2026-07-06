@@ -250,12 +250,19 @@ export const POST = async ({ request, fetch }) => {
   // High-res FLOOR (SVG "high"): raise the raw-helper segment count AND set the
   // engine-prim floor, so deps that hard-code a low `segments` get lifted UP.
   if (segFloorArg !== undefined) { helpers.setCircularSegmentCount(segFloorArg); helpers.setCircularSegmentFloor(segFloorArg); }
-  // Build-time axial Z-densification (smooth warp) — ONLY when a warp option is
-  // present, so non-warp revolves stay light. Drive the target Z-edge length
-  // from the warp frequency (period 2π/freq, ~16 samples/cycle). Same race-safe
-  // window as the segment levers: set right before the SYNC build, restore after.
-  const axialPrev = (warpArg && warpArg.freq > 0) ? getAxialMaxZSpan() : undefined;
+  // Build-time axial Z-densification (smooth warp) — ONLY when a warp is present,
+  // so non-warp revolves stay light. SINE warp (opts.warp): drive the target Z-edge
+  // from the warp frequency (period 2π/freq, ~16 samples/cycle). WARP-NODE part
+  // (`warpSpline(...)` in the source → warpedSrc): r_revolve is now LEAN by default
+  // (g_shaft zSegments 0), so cap each profile Z-span at WARP_AXIAL_MAX_ZSPAN=1.5
+  // → the straight wall re-laths into enough rings to bend smoothly (Rule-25 clean:
+  // build-time on the 2D profile, not a post-bake subdivide). Non-warp bakes never
+  // touch the dial → byte-identical + lean. Same race-safe set/restore window.
+  const WARP_AXIAL_MAX_ZSPAN = 1.5;
+  const useAxialDial = (warpArg && warpArg.freq > 0) || warpedSrc;
+  const axialPrev = useAxialDial ? getAxialMaxZSpan() : undefined;
   if (warpArg && warpArg.freq > 0) setAxialMaxZSpan((2 * Math.PI / warpArg.freq) / 16);
+  else if (warpedSrc) setAxialMaxZSpan(WARP_AXIAL_MAX_ZSPAN);
   try { manifold = primFn(...args); }
   catch (e: any) {
     if (segActive) helpers.setCircularSegmentCount(segPrev as number);

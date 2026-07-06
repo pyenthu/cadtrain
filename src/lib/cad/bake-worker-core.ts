@@ -34,6 +34,12 @@ import { serializeComponentResult, type SerializedComponentResult, type Serializ
  *  "bust the IndexedDB cache on kernel-version change"). */
 export const KERNEL_VERSION = 'manifold-3d@3.4.1+cap1'; // +cap1: ear-clip r_sweep end caps (fanCap3D, manifold-mesh) — a transitive engine import NOT in scriptHash, so its fix needs a manual kernel bump to bust the stale-cap IndexedDB cache. +nrm4: crease-aware render normals under vert ceiling
 
+/** Max profile Z-span (world units) a WARP-NODE bake allows before re-lathing an
+ *  extra axial ring — the density source for a lean revolve under `warpSpline`.
+ *  Constant heuristic (spike-validated on a 30-long tube: ~20 rings, smooth).
+ *  TODO: curvature-adaptive via planAxialStations for long/gently-curved wells. */
+const WARP_AXIAL_MAX_ZSPAN = 1.5;
+
 /** Render options — the subset of /api/primitives/preview's request body that
  *  affects the baked geometry. All optional; absent → the byte-identical default
  *  bake. `material` is an optional passthrough (the compiled script strips meta,
@@ -164,8 +170,19 @@ export async function runCompiledManifold(
   const capPrev = segArg !== undefined ? helpers.getCircularSegmentCap() : undefined;
   const weldCapPrev = segArg !== undefined ? getCircSegCap() : undefined;
   if (segArg !== undefined) { helpers.setCircularSegmentCount(segArg); helpers.setCircularSegmentCap(segArg); setCircSegCap(segArg); }
-  const axialPrev = (warpArg && warpArg.freq > 0) ? getAxialMaxZSpan() : undefined;
+  // Axial-density dial. A warp bends POSITIONS on the already-built mesh, so the
+  // axial rings must exist BEFORE the warp (Manifold can't subdivide post-bake —
+  // Rule 25). r_revolve is now LEAN by default (g_shaft zSegments 0), so a warp
+  // NODE part (`warpSpline(...)`, detected as smoothWarp) supplies its density
+  // here via the SAME `_axialMaxZSpan` dial the sine-warp path uses: cap each
+  // profile Z-span at WARP_AXIAL_MAX_ZSPAN so a straight wall re-laths into enough
+  // rings to bend smoothly (spike: span 1.5 → ~20 rings on a 30-long tube, matched
+  // the old zSegments-10 reference at 3.2× fewer tris). NON-warp bakes never touch
+  // the dial → byte-identical + lean (the 5.5× straight-part win).
+  const useAxialDial = (warpArg && warpArg.freq > 0) || smoothWarp;
+  const axialPrev = useAxialDial ? getAxialMaxZSpan() : undefined;
   if (warpArg && warpArg.freq > 0) setAxialMaxZSpan((2 * Math.PI / warpArg.freq) / 16);
+  else if (smoothWarp) setAxialMaxZSpan(WARP_AXIAL_MAX_ZSPAN);
 
   const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const _tBuild0 = _now();
