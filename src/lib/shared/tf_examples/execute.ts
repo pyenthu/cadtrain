@@ -90,6 +90,68 @@ export class TfUnsupportedError extends Error {
  *  the native lathe would produce garbage. Treated as "unsupported" → fall back. */
 const MIN_PROFILE_PTS = 3;
 
+/** Cap for the GENERIC (non-revolve) warp densifier's z-stations. subdivideAxialAdaptive
+ *  plane-SPLITS an already-built mesh, so its default cap of 128 stations balloons even a
+ *  small tube into tens of thousands of triangles (192 tris → ~26 k at 128) AND — because
+ *  every tube wall quad's diagonal spans z+circumference — introduces off-ring "spanning"
+ *  triangles (Rule 25). Only box/sweep/loft warps still take this path (no clean profile to
+ *  re-lathe); a modest cap keeps them bendable without the blow-up. */
+const GENERIC_WARP_MAX_STATIONS = 24;
+
+/** True when this instr tree can be warped by densifying at the PROFILE level and
+ *  re-building — i.e. every LEAF is a revolve/profile and the interior is only
+ *  transforms / booleans / unions (e.g. a hollow tube = `revolve(outer).subtract(
+ *  revolve(inner))`, which is what bw_casing / bw_open_hole compile to). Such a
+ *  tree is densified per-leaf into CLEAN ring×segment grids (see {@link
+ *  densifyRevolveTree}), so the warp bends smoothly WITHOUT the plane-split
+ *  diagonal artifact + vert explosion subdivideAxialAdaptive inflicts on an
+ *  already-triangulated tube (the TODO #39 regression). */
+export function isRevolveTree(instr: any): boolean {
+  if (!instr) return false;
+  switch (instr.op) {
+    case 'revolve':
+    case 'profile':
+      return Array.isArray(instr.profile) && instr.profile.length >= MIN_PROFILE_PTS;
+    case 'translate':
+    case 'rotate':
+      return isRevolveTree(instr.child);
+    case 'booleanDifference':
+    case 'booleanUnion':
+    case 'booleanIntersection':
+      return isRevolveTree(instr.obj) && isRevolveTree(instr.arg);
+    case 'union':
+      return Array.isArray(instr.children) && instr.children.length > 0 && instr.children.every(isRevolveTree);
+    default:
+      return false;
+  }
+}
+
+/** Deep-clone a revolve-tree instr (see {@link isRevolveTree}), replacing every
+ *  revolve/profile `profile` with its axially-densified version (densifyProfileAxial
+ *  along `path`) so each leaf lathes into a clean ring×segment grid dense enough to
+ *  bend as a smooth arc. Interior transforms/booleans/unions pass through
+ *  structurally — the booleans then run on the DENSE cylinders, and their lateral
+ *  walls (which don't self-intersect on coaxial tubes) keep those rings, so the warp
+ *  is smooth with NO plane-split spanning triangles. Pure data transform. */
+export function densifyRevolveTree(instr: any, path: any): any {
+  switch (instr.op) {
+    case 'revolve':
+    case 'profile':
+      return { ...instr, profile: densifyProfileAxial(instr.profile, path, {}) };
+    case 'translate':
+    case 'rotate':
+      return { ...instr, child: densifyRevolveTree(instr.child, path) };
+    case 'booleanDifference':
+    case 'booleanUnion':
+    case 'booleanIntersection':
+      return { ...instr, obj: densifyRevolveTree(instr.obj, path), arg: densifyRevolveTree(instr.arg, path) };
+    case 'union':
+      return { ...instr, children: instr.children.map((c: any) => densifyRevolveTree(c, path)) };
+    default:
+      return instr;
+  }
+}
+
 /**
  * Compose a transform matrix onto a mesh handle. TrueForm has no transform stack;
  * each mesh carries a single `transformation` 4×4. When the mesh already has one
@@ -313,25 +375,34 @@ function buildInstr(t: any, instr: TfInstr): any {
       //  • POST-BUILD (non-revolve child — box/sweep/boolean): fall back to the
       //    generic curvature-adaptive triangle-split (imperfect but keeps working).
       const childInstr = instr.child as any;
-      const isRevolve =
-        childInstr && (childInstr.op === 'revolve' || childInstr.op === 'profile') &&
-        Array.isArray(childInstr.profile) && childInstr.profile.length >= 3;
 
-      if (isRevolve) {
-        const denseProfile = densifyProfileAxial(childInstr.profile, instr.path as any, {});
-        const child = tfRevolveProfile(t, denseProfile, childInstr.segments || 64);
-        const md = tfMeshData(child); // buildRevolveMesh shares verts already — no weld needed
+      // REVOLVE-TREE fast path (the durable fix — Rule 25). A bare revolve OR any
+      // tree of transforms/booleans/unions whose LEAVES are all revolves (e.g. a
+      // hollow tube `revolve(outer).subtract(revolve(inner))` = bw_casing) is
+      // densified at the PROFILE level and re-built: each leaf lathes into a clean
+      // ring×segment grid, the booleans run on those dense cylinders, and the warp
+      // bends the result smoothly. This replaces the plane-split subdivideAxialAdaptive
+      // path for composites too — that path exploded a 192-tri tube to ~26 k tris of
+      // off-ring spanning triangles (TODO #39: faceted sides + ~53 k verts). buildInstr
+      // re-runs the booleans on the densified tree; buildRevolveMesh shares verts, so
+      // no weld is needed and the adapter's crease-aware normals read round.
+      if (isRevolveTree(childInstr)) {
+        const built = buildInstr(t, densifyRevolveTree(childInstr, instr.path as any));
+        const md = tfMeshData(built);
         const src = md.points instanceof Float32Array ? md.points : new Float32Array(md.points);
         const { positions } = warpMeshJS(src, null, instr.path as any, { stretch: instr.stretch });
         return t.mesh(md.faces, positions);
       }
 
+      // GENERIC path — only a non-revolve child (box / sweep / loft) reaches here,
+      // where there is no clean profile to re-lathe. Insert curvature-adaptive
+      // z-stations (CAPPED so it can't balloon — see GENERIC_WARP_MAX_STATIONS),
+      // then re-weld by position so t.mesh recovers shared-edge connectivity →
+      // smooth normals.
       const child = buildInstr(t, instr.child);
       const md = tfMeshData(child); // { points: Float(32|64)Array, faces: Int32Array }
       const src = md.points instanceof Float32Array ? md.points : new Float32Array(md.points);
-      // Generic densify: insert curvature-adaptive z-stations, then re-weld by
-      // position so t.mesh recovers shared-edge connectivity → smooth normals.
-      const dense = subdivideAxialAdaptive(src, null, md.faces, instr.path as any, {});
+      const dense = subdivideAxialAdaptive(src, null, md.faces, instr.path as any, { maxStations: GENERIC_WARP_MAX_STATIONS });
       const welded = weldMeshByPosition(dense.positions, dense.faces);
       const { positions } = warpMeshJS(welded.points, null, instr.path as any, { stretch: instr.stretch });
       return t.mesh(welded.faces, positions);
