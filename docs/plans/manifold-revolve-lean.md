@@ -1,9 +1,18 @@
-# Lean Manifold revolve for straight parts (proven spike — Route C)
+# Lean Manifold revolve for straight parts (Route C — ✅ SHIPPED 2026-07-06)
+
+**STATUS: SHIPPED** (commit f85f52d). `g_shaft` `zSegments 10→0` on the volume
+(backup `.route-c-backup/`); warp-gated `_axialMaxZSpan=1.5` dial in
+`bake-worker-core.ts` + `preview/+server.ts`. Verified: straight well 528→96
+tris (5.5×), warped 8448→2640 (3.2×, smooth = spike ref maxTurn 11.9°). Non-warp
+byte-identical. **REMAINING (open): upgrade the constant span 1.5 → curvature-adaptive
+via `planAxialStations`** so long/gently-curved wells aren't over-tessellated.
+
+---
+_Original spike write-up below (retained for the design rationale)._
 
 Question: can the Manifold 3D-bake be as lean as TF on STRAIGHT parts? (bw_open_hole:
 Manifold 528 tris vs TF 96.) Spike verdict: **YES, and it's a small, low-risk,
-proven change — but it edits volume-data `g_shaft` + two bake hooks, so it's a
-go/no-go decision, not yet implemented.**
+proven change** (now shipped, see above).
 
 ## Key findings (measured on the live Manifold kernel)
 - Win is real: straight `bw_open_hole` **528 → 96 tris (5.5×)** with `g_shaft` zSegments 10→0.

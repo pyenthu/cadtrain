@@ -132,3 +132,4 @@ test-results/
 
 # Screenshot handoff copies (scripts/last-shots.sh) — transient, hand to Read
 .shots/
+.route-c-backup/

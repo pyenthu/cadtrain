@@ -69,28 +69,27 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
 25. **The welded-mesh system is the PRIMARY geometry builder.** `src/lib/cad/manifold-mesh.ts` (`gridPatch` / `capFan` / `weldAndBuild`, injected via `primitive-sandbox.ts`; memories `welded_mesh_toolkit_shared` + `raw_mesh_helix_pattern`) builds geometry with **explicit, controllable segmentation** — unlike `CrossSection.revolve`, which gives no axial sampling. It exists specifically to (a) **warp smoothly** (enough Z-samples → a smooth sine, not faceted chords) and (b) **build along a spline** for the coming **deviated / curved profiles**. **Segmentation / warp resolution belongs at BUILD time, never as a post-bake mesh rewrite** — subdividing the final welded Manifold's MeshGL OOB-crashes the WASM core and corrupts the singleton so every later bake fails (why warp-subdivide `d41877b` was reverted in `3fb1fa8`). The old client-side `subdivideAlongZ` (`src/lib/shared/warp.ts`) was a render-time stopgap; the durable fix is build-time Z-segmentation in the weld builders.
 26. **Subagent verification — ASK "headless or worktree dev-server?" BEFORE dispatching.** When a subagent's work needs verifying, confirm the mode first. **HEADLESS** (build + Node/vitest test, no browser — works in a bare worktree; the RIGHT choice for geometry/compile/logic, since TrueForm + Manifold run in Node) vs **WORKTREE DEV-SERVER + browser** (only when the deliverable is UI/interaction/visual/Svelte reactivity that can't be judged headless). Worktree browser-verify is FRAGILE and has STALLED agents repeatedly (2026-07-03): a bare worktree lacks `node_modules`/`.env.local`, and a random dev port COLLIDES with leftover servers → the agent loops on "port in use" and never commits. RULES: (a) default headless; only pay for the browser when the change is genuinely visual — and prefer doing THAT inline on the live `:3333` (per the modularize "GEP inline" rule) or verify it yourself after merging the branch (build-green ≠ visually correct); (b) a worktree that MUST serve uses **`bun run dev:worktree`** (`scripts/dev-worktree.sh`) — a **DETERMINISTIC port hashed from the branch name** (same worktree → same port, no collisions, trackable; logged to `.claude/worktree-ports.log`) + symlinks the parent `node_modules` + copies `.env.local`; (c) POLL liveness (agent output mtime + branch commit count) and if idle >~7 min with no commit, KILL and re-dispatch headless (or do it inline).
 
-## Current focus (2026-07-03 — resume point)
+## Current focus (2026-07-06 — resume point)
 
 > Keep ≤ 20 lines. Shipped detail → `docs/HISTORY.md` + session-handoff
 > memories; roadmap → `/plan` (Rule 19).
 > **Launch `claude --chrome` for fast visual iteration on /primitives + /vocab.**
 
-- **Latest session**: memory `session_handoff_2026-07-02` — READ IT FIRST.
-- **THE CURRENT FOCUS**: **GraphEditorPane modularization reorg** (#940, active) —
-  GEP has drifted to ~5.3k lines; cut it toward a ~1.5k composing shell (layout-
-  actions extraction next). Plan `docs/plans/graph-editor-pane.md`. This unblocks
-  the **warp NODE + editor card** (#936 — geometry core `warp-spline.ts` shipped,
-  the user-facing node is deferred pending the reorg).
-- **Multi-engine matrix** (#939, active): Manifold client✓/server✓ · BREP/replicad
-  server✓ → **client-side TODO** (#934) + display-mesh quality/color (#935) · tf/
-  TrueForm tab✓ (demo box only → per-part + client/server toggle). r_sweep quality
-  + annular hollow-tube fix + BREP/tf tabs + COOP/COEP all SHIPPED 2026-07-02.
-- **Typed expression outputs** (#926, active): LEFT C explicit annotation · E
-  consumers (r_sweep.path / r_surface_grid) + ObjectNode emit. Feeds the
-  **expression-as-builder** unify of the 3 repeats (#923).
-- **/wells** shipped live (SVTC engine + ewells shell + wired 3D). NEXT: register
-  g_* parts into the parametric registry · long-string perf · real store · sidenav.
-- Plans in `docs/plans/`; research in `docs/FINDINGS.md`.
+- **Latest session**: memory `session_handoff_2026-07-06` — READ IT FIRST.
+- **TF tab is now a real engine surface** (2026-07-06): runs in a **Web Worker**
+  (`tf-worker*.ts`), **native-only** (no Manifold fallback → blank+reason), per-part
+  **material** on full+cut views, `r_weld_extrude` builds natively (g_cube/star/
+  spiral/barrel), cutaway = view-switch (no blank), and **only the ACTIVE /primitives
+  pane bakes** (shared TF worker supersede was blanking all-but-one on open). Compile
+  caches: `/api/tf/compile` + `resolveDepColors` (302/940ms → ~1/0.1ms); 🔄 = true fresh.
+- **⚠ Route C lean revolve**: `g_shaft` `zSegments 10→0` edited on the VOLUME (backup
+  `.route-c-backup/`); warp re-densifies at build time via `_axialMaxZSpan` dial (span
+  1.5) in `bake-worker-core.ts` + `preview/+server.ts`. Straight 528→96, warped 8448→2640
+  smooth. Rule-25 clean. NEXT: curvature-adaptive span. `docs/plans/manifold-revolve-lean.md`.
+- Open follow-ups: `docs/plans/{tf-compile-perf (BFS-parallelize + save-invalidation),
+  tf-wasm-tab, manifold-revolve-lean}.md`; per-SUBPART material needs color-by-source.
+- **GraphEditorPane modularization** (#940) still open; **typed expression outputs** (#926);
+  **/wells** re-plan (`session_handoff_2026-07-04-wells`). Plans in `docs/plans/`.
 
 ## Client-side execution (in progress)
 
