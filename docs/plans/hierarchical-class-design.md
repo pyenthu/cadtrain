@@ -1,13 +1,29 @@
 # Plan — Hierarchical / Class-Based Redesign of the Composition Graph
 
-> **Status:** DRAFT / proposal (2026-07-06). No code changed. This is a design
-> study + phased migration map, to be reconciled into `/plan` (Rule 19) if
-> adopted. It is deliberately *conservative*: the recommendation is a **hybrid**
-> (behaviour in classes, persisted graph stays plain data), NOT a wholesale OOP
-> rewrite. Read alongside `docs/plans/modularize-round2.md` (the mechanical
-> file-splitting effort already in flight) and `docs/plans/graph-editor-pane.md`
-> (the GEP phase ledger). This plan is the *architectural* layer those two are
-> groping toward without naming.
+> **Status:** ✅ **FINALIZED (2026-07-06)** — execution-ready. Recommendation
+> LOCKED (§3), §8 open questions all RESOLVED + folded into the body, Phase 0 is
+> fully specified in §6a (implementable from this doc alone). No code changed by
+> this doc. Reconcile into `/plan` (Rule 19) when the first phase is scheduled.
+> Still deliberately *conservative*: the recommendation is a **hybrid**
+> (behaviour in a registry of stateless descriptors, persisted graph stays plain
+> data), NOT a wholesale OOP rewrite. Read alongside
+> `docs/plans/modularize-round2.md` (the mechanical file-splitting effort) and
+> `docs/plans/graph-editor-pane.md` (the GEP phase ledger). This plan is the
+> *architectural* layer those two are groping toward without naming.
+>
+> **Warm-up already shipped.** `buildSolidDrop` was extracted from GEP into
+> `src/lib/shared/graph-editor/node-palette.ts` (with `node-palette.test.ts`) as
+> an unrelated modularize step — GEP **4456 → 4380**. That is the promote-to-class
+> target for the `NodePalette` sub-controller in §5.3; the file already exists.
+>
+> **Subagent-safety (binding — from `modularize-round2.md` §0 lessons 1–2).**
+> **Phases 0–2 are pure-TS, headless-verifiable, and subagent-safe** (a bare
+> worktree can `bun run test` them — Rule 26 default). **Phases 3–5 touch live
+> Svelte (GEP / NodeCard) and are INLINE-ONLY**: every background subagent that
+> attempted a large GEP extraction this cycle *stalled at the watchdog mid-write*,
+> and `bun run build` green ≠ working for Svelte (Phase E built clean yet threw
+> two `ReferenceError`s on mount). Do 3–5 one at a time, inline, browser-mount-
+> verified against `g_dp_box` / `g_mule_shoe` / a polygon part.
 
 ---
 
@@ -28,18 +44,33 @@ MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode |
 SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode |
 MaterialNode`). Every behaviour that varies by node type is written as a
 hand-rolled `switch (node.type)` or a family-prefixed batch of free functions.
-Adding one node type today means editing, by hand, **at least eight sites**:
+Adding one node type today means editing, by hand, **at least ten sites**
+(all line numbers verified 2026-07-06):
 
-1. the union in `composition-graph-types.ts`
-2. `validateGraph` — `switch` at `composition-emit.ts:118`
-3. `emitNodeExpr` — `switch` at `composition-emit.ts:534`
-4. `computeConsumedSet` (childrenOf/uses walk) — `if/else` chain at `composition-emit.ts:1009`
-5. `nodeSize` layout dispatch — `composition-layout.ts:87`
-6. `hydrateGraph` migrations — `composition-graph-hydrate.ts`
-7. a batch of `add*/set*/remove*` mutators in `composition-graph-mutate.ts`
+1. the union in `composition-graph-types.ts` (`GraphNode`, line 515)
+2. `validateGraph` — `switch (node.type)` at `composition-emit.ts:118`
+   (**12 case labels** today: call/list/stack/group/method/mv/rot/txfmn/repeat/
+   sketch/expr/warp — polygon/poly_repeat/sketch_repeat/spline/material silently
+   fall through with no arm)
+3. `emitNodeExpr` — `switch (node.type)` at `composition-emit.ts:532` (**14 case
+   labels / 13 arm bodies**, list+group share one; expr/spline return `null`;
+   poly_repeat/sketch_repeat/material fall off → `undefined`)
+4. `computeConsumedSet` (input walk) — `if/else` chain at `composition-emit.ts:1006`
+   (8 branches: method/mv|rot|txfmn/warp/repeat/stack|group/list/sketch/call)
+5. `nodeSize` layout dispatch — **`src/lib/shared/graph-editor/geom.ts:341`**
+   (an `if` chain over ~14 node types; NOT `composition-layout.ts` — that file's
+   `nodeSize` is only an injected option). `composition-layout.ts` ALSO carries a
+   parallel `predecessorsOf` `switch` (line 75) that must learn each new type or
+   `autoLayoutGraph` throws on it.
+6. `assignVarNames` var-name-prefix `?:` ladder — `composition-emit.ts:1078`
+   (+ `computeListProducers`, line 997)
+7. `hydrateGraph` migrations — `composition-graph-hydrate.ts` (per-type `if` blocks)
+8. a batch of `add*/set*/remove*` mutators in `composition-graph-mutate.ts`
    (Repeat alone has ~30: `addRepeat`, `setRepeatCount`, `addRepeatModifier`,
    `setPartModifierAxis`, …)
-8. a `{#if node.type === …}` arm plus its sockets/CSS in `NodeCard.svelte`
+9. a `{#if node.type === …}` arm plus its sockets/CSS in `NodeCard.svelte`
+10. (view-only kinds) an appearance/binding resolver, e.g. `resolveEffectiveAppearance`
+    for `MaterialNode` — the `emitGraph` instanceColors loop (`composition-emit.ts:250`)
 
 That is the *polymorphism-by-hand* a class hierarchy exists to collapse. The
 symptom is real: `RepeatNode`, `SketchNode`, and `ExprDef` each carry ~25–30
@@ -78,11 +109,12 @@ polymorphic `node.emit()` / `node.childRefs()` / `node.validate()` would absorb:
 
 | Behaviour | Site | Dispatch |
 |---|---|---|
-| Validation | `validateGraph`, `composition-emit.ts:118` | `switch` over 8 cases |
-| Emit expression | `emitNodeExpr`, `composition-emit.ts:534` | `switch` over ~11 cases |
-| Consumed-set / input walk | `computeConsumedSet`, `composition-emit.ts:1009` | `if/else` chain |
-| Output-kind label | `composition-emit.ts:1079` | `?:` ladder |
-| Layout size | `nodeSize`, `composition-layout.ts:87` | `if` chain |
+| Validation | `validateGraph`, `composition-emit.ts:118` | `switch` over **12** case labels |
+| Emit expression | `emitNodeExpr`, `composition-emit.ts:532` | `switch` over **14** labels / 13 bodies |
+| Consumed-set / input walk | `computeConsumedSet`, `composition-emit.ts:1006` | `if/else` chain (8 branches) |
+| Var-name-prefix label | `assignVarNames`, `composition-emit.ts:1078` | `?:` ladder (10-arm) |
+| Layout size | `nodeSize`, **`shared/graph-editor/geom.ts:341`** | `if` chain (~14 types) |
+| Layout predecessors | `predecessorsOf`, `composition-layout.ts:75` | `if`/`switch` |
 | Hydrate/migrate | `composition-graph-hydrate.ts` | per-type `if` blocks |
 | Card render + sockets | `NodeCard.svelte` | `{#if}` arms |
 
@@ -155,6 +187,14 @@ export interface EmitCtx {
 export interface ValidationError { nodeId: NodeId; slot: string; badRef: string;
   kind: 'missing-node' | 'missing-param'; }
 
+/** Width policy is centralised in the geom.ts nodeSize wrapper (savedW override
+ *  → cardAutoWidth → cardMinWidth clamp); descriptors receive the resolved
+ *  content width + the root id and return the final {w,h}. This keeps `size`
+ *  a pure function of (node, ctx) — no `graph` handle, no Svelte import — so
+ *  it is testable and worker-safe. Kinds with a FIXED width (method/material)
+ *  ignore `ctx.width`. */
+export interface SizeCtx { width: number; root: NodeId; }
+
 /** One entry per node.type. Stateless — the node DATA is the first arg.
  *  This is the "abstract base class": every variant implements it. */
 export interface NodeKind<N extends GraphNode = GraphNode> {
@@ -166,8 +206,9 @@ export interface NodeKind<N extends GraphNode = GraphNode> {
   /** NodeIds this node consumes as inputs (drives computeConsumedSet + the
    *  Output-root filter + delete-button greying). */
   inputRefs(node: N): NodeId[];
-  /** Canvas footprint for auto-layout (was composition-layout.nodeSize). */
-  size(node: N): [w: number, h: number] | null;
+  /** Canvas footprint for auto-layout (was geom.ts:341 nodeSize). Returns the
+   *  SAME {w,h} the current if-chain does — verified byte-for-byte per kind. */
+  size(node: N, ctx: SizeCtx): { w: number; h: number };
   /** Optional one-way hydrate migration for legacy files of this kind. */
   migrate?(raw: any): N | null;
   /** The editor-facing socket schema (input slots + output arity) — lets
@@ -180,47 +221,60 @@ export interface NodeKind<N extends GraphNode = GraphNode> {
 
 ```ts
 // src/lib/cad/nodes/kinds/method.ts
+//   emit  ← composition-emit.ts:594  ·  validate ← :129  ·  inputRefs ← :1009
+//   size  ← geom.ts:351  (FIXED 40×40 CSG-operator circle — NOT auto-fit)
 export const MethodKind: NodeKind<MethodNode> = {
   type: 'method',
   emitExpr: (n, c) => `${c.ref(n.obj, 'obj')}.${n.op}(${c.ref(n.arg, 'arg')})`,
   validate: (n, g) => [
-    ...(g.nodes[n.obj] ? [] : [err(n.id, 'obj', n.obj, 'missing-node')]),
-    ...(g.nodes[n.arg] ? [] : [err(n.id, 'arg', n.arg, 'missing-node')]),
+    ...(has(g, n.obj) ? [] : [err(n.id, 'obj', n.obj, 'missing-node')]),
+    ...(has(g, n.arg) ? [] : [err(n.id, 'arg', n.arg, 'missing-node')]),
   ],
   inputRefs: (n) => [n.obj, n.arg].filter(Boolean),
-  size: () => null,                       // auto-fit
+  size: () => ({ w: 40, h: 40 }),
   sockets: () => ({ inputs: ['obj', 'arg'], output: true }),
 };
 
 // src/lib/cad/nodes/kinds/txfmn.ts   (identity-elision preserved verbatim)
+//   emit  ← composition-emit.ts:609  ·  validate ← :141  ·  inputRefs ← :1012
+//   size  ← geom.ts:364  (width from ctx; FIXED height 226 — rot 3 rows + mv 3 rows)
 export const TxfmnKind: NodeKind<TxfmnNode> = {
   type: 'txfmn',
   emitExpr: (n, c) => {
     const child = c.ref(n.child ?? '', 'child');
     let e = child;
-    if (!n.rot.every(isLiteralZero))    e = `rot(${e}, [${n.rot.map(c.emitValue).join(', ')}])`;
-    if (!n.offset.every(isLiteralZero)) e = `mv(${e}, [${n.offset.map(c.emitValue).join(', ')}])`;
+    if (!n.rot.every(isLiteralZero))    e = `rot(${e}, [${n.rot.map(c.emitValue).join(', ')}])`;   // INNER
+    if (!n.offset.every(isLiteralZero)) e = `mv(${e}, [${n.offset.map(c.emitValue).join(', ')}])`;  // OUTER
     return e;
   },
   validate: (n, g) => [
-    ...(n.child && g.nodes[n.child] ? [] : [err(n.id, 'child', String(n.child ?? ''), 'missing-node')]),
+    ...(n.child != null && has(g, n.child) ? [] : [err(n.id, 'child', String(n.child ?? ''), 'missing-node')]),
     ...checkArgs(n.id, 'rot', n.rot, g), ...checkArgs(n.id, 'offset', n.offset, g),
   ],
   inputRefs: (n) => n.child ? [n.child] : [],
-  size: () => null,
+  size: (_n, ctx) => ({ w: ctx.width, h: 226 }),
   sockets: () => ({ inputs: ['child'], output: true }),
 };
 
 // src/lib/cad/nodes/kinds/material.ts   (view-only, emits nothing — the current
 //   "silently skipped by every switch" node becomes explicit + discoverable)
+//   emit  ← never in render tree (returns null)  ·  validate ← no switch arm today (→ [])
+//   size  ← geom.ts:358  (label-fit pill: max(128, 88 + label.length*7.5) × 30)
 export const MaterialKind: NodeKind<MaterialNode> = {
   type: 'material',
   emitExpr: () => null,                   // never in the render tree
   validate: () => [],
   inputRefs: () => [],
-  size: () => [200, 120],
+  size: (n) => ({ w: Math.max(128, 88 + String(n.name ?? 'material').length * 7.5), h: 30 }),
   sockets: () => ({ inputs: [], output: 'material' }),
 };
+
+// shared helpers the descriptors call (moved out of validateGraph's closure):
+//   has(g, id)          = Object.prototype.hasOwnProperty.call(g.nodes, id)
+//   err(id, slot, ref, kind)                → ValidationError literal
+//   checkArgs(id, slot, ArgValue[], g)      → per-component missing-param check
+//     (was validateGraph's `checkArg`, composition-emit.ts:111)
+//   isLiteralZero(ArgValue)                 = the emit-side helper (already exists)
 
 // RepeatKind is the fat one — its emitExpr keeps the foldMods/partModifiers
 // logic from composition-emit.ts:624-680 verbatim; its ~30 mutators (§5.3)
@@ -232,9 +286,10 @@ export const MaterialKind: NodeKind<MaterialNode> = {
 ```ts
 // src/lib/cad/nodes/registry.ts
 const KINDS: Record<GraphNode['type'], NodeKind> = Object.fromEntries(
-  [CallKind, ContainerKind /*list|stack|group*/, MethodKind, TxfmnKind,
+  [CallKind, ContainerKind /* type: ['list','stack','group'] */, MethodKind,
+   MvKind, RotKind /* LIVE transform twins — see OQ2 */, TxfmnKind /* legacy, hydrate-only */,
    RepeatKind, PolygonKind, PolyRepeatKind, SketchKind, SketchRepeatKind,
-   ExprKind, SplineKind, WarpKind, MaterialKind, /* Mv/RotKind: legacy hydrate-only */]
+   ExprKind, SplineKind, WarpKind, MaterialKind]
     .flatMap(k => (Array.isArray(k.type) ? k.type : [k.type]).map(t => [t, k]))
 ) as any;
 
@@ -252,7 +307,9 @@ function emitNodeExpr(node, varNames, listProducers, nodes) {
 for (const node of Object.values(graph.nodes)) errs.push(...kindOf(node).validate(node, graph));
 // computeConsumedSet:
 for (const n of Object.values(graph.nodes)) for (const id of kindOf(n).inputRefs(n)) consumed.add(id);
-// composition-layout.nodeSize → kindOf(n).size(n)
+// geom.ts:341 nodeSize (width resolved first, then delegate):
+//   const k = kindOf(node); if (k) return k.size(node, { width: w, root: graph.root });
+//   /* …existing if-chain for not-yet-migrated kinds… */
 ```
 
 **`ArgValue` / params / edges do not change.** They stay plain data; a slot is
@@ -379,9 +436,9 @@ lowest-risk-first. LOC figures are *moved*, not new.
 
 | Phase | Scope | Behind-facade trick | LOC moved | Risk | Ship gate |
 |---|---|---|---|---|---|
-| **0. Registry scaffold** | Create `src/lib/cad/nodes/{node-kind.ts, registry.ts}` + descriptors for the **3 leaf kinds** (`method`, `txfmn`, `material`). Route only `nodeSize` (layout) + `validate` for those 3 through `kindOf()`; every other path untouched. | New module; `validateGraph`/`nodeSize` fall through to old switch for unmapped types (`kindOf(n) ?? legacySwitch`). | ~120 | **Very low** — pure functions, unit-tested, no editor/UI, works headless. | `bun run test` + a golden-emit diff on 3 volume parts is byte-identical |
-| **1. Emit through the registry** | Move all ~11 `emitNodeExpr` arms into descriptors; delete the switch. This is the highest-value collapse. | Descriptor `emitExpr` reproduces each arm verbatim (Repeat/Stack keep every comment). Keep `emitNodeExpr(node, …)` signature as a thin delegating wrapper. | ~250 | **Low-med** — emit is deterministic + golden-testable. Byte-identical `.asm.ts` is the gate. | Golden-emit diff = 0 across ALL ~40 volume parts (`bun run test:graph` + a full re-emit dry run) |
-| **2. Validate + consumed-set + hydrate** | Collapse `validateGraph`, `computeConsumedSet`, output-kind ladder, and per-type hydrate migrations into descriptor methods. | Same wrapper approach. `migrate?` is optional; unmigrated kinds no-op. | ~300 | **Low-med** — covered by existing hydrate/validate tests + migration fixtures. | `composition-graph.test.ts` green + legacy-file open test |
+| **0. Registry scaffold** | Create `src/lib/cad/nodes/{node-kind.ts, registry.ts}` + descriptors for the **3 leaf kinds** (`method`, `txfmn`, `material`) + `kinds/index.ts`. Route `validate` (all 3) + `nodeSize` (all 3) through `kindOf()`; every other path untouched. Full spec: **§6a**. | New module; `validateGraph` (`composition-emit.ts:118`) + `nodeSize` (`geom.ts:341`) fall through to their existing switch/if-chain for unmapped types (`const k = kindOf(n); if (k) …; else legacy`). | ~140 | **Very low** — pure functions, unit-tested, no editor/UI, works headless (subagent-safe). | `bun run test` (3 descriptor unit specs + `geom.test.ts` still green) + the §6a golden-emit snapshot diff = 0 |
+| **1. Emit through the registry** | Move all **13 `emitNodeExpr` bodies** (14 case labels, `composition-emit.ts:532`) into descriptors; delete the switch. Highest-value collapse. Add the remaining ~12 kinds' descriptors. | Descriptor `emitExpr` reproduces each arm verbatim (Repeat/Stack keep every comment); `null` for expr/spline/material. Keep `emitNodeExpr(node, …)` as a thin delegating wrapper: `return kindOf(node)?.emitExpr(node, ctx) ?? null`. | ~250 | **Low-med** — emit is deterministic + golden-testable. Byte-identical `.asm.ts` is the gate. | Golden-emit snapshot diff = 0 across ALL volume parts (§6a harness) + `bun run test:graph` e2e |
+| **2. Validate + consumed-set + layout + hydrate** | Collapse the remaining dispatch: `validateGraph` (12 labels), `computeConsumedSet` (8 branches), `assignVarNames` prefix ladder + `computeListProducers`, `predecessorsOf` (`composition-layout.ts:75`), and per-type hydrate migrations → descriptor methods (`validate`/`inputRefs`/`varPrefix`/`migrate?`). | Same wrapper approach. `migrate?` is optional; unmigrated kinds no-op. | ~320 | **Low-med** — covered by existing hydrate/validate tests + migration fixtures. | `composition-graph.test.ts` + `composition-layout.test.ts` green + legacy-file open test |
 | **3. Command layer (undo/redo)** | Add `GraphCommand` + `cmd()` adapter + wrap GEP's `graph = mutator(…)` call-sites. Add `GraphEditorController` owning `graph` + history; existing state classes become members. | Controller is *additive*; GEP keeps working, handlers call `ctrl.apply(cmd(...))` incrementally. No mutator changes. | ~400 (GEP call-sites rewired) | **Medium** — touches live GEP; browser-mount-verify per `modularize-round2.md` lesson 2. INLINE only (lesson 1). | Browser-verify `g_dp_box`/`g_mule_shoe`/a polygon part; undo/redo smoke; graph e2e |
 | **4. Sub-controller extraction** | Pull the 7 candidates (§5.3) out of GEP into controller classes; regroup mutator batches into `*.ops.ts` namespace objects co-located with descriptors. | Each extraction is one PR; GEP imports the new controller and deletes the moved block. Free functions stay exported (re-exported from `.ops.ts`). | ~2,000 (GEP 4,380 → ~1,500 target) | **Med-high** — the fragile part. One candidate per PR, browser-verify each. | Per-PR browser-mount + `bun run build` + graph e2e; GEP shrinks monotonically |
 | **5. NodeCard generic render** | Drive `NodeCard.svelte` sockets/output-arity from `kind.sockets(node)` instead of `{#if node.type}` arms where the arm is pure chrome (sockets, delete-greying). Keep bespoke bodies (Sketch/Poly/Expr cards) as-is. | Generic socket row reads the schema; bespoke `{#if}` bodies remain until each is worth carving. | ~400 | **Med-high** — Svelte markup; SVG socket Y-math is delicate (`geom.ts`/`geom.test.ts`, memory `entry_idx_eval_idx_gotcha`). | Extend `geom.test.ts` to pin socket contract; browser-verify sockets align |
@@ -397,11 +454,189 @@ covers the same candidates without the controller class; the controller is the
 
 ---
 
+## 6a. Phase 0 — execution-ready spec (implement from this section alone)
+
+Phase 0 is the smallest self-contained slice: stand up the registry module +
+the three leaf descriptors, route **`validate` and `nodeSize` for those three
+kinds only** through `kindOf()`, and land the golden-emit safety net that
+Phases 1–2 will lean on. No editor/Svelte changes to any *body* — only two thin
+`if (k) … else legacy` guards. Headless-verifiable; subagent-safe.
+
+### 6a.1 New files (exact paths)
+
+```
+src/lib/cad/nodes/node-kind.ts        # interfaces: EmitCtx, ValidationError, SizeCtx,
+                                       #   SocketSchema, NodeKind<N>; + shared helpers
+                                       #   has() / err() / checkArgs() / makeEmitCtx()
+src/lib/cad/nodes/registry.ts         # KINDS record + kindOf(node) lookup (undefined for
+                                       #   unregistered types → callers fall through)
+src/lib/cad/nodes/kinds/method.ts     # MethodKind   (§4.2)
+src/lib/cad/nodes/kinds/txfmn.ts      # TxfmnKind    (§4.2)
+src/lib/cad/nodes/kinds/material.ts   # MaterialKind (§4.2)
+src/lib/cad/nodes/kinds/index.ts      # re-exports the 3 leaf kinds (registry imports this)
+src/lib/cad/nodes/kinds/method.test.ts   # unit spec — emit/validate/inputRefs/size
+src/lib/cad/nodes/kinds/txfmn.test.ts    # unit spec — incl. identity-elision emit
+src/lib/cad/nodes/kinds/material.test.ts # unit spec — emit=null, validate=[], size pill
+src/lib/cad/nodes/emit-golden.test.ts    # re-emit-every-part snapshot diff (§6a.5)
+scripts/snapshot-emit.ts                 # one-shot: capture the golden baseline (§6a.5)
+tests/golden/emit/<id>.js                # committed baseline: one emitted body per part
+```
+
+Everything under `src/lib/cad/nodes/` is pure TS — **no Svelte, no `$state`, no
+worker-hostile imports** — so `geom.ts` (a `shared/graph-editor` module) may
+import `kindOf` without dragging the editor into the bake worker.
+
+### 6a.2 The interface module (`node-kind.ts`) — canonical, final
+
+Ship exactly §4.1 (`EmitCtx`, `ValidationError`, `SizeCtx`, `NodeKind<N>`,
+`SocketSchema`) plus these shared helpers lifted out of `validateGraph`'s
+closure so the descriptors are self-contained:
+
+```ts
+export const has = (g: Graph, id: NodeId): boolean =>
+  Object.prototype.hasOwnProperty.call(g.nodes, id);
+export const err = (nodeId: NodeId, slot: string, badRef: string,
+  kind: ValidationError['kind']): ValidationError => ({ nodeId, slot, badRef, kind });
+/** Per-component missing-param check — was validateGraph's `checkArg`
+ *  (composition-emit.ts:111), lifted verbatim. */
+export const checkArgs = (nodeId: NodeId, slot: string, vs: ArgValue[], g: Graph):
+  ValidationError[] => vs.flatMap((v, i) =>
+    v.kind === 'param' && !Object.prototype.hasOwnProperty.call(g.params, v.param)
+      ? [err(nodeId, `${slot}[${i}]`, v.param, 'missing-param')] : []);
+export interface SocketSchema { inputs: string[]; output: boolean | 'material'; }
+```
+
+`ValidationError` is structurally identical to the existing
+`GraphValidationError` (`{ nodeId, slot, badRef, kind }`) — Phase 0 aliases it so
+`validateGraph` can splice descriptor output straight into its `errs` array.
+
+### 6a.3 The three leaf descriptors
+
+Ship the three corrected descriptors in **§4.2 verbatim** (`MethodKind`,
+`TxfmnKind`, `MaterialKind`). Each is a byte-for-byte transcription of one
+existing switch/if arm — provenance line-refs are in the §4.2 comments. Note the
+grounded corrections over the first draft: `MethodKind.size` = `{w:40,h:40}` (not
+auto-fit), `TxfmnKind.size` = `{w: ctx.width, h:226}`, `MaterialKind.size` =
+label-fit pill `{…, h:30}`.
+
+> **⚠ Grounding note on `txfmn` (resolves OQ2).** As of 2026-07-01
+> `hydrateGraph` (`composition-graph-hydrate.ts:250–280`) **UNFOLDS every saved
+> `txfmn` back into live `mv`/`rot` nodes** (mixed → `mv` wrapping a new `rot`).
+> The type-file comment that claims the reverse (types.ts:100) is **stale**. So
+> **`mv` + `rot` are the LIVE transform kinds a hydrated graph actually carries;
+> `txfmn`'s emit/size/validate arms are effectively legacy (pre-hydrate + unit
+> tests only).** `TxfmnKind` is still a correct, exercisable transcription (kept
+> as the plan's `migrate`-adjacent example), but Phase 1 MUST also add the trivial
+> `MvKind` + `RotKind` (`geom.ts:355` → `{40,40}`; emit `mv(child,[…])` /
+> `rot(child,[…])`, `composition-emit.ts:599`/`604`) — they are the ones the
+> runtime hits. If you prefer to keep Phase 0's routed kinds to *live* types only,
+> swap `txfmn` for `mv`+`rot` in §6a.1/§6a.4 (4 files instead of 3); the wiring is
+> identical.
+
+### 6a.4 Wiring `kindOf()` at the two Phase-0 call-sites
+
+`registry.ts`:
+
+```ts
+import { MethodKind, TxfmnKind, MaterialKind } from './kinds';
+const KINDS: Partial<Record<GraphNode['type'], NodeKind>> = {
+  method: MethodKind, txfmn: TxfmnKind, material: MaterialKind,
+};
+/** undefined for not-yet-migrated kinds → every call-site keeps its legacy arm. */
+export const kindOf = (n: GraphNode): NodeKind | undefined => KINDS[n.type];
+```
+
+**Call-site 1 — `validateGraph`, `composition-emit.ts:116` loop.** Inside
+`for (const [id, node] of Object.entries(graph.nodes))`, right after the
+`if (!node) continue;`:
+
+```ts
+const k = kindOf(node);
+if (k) { errs.push(...k.validate(node, graph)); continue; }   // method/txfmn/material
+switch (node.type) { /* …unchanged arms for every other type… */ }
+```
+
+The old `case 'method':` and `case 'txfmn':` arms become dead for registered
+kinds (the `continue` skips them) — leave them in place for Phase 0 (Rule: no
+deletion during scaffold; they're removed in Phase 2 when the whole switch goes).
+The descriptor output is asserted byte-identical by the unit specs, so behaviour
+is unchanged. `material` never had an arm → this makes its (empty) validation
+explicit.
+
+**Call-site 2 — `nodeSize`, `src/lib/shared/graph-editor/geom.ts:341`.** After
+the `w` is computed (`const w = Math.max(cardMinWidth(node), baseW);`, line 344),
+before the existing `if (node.type === 'call')` chain:
+
+```ts
+const k = kindOf(node);
+if (k) return k.size(node, { width: w, root: (graph as any).root });
+```
+
+`method`/`txfmn`/`material` now resolve through the descriptor; every other type
+falls to the unchanged if-chain. `geom.test.ts` (which pins `nodeSize` for method
+= `{40,40}`, material pill, txfmn height) is the regression gate — it must stay
+green with zero edits.
+
+**Not touched in Phase 0:** `emitNodeExpr`, `computeConsumedSet`,
+`assignVarNames`, `predecessorsOf`, `hydrateGraph`, `NodeCard.svelte`. Those are
+Phases 1–2/5. `emitGraph`'s output is therefore provably unchanged in Phase 0 —
+which is exactly why the golden harness can be *captured* now and *trusted* as the
+Phase 1–2 gate.
+
+### 6a.5 Test list + golden-emit harness
+
+**Unit specs (3 files, vitest — `bun run test`).** Each descriptor tested with a
+literal node + a fake `EmitCtx`, no graph scaffolding, no Svelte:
+
+- `method.test.ts` — `emitExpr` → `"A.subtract(B)"` for a fake `ref`; `validate`
+  flags a missing `obj`/`arg`; `inputRefs` = `[obj, arg]`; `size` = `{w:40,h:40}`.
+- `txfmn.test.ts` — identity-elision matrix: all-zero → bare child; pure-rot →
+  `rot(child, […])`; pure-mv → `mv(child, […])`; both → `mv(rot(child, […]), […])`
+  (rot inner, mv outer). `size` → `{w: ctx.width, h:226}`. `validate` flags a null
+  child + a since-deleted param in `rot`/`offset`.
+- `material.test.ts` — `emitExpr` = `null`; `validate` = `[]`; `inputRefs` = `[]`;
+  `size` pill width = `max(128, 88 + name.length*7.5)`, h = 30.
+
+**Golden-emit harness (the Phase 1–2 safety net, built in Phase 0).** OQ4 is
+resolved: no fixture set exists, so Phase 0 builds it — cheap insurance, reused by
+`modularize-round2.md`.
+
+1. `scripts/snapshot-emit.ts` (run ONCE, at Phase-0 start, before any registry
+   wiring): enumerate every volume part via `/api/primitives/list`, fetch each
+   `.asm.ts` via `/api/primitives/source?name=<id>` (local dev proxies these to
+   prod — CLAUDE.md Rule 13), parse its `meta.graph`, `hydrateGraph()` it, run
+   `emitGraph(graph, { id })`, and write the returned `.body` to
+   `tests/golden/emit/<id>.js`. Commit the whole `tests/golden/emit/` tree. This
+   is the frozen baseline.
+2. `src/lib/cad/nodes/emit-golden.test.ts` (vitest): read every
+   `tests/golden/emit/*.js`, load the matching graph fixture (either re-parse from
+   a committed `meta.graph` snapshot alongside, or a JSON dump written by the same
+   script into `tests/golden/graph/<id>.json`), re-`emitGraph`, and
+   `expect(body).toBe(golden)` — **byte-for-byte**. Diff = 0 is the ship gate for
+   Phases 0, 1, and 2. Because Phase 0 changes no emit path, this test passes the
+   moment the baseline lands; it only starts *doing work* when Phase 1 moves the
+   emit arms.
+
+`bun run test:graph` (the Playwright graph-editor spec) remains the end-to-end
+belt-and-braces check for Phases 1+; the golden unit test is the fast inner loop.
+
+### 6a.6 Phase-0 done checklist
+
+- [ ] 7 source files + 4 test/script files created (§6a.1).
+- [ ] `bun run test` green — 3 new descriptor specs + `geom.test.ts` +
+      `composition-graph.test.ts` unchanged.
+- [ ] `tests/golden/emit/` baseline committed; `emit-golden.test.ts` green.
+- [ ] `bun run build` clean.
+- [ ] `validateGraph` + `nodeSize` route method/txfmn/material through `kindOf`;
+      all other types untouched. No arm deleted.
+
+---
+
 ## 7. Honest tradeoffs
 
 ### Where the class/registry hierarchy genuinely helps
 
-- **Adding a node type collapses from 8 edit-sites to 1 descriptor file.** This
+- **Adding a node type collapses from ~10 edit-sites (§1) to 1 descriptor file.** This
   is the whole thesis and it is real — Warp and Material were each added by
   touching every switch by hand; `WarpNode` even documents "silently skipped by
   every switch" for `MaterialNode`, i.e. an *invisible contract* the registry
@@ -444,30 +679,57 @@ would incur.
 
 ---
 
-## 8. Open questions
+## 8. Resolved decisions (formerly open questions)
 
-1. **`ContainerNode` triple-type** (`list | stack | group`). One descriptor with
-   internal branching, or three? Stack carries the fat `childRefs`/`childCounts`
-   emit logic (`composition-emit.ts:540`); list/group are trivial. Lean: one
-   `ContainerKind` with a sub-switch, since they share the children array shape.
-2. **Where do `MvNode`/`RotNode` live?** They're hydrate-only legacy (folded into
-   `TxfmnNode`). Give them `migrate`-only descriptors with no `emitExpr` (assert
-   never reached post-hydrate), or handle them purely inside `hydrateGraph`? Lean:
-   keep in hydrate; don't pollute the registry with dead render paths.
-3. **`ExprDef` is graph-level, not a node.** It lives on `graph.exprDefs[]`, not
-   `graph.nodes`, and its ~30 mutators don't fit the per-node registry. Give it
-   its own `ExprDefOps` namespace + an `ExprController` (§5.3), separate from the
-   node registry. Confirm the `ExprNode` *instance* (which IS a node) delegates
-   its emit to the def.
-4. **Golden-emit harness.** Phases 0–2 lean entirely on "re-emit every volume
-   part, diff = 0." Does a fixture set of all ~40 parts' `.asm.ts` exist to diff
-   against, or must Phase 0 build it first? (Likely build it first — cheap
-   insurance, reusable by `modularize-round2.md` too.)
-5. **Command granularity for drag.** Node-drag emits many intermediate positions
-   (`dragLive` overlay, commit on pointerup — memory `graph_editor_drag_bake_perf`).
-   The command should capture only the *committed* move, not every frame — align
-   with the existing overlay-then-commit pattern so undo doesn't record 60
-   micro-moves.
+All five are decided and folded into the body; kept here as a rationale ledger.
+
+1. **`ContainerNode` triple-type (`list | stack | group`) → ONE `ContainerKind`,
+   sub-switched on `node.type`.** DECIDED. Grounded: `emitNodeExpr` already shares
+   ONE arm for `list`+`group` (`composition-emit.ts:537–539`) and a separate fat
+   arm for `stack` (`:540–592`, the `childRefs`/`childCounts` per-child count +
+   stack-ref override logic); `nodeSize` treats all three identically save the root
+   `▶ Output` special-case (`geom.ts:371–380`); `validate` shares one arm
+   (`:122–128`); `computeConsumedSet` splits stack|group vs nested-list-vs-root
+   (`:1022–1031`). They all key off the same `children: NodeId[]`. Register ONE
+   descriptor under all three types via the `KINDS` builder's array-type flatMap
+   (§4.3 already supports `Array.isArray(k.type)`), with an internal
+   `if (node.type === 'stack')` branch inside `emitExpr` and the
+   `node.id === graph.root` branch inside `size`.
+2. **`mv`/`rot` are the LIVE transform kinds; `txfmn` is hydrate-only; the
+   txfmn→mv/rot unfold stays a GRAPH-LEVEL migration, NOT a per-node `migrate?`
+   hook.** DECIDED — this *reverses* the draft's assumption after reading the code.
+   `hydrateGraph:250–280` unfolds every saved `txfmn` into `mv`/`rot` (mixed →
+   `mv` wrapping a new `rot`), so a hydrated graph never contains `txfmn`. Give
+   `mv` + `rot` real first-class descriptors (they're trivial: `{40,40}` size,
+   `mv(child,[…])`/`rot(child,[…])` emit, single `child` input). Keep `TxfmnKind`
+   as a legacy-arm transcription (harmless, unit-tested). The unfold produces TWO
+   nodes from one, which does **not** fit the 1:1 `migrate?(raw): N` signature, so
+   it remains a graph-level pass in `hydrateGraph` — the same "graph-level, not
+   per-node" bucket as OQ3. The per-node `migrate?` hook is reserved for 1:1 field
+   migrations (PolygonPoint `kind` default, spline `ctrl`→`pts`).
+3. **`ExprDef` is graph-level → its own `ExprDefOps` namespace + `ExprController`,
+   OUTSIDE the node registry.** DECIDED. `ExprDef` lives on `graph.exprDefs[]`, not
+   `graph.nodes`, so it has no `node.type` to key on. Its ~30 mutators become
+   `ExprDefOps` (a `*.ops.ts` namespace object, §5.3) owned by `ExprController`.
+   The `ExprNode` *instance* (which IS a node) gets a normal registry descriptor:
+   its `emitExpr` returns `null` (confirmed — `composition-emit.ts:785`; expr
+   instances contribute a PRELUDE const via `emitExprBlocks`, not a geometry
+   value), and its `inputRefs` are its `bindings` sources. So the def↔instance
+   split maps cleanly onto ops-namespace (def) + registry-descriptor (instance).
+4. **Golden-emit fixture does NOT exist yet → Phase 0 builds it.** DECIDED +
+   specified in §6a.5: `scripts/snapshot-emit.ts` captures `tests/golden/emit/<id>.js`
+   (+ `tests/golden/graph/<id>.json`) once at Phase-0 start via
+   `/api/primitives/{list,source}` → `hydrateGraph` → `emitGraph`;
+   `emit-golden.test.ts` re-emits + diffs byte-for-byte. Reusable by
+   `modularize-round2.md`.
+5. **Drag commands capture only the COMMITTED move (on pointerup), never
+   intermediate frames.** DECIDED (Phase 3). Align with the existing
+   `dragLive`-overlay-then-commit-on-pointerup pattern (memory
+   `graph_editor_drag_bake_perf`: never reassign `graph` per frame). One
+   `cmd('move node', …)` is pushed to the undo stack on pointerup with the
+   pre-drag position as the snapshot inverse — so undo reverts the whole gesture,
+   not 60 micro-moves. The overlay drives the live visual; only the settle writes
+   graph state + history.
 
 ---
 
