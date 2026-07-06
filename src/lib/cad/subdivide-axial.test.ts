@@ -91,6 +91,28 @@ describe('planAxialStations — curvature-driven station selection', () => {
   });
 });
 
+describe('warpMeshJS — originZ absolute placement (TODO #36b)', () => {
+  it('originZ shifts an offset part along the spline; absent = legacy z−z0', () => {
+    // On-axis column already at z∈[30,33] on a long vertical spline.
+    const col = (): Float32Array => {
+      const p = new Float32Array(3 * 4);
+      p[3 * 0 + 2] = 30; p[3 * 1 + 2] = 31; p[3 * 2 + 2] = 32; p[3 * 3 + 2] = 33;
+      return p;
+    };
+    const cp: [number, number][] = [[0, 0], [0, 60]]; // vertical, total ≈ 60
+    const abs = warpMeshJS(col(), null, cp, { originZ: 0 });   // s = z → arc-length 30..33
+    const shifted = warpMeshJS(col(), null, cp, { originZ: 30 }); // s = z−30 → 0..3
+    for (let k = 0; k < 4; k++) {
+      expect(abs.positions[3 * k + 2] - shifted.positions[3 * k + 2]).toBeCloseTo(30, 2);
+    }
+    // originZ absent must equal originZ=z0 (=30) exactly — byte-identical gate.
+    const legacy = warpMeshJS(col(), null, cp);
+    for (let i = 0; i < legacy.positions.length; i++) {
+      expect(legacy.positions[i]).toBe(shifted.positions[i]);
+    }
+  });
+});
+
 describe('subdivideAxialAdaptive — mesh split', () => {
   it('straight spline → output ≈ input (few triangles, identity-ish)', () => {
     const { positions, faces } = thinWall();

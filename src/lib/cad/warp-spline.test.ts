@@ -31,6 +31,49 @@ describe('splineSampler (planar, unchanged contract)', () => {
   });
 });
 
+describe('splineSampler — ±∞ straight-tangent extension (TODO #36a)', () => {
+  it('beyond the START: point lands on the straight ray, tangent constant', () => {
+    // Diagonal spline 0..(3,0,4), total = 5, endpoint tangent = (0.6, 0, 0.8).
+    const { sampleAt, total } = splineSampler([[0, 0], [3, 4]]);
+    expect(total).toBeCloseTo(5, 3);
+    const inTan = sampleAt(0.001).tan; // start tangent
+    const r = sampleAt(-5); // 5 units BEFORE the start
+    // tangent is the (constant) endpoint tangent
+    expect(r.tan[0]).toBeCloseTo(inTan[0], 4);
+    expect(r.tan[1]).toBeCloseTo(inTan[1], 4);
+    expect(r.tan[2]).toBeCloseTo(inTan[2], 4);
+    // pos = start(0,0,0) + tan·(−5)
+    expect(r.pos[0]).toBeCloseTo(-5 * inTan[0], 3);
+    expect(r.pos[1]).toBeCloseTo(0, 6);
+    expect(r.pos[2]).toBeCloseTo(-5 * inTan[2], 3);
+  });
+
+  it('beyond the END: point lands on the straight ray, tangent constant', () => {
+    const { sampleAt, total } = splineSampler([[0, 0], [3, 4]]);
+    const endTan = sampleAt(total - 0.001).tan;
+    const end = sampleAt(total - 1e-9).pos; // ~(3,0,4)
+    const r = sampleAt(total + 5); // 5 units PAST the end
+    expect(r.tan[0]).toBeCloseTo(endTan[0], 4);
+    expect(r.tan[2]).toBeCloseTo(endTan[2], 4);
+    // pos = end + tan·5  → collinear with the endpoint tangent
+    expect(r.pos[0]).toBeCloseTo(end[0] + 5 * endTan[0], 2);
+    expect(r.pos[2]).toBeCloseTo(end[2] + 5 * endTan[2], 2);
+  });
+
+  it('vertical spline: extension keeps x=0 and pushes z past both ends', () => {
+    const { sampleAt, total } = splineSampler([[0, 0], [0, 10]]);
+    const before = sampleAt(-4);
+    const after = sampleAt(total + 4);
+    expect(before.pos[0]).toBeCloseTo(0, 6);
+    expect(before.pos[2]).toBeCloseTo(-4, 3);
+    expect(after.pos[0]).toBeCloseTo(0, 6);
+    expect(after.pos[2]).toBeCloseTo(total + 4, 3);
+    // in-range unchanged (regression guard on the byte-identical gate)
+    const mid = sampleAt(total / 2);
+    expect(mid.pos[2]).toBeCloseTo(total / 2, 3);
+  });
+});
+
 describe('spline3DFrames — right-handed rotation-minimizing frame', () => {
   const path: Pt3[] = [
     [0, 0, 0],
@@ -65,6 +108,27 @@ describe('spline3DFrames — right-handed rotation-minimizing frame', () => {
       prev = pos[2] > prev ? pos[2] : prev; // z is monotonically increasing on this path
     }
     expect(prev).toBeGreaterThan(4.5);
+  });
+
+  it('extends past both ends on the endpoint tangent, frame constant (TODO #36a)', () => {
+    const { at, total } = spline3DFrames(path);
+    const start = at(0.0001), end = at(total - 0.0001);
+    const before = at(-3), after = at(total + 3);
+
+    // tangent + frame are the (constant) endpoint values
+    for (let d = 0; d < 3; d++) {
+      expect(before.tan[d]).toBeCloseTo(start.tan[d], 4);
+      expect(before.N[d]).toBeCloseTo(start.N[d], 6);
+      expect(before.B[d]).toBeCloseTo(start.B[d], 6);
+      expect(after.tan[d]).toBeCloseTo(end.tan[d], 4);
+      expect(after.N[d]).toBeCloseTo(end.N[d], 6);
+      expect(after.B[d]).toBeCloseTo(end.B[d], 6);
+    }
+    // pos = end + tan·offset → offset is exactly |Δs| along the endpoint tangent
+    const dx = after.pos[0] - end.pos[0], dy = after.pos[1] - end.pos[1], dz = after.pos[2] - end.pos[2];
+    expect(Math.hypot(dx, dy, dz)).toBeCloseTo(3, 1);
+    // still right-handed past the end
+    expect(det3(after.N, after.B, after.tan)).toBeCloseTo(1, 5);
   });
 });
 
@@ -111,6 +175,38 @@ describe('warpManifoldAlongSpline', () => {
     const bent: any = warpManifoldAlongSpline(m, [[0, 0, 0], [1, 1, 1.5], [0, 0, 3]] as Pt3[]);
     expect(bent.verts.length).toBe(16);
     expect(bent.verts.every((v: V3) => v.every((c) => Number.isFinite(c)))).toBe(true);
+  });
+
+  it('originZ: absolute-z placement shifts the part along the spline (TODO #36b)', () => {
+    // A short part already offset down-hole to z∈[30,33]. On a long vertical
+    // spline, originZ=0 places it at arc-length 30; originZ=30 at arc-length 0.
+    const verts: V3[] = [];
+    for (const z of [30, 33]) for (const x of [-0.5, 0.5]) verts.push([x, 0, z]);
+    const cp: [number, number][] = [[0, 0], [0, 60]]; // vertical, total ≈ 60
+    const m0 = fakeManifold(verts);
+    const m1 = fakeManifold(verts);
+    const at0: any = warpManifoldAlongSpline(m0, cp, { originZ: 0 });  // s = z
+    const at30: any = warpManifoldAlongSpline(m1, cp, { originZ: 30 }); // s = z − 30
+    for (let k = 0; k < verts.length; k++) {
+      // x (radial) offset identical; only the arc-length station (z) shifts by 30
+      expect(at0.verts[k][0]).toBeCloseTo(at30.verts[k][0], 4);
+      expect(at0.verts[k][2] - at30.verts[k][2]).toBeCloseTo(30, 2);
+    }
+    // originZ=30 lands the part at the spline start (arc-length 0..3)
+    const zs = at30.verts.map((v: V3) => v[2]);
+    expect(Math.min(...zs)).toBeCloseTo(0, 2);
+  });
+
+  it('originZ absent reproduces the legacy z−z0 placement exactly', () => {
+    const verts: V3[] = [];
+    for (const z of [30, 33]) for (const x of [-0.5, 0.5]) verts.push([x, 0, z]);
+    const cp: [number, number][] = [[0, 0], [0, 60]];
+    const legacy: any = warpManifoldAlongSpline(fakeManifold(verts), cp);
+    const explicit: any = warpManifoldAlongSpline(fakeManifold(verts), cp, { originZ: 30 });
+    // z0 = 30 for this part ⇒ originZ:30 must be byte-identical to the default.
+    for (let k = 0; k < verts.length; k++) {
+      for (let d = 0; d < 3; d++) expect(legacy.verts[k][d]).toBe(explicit.verts[k][d]);
+    }
   });
 });
 

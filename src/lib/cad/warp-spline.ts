@@ -74,7 +74,28 @@ function locate(cum: number[], total: number, s: number): { j: number; f: number
 export function splineSampler(cp: Pt2[]) {
   const CP: V3[] = cp.map((p) => [p[0], 0, p[1]]);
   const { dense, cum, total } = catmullRomDense(CP);
+  const endTan = (a: V3, b: V3): V3 => {
+    const tx = b[0] - a[0], ty = b[1] - a[1], tz = b[2] - a[2];
+    const tl = Math.hypot(tx, ty, tz) || 1;
+    return [tx / tl, ty / tl, tz / tl];
+  };
+  const n = dense.length;
   function sampleAt(s: number): { pos: V3; tan: V3 } {
+    // Beyond the ends (s<0 or s>total): extrapolate a STRAIGHT ray along the
+    // endpoint tangent (constant tangent), rather than clamping s into
+    // [0, total]. Inside the range the path is UNCHANGED (locate untouched), so
+    // a part whose z-extent sits within the spline warps byte-identically.
+    if (s < 0) {
+      const a = dense[0], b = dense[1] ?? dense[0];
+      const t = endTan(a, b);
+      return { pos: [a[0] + t[0] * s, a[1] + t[1] * s, a[2] + t[2] * s], tan: t };
+    }
+    if (s > total) {
+      const a = dense[n - 2] ?? dense[n - 1], b = dense[n - 1];
+      const t = endTan(a, b);
+      const ds = s - total;
+      return { pos: [b[0] + t[0] * ds, b[1] + t[1] * ds, b[2] + t[2] * ds], tan: t };
+    }
     const { j, f } = locate(cum, total, s);
     const a = dense[j], b = dense[j + 1];
     const pos: V3 = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
@@ -124,7 +145,21 @@ export function spline3DFrames(cp: Pt3[]) {
     N.push(n);
     B.push(_norm(_cross(fr.tangent as V3, n)));
   }
+  const last = dense.length - 1;
   function at(s: number): { pos: V3; N: V3; B: V3; tan: V3 } {
+    // Straight-ray extension past the ends: constant endpoint frame + tangent
+    // (see splineSampler). In-range behaviour is unchanged.
+    if (s < 0) {
+      const t = frames[0].tangent as V3;
+      const a = dense[0];
+      return { pos: [a[0] + t[0] * s, a[1] + t[1] * s, a[2] + t[2] * s], N: N[0], B: B[0], tan: t };
+    }
+    if (s > total) {
+      const t = frames[last].tangent as V3;
+      const b = dense[last];
+      const ds = s - total;
+      return { pos: [b[0] + t[0] * ds, b[1] + t[1] * ds, b[2] + t[2] * ds], N: N[last], B: B[last], tan: t };
+    }
     const { j, f } = locate(cum, total, s);
     const a = dense[j], b = dense[j + 1];
     const pos: V3 = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
@@ -169,12 +204,16 @@ export function warpValidity(m: any, genusBefore?: number): { volume: number; ge
 export function warpManifoldAlongSpline(
   m: any,
   cp: Pt2[] | Pt3[],
-  opts: { refine?: number; stretch?: boolean; validate?: boolean } = {},
+  opts: { refine?: number; stretch?: boolean; validate?: boolean; originZ?: number } = {},
 ): any {
   if (!m || !Array.isArray(cp) || cp.length < 2) return m;
   let bb: any;
   try { bb = m.boundingBox(); } catch { return m; }
   const z0 = bb.min[2], zLen = (bb.max[2] - bb.min[2]) || 1;
+  // z → arc-length origin: absolute placement (`s = z − originZ`) when originZ is
+  // given, else the legacy part-relative map (`s = z − z0`). A part offset
+  // down-hole by mv(z) then sits at arc-length z along the spline.
+  const zBase = opts.originZ !== undefined ? opts.originZ : z0;
 
   let mm = m;
   let refN = Math.max(0, Math.floor(opts.refine ?? 0));
@@ -200,7 +239,7 @@ export function warpManifoldAlongSpline(
     const { at, total } = spline3DFrames(cp as Pt3[]);
     out = mm.warp((p: number[]) => {
       const x = p[0], y = p[1], z = p[2];
-      const s = opts.stretch ? ((z - z0) / zLen) * total : (z - z0);
+      const s = opts.stretch ? ((z - z0) / zLen) * total : (z - zBase);
       const { pos, N, B } = at(s);
       p[0] = pos[0] + x * N[0] + y * B[0];
       p[1] = pos[1] + x * N[1] + y * B[1];
@@ -213,7 +252,7 @@ export function warpManifoldAlongSpline(
     const { sampleAt, total } = splineSampler(flat);
     out = mm.warp((p: number[]) => {
       const x = p[0], y = p[1], z = p[2];
-      const s = opts.stretch ? ((z - z0) / zLen) * total : (z - z0);
+      const s = opts.stretch ? ((z - z0) / zLen) * total : (z - zBase);
       const { pos, tan } = sampleAt(s);
       const N = frameN(tan);
       p[0] = pos[0] + x * N[0];
@@ -247,7 +286,7 @@ export function warpMeshJS(
   positions: Float32Array,
   normals: Float32Array | null,
   cp: Pt2[] | Pt3[],
-  opts: { stretch?: boolean } = {},
+  opts: { stretch?: boolean; originZ?: number } = {},
 ): { positions: Float32Array; normals: Float32Array | null } {
   if (!positions || positions.length < 3 || !Array.isArray(cp) || cp.length < 2) {
     return { positions, normals };
@@ -258,6 +297,9 @@ export function warpMeshJS(
     const z = positions[i]; if (z < z0) z0 = z; if (z > z1) z1 = z;
   }
   const zLen = (z1 - z0) || 1;
+  // Absolute placement `s = z − originZ` when given (a part offset by mv(z) sits
+  // at arc-length z), else the legacy part-relative `s = z − z0`.
+  const zBase = opts.originZ !== undefined ? opts.originZ : z0;
 
   const use3D = is3DPath(cp as number[][]);
   const s3 = use3D ? spline3DFrames(cp as Pt3[]) : null;
@@ -270,7 +312,7 @@ export function warpMeshJS(
 
   for (let i = 0; i < positions.length; i += 3) {
     const x = positions[i], y = positions[i + 1], z = positions[i + 2];
-    const s = opts.stretch ? ((z - z0) / zLen) * total : (z - z0);
+    const s = opts.stretch ? ((z - z0) / zLen) * total : (z - zBase);
 
     let N: V3, B: V3, T: V3, pos: V3;
     if (use3D) {
