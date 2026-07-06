@@ -989,9 +989,9 @@
           {@const aPBR = materialPreset(a.material)}
           <T.Mesh geometry={p.geo}>
             {#if scene.zRectLight}
-              <T.MeshStandardMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+              <T.MeshStandardMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} wireframe={scene.wireframe} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
             {:else}
-              <T.MeshPhongMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+              <T.MeshPhongMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} specular="#666666" shininess={120} flatShading={!smoothShade} wireframe={scene.wireframe} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
             {/if}
             {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
           </T.Mesh>
@@ -1011,9 +1011,9 @@
           {@const aPBR = materialPreset(a.material)}
           <T.Mesh geometry={p.geo}>
             {#if scene.zRectLight}
-              <T.MeshStandardMaterial vertexColors roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+              <T.MeshStandardMaterial vertexColors roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} wireframe={scene.wireframe} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
             {:else}
-              <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+              <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} wireframe={scene.wireframe} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
             {/if}
             {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
           </T.Mesh>
