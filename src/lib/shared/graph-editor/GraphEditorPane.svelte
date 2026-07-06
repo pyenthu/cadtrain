@@ -141,6 +141,7 @@
   // passed in via layoutCtx()). The shell keeps the thin autoLayout/pushApart
   // entry points below (they own the undoLayout snapshot + assign graph).
   import { overlayCardObstacles, separateGraph, type LayoutContext } from './graph-layout-actions';
+  import { buildSolidDrop } from './node-palette';
   import { PolyPreviewState } from './poly-preview-state.svelte';
   import PolyPreview from './PolyPreview.svelte';
   import { ProfilePreviewState } from './profile-preview-state.svelte';
@@ -1867,90 +1868,13 @@
     { r: asLiteral(1), z: asLiteral(0) },
     { r: asLiteral(1), z: asLiteral(1) },
   ];
-  const POLY_EXTRUDE_DEFAULT = [
-    { r: asLiteral(-1), z: asLiteral(-1) },
-    { r: asLiteral( 1), z: asLiteral(-1) },
-    { r: asLiteral( 1), z: asLiteral( 1) },
-    { r: asLiteral(-1), z: asLiteral( 1) },
-  ];
-
   function dropSolid(op: 'revolve' | 'extrude' | 'loft' | 'sweep') {
     closePicker();
-    // SWEEP is the odd one out: r_sweep takes TWO data inputs — a 3D `path` and a
-    // 2D `section` — not a single profile producer. Seed both as inline expr args
-    // (a round 24-gon section + an L-bend path) so the default tube is ROUND; the
-    // user edits them in the ƒ popover or rewires a polygon/expr into either socket.
-    if (op === 'sweep') {
-      graph = addCall(graph, 'r_sweep', {
-        path: { kind: 'expr', expr: '[[0, 0, 0], [3, 0, 0], [3, 3, 0]]' } as any,
-        section: {
-          kind: 'expr',
-          expr: '(() => { const n = 24, r = 0.5; return Array.from({ length: n }, (_, i) => { const a = 2 * Math.PI * i / n; return [r * Math.cos(a), r * Math.sin(a)]; }); })()',
-        } as any,
-        closedPath: { kind: 'literal', value: false } as any,
-        caps: { kind: 'literal', value: true } as any,
-      }).graph;
-      bakeNonce++;
-      return;
-    }
-    // Find an existing PROFILE PRODUCER to feed the solid, or create one.
-    // REVOLVE defaults to the SKETCH engine (line/spline/fillet (r,z) ops) —
-    // smoother, CAD-style half-sections beat a raw polygon, and the sketch
-    // wires into the profile arg the same `__POLY__<id>` way (per dropSketch).
-    // EXTRUDE / LOFT keep the cartesian (x,y) polygon. The producer becomes
-    // non-deletable while the solid consumes it (× greys out + 🔒 on the card);
-    // delete the solid first to unlock it.
-    let profileId: string | undefined;
-    if (op === 'revolve') {
-      profileId = (Object.values(graph.nodes).find((n) => (n as any).type === 'sketch') as any)?.id;
-      if (!profileId) {
-        const r = addSketch(graph);
-        graph = r.graph;
-        profileId = r.id;
-      }
-    } else {
-      // loft + extrude both take a cartesian (x,y) cross-section.
-      profileId = (Object.values(graph.nodes).find((n) => (n as any).type === 'polygon') as any)?.id;
-      if (!profileId) {
-        const r = addPolygon(graph, POLY_EXTRUDE_DEFAULT);
-        graph = r.graph;
-        profileId = r.id;
-      }
-    }
-    const profileArg = { kind: 'expr' as const, expr: '__POLY__' + profileId };
-    if (op === 'revolve') {
-      graph = addCall(graph, 'r_revolve', {
-        profile: profileArg as any,
-        segments: { kind: 'literal', value: 96 } as any,
-      }).graph;
-    } else if (op === 'loft') {
-      // r_loft (stdlib) sig: profile · length · divs · twist · bulge · shape ·
-      // segments. Defaults to a barrel bulge so the new node visibly differs
-      // from a plain extrude. shape stays the engine default ('barrel') even if
-      // the enum field reads blank in the card — it bakes via the default.
-      graph = addCall(graph, 'r_loft', {
-        profile:  profileArg as any,
-        length:   { kind: 'literal', value: 6 } as any,
-        divs:     { kind: 'literal', value: 48 } as any,
-        twist:    { kind: 'literal', value: 0 } as any,
-        bulge:    { kind: 'literal', value: 0.4 } as any,
-        shape:    { kind: 'literal', value: 'barrel' } as any,
-        segments: { kind: 'literal', value: 48 } as any,
-      }).graph;
-    } else {
-      // r_weld_extrude actual sig (stdlib/r_weld_extrude.ts meta.params):
-      //   profile · length · divs · twist · taper · segments
-      // Earlier draft used `height` (CrossSection.extrude arg name) which
-      // didn't match meta.params → drift warning + bake skipped.
-      graph = addCall(graph, 'r_weld_extrude', {
-        profile: profileArg as any,
-        length:   { kind: 'literal', value: 2 } as any,
-        divs:     { kind: 'literal', value: 12 } as any,
-        twist:    { kind: 'literal', value: 0 } as any,
-        taper:    { kind: 'literal', value: 0 } as any,
-        segments: { kind: 'literal', value: 32 } as any,
-      }).graph;
-    }
+    // Graph construction lives in node-palette.ts (pure + unit-tested); the shell
+    // just reassigns state + bumps the bake nonce when the builder asks.
+    const r = buildSolidDrop(graph, op);
+    graph = r.graph;
+    if (r.bakeBump) bakeNonce++;
   }
 
   // The stack/list reorder popover (containerPop + openContainerPop/moveChild)
