@@ -30,6 +30,27 @@
     if (typeof localStorage !== 'undefined') localStorage.setItem(LS_ARCH_TAB, t);
   }
 
+  // ── Top-level page sections as VERTICAL TABS (left rail) — show one at a
+  // time instead of one long scroll (more compact + easier to navigate). ──
+  const PAGE_SECTIONS = [
+    { id: 'what',   num: '01', label: 'What it is' },
+    { id: 'arch',   num: '02', label: 'Architecture' },
+    { id: 'cap',    num: '03', label: 'Capabilities' },
+    { id: 'stack',  num: '04', label: 'Tech stack' },
+    { id: 'routes', num: '05', label: 'Routes' },
+  ] as const;
+  type PageSection = (typeof PAGE_SECTIONS)[number]['id'];
+  const LS_PAGE_SECTION = 'design-page-section';
+  let pageSection = $state<PageSection>('what');
+  if (typeof localStorage !== 'undefined') {
+    const s = localStorage.getItem(LS_PAGE_SECTION);
+    if (s && PAGE_SECTIONS.some((x) => x.id === s)) pageSection = s as PageSection;
+  }
+  function setPageSection(s: PageSection) {
+    pageSection = s;
+    if (typeof localStorage !== 'undefined') localStorage.setItem(LS_PAGE_SECTION, s);
+  }
+
   const capabilities = [
     {
       icon: '◈',
@@ -79,7 +100,7 @@
 </svelte:head>
 
 <main class="page">
-  <!-- ───────────────────────── Hero ───────────────────────── -->
+  <!-- ───────────────────────── Compact hero ───────────────────────── -->
   <header class="hero">
     <div class="hero-inner">
       <div class="kicker">Parametric CAD pipeline</div>
@@ -87,12 +108,6 @@
       <p class="tagline">
         A parametric 3D CAD pipeline for downhole-tool components — describe a
         part, wire a graph, bake the geometry.
-      </p>
-      <p class="lede">
-        Downhole tools are families of revolved, extruded and threaded bodies
-        with shared parametric DNA. CAD Train turns that DNA into a visual
-        node-graph editor over a typed parts library, bakes it with a real CSG
-        kernel, and renders it live in the browser.
       </p>
       <div class="badges">
         <span class="badge">SvelteKit</span>
@@ -104,6 +119,25 @@
     <div class="hero-glow" aria-hidden="true"></div>
   </header>
 
+  <!-- ─────────────────── Vertical section tabs ─────────────────── -->
+  <div class="design-shell">
+    <div class="page-rail" role="tablist" aria-label="Sections">
+      {#each PAGE_SECTIONS as s}
+        <button
+          class="rail-tab"
+          class:active={pageSection === s.id}
+          role="tab"
+          aria-selected={pageSection === s.id}
+          onclick={() => setPageSection(s.id)}
+        >
+          <span class="rail-num">{s.num}</span>
+          <span class="rail-label">{s.label}</span>
+        </button>
+      {/each}
+    </div>
+
+    <div class="page-body">
+  {#if pageSection === 'what'}
   <!-- ───────────────────────── What it is ───────────────────────── -->
   <section class="section" aria-labelledby="what-h">
     <div class="section-head">
@@ -132,9 +166,9 @@
       </p>
     </div>
   </section>
-
+  {:else if pageSection === 'arch'}
   <!-- ───────────────────────── Architecture graph ───────────────────────── -->
-  <section class="section section-alt" aria-labelledby="arch-h">
+  <section class="section" aria-labelledby="arch-h">
     <div class="section-head">
       <span class="num">02</span>
       <h2 id="arch-h">Architecture</h2>
@@ -213,6 +247,7 @@
     {/if}
   </section>
 
+  {:else if pageSection === 'cap'}
   <!-- ───────────────────────── Capabilities ───────────────────────── -->
   <section class="section" aria-labelledby="cap-h">
     <div class="section-head">
@@ -233,8 +268,9 @@
     </div>
   </section>
 
+  {:else if pageSection === 'stack'}
   <!-- ───────────────────────── Tech stack ───────────────────────── -->
-  <section class="section section-alt" aria-labelledby="stack-h">
+  <section class="section" aria-labelledby="stack-h">
     <div class="section-head">
       <span class="num">04</span>
       <h2 id="stack-h">Tech stack</h2>
@@ -249,6 +285,7 @@
     </ul>
   </section>
 
+  {:else if pageSection === 'routes'}
   <!-- ───────────────────────── Routes ───────────────────────── -->
   <section class="section" aria-labelledby="routes-h">
     <div class="section-head">
@@ -265,6 +302,9 @@
       <code><a href="/plan">/plan</a></code> (Gantt roadmap).
     </p>
   </section>
+  {/if}
+    </div>
+  </div>
 
   <!-- ───────────────────────── Footer ───────────────────────── -->
   <footer class="foot">
@@ -306,12 +346,12 @@
     box-sizing: border-box;
   }
 
-  /* ───────── Hero ───────── */
+  /* ───────── Hero (compact) ───────── */
   .hero {
     position: relative;
     overflow: hidden;
-    padding: clamp(4rem, 11vw, 9rem) clamp(1.25rem, 6vw, 7rem)
-      clamp(3rem, 7vw, 5.5rem);
+    padding: clamp(1.6rem, 4vw, 2.6rem) clamp(1.25rem, 5vw, 3.5rem)
+      clamp(1.3rem, 3vw, 2rem);
     border-bottom: 1px solid var(--line);
   }
   .hero-inner {
@@ -333,38 +373,32 @@
     pointer-events: none;
   }
   .kicker {
-    font-size: 0.78rem;
+    font-size: 0.68rem;
     font-weight: 600;
     letter-spacing: 0.18em;
     text-transform: uppercase;
     color: var(--accent);
-    margin-bottom: 1.1rem;
+    margin-bottom: 0.5rem;
   }
   .title {
     margin: 0;
-    font-size: clamp(3rem, 11vw, 6.5rem);
+    font-size: clamp(1.9rem, 5vw, 3rem);
     font-weight: 800;
-    letter-spacing: -0.04em;
-    line-height: 0.98;
+    letter-spacing: -0.03em;
+    line-height: 1;
   }
   .tagline {
-    margin: 1.4rem 0 0;
-    font-size: clamp(1.15rem, 2.6vw, 1.6rem);
+    margin: 0.6rem 0 0;
+    font-size: clamp(0.95rem, 1.8vw, 1.12rem);
     font-weight: 500;
-    color: var(--ink);
-    max-width: 42rem;
-  }
-  .lede {
-    margin: 1.1rem 0 0;
-    font-size: 1.05rem;
     color: var(--ink-soft);
-    max-width: 40rem;
+    max-width: 46rem;
   }
   .badges {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.6rem;
-    margin-top: 2.2rem;
+    gap: 0.5rem;
+    margin-top: 1rem;
   }
   .badge {
     font-size: 0.82rem;
@@ -384,19 +418,70 @@
     transform: translateY(-2px);
   }
 
+  /* ───────── Vertical section tabs (left rail + body) ───────── */
+  .design-shell {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+  }
+  .page-rail {
+    position: sticky;
+    top: 0;
+    flex: 0 0 auto;
+    width: 12rem;
+    display: flex;
+    flex-direction: column;
+    padding: 1.25rem 0.6rem;
+    gap: 0.2rem;
+    border-right: 1px solid var(--line);
+    background: var(--paper-alt);
+    min-height: 60vh;
+  }
+  .rail-tab {
+    display: flex;
+    align-items: baseline;
+    gap: 0.55rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    border-radius: 9px;
+    background: none;
+    color: var(--ink-soft);
+    font: inherit;
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+  }
+  .rail-tab:hover { background: #fff; color: var(--ink); }
+  .rail-tab.active {
+    background: #fff;
+    color: var(--ink);
+    box-shadow: inset 3px 0 0 var(--accent), 0 1px 3px rgba(0, 0, 0, 0.05);
+  }
+  .rail-num {
+    font-size: 0.66rem;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 0.04em;
+  }
+  .rail-tab.active .rail-num { color: var(--accent); }
+  .page-body {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
   /* ───────── Sections ───────── */
   .section {
-    padding: clamp(3rem, 7vw, 6rem) clamp(1.25rem, 6vw, 7rem);
-    border-bottom: 1px solid var(--line);
-  }
-  .section-alt {
-    background: var(--paper-alt);
+    padding: clamp(1.5rem, 3vw, 2.5rem) clamp(1.25rem, 4vw, 3rem);
+    border-bottom: none;
   }
   .section-head {
     display: flex;
     align-items: baseline;
     gap: 1rem;
-    margin-bottom: 2rem;
+    margin-bottom: 1.4rem;
   }
   .num {
     font-size: 0.85rem;

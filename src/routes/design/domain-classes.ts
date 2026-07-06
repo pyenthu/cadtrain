@@ -6,76 +6,90 @@
  * readability-trimmed transcription (key fields only) — NOT every field — so the
  * diagram stays legible. Refresh when the node union or Graph shape changes.
  *
- * `Graph` is the aggregate root (a bag of nodes + params + edges). `GraphNode`
- * is the 15-way discriminated union every node card is one of. `ArgValue` is the
- * literal|expr|param value every parametric slot holds.
+ * The 15 GraphNode variants are grouped into Mermaid NAMESPACES by modular role
+ * (core model · solid producers · 2D/profile producers · transforms · containers
+ * · appearance) so the diagram reads as modular boxes, not one flat inheritance
+ * fan. `Graph` is the aggregate root; `ArgValue` is the value every slot holds.
  */
 export const DOMAIN_CLASS_DIAGRAM = `classDiagram
-  direction LR
+  direction TB
 
-  class Graph {
-    <<aggregate root>>
-    +Map~GraphNode~ nodes
-    +NodeId root
-    +Map~ParamSchema~ params
-    +Edge[] edges
-    +string[] imports
-    +Map~LayoutXY~ layout
-    +Viewport viewport
-    +PartAppearance appearance
+  namespace CoreModel {
+    class Graph {
+      <<aggregate root>>
+      +Map~GraphNode~ nodes
+      +NodeId root
+      +Map~ParamSchema~ params
+      +Edge[] edges
+      +string[] imports
+      +Map~LayoutXY~ layout
+      +PartAppearance appearance
+    }
+    class GraphNode {
+      <<union base>>
+      +NodeId id
+      +string type
+    }
+    class ArgValue {
+      <<value union>>
+      +literal|expr|param kind
+    }
+    class Literal { +number|string|bool value }
+    class Expr { +string expr }
+    class Param { +string param }
+    class ParamSchema { +number default; +number step }
+    class Edge { +NodeId from; +string key; +string param }
+    class LayoutXY { +number x; +number y }
   }
 
-  class GraphNode {
-    <<union>>
-    +NodeId id
-    +string type
+  namespace SolidProducers {
+    class CallNode { +string src; +string alias; +Map~ArgValue~ args }
+    class MethodNode { +CsgOp op; +NodeId obj; +NodeId arg }
   }
 
-  class ArgValue {
-    <<union>>
-    +literal | expr | param kind
+  namespace ProfileProducers {
+    class PolygonNode { +PolygonEntry[] points }
+    class PolyRepeatNode { +ArgValue count; +ArgValue r; +ArgValue z; +string loopVar }
+    class SketchNode { +SketchOpEntry[] ops; +ArgValue segments }
+    class SketchRepeatNode { +ArgValue count; +string loopVar }
+    class SplineNode { +number[3][] points; +ArgValue samples; +bool closed }
+    class ExprNode { +NodeId defId; +Map~ArgValue~ bindings }
   }
-  class Literal { +number|string|bool value }
-  class Expr { +string expr }
-  class Param { +string param }
+
+  namespace Transforms {
+    class MvNode { +NodeId child; +ArgValue[3] offset }
+    class RotNode { +NodeId child; +ArgValue[3] rot }
+    class TxfmnNode { +NodeId child; +ArgValue[3] rot; +ArgValue[3] offset }
+    class WarpNode { +NodeId child; +ArgValue path; +ArgValue refine }
+  }
+
+  namespace Containers {
+    class ContainerNode { +list|stack|group type; +NodeId[] children; +Map childCounts }
+    class RepeatNode { +NodeId[] children; +ArgValue count; +RepeatOp op; +string loopVar }
+  }
+
+  namespace Appearance {
+    class MaterialNode { +string material; +string colorOuter; +number opacity }
+  }
+
   ArgValue <|-- Literal
   ArgValue <|-- Expr
   ArgValue <|-- Param
 
-  class ParamSchema { +number default; +number step }
-  class Edge { +NodeId from; +string key; +string param }
-  class LayoutXY { +number x; +number y }
-
-  class CallNode { +string src; +string alias; +Map~ArgValue~ args }
-  class ContainerNode { +list|stack|group type; +NodeId[] children; +Map childCounts }
-  class MethodNode { +CsgOp op; +NodeId obj; +NodeId arg }
-  class MvNode { +NodeId child; +ArgValue[3] offset }
-  class RotNode { +NodeId child; +ArgValue[3] rot }
-  class TxfmnNode { +NodeId child; +ArgValue[3] rot; +ArgValue[3] offset }
-  class RepeatNode { +NodeId[] children; +ArgValue count; +RepeatOp op; +string loopVar }
-  class PolygonNode { +PolygonEntry[] points }
-  class PolyRepeatNode { +ArgValue count; +ArgValue r; +ArgValue z; +string loopVar }
-  class SketchNode { +SketchOpEntry[] ops; +ArgValue segments }
-  class SketchRepeatNode { +ArgValue count; +string loopVar }
-  class ExprNode { +NodeId defId; +Map~ArgValue~ bindings }
-  class SplineNode { +number[3][] points; +ArgValue samples; +bool closed }
-  class WarpNode { +NodeId child; +ArgValue path; +ArgValue refine }
-  class MaterialNode { +string material; +string colorOuter; +number opacity }
-
   GraphNode <|-- CallNode
-  GraphNode <|-- ContainerNode
   GraphNode <|-- MethodNode
-  GraphNode <|-- MvNode
-  GraphNode <|-- RotNode
-  GraphNode <|-- TxfmnNode
-  GraphNode <|-- RepeatNode
   GraphNode <|-- PolygonNode
   GraphNode <|-- PolyRepeatNode
   GraphNode <|-- SketchNode
   GraphNode <|-- SketchRepeatNode
-  GraphNode <|-- ExprNode
   GraphNode <|-- SplineNode
+  GraphNode <|-- ExprNode
+  GraphNode <|-- MvNode
+  GraphNode <|-- RotNode
+  GraphNode <|-- TxfmnNode
   GraphNode <|-- WarpNode
+  GraphNode <|-- ContainerNode
+  GraphNode <|-- RepeatNode
   GraphNode <|-- MaterialNode
 
   Graph "1" o-- "*" GraphNode : nodes
