@@ -24,6 +24,7 @@ import {
 } from '$lib/cad/composition-graph';
 import { sketchColLayout, SKETCH_COL_W, SKETCH_COL_GAP } from '$lib/cad/sketch-layout';
 import { kindOf } from '$lib/cad/nodes/registry';
+import type { SizeConsts } from '$lib/cad/nodes/node-kind';
 
 // ─── Params-card geometry constants ────────────────────────────────────────
 // Outer card sits at (CARD_X0, CARD_Y0); the title bar takes CARD_TITLE_H;
@@ -89,6 +90,16 @@ export function exprInputSockY(idx: number): number { return exprRowTop(idx) + E
 /** Card-local Y of the idx-th OUTPUT socket centre (right edge), aligned to
  *  that output's row (line-aligned outputs). */
 export function exprOutputSockY(idx: number): number { return exprRowTop(idx) + EXPR_ROW_H / 2; }
+
+// ─── Node-kind SizeCtx constant bag (docs/plans/hierarchical-class-design.md) ─
+// The single source of truth for these layout numbers stays HERE (the shared
+// layer); nodeSize passes this bag into each cad-layer size descriptor so they
+// reproduce their arm byte-identically without importing shared.
+export const SIZE_CONSTS: SizeConsts = {
+  OUTPUT_BOX_MIN_W, OUTPUT_ARROW_W, OUTPUT_MIN_H,
+  POLY_VTX_PITCH, POLY_RREF_PITCH,
+  EXPR_BODY_TOP, EXPR_ROW_H,
+};
 
 // ─── card obstacle type (passed into `bezier`) ─────────────────────────────
 export type CardObstacle = { id: string; x: number; y: number; w: number; h: number };
@@ -343,11 +354,20 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
   const savedW = graph.layout[node.id]?.w;
   const baseW = typeof savedW === 'number' ? savedW : cardAutoWidth(graph, node);
   const w = Math.max(cardMinWidth(node), baseW);
-  // Phase 0 registry (docs/plans/hierarchical-class-design.md §6a): registered
-  // kinds (method/txfmn/material) size through their descriptor — byte-identical
-  // to the if-chain below (pinned by geom.test.ts). Others fall through.
+  // Phase 0/1 registry (docs/plans/hierarchical-class-design.md §6a): registered
+  // kinds size through their descriptor — byte-identical to the if-chain below
+  // (pinned by geom.test.ts). The graph-dependent kinds (container root branch,
+  // polygon/sketch persisted h + cols, expr def row-count) read their inputs
+  // from the INJECTED ctx (layout slot / exprDefs / geom-owned SizeConsts) so
+  // the cad-layer descriptor never imports this shared module.
   const k = kindOf(node as any);
-  if (k) return k.size(node as any, { width: w, root: (graph as any).root });
+  if (k) return k.size(node as any, {
+    width: w,
+    root: (graph as any).root,
+    layout: graph.layout[node.id] as any,
+    exprDefs: graph.exprDefs,
+    consts: SIZE_CONSTS,
+  });
   if (node.type === 'call') {
     const argCount = Object.keys(node.args ?? {}).length;
     return { w, h: Math.max(80, 50 + argCount * 22) };

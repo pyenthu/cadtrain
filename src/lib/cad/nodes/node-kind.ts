@@ -29,6 +29,15 @@ export interface EmitCtx {
   varNames: ReadonlyMap<NodeId, string>;
   listProducers: ReadonlySet<NodeId>;
   nodes: Readonly<Record<NodeId, GraphNode>>;
+  /** exprBlockVar(nodeId) — the prelude const-name base for an ExprNode's
+   *  emitted outputs (`graph-exprs.ts`). Bound by emitNodeExpr; used by the
+   *  polygon/sketch `expr-list-ref` + `repeat-ref` splices. Optional so the
+   *  fixed-shape descriptors + their unit ctxs need not supply it. */
+  exprBlockVar?(id: NodeId): string;
+  /** emitSketchOpObject — one sketch op → its `{ op: … }` source literal
+   *  (composition-emit.ts local, not exported → passed IN to avoid a cycle).
+   *  Bound by emitNodeExpr; used only by SketchKind. */
+  emitSketchOp?(o: any): string;
 }
 
 /** Structurally identical to composition-emit.ts's GraphValidationError so
@@ -40,12 +49,42 @@ export interface ValidationError {
   kind: 'missing-node' | 'missing-param';
 }
 
+/** Layout constants OWNED by geom.ts (the shared layer). Injected into SizeCtx
+ *  by geom.ts's nodeSize wrapper so the cad-layer descriptors reproduce their
+ *  size arm byte-identically WITHOUT importing shared (layering rule: cad ✗→
+ *  shared). Absent for the fixed-size leaf kinds that don't read them. */
+export interface SizeConsts {
+  OUTPUT_BOX_MIN_W: number;
+  OUTPUT_ARROW_W: number;
+  OUTPUT_MIN_H: number;
+  POLY_VTX_PITCH: number;
+  POLY_RREF_PITCH: number;
+  EXPR_BODY_TOP: number;
+  EXPR_ROW_H: number;
+}
+
 /** Width policy stays centralised in geom.ts's nodeSize wrapper (savedW override
  *  → cardAutoWidth → cardMinWidth clamp); descriptors receive the resolved
  *  content width + the root id and return the final {w,h}. Kinds with a FIXED
  *  width (method/material) ignore `ctx.width`. Keeping `size` a pure function of
- *  (node, ctx) — no `graph` handle, no Svelte import — makes it worker-safe. */
-export interface SizeCtx { width: number; root: NodeId; }
+ *  (node, ctx) — no `graph` handle, no Svelte import — makes it worker-safe.
+ *
+ *  `layout` / `exprDefs` / `consts` are INJECTED by geom.ts for the
+ *  graph-dependent kinds (container root branch, polygon/sketch persisted
+ *  height + column count, expr def row-count) — replacing the direct
+ *  `graph.layout[id]` / `graph.exprDefs` / shared-constant reads. Optional so
+ *  the fixed-size kinds and their unit ctxs need not supply them. */
+export interface SizeCtx {
+  width: number;
+  root: NodeId;
+  /** graph.layout[node.id] — the node's persisted layout slot. `w` is already
+   *  folded into `width`; `h`/`cols` are still needed by polygon/sketch. */
+  layout?: { w?: number; h?: number; cols?: number };
+  /** graph.exprDefs — ExprKind resolves its def's param/output row counts. */
+  exprDefs?: readonly any[];
+  /** geom.ts layout constants (see SizeConsts). */
+  consts?: SizeConsts;
+}
 
 /** The editor-facing socket schema (input slots + output arity) — lets
  *  NodeCard.svelte eventually render generically instead of a {#if} arm. */
