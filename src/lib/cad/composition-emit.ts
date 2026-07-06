@@ -1023,49 +1023,15 @@ function computeListProducers(graph: Graph): Set<NodeId> {
 
 function computeConsumedSet(graph: Graph): Set<NodeId> {
   const consumed = new Set<NodeId>();
+  // Each node-kind descriptor's `inputRefs` enumerates the NodeIds it consumes —
+  // method obj/arg, mv/rot/txfmn/warp child, container/repeat children, sketch
+  // repeat-ref sources, call __POLY__ sentinels. Skipping the ROOT node is what
+  // preserves the "root list's children are the OUTPUT, not consumed" rule
+  // (ContainerKind.inputRefs returns children unconditionally; this skip is the
+  // sole home of the root exception the old `n.id !== graph.root` guard held).
   for (const n of Object.values(graph.nodes)) {
-    if (n.type === 'method') {
-      if (n.obj) consumed.add(n.obj);
-      if (n.arg) consumed.add(n.arg);
-    } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn') {
-      if (n.child) consumed.add(n.child);
-    } else if (n.type === 'warp') {
-      // The warp's bent solid is an INPUT — consumed so it doesn't double-emit
-      // as an Output + its × delete button greys (mirrors mv/rot child).
-      if (n.child) consumed.add(n.child);
-    } else if (n.type === 'repeat') {
-      // Every wired PART is an input to the repeat — consumed so it doesn't
-      // double-emit as an Output and its delete button greys.
-      for (const c of n.children ?? []) consumed.add(c);
-    } else if (n.type === 'stack' || n.type === 'group') {
-      // Stack + group are EXPRESSIONS that operate on their children
-      // (`stack(a, b, c)` / `group(a, b, c)`). The children are inputs,
-      // not outputs — mark them consumed so the root-list filter drops them.
-      for (const c of n.children) consumed.add(c);
-    } else if (n.type === 'list' && n.id !== graph.root) {
-      // A NESTED list literal is also a single expression `[a, b, c]` whose
-      // children are inputs. The ROOT list is special — its children ARE
-      // the function's return value (filtered downstream).
-      for (const c of n.children) consumed.add(c);
-    } else if (n.type === 'sketch') {
-      // A sketch's repeat-ref entries consume their SketchRepeatNode source
-      // (#805) so it never double-emits as an Output + its × greys out —
-      // exactly the polygon repeat-ref / __POLY__ precedent.
-      for (const o of (n.ops as any[]) ?? []) {
-        if (o?.op === 'repeat-ref' && o.sourceId) consumed.add(o.sourceId);
-      }
-    } else if (n.type === 'call') {
-      // Call args carrying a `__POLY__<sourceId>` sentinel expr consume
-      // the source node (the polygon, today). Without this, the polygon
-      // and the revolve BOTH show up as Output children — the user sees
-      // two outputs when there's really only one (the revolve's solid).
-      for (const v of Object.values(n.args)) {
-        if (v.kind !== 'expr') continue;
-        const matches = v.expr.match(/__POLY__(n_[a-z0-9_]+)/gi);
-        if (!matches) continue;
-        for (const m of matches) consumed.add(m.slice('__POLY__'.length));
-      }
-    }
+    if (!n || n.id === graph.root) continue;
+    for (const id of kindOf(n)?.inputRefs(n) ?? []) consumed.add(id);
   }
   return consumed;
 }
