@@ -103,17 +103,21 @@
   <!-- ───────────────────────── Compact hero ───────────────────────── -->
   <header class="hero">
     <div class="hero-inner">
-      <div class="kicker">Parametric CAD pipeline</div>
-      <h1 class="title">CAD&nbsp;Train</h1>
-      <p class="tagline">
-        A parametric 3D CAD pipeline for downhole-tool components — describe a
-        part, wire a graph, bake the geometry.
-      </p>
-      <div class="badges">
-        <span class="badge">SvelteKit</span>
-        <span class="badge">ManifoldCAD</span>
-        <span class="badge">Threlte</span>
-        <span class="badge">Bun</span>
+      <div class="hero-lead">
+        <div class="kicker">Parametric CAD pipeline</div>
+        <h1 class="title">CAD&nbsp;Train</h1>
+      </div>
+      <div class="hero-meta">
+        <p class="tagline">
+          A parametric 3D CAD pipeline for downhole-tool components — describe a
+          part, wire a graph, bake the geometry.
+        </p>
+        <div class="badges">
+          <span class="badge">SvelteKit</span>
+          <span class="badge">ManifoldCAD</span>
+          <span class="badge">Threlte</span>
+          <span class="badge">Bun</span>
+        </div>
       </div>
     </div>
     <div class="hero-glow" aria-hidden="true"></div>
@@ -350,14 +354,29 @@
   .hero {
     position: relative;
     overflow: hidden;
-    padding: clamp(1.6rem, 4vw, 2.6rem) clamp(1.25rem, 5vw, 3.5rem)
-      clamp(1.3rem, 3vw, 2rem);
+    padding: clamp(1.1rem, 2.4vw, 1.5rem) clamp(1.25rem, 5vw, 3.5rem);
     border-bottom: 1px solid var(--line);
   }
   .hero-inner {
     position: relative;
     z-index: 1;
-    max-width: 60rem;
+    max-width: 72rem;
+    display: flex;
+    align-items: center;
+    gap: clamp(1rem, 3vw, 2.6rem);
+    flex-wrap: wrap;
+  }
+  .hero-lead { flex: 0 0 auto; }
+  .hero-meta {
+    flex: 1 1 20rem;
+    min-width: 16rem;
+    display: flex;
+    align-items: center;
+    gap: 1.2rem;
+    flex-wrap: wrap;
+    /* left divider to separate title from the meta */
+    padding-left: clamp(1rem, 3vw, 2.6rem);
+    border-left: 1px solid var(--line);
   }
   .hero-glow {
     position: absolute;
@@ -388,17 +407,20 @@
     line-height: 1;
   }
   .tagline {
-    margin: 0.6rem 0 0;
-    font-size: clamp(0.95rem, 1.8vw, 1.12rem);
+    margin: 0;
+    flex: 1 1 18rem;
+    font-size: clamp(0.9rem, 1.5vw, 1.02rem);
     font-weight: 500;
     color: var(--ink-soft);
-    max-width: 46rem;
+    max-width: 34rem;
+    line-height: 1.4;
   }
   .badges {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.5rem;
-    margin-top: 1rem;
+    gap: 0.4rem;
+    margin: 0;
+    flex: 0 0 auto;
   }
   .badge {
     font-size: 0.82rem;
