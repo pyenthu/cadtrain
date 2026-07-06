@@ -3,3 +3,5 @@
 export { MethodKind } from './method';
 export { TxfmnKind } from './txfmn';
 export { MaterialKind } from './material';
+export { MvKind } from './mv';
+export { RotKind } from './rot';

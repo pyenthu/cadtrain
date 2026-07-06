@@ -9,12 +9,14 @@
  */
 import type { GraphNode } from '../composition-graph-types';
 import type { NodeKind } from './node-kind';
-import { MethodKind, TxfmnKind, MaterialKind } from './kinds';
+import { MethodKind, TxfmnKind, MaterialKind, MvKind, RotKind } from './kinds';
 
 const KINDS: Partial<Record<GraphNode['type'], NodeKind>> = {
   method: MethodKind as NodeKind,
   txfmn: TxfmnKind as NodeKind,
   material: MaterialKind as NodeKind,
+  mv: MvKind as NodeKind,
+  rot: RotKind as NodeKind,
 };
 
 /** undefined for not-yet-migrated kinds → the call-site keeps its legacy arm. */
