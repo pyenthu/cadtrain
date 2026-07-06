@@ -13,3 +13,6 @@ export { StackKind } from './stack';
 export { RepeatKind } from './repeat';
 export { PolygonKind } from './polygon';
 export { PolyRepeatKind } from './poly-repeat';
+export { SketchKind } from './sketch';
+export { SketchRepeatKind } from './sketch-repeat';
+export { ExprKind } from './expr';
