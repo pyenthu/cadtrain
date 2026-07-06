@@ -188,6 +188,7 @@
   // (NOT a singleton — /primitives mounts all tab panes at once); `wire` is
   // constructed below once `graph`/`clientToGraph` are in scope.
   import { WireState } from './wire-state.svelte';
+  import { GraphHistory } from './graph-history.svelte';
   import { SketchState } from './sketch-state.svelte';
   import { SplineState } from './spline-state.svelte';
   import { CanvasInteractionState } from './canvas-interaction.svelte';
@@ -264,6 +265,11 @@
   // id input mutate it locally. The `id` prop only seeds it; once mounted
   // we stop reading the prop so the user's typed value isn't reverted.
   let graph = $state<Graph>(newGraph());
+  // Phase 3 (docs/plans/hierarchical-class-design.md §5.2): per-pane undo/redo.
+  // Snapshot-based — records the previous graph whenever `graph` changes (a
+  // committed transaction); ⌘/Ctrl+Z / ⇧+Z restore. reset() on part load.
+  const history = new GraphHistory();
+  $effect(() => history.record(graph));
   let exemplarId = $state<string>(props.id ?? 'test_graph_a');
   let saveStatus = $state<string | null>(null);
   /** Embed mode — when the editor is mounted inside another surface (the
@@ -666,6 +672,18 @@
       sketch.selectedSplineOpIdx = null;
       return;
     }
+    // Undo / redo (⌘/Ctrl+Z, ⌘/Ctrl+⇧+Z or ⌘/Ctrl+Y) — graph-level. NOT while
+    // typing in a field: let the browser do native text undo there.
+    if ((ev.metaKey || ev.ctrlKey) && (ev.key === 'z' || ev.key === 'Z' || ev.key === 'y' || ev.key === 'Y')) {
+      const t = ev.target as HTMLElement | null;
+      const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || (t as any).isContentEditable);
+      if (inField) return;
+      ev.preventDefault();
+      const redo = ev.key === 'y' || ev.key === 'Y' || ev.shiftKey;
+      const g = redo ? history.redo(graph) : history.undo(graph);
+      if (g) graph = g;
+      return;
+    }
     if (ev.key !== 'Enter') return;
     if (ev.isComposing) return;
     if (ev.shiftKey || ev.ctrlKey || ev.metaKey || ev.altKey) return;
@@ -1033,6 +1051,9 @@
             ci.zoom = graph.viewport.zoom;
           }
           exemplarId = id;
+          // Seed the undo baseline AFTER load settles (hydrate + auto-layout +
+          // viewport) so the initial load isn't undoable back to the empty graph.
+          history.reset(graph);
         } else {
           legacyLoad = { id, reason: 'no-graph', origin: d.origin };
           exemplarId = id;
