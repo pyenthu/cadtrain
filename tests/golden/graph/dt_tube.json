@@ -1,0 +1,128 @@
+{
+  "nodes": {
+    "n_jcj7hw": {
+      "id": "n_jcj7hw",
+      "type": "list",
+      "children": [
+        "n_ov3o28",
+        "n_85y8nt",
+        "n_bt8koo"
+      ]
+    },
+    "n_ov3o28": {
+      "id": "n_ov3o28",
+      "type": "call",
+      "src": "g_shaft",
+      "alias": "C",
+      "args": {
+        "r": {
+          "kind": "expr",
+          "expr": "p.od/2- p.wall"
+        },
+        "length": {
+          "kind": "literal",
+          "value": 5
+        },
+        "segments": {
+          "kind": "literal",
+          "value": 32
+        }
+      }
+    },
+    "n_85y8nt": {
+      "id": "n_85y8nt",
+      "type": "call",
+      "src": "g_shaft",
+      "alias": "A",
+      "args": {
+        "r": {
+          "kind": "expr",
+          "expr": "p.od/2"
+        },
+        "length": {
+          "kind": "literal",
+          "value": 5
+        },
+        "segments": {
+          "kind": "literal",
+          "value": 32
+        }
+      }
+    },
+    "n_bt8koo": {
+      "id": "n_bt8koo",
+      "type": "method",
+      "op": "subtract",
+      "obj": "n_85y8nt",
+      "arg": "n_ov3o28"
+    }
+  },
+  "root": "n_jcj7hw",
+  "params": {
+    "od": {
+      "label": "od",
+      "min": 0.1,
+      "max": 24,
+      "step": 0.05,
+      "default": 4.5,
+      "unit": "in"
+    },
+    "wall": {
+      "label": "wall",
+      "min": 0.05,
+      "max": 5,
+      "step": 0.05,
+      "default": 0.5,
+      "unit": "in"
+    },
+    "length": {
+      "label": "length",
+      "min": 0.1,
+      "max": 50,
+      "step": 0.1,
+      "default": 3,
+      "unit": "in"
+    }
+  },
+  "imports": [
+    "g_shaft"
+  ],
+  "layout": {
+    "n_jcj7hw": {
+      "x": 360.25,
+      "y": 85.6640625
+    },
+    "n_4o5fl1": {
+      "x": 37.125,
+      "y": 228.8984375
+    },
+    "n_me0jst": {
+      "x": 320,
+      "y": 80
+    },
+    "n_zgslct": {
+      "x": 560,
+      "y": 80
+    },
+    "n_ov3o28": {
+      "x": 41.3671875,
+      "y": 295.37890625
+    },
+    "n_85y8nt": {
+      "x": 48.73051852213578,
+      "y": 159.57421875
+    },
+    "n_bt8koo": {
+      "x": 280.0156747721358,
+      "y": 65.39961884037066
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 0,
+      "y": 0
+    },
+    "zoom": 1
+  },
+  "colorOuter": "#23cd45"
+}

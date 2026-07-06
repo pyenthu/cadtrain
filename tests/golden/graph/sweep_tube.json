@@ -1,0 +1,159 @@
+{
+  "nodes": {
+    "n_po7b90": {
+      "id": "n_po7b90",
+      "type": "list",
+      "children": [
+        "n_b29cmz"
+      ]
+    },
+    "n_nrx5le": {
+      "id": "n_nrx5le",
+      "type": "expr",
+      "defId": "n_t7oz9k"
+    },
+    "n_cucjqo": {
+      "id": "n_cucjqo",
+      "type": "spline",
+      "points": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0.539,
+          0.679,
+          4.295
+        ],
+        [
+          0.974,
+          0.582,
+          8.688
+        ],
+        [
+          0.494,
+          2.272,
+          13.617
+        ]
+      ],
+      "samples": {
+        "kind": "literal",
+        "value": 16
+      },
+      "closed": false
+    },
+    "n_b29cmz": {
+      "id": "n_b29cmz",
+      "type": "call",
+      "src": "r_sweep",
+      "alias": "A",
+      "args": {
+        "path": {
+          "kind": "expr",
+          "expr": "_x_n_cucjqo_path"
+        },
+        "section": {
+          "kind": "expr",
+          "expr": "_x_n_69nj2h_path"
+        },
+        "closedPath": {
+          "kind": "expr",
+          "expr": "true"
+        },
+        "caps": {
+          "kind": "literal",
+          "value": true
+        }
+      }
+    },
+    "n_69nj2h": {
+      "id": "n_69nj2h",
+      "type": "spline",
+      "points": [
+        [
+          -1.692,
+          -0.25,
+          0
+        ],
+        [
+          -0.338,
+          -3.167,
+          0
+        ],
+        [
+          4.272,
+          -1.179,
+          0
+        ],
+        [
+          0.228,
+          1.054,
+          0
+        ]
+      ],
+      "samples": {
+        "kind": "literal",
+        "value": 16
+      },
+      "closed": true
+    }
+  },
+  "root": "n_po7b90",
+  "params": {},
+  "imports": [
+    "r_sweep"
+  ],
+  "layout": {
+    "n_po7b90": {
+      "x": 212.92550327345722,
+      "y": -96.04527571784138
+    },
+    "n_nrx5le": {
+      "x": -163.15448529212827,
+      "y": 5.773790989709568,
+      "w": 200
+    },
+    "n_cucjqo": {
+      "x": -130.53603379600915,
+      "y": 157.8504475530413
+    },
+    "n_b29cmz": {
+      "x": 114.32331768590046,
+      "y": 25.03590700246761
+    },
+    "n_69nj2h": {
+      "x": 29.751559818981193,
+      "y": 232.88743015559442
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 171.86328125,
+      "y": 133.85546875
+    },
+    "zoom": 0.9852312809461101
+  },
+  "colorOuter": "#3bbf8c",
+  "exprDefs": [
+    {
+      "id": "n_t7oz9k",
+      "name": "spline_helical",
+      "params": [
+        {
+          "name": "p1"
+        }
+      ],
+      "consts": [],
+      "vars": [],
+      "outputs": [
+        {
+          "name": "pts",
+          "formula": "poly = []\npoly.append([-1, 0, 0])\npoly.append([1, 0, 4.5])\npoly.append([4, 3, 1])\nreturn poly",
+          "shape": "list",
+          "elem": "point"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,169 @@
+{
+  "nodes": {
+    "n_u62rg3": {
+      "id": "n_u62rg3",
+      "type": "list",
+      "children": [
+        "n_m4qz9n"
+      ]
+    },
+    "n_m4qz9n": {
+      "id": "n_m4qz9n",
+      "type": "polygon",
+      "points": [
+        {
+          "kind": "point",
+          "r": {
+            "kind": "literal",
+            "value": "10"
+          },
+          "z": {
+            "kind": "literal",
+            "value": "0"
+          }
+        },
+        {
+          "kind": "point",
+          "r": {
+            "kind": "literal",
+            "value": "7.5"
+          },
+          "z": {
+            "kind": "literal",
+            "value": "4.33"
+          }
+        },
+        {
+          "kind": "point",
+          "r": {
+            "kind": "literal",
+            "value": "5"
+          },
+          "z": {
+            "kind": "literal",
+            "value": "8.66"
+          }
+        },
+        {
+          "kind": "point",
+          "r": {
+            "kind": "literal",
+            "value": "0"
+          },
+          "z": {
+            "kind": "literal",
+            "value": "8.66"
+          }
+        },
+        {
+          "kind": "point",
+          "r": {
+            "kind": "literal",
+            "value": "-5"
+          },
+          "z": {
+            "kind": "literal",
+            "value": "8.66"
+          }
+        },
+        {
+          "kind": "point",
+          "r": {
+            "kind": "literal",
+            "value": "-7.5"
+          },
+          "z": {
+            "kind": "literal",
+            "value": "4.33"
+          }
+        },
+        {
+          "kind": "point",
+          "r": {
+            "kind": "literal",
+            "value": "-10"
+          },
+          "z": {
+            "kind": "literal",
+            "value": "0"
+          }
+        },
+        {
+          "kind": "point",
+          "r": {
+            "kind": "literal",
+            "value": "-7.5"
+          },
+          "z": {
+            "kind": "literal",
+            "value": "-4.33"
+          }
+        },
+        {
+          "kind": "point",
+          "r": {
+            "kind": "literal",
+            "value": "-5"
+          },
+          "z": {
+            "kind": "literal",
+            "value": "-8.66"
+          }
+        },
+        {
+          "kind": "point",
+          "r": {
+            "kind": "literal",
+            "value": "0"
+          },
+          "z": {
+            "kind": "literal",
+            "value": "-8.66"
+          }
+        },
+        {
+          "kind": "point",
+          "r": {
+            "kind": "literal",
+            "value": "5"
+          },
+          "z": {
+            "kind": "literal",
+            "value": "-8.66"
+          }
+        },
+        {
+          "kind": "point",
+          "r": {
+            "kind": "literal",
+            "value": "7.5"
+          },
+          "z": {
+            "kind": "literal",
+            "value": "-4.33"
+          }
+        }
+      ]
+    }
+  },
+  "root": "n_u62rg3",
+  "params": {},
+  "imports": [],
+  "layout": {
+    "n_u62rg3": {
+      "x": 600,
+      "y": 80
+    },
+    "n_m4qz9n": {
+      "x": 245.15234375,
+      "y": 20.34375
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 0,
+      "y": 0
+    },
+    "zoom": 1
+  }
+}

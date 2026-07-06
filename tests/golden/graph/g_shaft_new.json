@@ -1,0 +1,108 @@
+{
+  "nodes": {
+    "n_5g2fbk": {
+      "id": "n_5g2fbk",
+      "type": "list",
+      "children": [
+        "n_9j02qv",
+        "n_uxs2bj"
+      ]
+    },
+    "n_9j02qv": {
+      "id": "n_9j02qv",
+      "type": "sketch",
+      "ops": [
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 0.5
+          },
+          "z": {
+            "kind": "literal",
+            "value": 0
+          }
+        },
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 0.5
+          },
+          "z": {
+            "kind": "literal",
+            "value": 2
+          }
+        },
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 1.5
+          },
+          "z": {
+            "kind": "literal",
+            "value": 2
+          }
+        },
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 1.5
+          },
+          "z": {
+            "kind": "literal",
+            "value": 0
+          }
+        }
+      ],
+      "segments": {
+        "kind": "literal",
+        "value": 64
+      }
+    },
+    "n_uxs2bj": {
+      "id": "n_uxs2bj",
+      "type": "call",
+      "src": "r_revolve",
+      "alias": "A",
+      "args": {
+        "profile": {
+          "kind": "expr",
+          "expr": "__POLY__n_9j02qv"
+        },
+        "segments": {
+          "kind": "literal",
+          "value": 48
+        }
+      }
+    }
+  },
+  "root": "n_5g2fbk",
+  "params": {},
+  "imports": [
+    "r_revolve"
+  ],
+  "layout": {
+    "n_5g2fbk": {
+      "x": 349.0234375,
+      "y": 48
+    },
+    "n_9j02qv": {
+      "x": 56.46875,
+      "y": 276.9999999999999
+    },
+    "n_uxs2bj": {
+      "x": 96.9921875,
+      "y": 133
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 0,
+      "y": 0
+    },
+    "zoom": 1
+  }
+}

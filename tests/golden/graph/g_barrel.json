@@ -1,0 +1,177 @@
+{
+  "nodes": {
+    "n_root": {
+      "id": "n_root",
+      "type": "list",
+      "children": [
+        "n_call"
+      ]
+    },
+    "n_call": {
+      "id": "n_call",
+      "type": "call",
+      "src": "r_loft",
+      "alias": "A",
+      "args": {
+        "profile": {
+          "kind": "expr",
+          "expr": "__POLY__n_brv5xk"
+        },
+        "length": {
+          "kind": "param",
+          "param": "length"
+        },
+        "divs": {
+          "kind": "literal",
+          "value": 48
+        },
+        "twist": {
+          "kind": "param",
+          "param": "twist"
+        },
+        "bulge": {
+          "kind": "param",
+          "param": "bulge"
+        },
+        "shape": {
+          "kind": "literal",
+          "value": "barrel"
+        },
+        "segments": {
+          "kind": "param",
+          "param": "segments"
+        }
+      }
+    },
+    "n_brv5xk": {
+      "id": "n_brv5xk",
+      "type": "polygon",
+      "points": [
+        {
+          "r": {
+            "kind": "literal",
+            "value": -1
+          },
+          "z": {
+            "kind": "literal",
+            "value": -1
+          }
+        },
+        {
+          "r": {
+            "kind": "literal",
+            "value": 1
+          },
+          "z": {
+            "kind": "literal",
+            "value": -1
+          }
+        },
+        {
+          "r": {
+            "kind": "literal",
+            "value": 1
+          },
+          "z": {
+            "kind": "literal",
+            "value": 1
+          }
+        },
+        {
+          "r": {
+            "kind": "literal",
+            "value": -1
+          },
+          "z": {
+            "kind": "literal",
+            "value": 1
+          }
+        }
+      ]
+    },
+    "n_0wnqsp": {
+      "id": "n_0wnqsp",
+      "type": "expr",
+      "defId": "n_6q47ru",
+      "bindings": {
+        "p1": {
+          "kind": "param",
+          "param": "segments"
+        }
+      }
+    }
+  },
+  "root": "n_root",
+  "params": {
+    "length": {
+      "default": 8,
+      "step": 0.1
+    },
+    "twist": {
+      "default": 90,
+      "step": 5
+    },
+    "bulge": {
+      "default": 0.45,
+      "step": 0.05
+    },
+    "segments": {
+      "default": 32,
+      "step": 0.05
+    }
+  },
+  "imports": [
+    "r_loft",
+    "r_weld_extrude"
+  ],
+  "layout": {
+    "n_root": {
+      "x": 422.7951388888889,
+      "y": 392.6736111111111
+    },
+    "n_call": {
+      "x": 52.49565972222223,
+      "y": 377.7170138888889
+    },
+    "n_brv5xk": {
+      "x": 362.30902777777777,
+      "y": 38.84548611111111
+    },
+    "n_acs27e": {
+      "x": 340.69010416666663,
+      "y": 297.29600694444446
+    },
+    "n_0wnqsp": {
+      "x": 36.10677083333333,
+      "y": 250.43836805555554
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 1.91796875,
+      "y": 1.87890625
+    },
+    "zoom": 0.9
+  },
+  "colorOuter": "#37cd23",
+  "exprDefs": [
+    {
+      "id": "n_6q47ru",
+      "name": "expr_1",
+      "params": [
+        {
+          "name": "p1",
+          "default": 22
+        }
+      ],
+      "consts": [],
+      "vars": [],
+      "outputs": [
+        {
+          "name": "out1",
+          "formula": "p1/22"
+        }
+      ]
+    }
+  ]
+}

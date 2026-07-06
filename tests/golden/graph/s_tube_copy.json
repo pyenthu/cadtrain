@@ -1,0 +1,100 @@
+{
+  "nodes": {
+    "n_6jo9sg": {
+      "id": "n_6jo9sg",
+      "type": "list",
+      "children": [
+        "n_j8ilae"
+      ]
+    },
+    "n_lr50jb": {
+      "id": "n_lr50jb",
+      "type": "call",
+      "src": "sweep_tube_demo",
+      "alias": "A",
+      "args": {
+        "rad": {
+          "kind": "literal",
+          "value": 0.6
+        },
+        "num_arcs": {
+          "kind": "literal",
+          "value": 12
+        }
+      }
+    },
+    "n_ll4kk1": {
+      "id": "n_ll4kk1",
+      "type": "call",
+      "src": "g_shaft",
+      "alias": "C",
+      "args": {
+        "r": {
+          "kind": "literal",
+          "value": 0.5
+        },
+        "length": {
+          "kind": "literal",
+          "value": 8
+        },
+        "segments": {
+          "kind": "literal",
+          "value": 32
+        }
+      }
+    },
+    "n_j8ilae": {
+      "id": "n_j8ilae",
+      "type": "method",
+      "op": "subtract",
+      "obj": "n_lr50jb",
+      "arg": "n_ll4kk1"
+    }
+  },
+  "root": "n_6jo9sg",
+  "params": {},
+  "imports": [
+    "g_shaft",
+    "sweep_demo",
+    "sweep_tube_demo"
+  ],
+  "layout": {
+    "n_6jo9sg": {
+      "x": 600,
+      "y": 80
+    },
+    "n_v44vci": {
+      "x": 80,
+      "y": 80
+    },
+    "n_lr50jb": {
+      "x": 265.203125,
+      "y": 66.3203125
+    },
+    "n_divshj": {
+      "x": 221.24609375,
+      "y": 173.2265625
+    },
+    "n_7okz7d": {
+      "x": 514.6328125,
+      "y": 9.8671875
+    },
+    "n_ll4kk1": {
+      "x": 274.74609375,
+      "y": 193.83203125
+    },
+    "n_j8ilae": {
+      "x": 505.94921875,
+      "y": 93.109375
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": -190.546875,
+      "y": 23.7265625
+    },
+    "zoom": 1
+  },
+  "viewZScale": 1,
+  "viewXScale": 1.25
+}

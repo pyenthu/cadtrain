@@ -1,0 +1,153 @@
+{
+  "nodes": {
+    "n_root": {
+      "id": "n_root",
+      "type": "list",
+      "children": [
+        "n_warp"
+      ]
+    },
+    "n_warp": {
+      "id": "n_warp",
+      "type": "warp",
+      "child": "n_rev",
+      "path": {
+        "kind": "expr",
+        "expr": "_x_n_sp_path"
+      }
+    },
+    "n_rev": {
+      "id": "n_rev",
+      "type": "call",
+      "src": "r_revolve",
+      "alias": "REV",
+      "args": {
+        "profile": {
+          "kind": "expr",
+          "expr": "__POLY__n_sk"
+        },
+        "segments": {
+          "kind": "literal",
+          "value": 64
+        },
+        "zSegments": {
+          "kind": "literal",
+          "value": 40
+        }
+      }
+    },
+    "n_sk": {
+      "id": "n_sk",
+      "type": "sketch",
+      "ops": [
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 0
+          },
+          "z": {
+            "kind": "literal",
+            "value": 0
+          }
+        },
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 2
+          },
+          "z": {
+            "kind": "literal",
+            "value": 0
+          }
+        },
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 2
+          },
+          "z": {
+            "kind": "literal",
+            "value": 30
+          }
+        },
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 0
+          },
+          "z": {
+            "kind": "literal",
+            "value": 30
+          }
+        }
+      ]
+    },
+    "n_sp": {
+      "id": "n_sp",
+      "type": "spline",
+      "points": [
+        [
+          0,
+          0,
+          0
+        ],
+        [
+          0,
+          0,
+          12
+        ],
+        [
+          3,
+          0,
+          22
+        ],
+        [
+          9,
+          0,
+          30
+        ]
+      ],
+      "samples": {
+        "kind": "literal",
+        "value": 32
+      },
+      "closed": false
+    }
+  },
+  "root": "n_root",
+  "params": {},
+  "imports": [],
+  "layout": {
+    "n_root": {
+      "x": 760,
+      "y": 80
+    },
+    "n_warp": {
+      "x": 520,
+      "y": 170
+    },
+    "n_rev": {
+      "x": 300,
+      "y": 200
+    },
+    "n_sk": {
+      "x": 60,
+      "y": 320
+    },
+    "n_sp": {
+      "x": 300,
+      "y": 420
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 0,
+      "y": 0
+    },
+    "zoom": 1
+  }
+}

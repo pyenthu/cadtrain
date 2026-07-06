@@ -1,0 +1,3 @@
+  const _poly_1 = [...Array.from({ length: p.points * 48 }, (_, i) => { const NPts = p.points * 48; const R_outer = p.r_outer; const R_inner = p.r_inner; const R_mid = (R_outer + R_inner) / 2; const amp = (R_outer - R_inner) / 2; const theta = i * tau / NPts; const R = R_mid + amp * cos(p.points * theta); return [R * cos(theta), R * sin(theta)]; })];
+  const A = r_weld_extrude({ profile: _poly_1, length: p.length, divs: 24, twist: 60, taper: 0, segments: 64 });
+  return A;

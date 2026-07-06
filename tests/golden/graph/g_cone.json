@@ -1,0 +1,106 @@
+{
+  "nodes": {
+    "n_v19xqx": {
+      "id": "n_v19xqx",
+      "type": "list",
+      "children": [
+        "n_qp4d1w",
+        "n_e2nrrh"
+      ]
+    },
+    "n_qp4d1w": {
+      "id": "n_qp4d1w",
+      "type": "polygon",
+      "points": [
+        {
+          "r": {
+            "kind": "literal",
+            "value": 0
+          },
+          "z": {
+            "kind": "literal",
+            "value": 0
+          }
+        },
+        {
+          "r": {
+            "kind": "expr",
+            "expr": "p.od/2"
+          },
+          "z": {
+            "kind": "param",
+            "param": "length"
+          }
+        },
+        {
+          "r": {
+            "kind": "expr",
+            "expr": "0"
+          },
+          "z": {
+            "kind": "expr",
+            "expr": "p.length"
+          }
+        }
+      ]
+    },
+    "n_e2nrrh": {
+      "id": "n_e2nrrh",
+      "type": "call",
+      "src": "r_revolve",
+      "alias": "A",
+      "args": {
+        "profile": {
+          "kind": "expr",
+          "expr": "__POLY__n_qp4d1w"
+        },
+        "segments": {
+          "kind": "param",
+          "param": "segments"
+        }
+      }
+    }
+  },
+  "root": "n_v19xqx",
+  "params": {
+    "od": {
+      "default": 3,
+      "step": 0.05
+    },
+    "length": {
+      "default": 4,
+      "step": 0.05
+    },
+    "segments": {
+      "default": 24,
+      "step": 0.05
+    }
+  },
+  "imports": [
+    "r_revolve"
+  ],
+  "layout": {
+    "n_v19xqx": {
+      "x": 317.10329763767606,
+      "y": 243.49906989593043
+    },
+    "n_qp4d1w": {
+      "x": -6.048441225700117,
+      "y": 243.4750830936099,
+      "w": 229
+    },
+    "n_e2nrrh": {
+      "x": 54.89532736334695,
+      "y": 131.3477905495074
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 10.80859375,
+      "y": 39.8046875
+    },
+    "zoom": 0.785841626388347
+  },
+  "colorOuter": "#8dd011",
+  "colorInner": "#5d5b5b"
+}

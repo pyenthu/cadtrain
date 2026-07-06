@@ -1,0 +1,57 @@
+{
+  "nodes": {
+    "n_95tlhd": {
+      "id": "n_95tlhd",
+      "type": "list",
+      "children": [
+        "n_8zve1z"
+      ]
+    },
+    "n_8zve1z": {
+      "id": "n_8zve1z",
+      "type": "call",
+      "src": "g_star",
+      "alias": "A",
+      "args": {
+        "points": {
+          "kind": "literal",
+          "value": 5
+        },
+        "r_outer": {
+          "kind": "literal",
+          "value": 2
+        },
+        "r_inner": {
+          "kind": "literal",
+          "value": 1
+        },
+        "length": {
+          "kind": "literal",
+          "value": 4
+        }
+      }
+    }
+  },
+  "root": "n_95tlhd",
+  "params": {},
+  "imports": [
+    "g_star"
+  ],
+  "layout": {
+    "n_95tlhd": {
+      "x": 600,
+      "y": 80
+    },
+    "n_8zve1z": {
+      "x": 128.2265625,
+      "y": 251
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 0,
+      "y": 0
+    },
+    "zoom": 1
+  }
+}

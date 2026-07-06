@@ -1,0 +1,190 @@
+{
+  "nodes": {
+    "n_circle": {
+      "id": "n_circle",
+      "type": "expr",
+      "defId": "d_circle",
+      "bindings": {
+        "rad": {
+          "kind": "param",
+          "param": "rad"
+        },
+        "num_pts": {
+          "kind": "param",
+          "param": "num_arcs"
+        }
+      }
+    },
+    "n_sec_spl": {
+      "id": "n_sec_spl",
+      "type": "spline",
+      "points": [
+        [
+          1.5,
+          0,
+          0
+        ],
+        [
+          0,
+          1.5,
+          0
+        ],
+        [
+          -1.5,
+          0,
+          0
+        ]
+      ],
+      "pointsExpr": {
+        "kind": "expr",
+        "expr": "_x_n_circle_pts"
+      },
+      "samples": {
+        "kind": "literal",
+        "value": 32
+      },
+      "closed": true
+    },
+    "n_path_spl": {
+      "id": "n_path_spl",
+      "type": "spline",
+      "points": [
+        [
+          -0.021,
+          -0.186,
+          0.646
+        ],
+        [
+          0,
+          0,
+          1.522071596816624
+        ],
+        [
+          0,
+          0,
+          2.498
+        ],
+        [
+          0.063,
+          -0.011,
+          4.456
+        ],
+        [
+          0,
+          0,
+          7.531
+        ]
+      ],
+      "samples": {
+        "kind": "literal",
+        "value": 32
+      },
+      "closed": false,
+      "plot": true
+    },
+    "n_sweep": {
+      "id": "n_sweep",
+      "type": "call",
+      "src": "r_sweep",
+      "alias": "body",
+      "args": {
+        "path": {
+          "kind": "expr",
+          "expr": "_x_n_path_spl_path"
+        },
+        "section": {
+          "kind": "expr",
+          "expr": "_x_n_sec_spl_path"
+        },
+        "closedPath": {
+          "kind": "literal",
+          "value": false
+        },
+        "caps": {
+          "kind": "literal",
+          "value": true
+        }
+      }
+    },
+    "n_root": {
+      "id": "n_root",
+      "type": "list",
+      "children": [
+        "n_sweep"
+      ]
+    }
+  },
+  "root": "n_root",
+  "params": {
+    "rad": {
+      "default": 0.6,
+      "step": 0.05
+    },
+    "num_arcs": {
+      "default": 12,
+      "step": 0.05
+    }
+  },
+  "imports": [
+    "r_sweep"
+  ],
+  "layout": {
+    "n_circle": {
+      "x": 126.26309460114697,
+      "y": 121.53466170553466,
+      "w": 200
+    },
+    "n_sec_spl": {
+      "x": 562.258195270346,
+      "y": -5.079778661205353
+    },
+    "n_path_spl": {
+      "x": 195.396112871971,
+      "y": 285.22697939014836
+    },
+    "n_sweep": {
+      "x": 410.43015763922585,
+      "y": 127.46159423675032
+    },
+    "n_root": {
+      "x": 674.1748605454347,
+      "y": 140
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": -97.7265625,
+      "y": 56.41015625
+    },
+    "zoom": 0.8220122346781883
+  },
+  "colorOuter": "#ba1c98",
+  "viewZScale": 1,
+  "viewXScale": 1.25,
+  "exprDefs": [
+    {
+      "id": "d_circle",
+      "name": "circle",
+      "params": [
+        {
+          "name": "rad",
+          "default": 2
+        },
+        {
+          "name": "num_pts",
+          "default": 12
+        }
+      ],
+      "consts": [],
+      "vars": [],
+      "outputs": [
+        {
+          "name": "pts",
+          "formula": "poly = []\nfor i = 0 to num_pts\n  poly.append([rad*cos(tau * i / num_pts), rad*sin(tau * i / num_pts) , 0])\nreturn poly",
+          "shape": "list",
+          "elem": "point"
+        }
+      ]
+    }
+  ]
+}

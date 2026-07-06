@@ -1,0 +1,109 @@
+{
+  "nodes": {
+    "n_root": {
+      "id": "n_root",
+      "type": "list",
+      "children": [
+        "n_rev"
+      ]
+    },
+    "n_rev": {
+      "id": "n_rev",
+      "type": "call",
+      "src": "r_revolve",
+      "alias": "DEV",
+      "args": {
+        "profile": {
+          "kind": "expr",
+          "expr": "__POLY__n_sk"
+        },
+        "segments": {
+          "kind": "literal",
+          "value": 64
+        },
+        "zSegments": {
+          "kind": "literal",
+          "value": 0
+        },
+        "axisPath": {
+          "kind": "expr",
+          "expr": "[[0,0,0],[0,0,12],[3,0,22],[9,0,30]]"
+        }
+      }
+    },
+    "n_sk": {
+      "id": "n_sk",
+      "type": "sketch",
+      "ops": [
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 0
+          },
+          "z": {
+            "kind": "literal",
+            "value": 0
+          }
+        },
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 2
+          },
+          "z": {
+            "kind": "literal",
+            "value": 0
+          }
+        },
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 2
+          },
+          "z": {
+            "kind": "literal",
+            "value": 30
+          }
+        },
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 0
+          },
+          "z": {
+            "kind": "literal",
+            "value": 30
+          }
+        }
+      ]
+    }
+  },
+  "root": "n_root",
+  "params": {},
+  "imports": [],
+  "layout": {
+    "n_root": {
+      "x": 640,
+      "y": 90
+    },
+    "n_rev": {
+      "x": 320,
+      "y": 190
+    },
+    "n_sk": {
+      "x": 60,
+      "y": 300
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 0,
+      "y": 0
+    },
+    "zoom": 1
+  }
+}

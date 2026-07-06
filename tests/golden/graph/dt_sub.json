@@ -1,0 +1,156 @@
+{
+  "nodes": {
+    "n_s5jynv": {
+      "id": "n_s5jynv",
+      "type": "list",
+      "children": [
+        "n_h8x3yg"
+      ]
+    },
+    "n_h8x3yg": {
+      "id": "n_h8x3yg",
+      "type": "stack",
+      "children": [
+        "n_zs3j2h",
+        "n_zcsgeb"
+      ]
+    },
+    "n_zs3j2h": {
+      "id": "n_zs3j2h",
+      "type": "call",
+      "src": "g_dp_box",
+      "alias": "A",
+      "args": {
+        "wall": {
+          "kind": "literal",
+          "value": 0.5
+        },
+        "collar_od": {
+          "kind": "literal",
+          "value": 6
+        },
+        "fillet_bot": {
+          "kind": "literal",
+          "value": 0.5
+        },
+        "od_body": {
+          "kind": "literal",
+          "value": 4.5
+        },
+        "length_body": {
+          "kind": "literal",
+          "value": 1.5
+        },
+        "length_collar": {
+          "kind": "literal",
+          "value": 4
+        },
+        "collar_upset": {
+          "kind": "literal",
+          "value": 0.4
+        },
+        "length_thd": {
+          "kind": "literal",
+          "value": 3
+        }
+      }
+    },
+    "n_zcsgeb": {
+      "id": "n_zcsgeb",
+      "type": "call",
+      "src": "g_dp_pin",
+      "alias": "B",
+      "args": {
+        "collar_od": {
+          "kind": "literal",
+          "value": 6
+        },
+        "od_body": {
+          "kind": "param",
+          "param": "od"
+        },
+        "wall": {
+          "kind": "literal",
+          "value": 0.5
+        },
+        "length_collar": {
+          "kind": "literal",
+          "value": 4
+        },
+        "length_body": {
+          "kind": "literal",
+          "value": 1.5
+        },
+        "length_thd": {
+          "kind": "literal",
+          "value": 3
+        },
+        "fillet_bot": {
+          "kind": "literal",
+          "value": 0.5
+        },
+        "fileld_top": {
+          "kind": "literal",
+          "value": 0.45
+        },
+        "upset_collar": {
+          "kind": "literal",
+          "value": 0.4
+        },
+        "segments": {
+          "kind": "literal",
+          "value": 32
+        }
+      }
+    }
+  },
+  "root": "n_s5jynv",
+  "params": {
+    "od": {
+      "label": "od",
+      "min": 0.5,
+      "max": 24,
+      "step": 0.05,
+      "default": 5.5,
+      "unit": "in"
+    },
+    "wall": {
+      "label": "wall",
+      "min": 0.05,
+      "max": 5,
+      "step": 0.05,
+      "default": 0.5,
+      "unit": "in"
+    }
+  },
+  "imports": [
+    "g_dp_box",
+    "g_dp_pin"
+  ],
+  "layout": {
+    "n_s5jynv": {
+      "x": 463.69436191289367,
+      "y": 167.10505879951342
+    },
+    "n_zs3j2h": {
+      "x": 345.20584006725346,
+      "y": 303.5157676941471
+    },
+    "n_zcsgeb": {
+      "x": 30.563097852108026,
+      "y": 243.61654548751494
+    },
+    "n_h8x3yg": {
+      "x": 292.2578125,
+      "y": 48
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 46.69921875,
+      "y": 101.234375
+    },
+    "zoom": 0.7718230230437038
+  },
+  "colorOuter": "#234dcd"
+}

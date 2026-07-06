@@ -1,0 +1,163 @@
+{
+  "nodes": {
+    "n_svq6rb": {
+      "id": "n_svq6rb",
+      "type": "list",
+      "children": [
+        "n_sp7j1l",
+        "n_vzo7et"
+      ]
+    },
+    "n_5d89ht": {
+      "id": "n_5d89ht",
+      "type": "call",
+      "src": "r_weld_extrude",
+      "alias": "A",
+      "args": {
+        "profile": {
+          "kind": "expr",
+          "expr": "__POLY__n_vzo7et"
+        },
+        "length": {
+          "kind": "literal",
+          "value": 2
+        },
+        "divs": {
+          "kind": "literal",
+          "value": 12
+        },
+        "twist": {
+          "kind": "literal",
+          "value": 0
+        },
+        "taper": {
+          "kind": "literal",
+          "value": 0
+        },
+        "segments": {
+          "kind": "param",
+          "param": "segments"
+        }
+      }
+    },
+    "n_vzo7et": {
+      "id": "n_vzo7et",
+      "type": "polygon",
+      "points": [
+        {
+          "kind": "repeat-ref",
+          "sourceId": "n_rjw75e"
+        }
+      ]
+    },
+    "n_rjw75e": {
+      "id": "n_rjw75e",
+      "type": "poly_repeat",
+      "count": {
+        "kind": "param",
+        "param": "arcs"
+      },
+      "loopVar": "i",
+      "r": {
+        "kind": "expr",
+        "expr": "cos(i*2*PI/NPts)"
+      },
+      "z": {
+        "kind": "expr",
+        "expr": "sin(i*2*PI/NPts)"
+      }
+    },
+    "n_sp7j1l": {
+      "id": "n_sp7j1l",
+      "type": "rot",
+      "child": "n_5d89ht",
+      "rot": [
+        {
+          "kind": "literal",
+          "value": 0
+        },
+        {
+          "kind": "literal",
+          "value": 0
+        },
+        {
+          "kind": "literal",
+          "value": 0
+        }
+      ]
+    }
+  },
+  "root": "n_svq6rb",
+  "params": {
+    "segments": {
+      "default": 256,
+      "step": 0.05
+    },
+    "arcs": {
+      "default": 120,
+      "step": 0.05
+    }
+  },
+  "imports": [
+    "r_weld_extrude"
+  ],
+  "layout": {
+    "n_svq6rb": {
+      "x": 525.60546875,
+      "y": 7.1875
+    },
+    "n_j63mxu": {
+      "x": 24,
+      "y": 218.1328125
+    },
+    "n_dotrmf": {
+      "x": 97.80212735602737,
+      "y": 202.12851754122283,
+      "w": 252
+    },
+    "n_pmlah4": {
+      "x": -5.390625,
+      "y": 265.83964932647416
+    },
+    "n_5d89ht": {
+      "x": 289.984375,
+      "y": 12.11328125
+    },
+    "n_vzo7et": {
+      "x": 288.53125,
+      "y": 212.6328125
+    },
+    "n_rjw75e": {
+      "x": 1.0546875,
+      "y": 141.83984375
+    },
+    "n_nrk5c9": {
+      "x": 120,
+      "y": 120
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 7.38671875,
+      "y": 49.96484375
+    },
+    "zoom": 1
+  },
+  "exprDefs": [
+    {
+      "id": "n_2j9vi8",
+      "name": "expr_1",
+      "params": [],
+      "consts": [],
+      "vars": [],
+      "outputs": [
+        {
+          "name": "pts",
+          "formula": "map(range(0, 8), f(i) = [0.5 + 0.4 * cos(i / 8 * tau), 0.4 * sin(i / 8 * tau)])",
+          "shape": "list",
+          "elem": "point"
+        }
+      ]
+    }
+  ]
+}

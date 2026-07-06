@@ -1,0 +1,165 @@
+{
+  "nodes": {
+    "n_gsc_r": {
+      "id": "n_gsc_r",
+      "type": "list",
+      "children": [
+        "n_gsc_p",
+        "n_gsc_c"
+      ]
+    },
+    "n_gsc_p": {
+      "id": "n_gsc_p",
+      "type": "polygon",
+      "points": [
+        {
+          "kind": "repeat-ref",
+          "sourceId": "n_gsc_l"
+        }
+      ]
+    },
+    "n_gsc_l": {
+      "id": "n_gsc_l",
+      "type": "poly_repeat",
+      "count": {
+        "kind": "expr",
+        "expr": "p.points * 48"
+      },
+      "loopVar": "i",
+      "r": {
+        "kind": "expr",
+        "expr": "R * cos(theta)"
+      },
+      "z": {
+        "kind": "expr",
+        "expr": "R * sin(theta)"
+      },
+      "bindings": [
+        {
+          "name": "R_outer",
+          "value": {
+            "kind": "param",
+            "param": "r_outer"
+          }
+        },
+        {
+          "name": "R_inner",
+          "value": {
+            "kind": "param",
+            "param": "r_inner"
+          }
+        },
+        {
+          "name": "R_mid",
+          "value": {
+            "kind": "expr",
+            "expr": "(R_outer + R_inner) / 2"
+          }
+        },
+        {
+          "name": "amp",
+          "value": {
+            "kind": "expr",
+            "expr": "(R_outer - R_inner) / 2"
+          }
+        },
+        {
+          "name": "theta",
+          "value": {
+            "kind": "expr",
+            "expr": "i * tau / NPts"
+          }
+        },
+        {
+          "name": "R",
+          "value": {
+            "kind": "expr",
+            "expr": "R_mid + amp * cos(p.points * theta)"
+          }
+        }
+      ]
+    },
+    "n_gsc_c": {
+      "id": "n_gsc_c",
+      "type": "call",
+      "src": "r_weld_extrude",
+      "alias": "A",
+      "args": {
+        "profile": {
+          "kind": "expr",
+          "expr": "__POLY__n_gsc_p"
+        },
+        "length": {
+          "kind": "param",
+          "param": "length"
+        },
+        "divs": {
+          "kind": "literal",
+          "value": 24
+        },
+        "twist": {
+          "kind": "literal",
+          "value": 60
+        },
+        "taper": {
+          "kind": "literal",
+          "value": 0
+        },
+        "segments": {
+          "kind": "literal",
+          "value": 64
+        }
+      }
+    }
+  },
+  "root": "n_gsc_r",
+  "params": {
+    "points": {
+      "default": 5,
+      "step": 1
+    },
+    "r_outer": {
+      "default": 2,
+      "step": 0.05
+    },
+    "r_inner": {
+      "default": 1,
+      "step": 0.05
+    },
+    "length": {
+      "default": 4,
+      "step": 0.05
+    }
+  },
+  "imports": [
+    "r_weld_extrude"
+  ],
+  "layout": {
+    "n_gsc_r": {
+      "x": 348,
+      "y": 810
+    },
+    "n_gsc_p": {
+      "x": 37,
+      "y": 312,
+      "w": 220,
+      "h": 140
+    },
+    "n_gsc_l": {
+      "x": 330.77690972222223,
+      "y": 263.24739583333337,
+      "w": 260
+    },
+    "n_gsc_c": {
+      "x": 302,
+      "y": 75
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": -11,
+      "y": -22
+    },
+    "zoom": 0.9
+  }
+}

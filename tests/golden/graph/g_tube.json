@@ -1,0 +1,119 @@
+{
+  "nodes": {
+    "n_p3b2by": {
+      "id": "n_p3b2by",
+      "type": "list",
+      "children": [
+        "n_457j2t",
+        "n_eefw52",
+        "n_80gxp6"
+      ]
+    },
+    "n_457j2t": {
+      "id": "n_457j2t",
+      "type": "call",
+      "src": "g_shaft",
+      "alias": "A",
+      "args": {
+        "r": {
+          "kind": "expr",
+          "expr": "p.od / 2"
+        },
+        "length": {
+          "kind": "param",
+          "param": "length"
+        },
+        "segments": {
+          "kind": "param",
+          "param": "segments"
+        }
+      }
+    },
+    "n_eefw52": {
+      "id": "n_eefw52",
+      "type": "call",
+      "src": "g_shaft",
+      "alias": "B",
+      "args": {
+        "r": {
+          "kind": "expr",
+          "expr": "p.od/2 - p.wall"
+        },
+        "length": {
+          "kind": "param",
+          "param": "length"
+        },
+        "segments": {
+          "kind": "param",
+          "param": "segments"
+        }
+      }
+    },
+    "n_80gxp6": {
+      "id": "n_80gxp6",
+      "type": "method",
+      "op": "subtract",
+      "obj": "n_457j2t",
+      "arg": "n_eefw52"
+    }
+  },
+  "root": "n_p3b2by",
+  "params": {
+    "od": {
+      "label": "od",
+      "min": 0.1,
+      "max": 24,
+      "step": 0.05,
+      "default": 4.5,
+      "unit": "in"
+    },
+    "wall": {
+      "label": "wall",
+      "min": 0.05,
+      "max": 5,
+      "step": 0.05,
+      "default": 0.5,
+      "unit": "in"
+    },
+    "length": {
+      "label": "length",
+      "min": 0.1,
+      "max": 50,
+      "step": 0.1,
+      "default": 3,
+      "unit": "in"
+    },
+    "segments": {
+      "default": 24,
+      "step": 0.05
+    }
+  },
+  "imports": [
+    "g_shaft"
+  ],
+  "layout": {
+    "n_p3b2by": {
+      "x": 600,
+      "y": 80
+    },
+    "n_457j2t": {
+      "x": 93.56640625,
+      "y": 304.96875
+    },
+    "n_eefw52": {
+      "x": 150.6015625,
+      "y": 177.18359375
+    },
+    "n_80gxp6": {
+      "x": 560,
+      "y": 80
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 0,
+      "y": 0
+    },
+    "zoom": 1
+  }
+}

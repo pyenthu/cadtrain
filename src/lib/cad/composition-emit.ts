@@ -47,6 +47,7 @@ import {
 import { isImperative, compileImperative } from './expr-imperative';
 import { inferStructure } from './struct-type';
 import { kindOf } from './nodes/registry';
+import type { EmitCtx } from './nodes/node-kind';
 
 export interface EmitOptions {
   /** The assembly id (becomes meta.id + the export function name). */
@@ -538,6 +539,16 @@ function emitSketchOpObject(o: any): string {
 
 function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProducers: Set<NodeId> | undefined, nodes: Record<NodeId, GraphNode>): string | null {
   const ref = (id: NodeId, slot: string) => varNames.get(id) ?? missingRef(node.id, slot, id);
+  // Phase 1 registry (docs/plans/hierarchical-class-design.md): registered kinds
+  // emit through their descriptor; the legacy switch handles the rest. The
+  // descriptor's emitExpr is a verbatim transcription of the arm it replaces —
+  // golden-emit (emit-golden.test.ts) asserts byte-identical output. The now-dead
+  // switch arms (method/txfmn) stay until the whole switch collapses (Phase 2).
+  const k = kindOf(node);
+  if (k) {
+    const ctx: EmitCtx = { ref, emitValue: emitValueExpr, varNames, listProducers: listProducers ?? new Set(), nodes };
+    return k.emitExpr(node, ctx);
+  }
   switch (node.type) {
     case 'call':
       return emitCallExpr(node.src, node.args, nodes);

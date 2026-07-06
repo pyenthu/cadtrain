@@ -1,0 +1,139 @@
+{
+  "nodes": {
+    "n_qg6hn9": {
+      "id": "n_qg6hn9",
+      "type": "list",
+      "children": [
+        "n_bj6gwq"
+      ]
+    },
+    "n_bj6gwq": {
+      "id": "n_bj6gwq",
+      "type": "call",
+      "src": "r_revolve",
+      "alias": "A",
+      "args": {
+        "profile": {
+          "kind": "expr",
+          "expr": "__POLY__n_ql24a1"
+        },
+        "segments": {
+          "kind": "param",
+          "param": "segments"
+        },
+        "zSegments": {
+          "kind": "literal",
+          "value": 0
+        },
+        "axisPath": {
+          "kind": "literal",
+          "value": 0
+        }
+      }
+    },
+    "n_ql24a1": {
+      "id": "n_ql24a1",
+      "type": "sketch",
+      "ops": [
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 0
+          },
+          "z": {
+            "kind": "literal",
+            "value": 0
+          }
+        },
+        {
+          "op": "line",
+          "r": {
+            "kind": "param",
+            "param": "r"
+          },
+          "z": {
+            "kind": "literal",
+            "value": 0
+          }
+        },
+        {
+          "op": "line",
+          "r": {
+            "kind": "param",
+            "param": "r"
+          },
+          "z": {
+            "kind": "param",
+            "param": "length"
+          }
+        },
+        {
+          "op": "line",
+          "r": {
+            "kind": "literal",
+            "value": 0
+          },
+          "z": {
+            "kind": "param",
+            "param": "length"
+          }
+        }
+      ],
+      "segments": {
+        "kind": "literal",
+        "value": 64
+      }
+    }
+  },
+  "root": "n_qg6hn9",
+  "params": {
+    "r": {
+      "default": 0.5,
+      "step": 0.05
+    },
+    "length": {
+      "default": 5,
+      "step": 0.05
+    },
+    "segments": {
+      "default": 32,
+      "step": 0.05
+    }
+  },
+  "imports": [
+    "r_revolve"
+  ],
+  "layout": {
+    "n_qg6hn9": {
+      "x": 239.56640625,
+      "y": 28.7578125
+    },
+    "n_grcssc": {
+      "x": 39.96875,
+      "y": 106.98828125,
+      "w": 208
+    },
+    "n_bj6gwq": {
+      "x": 277.89453125,
+      "y": 131.10546874999983
+    },
+    "n_ql24a1": {
+      "x": 3.42578125,
+      "y": 163.046875
+    }
+  },
+  "viewport": {
+    "pan": {
+      "x": 26.48046875,
+      "y": 19.2421875
+    },
+    "zoom": 1
+  },
+  "colorOuter": "#2ecd23",
+  "partAppearance": {
+    "n_bj6gwq": {
+      "colorOuter": "#5af250"
+    }
+  }
+}
