@@ -49,6 +49,15 @@ describe('SketchKind', () => {
     const errs = SketchKind.validate(sk([{ op: 'line', r: par('gone'), z: lit(0) }]), graph());
     expect(errs).toEqual([{ nodeId: 'sk', slot: 'ops[0].r', badRef: 'gone', kind: 'missing-param' }]);
   });
+  it('inputRefs: repeat-ref ops consume their SketchRepeatNode source (← computeConsumedSet)', () => {
+    expect(SketchKind.inputRefs(sk([{ op: 'line', r: lit(1), z: lit(0) }]))).toEqual([]);
+    expect(SketchKind.inputRefs(sk([
+      { op: 'repeat-ref', sourceId: 'sr1' },
+      { op: 'line', r: lit(1), z: lit(0) },
+      { op: 'repeat-ref', sourceId: 'sr2' },
+      { op: 'repeat-ref' }, // no sourceId → skipped
+    ]))).toEqual(['sr1', 'sr2']);
+  });
   it('size floors width at 210 and grows height with the column layout', () => {
     const { w, h } = SketchKind.size(sk([{ op: 'line', r: lit(1), z: lit(0) }]), { width: 100, root: 'r', consts: CONSTS });
     expect(w).toBeGreaterThanOrEqual(210);
