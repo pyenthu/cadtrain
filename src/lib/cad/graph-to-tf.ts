@@ -781,6 +781,30 @@ function lowerNode(
  *  assembly of assemblies (e.g. `s_tube_demo` → `sweep_tube_demo` → `r_sweep`)
  *  compiles to one fully-inlined recipe. Without a resolver, composite Calls stay
  *  UNSUPPORTED (unchanged v0 behaviour). */
+/** Resolve an output node's effective appearance, following any single-child
+ *  transform/warp wrappers (mv/rot/txfmn/warp) DOWN to the Call that carries the
+ *  material binding. Returns the FIRST non-empty appearance encountered (so a
+ *  material bound to the wrapper itself still wins over the child's). Empty when
+ *  nothing on the chain has an appearance. Cycle-guarded. This is what lets a
+ *  warped/moved part keep its material in the TF per-part render, matching the
+ *  3D-bake path — a warp output was previously read as "not a Call" → default red. */
+function outputAppearanceThroughWrappers(graph: Graph, id: NodeId) {
+  const seen = new Set<NodeId>();
+  let cur: NodeId | undefined = id;
+  while (cur && !seen.has(cur)) {
+    seen.add(cur);
+    const n = graph.nodes[cur];
+    if (!n) break;
+    const eff = resolveEffectiveAppearance(graph, cur);
+    if (Object.keys(eff).length) return eff;
+    if ((n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'warp')
+        && typeof (n as any).child === 'string') {
+      cur = (n as any).child as NodeId;
+    } else break;
+  }
+  return {};
+}
+
 export function graphToTf(
   graph: Graph,
   params: Record<string, number> = {},
@@ -815,9 +839,13 @@ function graphToTfInner(
   // appearance (wired material ▸ per-part override) for the per-part-mesh TF
   // render. Only Call outputs carry appearance today; other output shapes → none.
   const partAppearance = outputs.map((id) => {
-    const n = graph.nodes[id];
-    if (n?.type !== 'call') return undefined;
-    const eff = resolveEffectiveAppearance(graph, id);
+    // The output node may be a transform/warp WRAPPER (mv/rot/txfmn/warp — each
+    // has a single `.child`) around the Call that actually carries the material
+    // binding. A warped part's output is the `warp` node, so reading appearance
+    // off it alone returns nothing → TF fell back to default red while the 3D
+    // bake (which resolves on the wrapped part) showed the real material. Walk
+    // DOWN through wrappers, taking the first non-empty appearance.
+    const eff = outputAppearanceThroughWrappers(graph, id);
     const a: TfAppearance = {};
     if (eff.colorOuter) a.colorOuter = eff.colorOuter;
     if (eff.colorInner) a.colorInner = eff.colorInner;

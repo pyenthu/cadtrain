@@ -359,6 +359,25 @@ describe('graphToTf', () => {
     expect(recipe.partAppearance![0]).toEqual({ material: 'steel' });
   });
 
+  it('a WARP output inherits the wrapped part\'s material (warp/mv/rot wrapper walk)', () => {
+    // w1_oh_warp-shaped: the material is bound to the wrapped Call (n_a), but the
+    // graph OUTPUT is the `warp` node. TF read appearance only off Call outputs →
+    // the warped part fell back to default red while the 3D bake showed steel.
+    // The wrapper-walk must descend warp.child → n_a and surface its material.
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_warp'] },
+        n_warp: { id: 'n_warp', type: 'warp', child: 'n_a', path: { kind: 'literal', value: 0 } },
+        n_a: { id: 'n_a', type: 'call', src: 'r_cuboid', alias: 'A', args: { w: { kind: 'literal', value: 4 }, h: { kind: 'literal', value: 4 }, d: { kind: 'literal', value: 4 } } },
+      },
+      'n_root',
+    );
+    (g as any).partAppearance = { n_a: { material: 'steel' } };
+    const recipe = graphToTf(g);
+    expect(recipe.partAppearance).toBeDefined();
+    expect(recipe.partAppearance![0]).toEqual({ material: 'steel' });
+  });
+
   it('tfRecipeText renders a readable plan without throwing', () => {
     const g = mkGraph(
       {
