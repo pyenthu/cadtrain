@@ -24,14 +24,18 @@
     pos,
     onClose,
     session,
+    onGenerated,
   }: {
     /** Viewport position anchored to the ✨ button (GEP's aiMenuPos). */
     pos: { left: number; top: number };
     onClose: () => void;
-    /** The pane's "edit this part" assist session (multi-shot tool loop) —
-     *  the ONLY mode here: in the canvas we're always editing the open part.
-     *  (Generate-a-new-part lives in the sidebar.) */
+    /** The pane's "edit this part" assist session (multi-shot tool loop). When
+     *  PRESENT → EDIT mode (tool-calls the open part). When ABSENT → GENERATE
+     *  mode (the sidebar's ✨ "new part from a description" flow). */
     session?: AssistSession;
+    /** Called on a successful GENERATE (session-absent mode) with the proposed
+     *  graph. May throw if the graph can't hydrate — caught + surfaced here. */
+    onGenerated?: (id: string, graph: any, candidates: string[]) => void;
   } = $props();
 
   let editPrompt = $state('');
@@ -41,6 +45,43 @@
     if (!p || !session || session.running) return;
     await session.run(p);
     editPrompt = '';
+  }
+
+  // ─── GENERATE mode (session absent) — one-shot new-part-from-a-description ──
+  //   POST /api/rag/prompt → { id, graph, candidates } → onGenerated(...).
+  let aiPrompt = $state('');
+  let aiBusy = $state(false);
+  let aiError = $state<string | null>(null);
+  let aiCandidates = $state<string[]>([]);
+  async function generateFromPrompt() {
+    const prompt = aiPrompt.trim();
+    if (!prompt || aiBusy) return;
+    aiBusy = true;
+    aiError = null;
+    aiCandidates = [];
+    try {
+      const r = await fetch('/api/rag/prompt', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!r.ok) { aiError = `generate ${r.status}: ${(await r.text()).slice(0, 200)}`; return; }
+      const j = await r.json();
+      if (!j?.graph) { aiError = 'no graph in response'; return; }
+      aiCandidates = Array.isArray(j.candidates) ? j.candidates : [];
+      try {
+        onGenerated?.(String(j.id || ''), j.graph, aiCandidates);
+      } catch (e) {
+        console.warn('[graph-editor] generated graph failed to hydrate', e);
+        aiError = 'the generated graph could not be loaded';
+        return;
+      }
+      aiPrompt = '';
+      onClose();
+    } catch (e: any) {
+      aiError = e?.message ?? String(e);
+    } finally {
+      aiBusy = false;
+    }
   }
   /** Compact one-line summary of a tool's input for the transcript. */
   const summ = (v: unknown) => {
@@ -113,7 +154,7 @@
   <!-- drag handle — the whole header bar moves the window -->
   <div class="ge-ai-head" onpointerdown={onHeadPointerDown}
     onpointermove={onHeadPointerMove} onpointerup={onHeadPointerUp} onpointercancel={onHeadPointerUp}>
-    <span class="ge-ai-headlabel">✎ AI assist</span>
+    <span class="ge-ai-headlabel">{session ? '✎ AI assist' : '✨ AI generate'}</span>
     <button class="ge-ai-headx" type="button" onclick={onClose} title="Close">×</button>
   </div>
   {#if session}
@@ -151,6 +192,31 @@
         {/each}
       </div>
     {/if}
+  {:else}
+    <!-- GENERATE mode (no session) — the sidebar's ✨ "new part from a
+         description" flow: describe → RAG-retrieve → Claude proposes a graph →
+         onGenerated opens it in a new tab. Nothing touches the volume until Save. -->
+    <div class="ge-ai-title">✨ Generate a part</div>
+    <div class="ge-ai-hint">Describe the part in plain words — e.g.
+      <em>flat coil disc, 2 turns, 60 segments</em>. Similar parts are retrieved
+      from the RAG corpus and Claude proposes a parametric graph, opened in a new
+      tab for review. Nothing touches the volume until you Save.</div>
+    <!-- svelte-ignore a11y_autofocus -->
+    <textarea class="ge-ai-input" rows="3" autofocus
+      placeholder="hexagonal prism with a central round bore…"
+      bind:value={aiPrompt}
+      disabled={aiBusy}
+      onkeydown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); generateFromPrompt(); } }}></textarea>
+    <div class="ge-ai-actions">
+      <button class="ge-ai-go" type="button"
+        disabled={aiBusy || !aiPrompt.trim()}
+        onclick={generateFromPrompt}>{aiBusy ? 'generating…' : 'Generate'}</button>
+      {#if aiError}
+        <span class="ge-ai-err" title={aiError}>failed — hover for detail</span>
+      {:else if aiCandidates.length > 0}
+        <span class="ge-ai-from">from: {aiCandidates.join(' · ')}</span>
+      {/if}
+    </div>
   {/if}
 </div>
 
