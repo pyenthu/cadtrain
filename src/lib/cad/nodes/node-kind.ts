@@ -22,6 +22,10 @@ import type { Graph, GraphNode, NodeId, ArgValue } from '../composition-graph-ty
 export interface EmitCtx {
   ref(id: NodeId, slot: string): string;   // var name or missingRef sentinel
   emitValue(v: ArgValue): string;          // ArgValue → JS expr (was emitValueExpr)
+  /** src + args → the call expression (was emitCallExpr in composition-emit).
+   *  Provided by makeEmitCtx so the CallKind descriptor stays in the cad layer
+   *  without importing emit internals (which would cycle). */
+  emitCall(src: string, args: Record<string, ArgValue>): string;
   varNames: ReadonlyMap<NodeId, string>;
   listProducers: ReadonlySet<NodeId>;
   nodes: Readonly<Record<NodeId, GraphNode>>;
@@ -77,6 +81,13 @@ export const has = (g: Graph, id: NodeId): boolean =>
 export const err = (
   nodeId: NodeId, slot: string, badRef: string, kind: ValidationError['kind'],
 ): ValidationError => ({ nodeId, slot, badRef, kind });
+
+/** Single-value missing-param check — validateGraph's `checkArg`
+ *  (composition-emit.ts:111) for a slot that is ONE ArgValue (call args use
+ *  `args.<key>`, no index). */
+export const checkArg = (nodeId: NodeId, slot: string, v: ArgValue, g: Graph): ValidationError[] =>
+  v.kind === 'param' && !Object.prototype.hasOwnProperty.call(g.params, v.param)
+    ? [err(nodeId, slot, v.param, 'missing-param')] : [];
 
 /** Per-array missing-param check — was validateGraph's `checkArg`
  *  (composition-emit.ts:111) applied over a triple via `.forEach((v,i) => …)`.

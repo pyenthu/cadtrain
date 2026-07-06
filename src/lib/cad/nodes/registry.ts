@@ -9,9 +9,10 @@
  */
 import type { GraphNode } from '../composition-graph-types';
 import type { NodeKind } from './node-kind';
-import { MethodKind, TxfmnKind, MaterialKind, MvKind, RotKind } from './kinds';
+import { CallKind, MethodKind, TxfmnKind, MaterialKind, MvKind, RotKind } from './kinds';
 
 const KINDS: Partial<Record<GraphNode['type'], NodeKind>> = {
+  call: CallKind as NodeKind,
   method: MethodKind as NodeKind,
   txfmn: TxfmnKind as NodeKind,
   material: MaterialKind as NodeKind,

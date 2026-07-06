@@ -546,7 +546,7 @@ function emitNodeExpr(node: GraphNode, varNames: Map<NodeId, string>, listProduc
   // switch arms (method/txfmn) stay until the whole switch collapses (Phase 2).
   const k = kindOf(node);
   if (k) {
-    const ctx: EmitCtx = { ref, emitValue: emitValueExpr, varNames, listProducers: listProducers ?? new Set(), nodes };
+    const ctx: EmitCtx = { ref, emitValue: emitValueExpr, emitCall: (src, args) => emitCallExpr(src, args, nodes), varNames, listProducers: listProducers ?? new Set(), nodes };
     return k.emitExpr(node, ctx);
   }
   switch (node.type) {
