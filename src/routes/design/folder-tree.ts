@@ -3,7 +3,7 @@
 // /design "Folder tree" hierarchy views. Regenerate with:
 //   bun scripts/gen-folder-tree.mjs      (this file alone)
 //   bun scripts/gen-design-diagrams.mjs  (all three /design snapshots)
-// Stats at generation: 419 files · 91 folders · 93,783 LOC.
+// Stats at generation: 476 files · 105 folders · 96,475 LOC.
 
 export interface FolderNode {
   name: string;
@@ -12,7 +12,7 @@ export interface FolderNode {
   children?: FolderNode[];
 }
 
-export const FOLDER_TREE_STATS = { files: 419, folders: 91, loc: 93783 } as const;
+export const FOLDER_TREE_STATS = { files: 476, folders: 105, loc: 96475 } as const;
 
 export const FOLDER_TREE: FolderNode = {
   "name": "src",
@@ -649,7 +649,7 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "subdivide-axial.test.ts",
               "path": "src/lib/cad/subdivide-axial.test.ts",
-              "loc": 163
+              "loc": 185
             },
             {
               "name": "sweep-cap-triangulation.test.ts",
@@ -699,12 +699,12 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "warp-spline.test.ts",
               "path": "src/lib/cad/warp-spline.test.ts",
-              "loc": 136
+              "loc": 232
             },
             {
               "name": "warp-spline.ts",
               "path": "src/lib/cad/warp-spline.ts",
-              "loc": 626
+              "loc": 668
             },
             {
               "name": "wire-check.test.ts",
@@ -961,7 +961,7 @@ export const FOLDER_TREE: FolderNode = {
                 {
                   "name": "GraphEditorPane.svelte",
                   "path": "src/lib/shared/graph-editor/GraphEditorPane.svelte",
-                  "loc": 4381
+                  "loc": 4389
                 },
                 {
                   "name": "MaterialEditorPopover.svelte",
@@ -1369,7 +1369,7 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "PrimitiveDualScene.svelte",
               "path": "src/lib/shared/PrimitiveDualScene.svelte",
-              "loc": 1097
+              "loc": 1106
             },
             {
               "name": "PrimitiveSvgView.svelte",
@@ -2635,6 +2635,375 @@ export const FOLDER_TREE: FolderNode = {
           "name": "+page.svelte",
           "path": "src/routes/+page.svelte",
           "loc": 426
+        }
+      ]
+    },
+    {
+      "name": "volume_backup",
+      "path": "src/volume_backup",
+      "children": [
+        {
+          "name": "archive",
+          "path": "src/volume_backup/archive",
+          "children": [
+            {
+              "name": "legacy_components",
+              "path": "src/volume_backup/archive/legacy_components",
+              "children": [
+                {
+                  "name": "casing_joint_threaded.ts",
+                  "path": "src/volume_backup/archive/legacy_components/casing_joint_threaded.ts",
+                  "loc": 77
+                },
+                {
+                  "name": "extract_52.ts",
+                  "path": "src/volume_backup/archive/legacy_components/extract_52.ts",
+                  "loc": 165
+                },
+                {
+                  "name": "new_tube.ts",
+                  "path": "src/volume_backup/archive/legacy_components/new_tube.ts",
+                  "loc": 16
+                },
+                {
+                  "name": "tubing_joint_threaded.ts",
+                  "path": "src/volume_backup/archive/legacy_components/tubing_joint_threaded.ts",
+                  "loc": 80
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "components",
+          "path": "src/volume_backup/components",
+          "children": [
+            {
+              "name": "test",
+              "path": "src/volume_backup/components/test",
+              "children": [
+                {
+                  "name": "e2e_stub_1779824094286",
+                  "path": "src/volume_backup/components/test/e2e_stub_1779824094286",
+                  "children": [
+                    {
+                      "name": "component.ts",
+                      "path": "src/volume_backup/components/test/e2e_stub_1779824094286/component.ts",
+                      "loc": 17
+                    }
+                  ]
+                },
+                {
+                  "name": "hollow_cylinder",
+                  "path": "src/volume_backup/components/test/hollow_cylinder",
+                  "children": [
+                    {
+                      "name": "component.ts",
+                      "path": "src/volume_backup/components/test/hollow_cylinder/component.ts",
+                      "loc": 27
+                    }
+                  ]
+                },
+                {
+                  "name": "taper",
+                  "path": "src/volume_backup/components/test/taper",
+                  "children": [
+                    {
+                      "name": "component.ts",
+                      "path": "src/volume_backup/components/test/taper/component.ts",
+                      "loc": 29
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "casing_joint_threaded.ts",
+              "path": "src/volume_backup/components/casing_joint_threaded.ts",
+              "loc": 77
+            },
+            {
+              "name": "extract_52.ts",
+              "path": "src/volume_backup/components/extract_52.ts",
+              "loc": 165
+            },
+            {
+              "name": "new_tube.ts",
+              "path": "src/volume_backup/components/new_tube.ts",
+              "loc": 16
+            },
+            {
+              "name": "tubing_joint_threaded.ts",
+              "path": "src/volume_backup/components/tubing_joint_threaded.ts",
+              "loc": 80
+            }
+          ]
+        },
+        {
+          "name": "primitives",
+          "path": "src/volume_backup/primitives",
+          "children": [
+            {
+              "name": "archive",
+              "path": "src/volume_backup/primitives/archive",
+              "children": [
+                {
+                  "name": "dp_newpin.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/dp_newpin.prim.ts",
+                  "loc": 21
+                },
+                {
+                  "name": "e_tube_test.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/e_tube_test.prim.ts",
+                  "loc": 22
+                },
+                {
+                  "name": "profile_extrude_v5.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/profile_extrude_v5.prim.ts",
+                  "loc": 87
+                },
+                {
+                  "name": "r_extrude.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/r_extrude.prim.ts",
+                  "loc": 49
+                },
+                {
+                  "name": "r_revolve.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/r_revolve.prim.ts",
+                  "loc": 34
+                },
+                {
+                  "name": "r_rotate.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/r_rotate.prim.ts",
+                  "loc": 50
+                },
+                {
+                  "name": "t_barrel_scoop.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_barrel_scoop.prim.ts",
+                  "loc": 8
+                },
+                {
+                  "name": "t_bolt_driven.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_bolt_driven.prim.ts",
+                  "loc": 21
+                },
+                {
+                  "name": "t_bolt_hexhead.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_bolt_hexhead.prim.ts",
+                  "loc": 9
+                },
+                {
+                  "name": "t_cup_knob.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_cup_knob.prim.ts",
+                  "loc": 8
+                },
+                {
+                  "name": "t_diamond_bore.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_diamond_bore.prim.ts",
+                  "loc": 8
+                },
+                {
+                  "name": "t_finial.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_finial.prim.ts",
+                  "loc": 9
+                },
+                {
+                  "name": "t_goblet_bored.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_goblet_bored.prim.ts",
+                  "loc": 8
+                },
+                {
+                  "name": "t_goblet_plus_cut.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_goblet_plus_cut.prim.ts",
+                  "loc": 12
+                },
+                {
+                  "name": "t_hex_countersink.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_hex_countersink.prim.ts",
+                  "loc": 9
+                },
+                {
+                  "name": "t_hex_nut.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_hex_nut.prim.ts",
+                  "loc": 8
+                },
+                {
+                  "name": "t_hex_revolve_pocket.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_hex_revolve_pocket.prim.ts",
+                  "loc": 9
+                },
+                {
+                  "name": "t_plus_boss.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_plus_boss.prim.ts",
+                  "loc": 8
+                },
+                {
+                  "name": "t_rounded_hex.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_rounded_hex.prim.ts",
+                  "loc": 9
+                },
+                {
+                  "name": "t_spinner.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_spinner.prim.ts",
+                  "loc": 9
+                },
+                {
+                  "name": "t_star_bore.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_star_bore.prim.ts",
+                  "loc": 8
+                },
+                {
+                  "name": "t_tee_slot.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_tee_slot.prim.ts",
+                  "loc": 8
+                },
+                {
+                  "name": "t_tube_hexcap.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_tube_hexcap.prim.ts",
+                  "loc": 8
+                },
+                {
+                  "name": "t_valve_port.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_valve_port.prim.ts",
+                  "loc": 18
+                },
+                {
+                  "name": "t_vase_clip.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/t_vase_clip.prim.ts",
+                  "loc": 8
+                },
+                {
+                  "name": "warp_along_spline.prim.ts",
+                  "path": "src/volume_backup/primitives/archive/warp_along_spline.prim.ts",
+                  "loc": 125
+                }
+              ]
+            },
+            {
+              "name": "basic",
+              "path": "src/volume_backup/primitives/basic",
+              "children": [
+                {
+                  "name": "dp_box.prim.ts",
+                  "path": "src/volume_backup/primitives/basic/dp_box.prim.ts",
+                  "loc": 19
+                },
+                {
+                  "name": "dp_pin.prim.ts",
+                  "path": "src/volume_backup/primitives/basic/dp_pin.prim.ts",
+                  "loc": 19
+                },
+                {
+                  "name": "r_ball.prim.ts",
+                  "path": "src/volume_backup/primitives/basic/r_ball.prim.ts",
+                  "loc": 26
+                },
+                {
+                  "name": "r_cone.prim.ts",
+                  "path": "src/volume_backup/primitives/basic/r_cone.prim.ts",
+                  "loc": 23
+                },
+                {
+                  "name": "r_cube_ball.prim.ts",
+                  "path": "src/volume_backup/primitives/basic/r_cube_ball.prim.ts",
+                  "loc": 24
+                },
+                {
+                  "name": "r_cube.prim.ts",
+                  "path": "src/volume_backup/primitives/basic/r_cube.prim.ts",
+                  "loc": 36
+                },
+                {
+                  "name": "r_cylinder.prim.ts",
+                  "path": "src/volume_backup/primitives/basic/r_cylinder.prim.ts",
+                  "loc": 38
+                },
+                {
+                  "name": "r_tapered_tube.prim.ts",
+                  "path": "src/volume_backup/primitives/basic/r_tapered_tube.prim.ts",
+                  "loc": 27
+                },
+                {
+                  "name": "r_thread_full.prim.ts",
+                  "path": "src/volume_backup/primitives/basic/r_thread_full.prim.ts",
+                  "loc": 148
+                },
+                {
+                  "name": "r_threads.prim.ts",
+                  "path": "src/volume_backup/primitives/basic/r_threads.prim.ts",
+                  "loc": 194
+                },
+                {
+                  "name": "r_tube.prim.ts",
+                  "path": "src/volume_backup/primitives/basic/r_tube.prim.ts",
+                  "loc": 25
+                }
+              ]
+            },
+            {
+              "name": "completions",
+              "path": "src/volume_backup/primitives/completions",
+              "children": [
+                {
+                  "name": "drill_pipe",
+                  "path": "src/volume_backup/primitives/completions/drill_pipe",
+                  "children": [
+                    {
+                      "name": "dp_pin_test.prim.ts",
+                      "path": "src/volume_backup/primitives/completions/drill_pipe/dp_pin_test.prim.ts",
+                      "loc": 30
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "profiles",
+              "path": "src/volume_backup/primitives/profiles",
+              "children": [
+                {
+                  "name": "barrel.prvl.ts",
+                  "path": "src/volume_backup/primitives/profiles/barrel.prvl.ts",
+                  "loc": 47
+                },
+                {
+                  "name": "cone.prvl.ts",
+                  "path": "src/volume_backup/primitives/profiles/cone.prvl.ts",
+                  "loc": 38
+                },
+                {
+                  "name": "cylinder.prvl.ts",
+                  "path": "src/volume_backup/primitives/profiles/cylinder.prvl.ts",
+                  "loc": 40
+                },
+                {
+                  "name": "dp_spec_box.prvl.ts",
+                  "path": "src/volume_backup/primitives/profiles/dp_spec_box.prvl.ts",
+                  "loc": 112
+                },
+                {
+                  "name": "dp_spec_pin.prvl.ts",
+                  "path": "src/volume_backup/primitives/profiles/dp_spec_pin.prvl.ts",
+                  "loc": 117
+                },
+                {
+                  "name": "drill_pipe_box.prvl.ts",
+                  "path": "src/volume_backup/primitives/profiles/drill_pipe_box.prvl.ts",
+                  "loc": 108
+                },
+                {
+                  "name": "tapered_tube.prvl.ts",
+                  "path": "src/volume_backup/primitives/profiles/tapered_tube.prvl.ts",
+                  "loc": 67
+                },
+                {
+                  "name": "tube.prvl.ts",
+                  "path": "src/volume_backup/primitives/profiles/tube.prvl.ts",
+                  "loc": 55
+                }
+              ]
+            }
+          ]
         }
       ]
     },

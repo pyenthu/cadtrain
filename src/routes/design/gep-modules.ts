@@ -52,7 +52,7 @@ export const GEP_CLUSTERS: GepCluster[] = [
 
 export const GEP_MODULE_NODES: GepModuleNode[] = [
   // ── Shell ──
-  { id: 'GraphEditorPane.svelte', label: 'GraphEditorPane', cluster: 'shell', loc: 4381, kind: 'shell',
+  { id: 'GraphEditorPane.svelte', label: 'GraphEditorPane', cluster: 'shell', loc: 4389, kind: 'shell',
     role: 'Root editor pane: canvas, state orchestration, node-drop/bake/keyboard actions; mounts everything',
     split: '7 extraction candidates: node-palette · canvas-interaction · expr-actions · bake-orchestration · part-actions · keymap/save · CSS' },
   { id: 'graph-history.svelte.ts', label: 'graph-history', cluster: 'shell', loc: 78, kind: 'state',
