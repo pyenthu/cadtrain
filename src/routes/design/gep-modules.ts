@@ -156,6 +156,8 @@ export const GEP_MODULE_NODES: GepModuleNode[] = [
     role: 'Arg/profile producer label + expr parse helpers' },
   { id: 'graph-layout-actions.ts', label: 'graph-layout-actions', cluster: 'geometry', loc: 174, kind: 'logic',
     role: 'Auto-layout / push-apart / obstacle separation' },
+  { id: 'node-palette.ts', label: 'node-palette', cluster: 'geometry', loc: 120, kind: 'logic',
+    role: 'Pure node-drop graph builders (buildSolidDrop, …) extracted from the GEP shell' },
 ];
 
 const M = (source: string, target: string, kind: 'imports' | 'mounts' = 'imports'): GepModuleLink => ({ source, target, kind });
@@ -175,6 +177,7 @@ export const GEP_MODULE_LINKS: GepModuleLink[] = [
   M('GraphEditorPane.svelte', 'spline-state.svelte.ts'),
   M('GraphEditorPane.svelte', 'canvas-interaction.svelte.ts'),
   M('GraphEditorPane.svelte', 'graph-editor-bake.svelte.ts'),
+  M('GraphEditorPane.svelte', 'node-palette.ts'),
   M('GraphEditorPane.svelte', 'PolyPreview.svelte', 'mounts'),
   M('GraphEditorPane.svelte', 'ProfilePreview.svelte', 'mounts'),
   M('GraphEditorPane.svelte', 'RightPane.svelte', 'mounts'),

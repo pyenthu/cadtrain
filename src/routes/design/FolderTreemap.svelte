@@ -61,9 +61,9 @@
     treemap<Pruned>()
       .tile(treemapSquarify)
       .size([W, H])
-      .paddingOuter(3)
-      .paddingTop(18)
-      .paddingInner(2)
+      .paddingOuter(6)
+      .paddingTop(20)
+      .paddingInner(4)
       .round(true)(root);
     return root as RNode;
   });
@@ -129,7 +129,7 @@
         role={folder ? 'button' : undefined}
         tabindex={folder ? 0 : undefined}
       >
-        <rect x={a.x0} y={a.y0} width={Math.max(0, a.x1 - a.x0)} height={Math.max(0, a.y1 - a.y0)} class="area-bg" fill={colorFor.get(a.data.path)} />
+        <rect x={a.x0} y={a.y0} width={Math.max(0, a.x1 - a.x0)} height={Math.max(0, a.y1 - a.y0)} rx="5" class="area-bg" fill={colorFor.get(a.data.path)} />
         <clipPath id={safeId(a.data.path)}><rect x={a.x0} y={a.y0} width={Math.max(0, a.x1 - a.x0)} height={16} /></clipPath>
         <text x={a.x0 + 5} y={a.y0 + 12} class="area-lbl" clip-path="url(#{safeId(a.data.path)})">
           {folder ? '▸ ' : ''}{a.data.name} · {fmt(a.value ?? 0)}
@@ -151,9 +151,9 @@
         role={folder ? 'button' : undefined}
         tabindex={folder ? 0 : undefined}
       >
-        <rect x={r.n.x0} y={r.n.y0} width={w} height={h} fill={r.color} class="cell-bg" class:is-folder={folder} />
-        {#if w > 44 && h > 13}
-          <text x={r.n.x0 + 3} y={r.n.y0 + 10} class="cell-lbl">{folder ? '▸ ' : ''}{r.n.data.name}</text>
+        <rect x={r.n.x0} y={r.n.y0} width={w} height={h} rx="2" fill={r.color} class="cell-bg" class:is-folder={folder} />
+        {#if w > 58 && h > 16}
+          <text x={r.n.x0 + 4} y={r.n.y0 + 11} class="cell-lbl">{folder ? '▸ ' : ''}{r.n.data.name}</text>
         {/if}
       </g>
     {/each}
