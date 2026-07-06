@@ -17,21 +17,29 @@
   import FolderIcicle from './FolderIcicle.svelte';
   import FolderCirclePack from './FolderCirclePack.svelte';
   import FolderTree from './FolderTree.svelte';
+  import FolderEdgeBundle from './FolderEdgeBundle.svelte';
+  import FolderArc from './FolderArc.svelte';
 
-  type Layout = 'treemap' | 'icicle' | 'pack' | 'tree';
+  type Layout = 'treemap' | 'icicle' | 'pack' | 'tree' | 'bundle' | 'arc';
   const LS_KEY = 'design-folder-layout';
   const LAYOUTS: { id: Layout; label: string; hint: string }[] = [
     { id: 'treemap', label: 'Treemap', hint: 'Nested rectangles, area ∝ LOC' },
     { id: 'icicle', label: 'Icicle', hint: 'Adjacency rows, click to zoom' },
     { id: 'pack', label: 'Circle pack', hint: 'Nested circles, click to zoom' },
     { id: 'tree', label: 'Tree', hint: 'Collapsible node-link dendrogram' },
+    {
+      id: 'bundle',
+      label: 'Edge bundling',
+      hint: 'Radial bundled parent→leaf splines',
+    },
+    { id: 'arc', label: 'Arc', hint: 'Parent→child arcs on one axis; click to expand' },
   ];
 
+  const LAYOUT_IDS = LAYOUTS.map((l) => l.id) as Layout[];
   let layout = $state<Layout>('treemap');
   if (typeof localStorage !== 'undefined') {
     const v = localStorage.getItem(LS_KEY);
-    if (v === 'treemap' || v === 'icicle' || v === 'pack' || v === 'tree')
-      layout = v;
+    if (v && (LAYOUT_IDS as string[]).includes(v)) layout = v as Layout;
   }
   function setLayout(l: Layout) {
     layout = l;
@@ -90,6 +98,10 @@
       <FolderIcicle data={FOLDER_TREE} {color} {showTip} {hideTip} />
     {:else if layout === 'pack'}
       <FolderCirclePack data={FOLDER_TREE} {color} {showTip} {hideTip} />
+    {:else if layout === 'bundle'}
+      <FolderEdgeBundle data={FOLDER_TREE} {color} {showTip} {hideTip} />
+    {:else if layout === 'arc'}
+      <FolderArc data={FOLDER_TREE} {color} {showTip} {hideTip} />
     {:else}
       <FolderTree data={FOLDER_TREE} {color} {showTip} {hideTip} />
     {/if}
