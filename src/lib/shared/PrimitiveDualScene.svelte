@@ -129,6 +129,13 @@
   // Present only on the TF per-part-mesh path (cutaway off); renders each part
   // with its own colour/texture/opacity material. Absent → single-mesh path.
   let parts = $derived(geo?.parts ?? null);
+  // PER-PART CUT meshes (TF v2): [{ geo, appearance }], present only on the TF
+  // cutaway path for an appearance-bearing recipe. Each part's cut mesh carries
+  // vertex colours — OUTER skin = the part's material tint, revealed interior =
+  // grey section — so the CUT view shows per-part material AND still reads as a
+  // cross-section. Rendered (cutaway ON) in preference to the merged grey/red
+  // `cutVC`; absent → the merged section renders as before.
+  let cutParts = $derived(geo?.cutParts ?? null);
   // GPU-instancing payload (present only when the LIVE-mesh /preview detected a
   // uniform Stack/Repeat): { instances: number[][], count }. When set, `full`/
   // `cutVC` are the CANONICAL CHILD mesh and we draw a THREE.InstancedMesh of
@@ -985,6 +992,28 @@
               <T.MeshStandardMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
             {:else}
               <T.MeshPhongMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+            {/if}
+            {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
+          </T.Mesh>
+        {/if}
+      {/each}
+    {:else if showCutaway && cutParts && cutParts.length}
+      <!-- PER-PART CUT meshes (TF v2): the CUT view, per-part. Each part is its
+           OWN cut mesh with vertex colours baked by the adapter — OUTER skin in the
+           part's material tint, revealed interior GREY — so the cross-section shows
+           per-part material (steel metallic on the skin) while still reading as a
+           section. Per-part metalness/roughness come from materialPreset; the grey
+           interior rides the same vertex-colour attribute so it stays a section. -->
+      {#each cutParts as p, i (i)}
+        {#if p.geo}
+          {@const a = p.appearance ?? {}}
+          {@const pOp = (typeof a.opacity === 'number' && a.opacity > 0 && a.opacity < 1) ? a.opacity : 1}
+          {@const aPBR = materialPreset(a.material)}
+          <T.Mesh geometry={p.geo}>
+            {#if scene.zRectLight}
+              <T.MeshStandardMaterial vertexColors roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
+            {:else}
+              <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} side={THREE.DoubleSide} transparent={pOp < 1} opacity={pOp} depthWrite={pOp >= 1} />
             {/if}
             {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
           </T.Mesh>

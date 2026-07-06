@@ -25,7 +25,7 @@
  */
 import { tfRevolveProfile } from './revolve';
 import { tfExtrudeProfile } from './extrude';
-import { tfResult, tfMeshData, buildOpenCurve, capOpenEnds, runTfGuarded, weldMeshByPosition, type TfDemoResult } from '../trueform-client';
+import { tfResult, tfMeshData, buildOpenCurve, capOpenEnds, runTfGuarded, weldMeshByPosition, applyTfCutaway, type TfDemoResult } from '../trueform-client';
 import type { TfRecipe, TfInstr, Vec3 } from '$lib/cad/graph-to-tf';
 import { warpMeshJS, subdivideAxialAdaptive, densifyProfileAxial } from '$lib/cad/warp-spline';
 
@@ -390,6 +390,25 @@ export function executeTfRecipe(
     const wantParts = !!appearance && appearance.some(Boolean) && partMeshes.length >= 1;
     const partData = wantParts ? partMeshes.map((m) => tfMeshData(m)) : null;
 
+    // PER-PART CUT meshes (v2 — per-part material on the CUTAWAY cross-section).
+    // When a cutaway is requested for an appearance-bearing recipe, cut EACH part
+    // on its OWN +x,+y quadrant box so the cut view can render a per-part list
+    // (outer skin in the part's material · revealed interior grey section) instead
+    // of one merged grey/red mesh. We cut a FRESH handle rebuilt from the extracted
+    // part data — NOT the original `partMeshes[i]` — so the per-part boolean never
+    // disturbs the handle the merged union below still consumes. Same world x=0/y=0
+    // planes as the merged section (applyTfCutaway self-guards → uncut on failure,
+    // which simply shows that part with no revealed section). BORE_EXT-style margin
+    // is inside applyTfCutaway; a part that doesn't cross the plane keeps its skin.
+    let cutParts: { data: TfMeshData; appearance?: any }[] | null = null;
+    if (wantParts && opts?.cutaway && partData) {
+      cutParts = partData.map((pd, i) => {
+        const fresh = t.mesh(pd.faces, pd.points);
+        const { mesh: cm } = applyTfCutaway(t, fresh);
+        return { data: tfMeshData(cm), appearance: appearance![i] };
+      });
+    }
+
     // Merged union — the single-mesh `data` + cutaway + stats (back-compat: the
     // composition's unconsumed outputs, mirroring dp_joint's box+tube+pin weld).
     let solid = partMeshes[0];
@@ -400,6 +419,10 @@ export function executeTfRecipe(
     try { solid = t.positivelyOriented(solid); } catch { /* keep the union as-is */ }
     const merged = tfResult(tf, t, solid, { cutaway: opts?.cutaway, cuttable: true });
     if (partData) merged.parts = partData.map((data, i) => ({ data, appearance: appearance![i] }));
+    // Attach the per-part cut list ONLY when the merged cutaway actually produced
+    // the exposed planes — the render path gates its per-part-cut arm on the same
+    // `cutPlanes`, so the two stay consistent (no cutParts without planes to shade).
+    if (cutParts && merged.cutPlanes) merged.cutParts = cutParts;
     return merged;
   });
 }

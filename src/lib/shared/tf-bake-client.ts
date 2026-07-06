@@ -89,7 +89,7 @@ function getWorker(): Worker {
       if (data.ok) {
         const t = (data as WorkerOk).timings;
         if (t && timingsOn()) { try { console.log(`[tf-worker] warm=${(t.warm ?? 0).toFixed(1)} · build=${(t.build ?? 0).toFixed(1)} ms`); } catch { /* noop */ } }
-        const payload: TfTransferable = { data: data.data, stats: data.stats, cutPlanes: data.cutPlanes, fullData: data.fullData, parts: data.parts };
+        const payload: TfTransferable = { data: data.data, stats: data.stats, cutPlanes: data.cutPlanes, fullData: data.fullData, parts: data.parts, cutParts: data.cutParts };
         (payload as any).__timings = t;
         settle(job, payload);
       } else if (!job.settled) {

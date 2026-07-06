@@ -363,9 +363,17 @@ export interface TfDemoResult {
    *  recipe part, each its own mesh + appearance (colour · opacity · texture).
    *  Built whenever the recipe carries per-part appearance, REGARDLESS of cutaway
    *  (the material must show on the full view irrespective of how the cut toggle
-   *  got there). Rendered on the full view only — the cut section stays the merged
-   *  grey/red `data` (per-part material on the cut section is out of scope, v1). */
+   *  got there). Rendered on the full view. The CUT view uses {@link cutParts}
+   *  when present (v2), else the merged grey/red `data` section. */
   parts?: { data: TfMeshData; appearance?: import('$lib/cad/graph-to-tf').TfAppearance }[];
+  /** PER-PART CUT meshes (v2 — per-part material on the CUTAWAY cross-section).
+   *  Present ONLY when a cutaway ran AND the recipe carries per-part appearance:
+   *  each top-level part is cut on its OWN +x,+y quadrant box (same world x=0/y=0
+   *  planes as the merged section, {@link cutPlanes}), so the cut view can render
+   *  a per-part list — each part's OUTER SKIN in its material while the revealed
+   *  interior cut faces stay a grey section (the adapter colours via `cutPlanes`).
+   *  The merged grey/red `data` remains for bounds + the non-per-part fallback. */
+  cutParts?: { data: TfMeshData; appearance?: import('$lib/cad/graph-to-tf').TfAppearance }[];
 }
 
 /**

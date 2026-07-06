@@ -87,6 +87,10 @@ export interface TfTransferable {
    *  section). Lets the cross-section toggle be a pure view-switch, no re-bake. */
   fullData?: { points: Float32Array; faces: Int32Array };
   parts?: { data: { points: Float32Array; faces: Int32Array }; appearance?: TfAppearance }[];
+  /** PER-PART CUT meshes (v2) — present only under a cutaway of an appearance-
+   *  bearing recipe. Each part cut on its own quadrant box; the main thread shades
+   *  the outer skin per material + the revealed interior grey via `cutPlanes`. */
+  cutParts?: { data: { points: Float32Array; faces: Int32Array }; appearance?: TfAppearance }[];
 }
 
 /** Copy a mesh's point/face arrays into FRESH typed arrays on regular (non-shared)
@@ -120,6 +124,13 @@ export function packTfResult(r: TfDemoResult): { payload: TfTransferable; transf
   }
   if (r.parts && r.parts.length) {
     payload.parts = r.parts.map((p) => {
+      const pd = copyMesh(p.data);
+      transfer.push(pd.points.buffer, pd.faces.buffer);
+      return { data: pd, appearance: p.appearance };
+    });
+  }
+  if (r.cutParts && r.cutParts.length) {
+    payload.cutParts = r.cutParts.map((p) => {
       const pd = copyMesh(p.data);
       transfer.push(pd.points.buffer, pd.faces.buffer);
       return { data: pd, appearance: p.appearance };

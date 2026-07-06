@@ -383,6 +383,53 @@ describe('executeTfRecipe — cutaway returns BOTH full + cut, and parts regardl
   });
 });
 
+describe('executeTfRecipe — per-part CUT (v2: per-part material on the cutaway)', () => {
+  // v2: under a cutaway of an appearance-bearing recipe, EACH part is cut on its
+  // own quadrant box → `cutParts` (one entry per part, carrying its appearance) so
+  // the CUT view can render per-part material on the outer skin (interior stays a
+  // grey section). Same world x=0/y=0 planes as the merged section.
+  const twoPartAppearance: TfRecipe = {
+    instrs: [
+      { op: 'box', w: 4, h: 4, d: 4 },
+      { op: 'box', w: 2, h: 2, d: 2 },
+    ],
+    notes: [],
+    partAppearance: [{ material: 'steel' }, { material: 'brass' }],
+  } as any;
+
+  it('a cutaway build returns per-part CUT data carrying each part appearance.material', () => {
+    const t = makeMockTf();
+    const out = executeTfRecipe(t, t, twoPartAppearance, { cutaway: true });
+    expect(out.cutParts).toBeDefined();
+    expect(out.cutParts).toHaveLength(2);
+    expect(out.cutParts![0].appearance).toEqual({ material: 'steel' });
+    expect(out.cutParts![1].appearance).toEqual({ material: 'brass' });
+    // Each per-part cut mesh has real geometry.
+    for (const cp of out.cutParts!) expect(cp.data.points.length).toBeGreaterThan(0);
+    // Cut planes are present (the render arm gates the per-part-cut arm on them).
+    expect(out.cutPlanes).toEqual([{ axis: 0, coord: 0 }, { axis: 1, coord: 0 }]);
+    // The per-part cut is INDEPENDENT of the merged section: still get both full + cut.
+    expect(out.fullData).toBeDefined();
+    // The full-view per-part meshes are still built (material shows on full view too).
+    expect(out.parts).toHaveLength(2);
+  });
+
+  it('does NOT build cutParts when the cutaway is OFF (nothing to section per part)', () => {
+    const t = makeMockTf();
+    const out = executeTfRecipe(t, t, twoPartAppearance, { cutaway: false });
+    expect(out.cutParts).toBeUndefined();
+    // full-view per-part material still built regardless of cutaway.
+    expect(out.parts).toHaveLength(2);
+  });
+
+  it('does NOT build cutParts when the recipe has NO per-part appearance', () => {
+    const t = makeMockTf();
+    const out = executeTfRecipe(t, t, recipe([{ op: 'box', w: 4, h: 4, d: 4 }]), { cutaway: true });
+    expect(out.cutParts).toBeUndefined();
+    expect(out.parts).toBeUndefined();
+  });
+});
+
 describe('recipeHasUnsupported', () => {
   it('is false for a clean revolve/boolean recipe', () => {
     expect(recipeHasUnsupported(recipe([

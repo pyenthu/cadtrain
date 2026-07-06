@@ -111,6 +111,17 @@ export function sectionFaceColors(
   return out;
 }
 
+/** Convert an sRGB hex string (e.g. `'#8a929c'`) to a linear-space RGB triple
+ *  (0..1) suitable for a THREE vertex-`color` attribute — matches how a
+ *  `MeshStandardMaterial.color` set from the same hex is converted, so a per-part
+ *  cut mesh's vertex-coloured OUTER skin reads the SAME tint as the full-view
+ *  per-part material arm (`color={aPBR.color}`). Used for the v2 per-part cutaway
+ *  (outer skin = the part's material colour, interior section = grey). */
+export function hexToRgb01(hex: string): [number, number, number] {
+  const c = new THREE.Color(hex);
+  return [c.r, c.g, c.b];
+}
+
 /**
  * Fan-triangulate an index buffer whose faces have `stride` vertices each into
  * a flat triangle index array. stride === 3 is returned as-is (already tris).

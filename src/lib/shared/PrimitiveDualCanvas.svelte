@@ -507,10 +507,11 @@
       // `tfMeshToGeo` runs below. The pure `recipeHasUnsupported` guard stays here
       // (no WASM) so the native-only error path is instant + the worker only ever
       // gets buildable work.
-      const [{ tfMeshToGeo }, { recipeHasUnsupported }, { tfBakeClient, isTfCancelled }] = await Promise.all([
+      const [{ tfMeshToGeo, hexToRgb01 }, { recipeHasUnsupported }, { tfBakeClient, isTfCancelled }, { materialPreset }] = await Promise.all([
         import('$lib/shared/trueform-adapter'),
         import('$lib/shared/tf_examples/execute'),
         import('$lib/shared/tf-bake-client'),
+        import('$lib/shared/material-preset'),
       ]);
       const importsMs = performance.now() - _tImp0; // dynamic-import cost (0 after 1st)
       if (ac.signal.aborted) return;
@@ -557,7 +558,7 @@
       const tim = (result as any).__timings as { warm: number; build: number } | undefined;
       const warmMs = tim?.warm ?? 0;
       const buildMs = tim?.build ?? (performance.now() - t0);
-      const { data, stats, cutPlanes, fullData, parts } = result;
+      const { data, stats, cutPlanes, fullData, parts, cutParts } = result;
       const _tMesh0 = performance.now();
       // Assemble BOTH meshes + parts TOGETHER (mirrors Manifold's {full,cutVC}) so
       // the cross-section toggle is a pure VIEW-SWITCH with NO re-bake and never
@@ -569,12 +570,28 @@
       // section on the cut view (per-part material on the cut is out of scope, v1).
       const full = tfMeshToGeo(fullData ?? data);
       const cutVC = cutPlanes ? tfMeshToGeo(data, undefined, { planes: cutPlanes }) : undefined;
+      // PER-PART CUT geo (v2): when a cutaway ran on an appearance-bearing recipe,
+      // each part's cut mesh is section-coloured with its OUTER skin in the part's
+      // material tint (steel/aluminum/…, via materialPreset — an explicit colorOuter
+      // override wins) and the revealed interior left GREY (SECTION_INNER default) so
+      // the cross-section cue survives. Rendered with per-part metalness/roughness in
+      // the scene's per-part-cut arm; falls back to the merged grey/red `cutVC` when
+      // absent. Outer omitted (→ adapter red default) when the part has no material.
+      const cutPartGeos = cutPlanes && cutParts && cutParts.length
+        ? cutParts.map((p) => {
+            const a = p.appearance ?? {};
+            const outerHex = a.colorOuter ?? materialPreset(a.material).color;
+            const outer = outerHex ? hexToRgb01(outerHex) : undefined;
+            return { geo: tfMeshToGeo(p.data, undefined, { planes: cutPlanes, outer }), appearance: p.appearance };
+          })
+        : null;
       geo = {
         full,
         ...(cutVC ? { cutVC } : {}),
         ...(parts && parts.length
           ? { parts: parts.map((p) => ({ geo: tfMeshToGeo(p.data), appearance: p.appearance })) }
           : {}),
+        ...(cutPartGeos && cutPartGeos.length ? { cutParts: cutPartGeos } : {}),
       };
       const meshMs = performance.now() - _tMesh0; // TF mesh → THREE.BufferGeometry (normals/weld)
       geoVersion++;
