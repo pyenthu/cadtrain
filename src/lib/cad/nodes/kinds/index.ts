@@ -8,3 +8,5 @@ export { MvKind } from './mv';
 export { RotKind } from './rot';
 export { SplineKind } from './spline';
 export { WarpKind } from './warp';
+export { ContainerKind, containerSize } from './container';
+export { StackKind } from './stack';
