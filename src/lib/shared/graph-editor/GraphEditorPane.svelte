@@ -2587,6 +2587,14 @@
     <button class="ge-vrail-btn" type="button"
       bind:this={callBtnEl} onclick={openCallPicker}
       data-tip="Fetch a part — primitives library">+</button>
+    <!-- Undo / redo — Phase 3 (docs/plans/hierarchical-class-design.md §5.2).
+         Keyboard is ⌘/Ctrl+Z / ⌘/Ctrl+⇧+Z; these are the discoverable buttons. -->
+    <button class="ge-vrail-btn" type="button" disabled={!history.canUndo}
+      onclick={() => { const g = history.undo(graph); if (g) graph = g; }}
+      data-tip="Undo (⌘Z)">↶</button>
+    <button class="ge-vrail-btn" type="button" disabled={!history.canRedo}
+      onclick={() => { const g = history.redo(graph); if (g) graph = g; }}
+      data-tip="Redo (⌘⇧Z)">↷</button>
     <!-- Click-to-connect: tap a source socket, then a target socket — no
          dragging. Always available on touch; this toggle turns it on for the
          mouse too. Drag-to-wire still works regardless. -->
