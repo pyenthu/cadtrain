@@ -15,14 +15,15 @@
   import C4View from './C4View.svelte';
   import GepModuleGraph from './GepModuleGraph.svelte';
   import FolderTreemap from './FolderTreemap.svelte';
+  import UmlClassDiagram from './UmlClassDiagram.svelte';
 
-  // ── Architecture view tabs: "Tree" | "C4 model" | "GEP module" | "Folder tree" ──
+  // ── Architecture view tabs: Tree | C4 | GEP module | Folder tree | Class model ──
   const LS_ARCH_TAB = 'design-arch-tab';
-  type ArchTab = 'tree' | 'c4' | 'gep' | 'folder';
+  type ArchTab = 'tree' | 'c4' | 'gep' | 'folder' | 'uml';
   let archTab = $state<ArchTab>('tree');
   if (typeof localStorage !== 'undefined') {
     const t = localStorage.getItem(LS_ARCH_TAB);
-    if (t === 'tree' || t === 'c4' || t === 'gep' || t === 'folder') archTab = t;
+    if (t === 'tree' || t === 'c4' || t === 'gep' || t === 'folder' || t === 'uml') archTab = t;
   }
   function setArchTab(t: ArchTab) {
     archTab = t;
@@ -186,6 +187,15 @@
       >
         Folder&nbsp;tree
       </button>
+      <button
+        class="arch-tab"
+        class:active={archTab === 'uml'}
+        role="tab"
+        aria-selected={archTab === 'uml'}
+        onclick={() => setArchTab('uml')}
+      >
+        Class&nbsp;model
+      </button>
     </div>
 
     {#if archTab === 'tree'}
@@ -196,8 +206,10 @@
       <C4View />
     {:else if archTab === 'gep'}
       <GepModuleGraph />
-    {:else}
+    {:else if archTab === 'folder'}
       <FolderTreemap />
+    {:else}
+      <UmlClassDiagram />
     {/if}
   </section>
 
