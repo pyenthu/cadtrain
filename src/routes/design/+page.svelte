@@ -11,24 +11,92 @@
    * turn imports @xyflow/svelte at module scope which is fine for client-only.
    */
   import { SvelteFlowProvider } from '@xyflow/svelte';
+  import { dev } from '$app/environment';
   import ArchGraph from './ArchGraph.svelte';
   import C4View from './C4View.svelte';
   import GepModuleGraph from './GepModuleGraph.svelte';
   import FolderHierarchy from './FolderHierarchy.svelte';
   import UmlClassDiagram from './UmlClassDiagram.svelte';
+  import CodeGraph, { type GraphJson } from './CodeGraph.svelte';
 
-  // ── Architecture view tabs: Tree | C4 | GEP module | Folder tree | Class model ──
+  // ── Architecture view tabs: Tree | C4 | GEP module | Folder tree | Class model | Code graph ──
   const LS_ARCH_TAB = 'design-arch-tab';
-  type ArchTab = 'tree' | 'c4' | 'gep' | 'folder' | 'uml';
+  type ArchTab = 'tree' | 'c4' | 'gep' | 'folder' | 'uml' | 'code';
+  const ARCH_TABS: ArchTab[] = ['tree', 'c4', 'gep', 'folder', 'uml', 'code'];
   let archTab = $state<ArchTab>('tree');
   if (typeof localStorage !== 'undefined') {
     const t = localStorage.getItem(LS_ARCH_TAB);
-    if (t === 'tree' || t === 'c4' || t === 'gep' || t === 'folder' || t === 'uml') archTab = t;
+    if (t && (ARCH_TABS as string[]).includes(t)) archTab = t as ArchTab;
   }
   function setArchTab(t: ArchTab) {
     archTab = t;
     if (typeof localStorage !== 'undefined') localStorage.setItem(LS_ARCH_TAB, t);
   }
+
+  // ── DEV-ONLY diagram/graphify pipelines (terminal child_process, ZERO
+  // Anthropic tokens). Buttons are hidden unless `dev`. Each POSTs a fixed
+  // command; graphify's tree-sitter AST pass is deterministic and offline. ──
+  let codeGraph = $state<GraphJson | null>(null);
+  let busy = $state<'' | 'diagrams' | 'graphify' | 'tree'>('');
+  let devMsg = $state('');
+
+  async function rebuildDiagrams() {
+    if (busy) return;
+    busy = 'diagrams'; devMsg = '';
+    try {
+      const r = await fetch('/api/design/rebuild-diagrams', { method: 'POST' });
+      const j = await r.json();
+      devMsg = j.ok
+        ? `↻ diagrams regenerated · ${j.ms}ms`
+        : `diagrams failed: ${j.reason ?? 'unknown'}`;
+    } catch (e) {
+      devMsg = `diagrams error: ${(e as Error).message}`;
+    } finally { busy = ''; }
+  }
+
+  async function runGraphify() {
+    if (busy) return;
+    busy = 'graphify'; devMsg = '';
+    try {
+      const r = await fetch('/api/design/graphify', { method: 'POST' });
+      const j = await r.json();
+      if (j.ok) {
+        devMsg = `graph: ${j.nodes.toLocaleString()} nodes · ${j.edges.toLocaleString()} edges · ${j.communities} communities · ${j.ms}ms`;
+        await loadCodeGraph();          // refresh the rendered graph
+        setArchTab('code');
+      } else {
+        devMsg = `graphify failed: ${j.reason ?? 'unknown'}`;
+      }
+    } catch (e) {
+      devMsg = `graphify error: ${(e as Error).message}`;
+    } finally { busy = ''; }
+  }
+
+  async function loadCodeGraph() {
+    const r = await fetch('/api/design/graphify-graph');
+    const j = await r.json();
+    codeGraph = j.ok ? (j.graph as GraphJson) : null;
+    return j;
+  }
+
+  async function buildTree() {
+    if (busy) return;
+    busy = 'tree'; devMsg = '';
+    try {
+      const j = await loadCodeGraph();
+      setArchTab('code');
+      devMsg = j.ok
+        ? `tree: ${(codeGraph?.nodes.length ?? 0).toLocaleString()} nodes`
+        : `no graph yet — run graphify first`;
+    } catch (e) {
+      devMsg = `tree error: ${(e as Error).message}`;
+    } finally { busy = ''; }
+  }
+
+  // Lazily fetch any existing graph the first time the Code-graph tab opens.
+  $effect(() => {
+    if (archTab === 'code' && codeGraph === null && !busy) void loadCodeGraph();
+  });
 
   // ── Top-level page sections as VERTICAL TABS (left rail) — show one at a
   // time instead of one long scroll (more compact + easier to navigate). ──
@@ -234,7 +302,36 @@
       >
         Class&nbsp;model
       </button>
+      {#if dev}
+        <button
+          class="arch-tab"
+          class:active={archTab === 'code'}
+          role="tab"
+          aria-selected={archTab === 'code'}
+          onclick={() => setArchTab('code')}
+          title="Deterministic code knowledge-graph (dev only)"
+        >
+          Code&nbsp;graph
+        </button>
+      {/if}
     </div>
+
+    {#if dev}
+      <!-- ── DEV-ONLY pipeline toolbar — runs in the terminal, ZERO Claude tokens ── -->
+      <div class="dev-toolbar" aria-label="Dev pipelines">
+        <span class="dev-badge">dev</span>
+        <button class="dev-btn" onclick={rebuildDiagrams} disabled={!!busy}>
+          {#if busy === 'diagrams'}<span class="spin"></span>{:else}↻{/if} Rebuild diagrams
+        </button>
+        <button class="dev-btn" onclick={runGraphify} disabled={!!busy}>
+          {#if busy === 'graphify'}<span class="spin"></span>{/if} Run graphify
+        </button>
+        <button class="dev-btn" onclick={buildTree} disabled={!!busy}>
+          {#if busy === 'tree'}<span class="spin"></span>{/if} Build tree
+        </button>
+        {#if devMsg}<span class="dev-msg">{devMsg}</span>{/if}
+      </div>
+    {/if}
 
     {#if archTab === 'tree'}
       <SvelteFlowProvider>
@@ -246,8 +343,10 @@
       <GepModuleGraph />
     {:else if archTab === 'folder'}
       <FolderHierarchy />
-    {:else}
+    {:else if archTab === 'uml'}
       <UmlClassDiagram />
+    {:else}
+      <CodeGraph graph={codeGraph} />
     {/if}
   </section>
 
@@ -575,6 +674,64 @@
     color: var(--accent);
     box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
   }
+
+  /* ───────── Dev-only pipeline toolbar ───────── */
+  .dev-toolbar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: 0 0 1.2rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px dashed var(--line);
+    border-radius: 12px;
+    background: var(--paper-alt);
+  }
+  .dev-badge {
+    font-size: 0.6rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: #b45309;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    padding: 2px 7px;
+    border-radius: 6px;
+  }
+  .dev-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 0.42rem 0.85rem;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: var(--paper);
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: background 0.16s ease, color 0.16s ease, border-color 0.16s ease;
+  }
+  .dev-btn:hover:not(:disabled) {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+  .dev-btn:disabled { opacity: 0.55; cursor: default; }
+  .dev-msg {
+    font-size: 0.76rem;
+    color: var(--ink-soft);
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  .spin {
+    width: 11px;
+    height: 11px;
+    border: 2px solid currentColor;
+    border-right-color: transparent;
+    border-radius: 50%;
+    display: inline-block;
+    animation: dev-spin 0.7s linear infinite;
+  }
+  @keyframes dev-spin { to { transform: rotate(360deg); } }
 
   /* ───────── Capability cards ───────── */
   .cards {
