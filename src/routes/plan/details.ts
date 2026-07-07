@@ -35,6 +35,35 @@ export interface PlanDetail {
 export const details: Record<number, PlanDetail> = {
   // ───── Remaining build work ─────
 
+  943: {
+    summary:
+      'g_dp_joint composite stack — DONE 2026-07-04.\n\n' +
+      'The mated-stack builder positions composite children END-TO-END down +Z ' +
+      'instead of stacking them at the origin. Each built child\'s local Z-extent is ' +
+      'measured (localZExtent) and the child is shifted onto a running down-Z cursor ' +
+      '(placeEndToEnd, STACK_OVERLAP 0.1 for a clean weld) — so g_dp_joint\'s bottom ' +
+      'collar is restored (box → tube → pin, total Z 37.8; was 25 with the pin ' +
+      'buried at the origin). Stack-mode repeat now stacks its copies end-to-end too, ' +
+      'so g_dp_stand builds all N joints down the hole rather than piling them at 0.\n\n' +
+      'Both helpers live in src/lib/shared/tf_examples/execute.ts (covered by ' +
+      'execute.test.ts). Plain unions are unchanged.',
+    steps: [
+      'df45da1 — mated stack positions children end-to-end by Z-extent (g_dp_joint bottom collar restored)',
+      '1a0b4ef — stack-mode repeat stacks copies end-to-end (g_dp_stand no longer piles at origin)',
+      '978e696 — g_dp_stand builds all N joints stacked',
+    ],
+    acceptance: [
+      'g_dp_joint bakes with its bottom collar present (box→tube→pin, total Z ≈ 37.8), pin no longer buried at the origin',
+      'g_dp_stand builds all N joints stacked end-to-end down +Z instead of overlapping at the origin',
+      'Plain (non-mated) unions unchanged',
+    ],
+    refs: [
+      'src/lib/shared/tf_examples/execute.ts (placeEndToEnd + localZExtent)',
+      'src/lib/shared/tf_examples/execute.test.ts',
+    ],
+    recorded: false,
+  },
+
   512: {
     summary:
       'AI refine — Level 2: post-generation validation in the refine endpoint.\n\n' +

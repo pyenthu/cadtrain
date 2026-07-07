@@ -18,7 +18,6 @@
 - **#50 Arbitrary-section swept-mesh** (subsumed by #51) — transport the 2D section loop along RMF frames + weld → `tf.mesh` (today `tubeMesh` is circle-only).
 - **#48/#49 Server compile** — JS + WASM ✓. LEFT: a ⚡client/☁server toggle UI. `#47` parked (per-part WASM `build`).
 - **TF `parts_map` builder** — `graph-to-tf.ts` has no `parts_map` case → native-only TF reports "no builder". Add a native builder (or documented fallback). (new, 2026-07-07)
-- **g_dp_joint composite stack** — executor must place mated children end-to-end by Z-extent (parts overlap at origin today).
 
 ### Open — editor
 - **#52 Modularize RightPane** — extract per-tab bodies (SVG/GLB/TF-recipe); large component → HMR silently skips it.
