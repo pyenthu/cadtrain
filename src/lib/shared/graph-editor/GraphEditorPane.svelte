@@ -74,6 +74,7 @@
     addExprInstance,
     addSpline,
     addWarpPlaceholder,
+    addPartsMap,
     addMaterialNode,
     updateMaterialNode,
     resolveEffectiveAppearance,
@@ -1766,6 +1767,10 @@
    *  Wire the SOLID into the top-left socket + a SPLINE's path into the lower-
    *  left socket; emits warpSpline(solid, path, opts). */
   function dropWarp() { closePicker(); graph = addWarpPlaceholder(graph).graph; }
+  /** Drop a `parts_map` PRODUCER (#38 Phase 3) — instantiates a template part
+   *  once per row of a list<record> param. Set src + rows + arg→field mappings on
+   *  the card; wire its list<geometry> output into a Stack / Output. */
+  function dropPartsMap() { closePicker(); graph = addPartsMap(graph).graph; }
 
   /** Drop a MATERIAL node (G-MAT-CARD) — a floating appearance bundle. Wire its
    *  output into a part's material socket to assign colour/texture/opacity,
@@ -3323,6 +3328,10 @@
         </button>
         <button class="ge-pick-item" type="button" onclick={() => { dropRepeat(); submenuKey = null; }}>
           <span class="ge-pick-icon">⋯</span><span class="ge-pick-name">repeat</span><span class="ge-pick-hint">× N</span>
+        </button>
+        <!-- parts_map: a list<record> param → N part instances (#38 Phase 3). -->
+        <button class="ge-pick-item" type="button" onclick={() => { dropPartsMap(); submenuKey = null; }}>
+          <span class="ge-pick-icon">⧉</span><span class="ge-pick-name">parts_map</span><span class="ge-pick-hint">list→N parts</span>
         </button>
       </div>
     {/if}

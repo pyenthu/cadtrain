@@ -15,6 +15,7 @@ import type {
   SketchRepeatNode, SketchRepeatRef, SketchExprListRef,
   ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem, SplineNode, WarpNode,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph, MaterialNode, PartAppearance,
+  PartsMapNode,
 } from './composition-graph-types';
 import { newNodeId, asLiteral, asParam, asExpr } from './composition-graph-types';
 
@@ -1490,6 +1491,64 @@ export function setWarpValidate(graph: Graph, warpId: NodeId, validate: boolean)
     if (!validate) { const { validate: _drop, ...rest } = n; return rest; }
     return { ...n, validate: true };
   });
+}
+
+// ─── parts_map (#38 Phase 3 — the list<record> → N part-instances producer) ──
+/** Drop an UNWIRED parts_map: no template, empty rows, op 'list'. The user then
+ *  picks the template part (`src`), points `list` at a list<record> param, and
+ *  maps each part arg to a row field (`s.<field>`). Emits
+ *  `Array.from(rows, (s,i) => src({ …argMap }))`. */
+export function addPartsMap(graph: Graph, parentId?: NodeId): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const node: PartsMapNode = { id, type: 'parts_map', src: '', list: asExpr('[]'), argMap: {}, op: 'list' };
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
+  return { graph: finalize(appendChild(next, parentId ?? graph.root, id)), id };
+}
+export function addPartsMapPlaceholder(graph: Graph, parentId?: NodeId) {
+  return addPartsMap(graph, parentId);
+}
+
+function updatePartsMap(graph: Graph, id: NodeId, fn: (n: PartsMapNode) => PartsMapNode): Graph {
+  const node = graph.nodes[id];
+  if (!node || node.type !== 'parts_map') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: fn(node as PartsMapNode) } });
+}
+/** Set the TEMPLATE part instantiated per row. */
+export function setPartsMapSrc(graph: Graph, id: NodeId, src: string): Graph {
+  return updatePartsMap(graph, id, (n) => ({ ...n, src }));
+}
+/** Point the rows at a list<record> PARAM (null → empty `[]`). */
+export function setPartsMapList(graph: Graph, id: NodeId, param: string | null): Graph {
+  return updatePartsMap(graph, id, (n) => ({ ...n, list: param ? asParam(param) : asExpr('[]') }));
+}
+/** Set / clear one arg→field mapping. `expr` is a row expression like `s.od`; a
+ *  blank / null value REMOVES the arg. */
+export function setPartsMapArg(graph: Graph, id: NodeId, key: string, expr: string | null): Graph {
+  return updatePartsMap(graph, id, (n) => {
+    const argMap = { ...(n.argMap ?? {}) };
+    if (expr === null || expr.trim() === '') delete argMap[key];
+    else argMap[key] = asExpr(expr);
+    return { ...n, argMap };
+  });
+}
+/** Add a new arg row; its value defaults to the row field of the same name
+ *  (`s.<key>`), the common case. No-op on a blank/duplicate key. */
+export function addPartsMapArg(graph: Graph, id: NodeId, key: string): Graph {
+  const k = (key || '').trim();
+  if (!k) return graph;
+  return updatePartsMap(graph, id, (n) => {
+    if (n.argMap && k in n.argMap) return n;
+    const s = /^[A-Za-z_$][\w$]*$/.test(String(n.loopVar || '')) ? String(n.loopVar) : 's';
+    return { ...n, argMap: { ...(n.argMap ?? {}), [k]: asExpr(`${s}.${k}`) } };
+  });
+}
+export function removePartsMapArg(graph: Graph, id: NodeId, key: string): Graph {
+  return setPartsMapArg(graph, id, key, null);
+}
+/** Combine mode for the N instances (list = bare array spread by a Stack). */
+export function setPartsMapOp(graph: Graph, id: NodeId, op: 'list' | 'stack' | 'place'): Graph {
+  return updatePartsMap(graph, id, (n) => ({ ...n, op }));
 }
 
 /** Immutable update of one def by id (no-op if the id is unknown). */

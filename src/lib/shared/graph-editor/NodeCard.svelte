@@ -47,6 +47,12 @@
     setWarpRefine,
     setWarpStretch,
     setWarpValidate,
+    setPartsMapSrc,
+    setPartsMapList,
+    setPartsMapArg,
+    addPartsMapArg,
+    removePartsMapArg,
+    setPartsMapOp,
     asLiteral,
     STACK_REF_PARAM,
     type Graph,
@@ -1731,6 +1737,63 @@
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
                   data-tip="the bent solid — wire into Output, a CSG op, or another modifier"
                   onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
+              {:else if n.type === 'parts_map'}
+                {@const pm = n as any}
+                {@const pmArgs = Object.keys(pm.argMap ?? {})}
+                {@const pmList = pm.list?.kind === 'param' ? pm.list.param : ''}
+                <!-- parts_map (#38 Phase 3) — instantiate `src` once per row of a
+                     list<record> param. rows ← a p.<param>; each arg ← a row field
+                     (s.<field>); op combines the N (list = spread by a Stack). -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg parts-map"
+                  width={size.w} height={size.h} rx="6"
+                  data-tip="parts_map: instantiate a template part once per row of a list<record> param. Set the part id (src), point rows at p.<listParam>, and map each arg to a row field (s.od)."
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <text x="12" y="20" class="ge-node-title">⧉ parts_map</text>
+                <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 18} y="20" class="ge-node-x"
+                  class:armed={del.isArmed(n.id)}
+                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
+                <foreignObject x="8" y="32" width={size.w - 16} height={size.h - 40}>
+                  <div class="ge-pm" xmlns="http://www.w3.org/1999/xhtml">
+                    <label class="ge-pm-row"><span>src</span>
+                      <input class="ge-arg-input" value={pm.src ?? ''} placeholder="part id (e.g. g_cube)"
+                        onchange={(e) => setGraph(setPartsMapSrc(graph, n.id, (e.target as HTMLInputElement).value.trim()))}/>
+                    </label>
+                    <label class="ge-pm-row"><span>rows</span>
+                      <input class="ge-arg-input" value={pmList ? 'p.' + pmList : ''} placeholder="p.<listParam>"
+                        onchange={(e) => { const v = (e.target as HTMLInputElement).value.trim().replace(/^p\./, ''); setGraph(setPartsMapList(graph, n.id, v || null)); }}/>
+                    </label>
+                    {#each pmArgs as k (k)}
+                      <div class="ge-pm-arg">
+                        <span class="ge-pm-key" title={k}>{k}</span>
+                        <input class="ge-arg-input" value={pm.argMap[k]?.expr ?? ''} title="row expression, e.g. s.od"
+                          onchange={(e) => setGraph(setPartsMapArg(graph, n.id, k, (e.target as HTMLInputElement).value))}/>
+                        <button class="ge-pm-x" type="button" title="remove arg"
+                          onclick={() => setGraph(removePartsMapArg(graph, n.id, k))}>×</button>
+                      </div>
+                    {/each}
+                    <div class="ge-pm-foot">
+                      <input class="ge-arg-input ge-pm-addk" placeholder="+ arg"
+                        onkeydown={(e) => { if (e.key === 'Enter') { const t = e.target as HTMLInputElement; if (t.value.trim()) { setGraph(addPartsMapArg(graph, n.id, t.value.trim())); t.value = ''; } } }}/>
+                      <div class="ge-pm-ops">
+                        {#each ['list', 'stack', 'place'] as op (op)}
+                          <button class="ge-pm-op" class:on={(pm.op ?? 'list') === op} type="button"
+                            onclick={() => setGraph(setPartsMapOp(graph, n.id, op as 'list' | 'stack' | 'place'))}>{op}</button>
+                        {/each}
+                      </div>
+                    </div>
+                  </div>
+                </foreignObject>
+                <!-- OUTPUT — RIGHT edge; the list<geometry> of N instances -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                  data-tip="the N part instances (list<geometry>) — wire into a Stack / Output"
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
               {/if}
               <!-- ─── Bottom-right corner resize grip ─────────────────────
                    Diagonal handle in the card's bottom-right corner —
@@ -1797,6 +1860,20 @@
     padding: 1px 5px; font: 600 10px Arial; cursor: pointer;
   }
   .ge-warp-tog.on { background: #0e7490; color: #fff; border-color: #0e7490; }
+  /* parts_map card (#38 Phase 3) — violet, matching the data-driven / list family. */
+  .ge-node-bg.parts-map { fill: #f5f3ff; stroke: #6d28d9; stroke-width: 2; }
+  .ge-pm { display: flex; flex-direction: column; gap: 3px; font: 10px Arial; overflow: auto; height: 100%; }
+  .ge-pm-row { display: flex; align-items: center; gap: 4px; }
+  .ge-pm-row > span { width: 30px; color: #6d28d9; font-weight: 600; flex: none; }
+  .ge-pm-arg { display: flex; align-items: center; gap: 3px; }
+  .ge-pm-key { width: 44px; flex: none; color: #5b21b6; font: 10px ui-monospace, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .ge-pm-x { flex: none; border: none; background: none; color: #a1a1aa; cursor: pointer; font-size: 12px; line-height: 1; padding: 0 2px; }
+  .ge-pm-x:hover { color: #dc2626; }
+  .ge-pm-foot { display: flex; align-items: center; gap: 4px; margin-top: 2px; }
+  .ge-pm-addk { width: 52px; flex: none; }
+  .ge-pm-ops { display: flex; gap: 2px; margin-left: auto; }
+  .ge-pm-op { border: 1px solid #d6d3d1; border-radius: 3px; background: #fff; color: #57534e; font: 9px Arial; padding: 1px 4px; cursor: pointer; }
+  .ge-pm-op.on { background: #6d28d9; color: #fff; border-color: #6d28d9; }
   .ge-node-bg.container { fill: #ecfdf5; stroke: #047857; stroke-width: 2; }
   /* Polygon card — warm peach background (matches the `.prvl` tag in the
      sidebar + the +Add Vertex CTA). Stroke amber to differentiate from
