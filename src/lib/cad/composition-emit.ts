@@ -198,10 +198,18 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
       // Same loud-throw treatment as emitNodeExpr — a missing root child
       // surfaces as an explicit throw instead of a silent placeholder that
       // compiles to undefined and crashes WASM downstream.
-      const exprs = visible.map((c, i) => varNames.get(c) ?? missingRef(id, `children[${i}]`, c));
+      const exprs = visible.map((c, i) => ({
+        v: varNames.get(c) ?? missingRef(id, `children[${i}]`, c),
+        // A LIST-producer child (e.g. a multi-input warp) emits a bare array — SPREAD
+        // it into the return so its parts reach the top-level SEPARATELY (a nested
+        // array would be re-composed by the loader's autoPlace = re-fused).
+        producer: listProducers.has(c),
+      }));
       if (exprs.length === 0)      returnExpr = 'undefined';
-      else if (exprs.length === 1) returnExpr = exprs[0]!;
-      else                         returnExpr = `[${exprs.join(', ')}]`;
+      // Sole child: return it bare — a producer's array IS the return (top-level
+      // autoPlace then separates it), a solid returns unchanged (byte-identical).
+      else if (exprs.length === 1) returnExpr = exprs[0]!.v;
+      else                         returnExpr = `[${exprs.map((e) => (e.producer ? `...${e.v}` : e.v)).join(', ')}]`;
       continue;
     }
     const expr = emitNodeExpr(node, varNames, listProducers, graph.nodes);
@@ -643,6 +651,10 @@ function computeListProducers(graph: Graph): Set<NodeId> {
     // A parts_map with op:'list' (its DEFAULT) emits a bare `Array.from(...)` of
     // N part instances (#38) — a parent Stack `...`-spreads it just like a Repeat.
     if (n.type === 'parts_map' && ((n as any).op ?? 'list') === 'list') set.add(n.id);
+    // A multi-input warp (#36b) emits `[warpSpline(a,…), warpSpline(b,…)]` — a bare
+    // array of per-part warps; the parent Stack / root `...`-spreads it so each
+    // warped part stays a SEPARATE body (no compose → no fusion).
+    if (n.type === 'warp' && Array.isArray((n as any).children) && (n as any).children.length > 1) set.add(n.id);
     // (Future: bare list nodes that aren't the root list, group containers, etc.)
   }
   return set;

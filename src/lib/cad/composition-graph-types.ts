@@ -486,7 +486,17 @@ export type SplineNode = {
 export type WarpNode = {
   id: NodeId;
   type: 'warp';
+  /** Legacy SINGLE child (one solid bent along `path`). Retained for byte-identical
+   *  emit of existing parts; new multi-input warps use `children[]`. When both are
+   *  present, `children` wins. */
   child: NodeId | null;
+  /** MULTI-INPUT (#36b): warp EACH wired solid SEPARATELY along the same `path`,
+   *  emitting `[warpSpline(a,path), warpSpline(b,path), …]` — a LIST producer so the
+   *  parent Stack / root spreads the warped parts as SEPARATE bodies (they never
+   *  compose, so a part inside a transparent open-hole stays independent — same
+   *  separate-parts rule as autoPlace/finalizeManifold). Absent / ≤1 entry ⇒ the
+   *  single `warpSpline(child,path)` emit (byte-identical). */
+  children?: NodeId[];
   path: ArgValue;
   refine?: ArgValue;
   stretch?: boolean;
