@@ -468,7 +468,20 @@ export async function buildPrimitiveGeom(
   const autoPlace = (v: any): any => {
     if (Array.isArray(v)) {
       const placed = v.map(autoPlace);
-      return helpers.place(placed);
+      const composed = helpers.place(placed);
+      // SEPARATE-PARTS: stash the pre-compose outputs so the renderer can mesh
+      // spatially-OVERLAPPING top-level parts (a part inside a transparent
+      // open-hole) SEPARATELY. `place()`/`M.compose` fuses overlapping bodies
+      // into one connected body (see manifold-helpers.place) — TF never composes,
+      // so it never fuses. The outermost (rendered) part is the one that matters;
+      // deps get further Manifold ops that strip this property, which is fine.
+      try {
+        const ms = placed.filter((p: any) => p && typeof p.getMesh === 'function');
+        if (ms.length > 1 && composed && typeof (composed as any).getMesh === 'function') {
+          (composed as any)._parts = ms;
+        }
+      } catch { /* non-critical — falls back to the composed single mesh */ }
+      return composed;
     }
     return v;
   };
@@ -680,7 +693,7 @@ function __isSegmentKey(key) {
 }
 function __adapt(fn, metaKeys, isObjectStyle) {
   var __place = (typeof place === 'function') ? place : function (v) { return v; };
-  function autoPlace(v) { if (Array.isArray(v)) { return __place(v.map(autoPlace)); } return v; }
+  function autoPlace(v) { if (Array.isArray(v)) { var placed = v.map(autoPlace); var composed = __place(placed); try { var ms = placed.filter(function (p) { return p && typeof p.getMesh === 'function'; }); if (ms.length > 1 && composed && typeof composed.getMesh === 'function') composed._parts = ms; } catch (e) {} return composed; } return v; }
   var segKeyIdx = metaKeys.findIndex(__isSegmentKey);
   function clampSegInObj(obj, cap) {
     if (segKeyIdx < 0) return obj;

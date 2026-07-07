@@ -315,11 +315,41 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   let sourceParts: PartMesh[] | undefined;
   let sourceCutParts: PartMesh[] | undefined;
   if (lut?.active) {
-    sourceParts = buildSourceParts(warped, lut, crease, maxOD, 'full');
-    if (!skipCutaway) {
-      let cutManifold: any;
-      try { cutManifold = warped.subtract(cutBox); } catch { cutManifold = null; }
-      if (cutManifold) sourceCutParts = buildSourceParts(cutManifold, lut, crease, maxOD, 'cut');
+    // SEPARATE-PARTS path: when the geom fn returned a LIST of top-level outputs,
+    // autoPlace stashed them (pre-compose) on `manifold._parts`. Mesh EACH output
+    // on its OWN Manifold so spatially-OVERLAPPING parts (a part inside a
+    // transparent open-hole) never share a body — `M.compose` fuses overlapping
+    // bodies (see manifold-helpers.place), which corrupted the split-by-originalID
+    // parts. Mirror the composed transform pipeline (z-scale → smooth → warp) per
+    // part so each part lands identically to the merged full/cutVC. A single-output
+    // part (no `_parts`) still splits the composed mesh (byte-identical fallback).
+    const rawParts: any[] = Array.isArray((manifold as any)?._parts)
+      ? (manifold as any)._parts.filter((p: any) => p && typeof p.getMesh === 'function')
+      : [];
+    if (rawParts.length > 1) {
+      sourceParts = [];
+      if (!skipCutaway) sourceCutParts = [];
+      for (const rp of rawParts) {
+        let sp = z === 1.0 ? rp : rp.scale([1, 1, z]);
+        if (opts?.smooth) {
+          try { sp = sp.smoothOut(opts.smooth.minSharpAngle ?? 60, 0).refineToTolerance(opts.smooth.tolerance ?? maxOD * 0.004); }
+          catch { /* keep unsmoothed */ }
+        }
+        const wp = applyWarp(sp, opts?.warp);
+        sourceParts.push(...buildSourceParts(wp, lut, crease, maxOD, 'full'));
+        if (!skipCutaway) {
+          let cw: any; try { cw = wp.subtract(cutBox); } catch { cw = null; }
+          if (cw) sourceCutParts!.push(...buildSourceParts(cw, lut, crease, maxOD, 'cut'));
+        }
+      }
+      if (sourceCutParts && sourceCutParts.length === 0) sourceCutParts = undefined;
+    } else {
+      sourceParts = buildSourceParts(warped, lut, crease, maxOD, 'full');
+      if (!skipCutaway) {
+        let cutManifold: any;
+        try { cutManifold = warped.subtract(cutBox); } catch { cutManifold = null; }
+        if (cutManifold) sourceCutParts = buildSourceParts(cutManifold, lut, crease, maxOD, 'cut');
+      }
     }
   }
 
