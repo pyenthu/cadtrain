@@ -249,8 +249,8 @@ export function cardMinWidth(node: any): number {
 // the bent solid out the RIGHT, and a compact opts row. The two left-socket Y's
 // are shared by the NodeCard render AND the WireLayer wire endpoints so they
 // can't drift.
-export const WARP_CHILD_CY = 40;   // `solid` (child) input socket cy (index 0)
-export const WARP_PATH_CY = 64;    // LEGACY single-solid `path` cy (kept for old refs)
+export const WARP_CHILD_CY = 40;   // first `solid` input socket cy (index 0)
+export const WARP_PATH_CY = 16;    // `path` input socket — now on the TITLE ROW (#36b redesign)
 export const WARP_SOLID_DY = 22;   // vertical pitch between stacked solid sockets
 
 /** #36b multi-input: number of `solid` input rows a warp shows = wired solids +
@@ -261,9 +261,10 @@ export function warpSolidRows(node: any): number {
 }
 /** cy of the i-th `solid` input socket (index 0 == WARP_CHILD_CY). */
 export function warpSolidCY(i: number): number { return WARP_CHILD_CY + i * WARP_SOLID_DY; }
-/** cy of the `path` input socket — sits BELOW all solid rows (dynamic with count).
+/** cy of the `path` input socket. The path now wires into the TITLE ROW (a fixed
+ *  position, independent of the solid count) — the options moved to a ⚙ popover.
  *  Shared by the NodeCard render AND the WireLayer path endpoint so they can't drift. */
-export function warpPathCY(node: any): number { return WARP_CHILD_CY + warpSolidRows(node) * WARP_SOLID_DY; }
+export function warpPathCY(_node?: any): number { return WARP_PATH_CY; }
 
 /** Auto-fit width from the card's content (title + longest arg key + value
  *  footprint). The DEFAULT width when no user override is set. */
@@ -286,7 +287,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
   if (node.type === 'polygon') return 200; // narrowed for the vertical-stack layout
   if (node.type === 'expr') return 260;    // input gutter + name=formula row
   if (node.type === 'spline') return 110;  // inline row: edit | curve | x | socket (+20%)
-  if (node.type === 'warp') return 172;    // solid/path labels + opts row
+  if (node.type === 'warp') return 148;    // title (path on title row) + solid rows; opts in ⚙ popover
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
     const labels: string[] = [];
     for (const cid of (node as any).children ?? []) {

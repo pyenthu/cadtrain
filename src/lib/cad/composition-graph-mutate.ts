@@ -2317,10 +2317,14 @@ export function topoOrder(graph: Graph): NodeId[] {
     } else if (node.type === 'mv' || node.type === 'rot' || node.type === 'txfmn') {
       if (node.child) visit(node.child);
     } else if (node.type === 'warp') {
-      // Visit the bent solid first so its `const` emits before the
-      // `warpSpline(child, …)` call that consumes it (TDZ). The spline PATH
-      // source is a free-floating node emitted as a prelude const, not visited.
-      if (node.child) visit(node.child);
+      // Visit EACH bent solid first so its `const` emits before the
+      // `warpSpline(child, …)` call that consumes it (TDZ). #36b: a multi-input
+      // warp bends `children[]` (each warped separately); legacy single `child`.
+      // The spline PATH source is a free-floating node emitted as a prelude const.
+      const kids = (Array.isArray((node as any).children) && (node as any).children.length)
+        ? (node as any).children as NodeId[]
+        : (node.child ? [node.child] : []);
+      for (const c of kids) if (c) visit(c);
     } else if (node.type === 'repeat') {
       for (const c of node.children ?? []) visit(c);
     } else if (node.type === 'call') {

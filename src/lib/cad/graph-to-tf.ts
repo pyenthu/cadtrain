@@ -478,8 +478,11 @@ function computeConsumed(graph: Graph): Set<NodeId> {
       // warp's bent solid is an INPUT — consume it so the un-warped child does
       // NOT double-emit as its own root output (mirrors composition-emit's
       // computeConsumedSet; without this the TF view shows the straight tube
-      // AND the warped tube as two parts).
-      if ((n as any).child) consumed.add((n as any).child);
+      // AND the warped tube as two parts). #36b: a multi-input warp consumes ALL
+      // its `children[]` (else the extra solid stays a straight output).
+      const wc = (n as any);
+      const kids = (Array.isArray(wc.children) && wc.children.length) ? wc.children : (wc.child ? [wc.child] : []);
+      for (const c of kids) consumed.add(c);
     } else if (n.type === 'repeat') {
       for (const c of (n as any).children ?? []) consumed.add(c);
     } else if (n.type === 'stack' || n.type === 'group') {
@@ -894,18 +897,12 @@ function graphToTfInner(
     outputs = [graph.root];
   }
 
-  const instrs = outputs.map((id) => lowerNode(graph.nodes[id], graph, scope, notes, resolve, seen, depth));
-  // Per-part appearance (aligned with instrs) — each output part's effective
-  // appearance (wired material ▸ per-part override) for the per-part-mesh TF
-  // render. Only Call outputs carry appearance today; other output shapes → none.
-  const partAppearance = outputs.map((id) => {
-    // The output node may be a transform/warp WRAPPER (mv/rot/txfmn/warp — each
-    // has a single `.child`) around the Call that actually carries the material
-    // binding. A warped part's output is the `warp` node, so reading appearance
-    // off it alone returns nothing → TF fell back to default red while the 3D
-    // bake (which resolves on the wrapped part) showed the real material. Walk
-    // DOWN through wrappers, taking the first non-empty appearance.
-    const eff = outputAppearanceThroughWrappers(graph, id);
+  // Effective appearance (wired material ▸ per-part override) → TfAppearance, per
+  // output part. The output may be a transform/warp WRAPPER around the Call that
+  // carries the material — walk DOWN through wrappers, first non-empty wins (so a
+  // warped/moved part keeps its material). Shared by the normal + multi-warp paths.
+  const apprOf = (nodeId: NodeId): TfAppearance | undefined => {
+    const eff = outputAppearanceThroughWrappers(graph, nodeId);
     const a: TfAppearance = {};
     if (eff.colorOuter) a.colorOuter = eff.colorOuter;
     if (eff.colorInner) a.colorInner = eff.colorInner;
@@ -913,7 +910,28 @@ function graphToTfInner(
     if (eff.material && eff.material !== 'none') a.material = eff.material;
     if (typeof eff.opacity === 'number' && eff.opacity > 0 && eff.opacity < 1) a.opacity = eff.opacity;
     return Object.keys(a).length ? a : undefined;
-  });
+  };
+
+  // instrs + partAppearance (aligned). #36b: a MULTI-INPUT warp expands into one
+  // warped part PER child — separate meshes (like the Manifold separate-parts path)
+  // so a part inside a transparent open-hole stays independent (no union/fusion).
+  // Each expanded part reads the CHILD's appearance (the OH's opacity, the casing's
+  // material), NOT the warp node's.
+  const instrs: TfInstr[] = [];
+  const partAppearance: (TfAppearance | undefined)[] = [];
+  for (const id of outputs) {
+    const node = graph.nodes[id] as any;
+    if (node && node.type === 'warp' && Array.isArray(node.children) && node.children.length > 1) {
+      for (const c of node.children as NodeId[]) {
+        const single = { ...node, child: c, children: undefined };
+        instrs.push(lowerNode(single, graph, scope, notes, resolve, seen, depth));
+        partAppearance.push(apprOf(c));
+      }
+    } else {
+      instrs.push(lowerNode(node, graph, scope, notes, resolve, seen, depth));
+      partAppearance.push(apprOf(id));
+    }
+  }
   return { instrs, notes, ...(partAppearance.some(Boolean) ? { partAppearance } : {}) };
 }
 

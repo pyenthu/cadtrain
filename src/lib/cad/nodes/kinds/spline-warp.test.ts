@@ -41,12 +41,12 @@ describe('WarpKind', () => {
     expect(errs).toContainEqual({ nodeId: 'w1', slot: 'refine', badRef: 'r', kind: 'missing-param' });
   });
   it('size grows for the ＋solid append row; inputRefs=[child]', () => {
-    // #36b: single solid → 2 socket rows (child + ＋append) → 40 + 2*22 + 48 = 132.
-    expect(WarpKind.size(warp(), { width: 150, root: 'r' })).toEqual({ w: 150, h: 132 });
+    // #36b: single solid → 2 socket rows (child + ＋append) → 40 + 2*22 + 12 = 96.
+    expect(WarpKind.size(warp(), { width: 150, root: 'r' })).toEqual({ w: 150, h: 96 });
     expect(WarpKind.inputRefs(warp())).toEqual(['c']);
-    // multi: two solids → 3 rows → 40 + 3*22 + 48 = 154; both children consumed.
+    // multi: two solids → 3 rows → 40 + 3*22 + 12 = 118; both children consumed.
     const multi = { ...warp(), child: undefined, children: ['c', 'd'] } as any;
-    expect(WarpKind.size(multi, { width: 150, root: 'r' })).toEqual({ w: 150, h: 154 });
+    expect(WarpKind.size(multi, { width: 150, root: 'r' })).toEqual({ w: 150, h: 118 });
     expect(WarpKind.inputRefs(multi)).toEqual(['c', 'd']);
   });
 });

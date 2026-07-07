@@ -32,6 +32,7 @@
     setStackChildRef,
     setMethodInput,
     setTransformAxisValue,
+    setWarpRefine, setWarpStretch, setWarpValidate,
     removeNode,
     STACK_REF_PARAM,
     type Graph,
@@ -96,6 +97,15 @@
     transformPop = { nodeId, x: ev.clientX, y: ev.clientY };
   }
   function closeTransformPop() { transformPop = null; txPinned = false; }
+
+  // ── Warp options popover (#36b) — the ≈ warp card's ⚙ button opens this to edit
+  // refine / stretch / validate (moved off the card so the card stays compact). ──
+  let warpPop = $state<{ nodeId: NodeId; x: number; y: number } | null>(null);
+  export function openWarpPop(ev: MouseEvent, nodeId: NodeId) {
+    ev.stopPropagation();
+    warpPop = { nodeId, x: ev.clientX, y: ev.clientY };
+  }
+  function closeWarpPop() { warpPop = null; }
   function txLiteral(axis: 0 | 1 | 2, value: number) {
     if (!transformPop) return;
     graph = setTransformAxisValue(graph, transformPop.nodeId, axis, asLiteral(Number.isFinite(value) ? value : 0));
@@ -355,6 +365,42 @@
       <div class="ge-expr-pop-row right">
         <button class="ge-param-add ghost" type="button" onclick={txDelete}>🗑 delete</button>
         <button class="ge-param-add" type="button" onclick={closeTransformPop}>done</button>
+      </div>
+    </div>
+  {/if}
+{/if}
+
+{#if warpPop}
+  {@const wn = graph.nodes[warpPop.nodeId] as any}
+  {#if wn && wn.type === 'warp'}
+    {@const refineVal = wn.refine?.kind === 'literal' ? Number(wn.refine.value) : (wn.refine ? NaN : 0)}
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <div class="ge-wire-shade" onclick={closeWarpPop}></div>
+    <div class="ge-wire-pop ge-tx-pop"
+      style="left: {Math.min(warpPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 220)}px; top: {warpPop.y}px">
+      <div class="ge-wire-head ge-tx-head">
+        <span>≈ warp · options</span>
+        <button class="ge-tx-headx" type="button" onclick={closeWarpPop} title="Close">×</button>
+      </div>
+      <div class="ge-tx-row">
+        <span class="ge-tx-key" title="Build-time subdivision so flat walls bend as arcs (0 = adaptive)">refine</span>
+        <input class="ge-tx-input" type="number" min="0" step="1"
+          value={Number.isFinite(refineVal) ? refineVal : 0}
+          oninput={(e) => { const v = Number((e.target as HTMLInputElement).value); graph = setWarpRefine(graph, warpPop!.nodeId, v > 0 ? asLiteral(v) : null); }} />
+      </div>
+      <div class="ge-tx-row">
+        <span class="ge-tx-key" title="Stretch the part to span the whole spline (else keep its own length)">stretch</span>
+        <button class="ge-warp-tog" class:on={wn.stretch === true} type="button"
+          onclick={() => { graph = setWarpStretch(graph, warpPop!.nodeId, wn.stretch !== true); }}>{wn.stretch === true ? 'on' : 'off'}</button>
+      </div>
+      <div class="ge-tx-row">
+        <span class="ge-tx-key" title="Warn on an inverted / self-intersecting bend (genus/volume check)">validate</span>
+        <button class="ge-warp-tog" class:on={wn.validate === true} type="button"
+          onclick={() => { graph = setWarpValidate(graph, warpPop!.nodeId, wn.validate !== true); }}>{wn.validate === true ? 'on' : 'off'}</button>
+      </div>
+      <div class="ge-expr-pop-row right">
+        <button class="ge-param-add" type="button" onclick={closeWarpPop}>done</button>
       </div>
     </div>
   {/if}

@@ -53,11 +53,11 @@ export const WarpKind: NodeKind<WarpNode> = {
   inputRefs: (n) => warpChildren(n),
   size: (n, ctx) => {
     // Rows of solid sockets = wired solids + 1 "＋ solid" append slot (mirror
-    // geom.warpSolidRows / warpPathCY: path sits at 40 + rows*22, then the path
-    // label row + the opts row). Duplicated (not imported) — cad can't depend on
-    // the shared graph-editor layer.
+    // geom.warpSolidRows: first solid at 40, pitch 22). Path wires into the TITLE
+    // row + options moved to a ⚙ popover, so the card is just title + solid rows.
+    // Duplicated (not imported) — cad can't depend on the shared graph-editor layer.
     const rows = Math.max(1, warpChildren(n).length) + 1;
-    return { w: ctx.width, h: 40 + rows * 22 + 48 };
+    return { w: ctx.width, h: 40 + rows * 22 + 12 };
   },
   sockets: (n) => {
     const kids = warpChildren(n);
