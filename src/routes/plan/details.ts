@@ -216,4 +216,106 @@ export const details: Record<number, PlanDetail> = {
     ],
     recorded: false,
   },
+
+  // ───── TF / revolve follow-ups (from the 2026-07-06/07 batch) ─────
+
+  944: {
+    summary:
+      'Curvature-adaptive warp axial span.\n\n' +
+      'Route C lean revolve (#942) re-densifies a warped part at build time via a ' +
+      'CONSTANT axial span dial (_axialMaxZSpan = 1.5) so a warped shaft samples enough ' +
+      'Z-stations to bend smoothly. A constant span over-tessellates long, gently-curved ' +
+      'wells (lots of stations where the trajectory is nearly straight). Replace the ' +
+      'constant with a planAxialStations() pass that places stations by LOCAL CURVATURE ' +
+      '— dense through doglegs, sparse on straight runs — so vert counts track the actual ' +
+      'geometry. Rule-25 clean (build-time segmentation, never a post-bake mesh rewrite).',
+    acceptance: [
+      'A long, near-straight warped well samples far fewer axial stations than the constant span',
+      'A tight dogleg keeps enough stations to stay smooth (no faceting)',
+      'Build-time only — no post-bake MeshGL subdivide (Rule 25)',
+    ],
+    refs: [
+      'docs/plans/manifold-revolve-lean.md',
+      'docs/plans/curvature-adaptive-warp-subdivision.md',
+      'src/lib/cad/bake-worker-core.ts (_axialMaxZSpan dial)',
+    ],
+    recorded: false,
+  },
+
+  945: {
+    summary:
+      '/api/tf/compile — parallelize the BFS dep frontier + save-invalidation.\n\n' +
+      'Two follow-ups on the TF compile cache shipped 2026-07-06:\n' +
+      ' (a) The dep-resolution BFS walks the frontier serially; fan each frontier level ' +
+      'out in parallel so a deep dep tree compiles in one round-trip per LEVEL, not per node.\n' +
+      ' (b) On part Save, INVALIDATE the dep-source caches that reference it so a ' +
+      'cross-part edit shows up instantly instead of waiting out the 30-60s TTL.',
+    acceptance: [
+      'A deep dep tree compiles noticeably faster (parallel frontier)',
+      'Editing a dependency part reflects in dependents immediately after Save (no TTL wait)',
+    ],
+    refs: [
+      'docs/plans/tf-compile-perf.md',
+      'src/routes/api/tf/compile/+server.ts',
+    ],
+    recorded: false,
+  },
+
+  946: {
+    summary:
+      'TF_WASM tab — C++→WASM TrueForm builders.\n\n' +
+      'A tab that runs the TrueForm builders compiled from C++ to WASM. IMPORTANT honest ' +
+      'framing: the reason the TF tab is fast is that it runs in a WEB WORKER (off the ' +
+      'main thread), NOT because of the language. Compiling to WASM here buys SOURCE ' +
+      'CONCEALMENT (ship builders as opaque WASM), not raw speed. Order this after the TF ' +
+      'tab + compile-perf work stabilizes.',
+    acceptance: [
+      'TF builders run from a WASM module in the worker',
+      'Builder source is not shipped as readable JS',
+    ],
+    refs: [
+      'docs/plans/tf-wasm-tab.md',
+    ],
+    recorded: false,
+  },
+
+  947: {
+    summary:
+      'Per-SUBPART material — color-by-source.\n\n' +
+      'The TF hardening (#942) shipped per-PART material on the full + cut views. But a ' +
+      'material set on a HIDDEN sub-part is currently lost when subparts are merged into ' +
+      'the full + cut meshes. Needs color-by-source: track which source part each merged ' +
+      'triangle came from so a subpart\'s material survives the merge.',
+    acceptance: [
+      'A material on a hidden sub-part is honored in both the full and the cut mesh',
+      'Merged meshes carry per-source material groups',
+    ],
+    refs: [
+      'src/lib/cad/tf-worker-core.ts (per-part material + merge)',
+      'memory: session_handoff_2026-07-06',
+    ],
+    recorded: false,
+  },
+
+  948: {
+    summary:
+      'Warp-trajectory + data-driven-params tails (from the 2026-07-07 batch, #972).\n\n' +
+      ' #36c — the warp spline tangent-extension to ±∞ shipped; the originZ PLACEMENT ' +
+      'option exists in the geometry core but is not wired through to the warp node UI. ' +
+      'Wire it.\n' +
+      ' #38 — data-driven params: P1 (ParamSchema discriminated union number|record|list) ' +
+      'and P3 (parts_map producer: list<record> → N part instances + the bakeable pm_demo) ' +
+      'shipped. LEFT: the GEP node-card UI for the new param kinds + the P2 param editor.',
+    acceptance: [
+      'The warp node exposes + applies the originZ placement option',
+      'A record/list param is authored + edited from the GEP node-card (P2 editor)',
+    ],
+    refs: [
+      'docs/plans/warp-part-along-spline.md (items: originZ wiring)',
+      'docs/plans/complex-params-list-of-parts.md',
+      'docs/plans/parts-params.md',
+      'src/lib/cad/nodes/kinds/parts-map.ts (P3, shipped)',
+    ],
+    recorded: false,
+  },
 };
