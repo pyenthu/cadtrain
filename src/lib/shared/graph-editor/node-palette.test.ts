@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { newGraph } from '$lib/cad/composition-graph-hydrate';
-import { buildSolidDrop, POLY_EXTRUDE_DEFAULT } from './node-palette';
+import { buildSolidDrop, buildCallArgs, POLY_EXTRUDE_DEFAULT } from './node-palette';
 
 const nodesArr = (g: ReturnType<typeof newGraph>) => Object.values(g.nodes) as any[];
 const callsOf = (g: ReturnType<typeof newGraph>, src: string) => nodesArr(g).filter((n) => n.type === 'call' && n.src === src);
@@ -59,5 +59,24 @@ describe('buildSolidDrop', () => {
   it('POLY_EXTRUDE_DEFAULT is a unit square (4 literal r,z verts)', () => {
     expect(POLY_EXTRUDE_DEFAULT).toHaveLength(4);
     expect((POLY_EXTRUDE_DEFAULT[0].r as any).value).toBe(-1);
+  });
+});
+
+describe('buildCallArgs', () => {
+  it('numeric param → literal from its default', () => {
+    expect(buildCallArgs({ od: { default: 5 }, wall: { default: 0.4 } }))
+      .toEqual({ od: { kind: 'literal', value: 5 }, wall: { kind: 'literal', value: 0.4 } });
+  });
+  it('missing default → literal 0', () => {
+    expect(buildCallArgs({ segs: {} })).toEqual({ segs: { kind: 'literal', value: 0 } });
+  });
+  it('profile-typed param → expr of the JSON descriptor', () => {
+    const desc = { kind: 'poly', params: { n: 6 } };
+    expect(buildCallArgs({ profile: { type: 'profile', default: desc } }))
+      .toEqual({ profile: { kind: 'expr', expr: JSON.stringify(desc) } });
+  });
+  it('empty / undefined params → {}', () => {
+    expect(buildCallArgs({})).toEqual({});
+    expect(buildCallArgs(undefined as any)).toEqual({});
   });
 });

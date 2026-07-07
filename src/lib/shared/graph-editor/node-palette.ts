@@ -7,11 +7,31 @@
  * (modularize: the node-palette cut) so the graph-construction logic is unit-
  * testable in isolation and the shell shrinks toward orchestration-only.
  */
-import type { Graph } from '$lib/cad/composition-graph-types';
-import { asLiteral } from '$lib/cad/composition-graph-types';
+import type { Graph, ArgValue } from '$lib/cad/composition-graph-types';
+import { asLiteral, asExpr } from '$lib/cad/composition-graph-types';
 import { addCall, addPolygon, addSketch } from '$lib/cad/composition-graph-mutate';
 
 export type SolidOp = 'revolve' | 'extrude' | 'loft' | 'sweep';
+
+/**
+ * Build a Call node's args from a fetched primitive's `meta.params`. A
+ * profile-typed param (r_revolve / r_extrude) carries a `{kind, params}`
+ * DESCRIPTOR as its default (not a number) → encode as an `expr` ArgValue so
+ * emit injects the literal object syntax + the primitive's resolveProfile
+ * collapses it to points; everything else → a literal from its default (0).
+ * Pure — the fetch + drift-cache ingest stay in the GEP handler.
+ */
+export function buildCallArgs(params: Record<string, any>): Record<string, ArgValue> {
+  const args: Record<string, ArgValue> = {};
+  for (const [k, p] of Object.entries(params ?? {})) {
+    if (p && typeof p === 'object' && p.type === 'profile' && p.default && typeof p.default === 'object') {
+      args[k] = asExpr(JSON.stringify(p.default));
+    } else {
+      args[k] = asLiteral(p?.default ?? 0);
+    }
+  }
+  return args;
+}
 
 /** Default cartesian (x,y) cross-section for a fresh extrude/loft polygon:
  *  a unit square centred on the origin. */

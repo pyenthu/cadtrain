@@ -141,7 +141,7 @@
   // passed in via layoutCtx()). The shell keeps the thin autoLayout/pushApart
   // entry points below (they own the undoLayout snapshot + assign graph).
   import { overlayCardObstacles, separateGraph, type LayoutContext } from './graph-layout-actions';
-  import { buildSolidDrop } from './node-palette';
+  import { buildSolidDrop, buildCallArgs } from './node-palette';
   import { PolyPreviewState } from './poly-preview-state.svelte';
   import PolyPreview from './PolyPreview.svelte';
   import { ProfilePreviewState } from './profile-preview-state.svelte';
@@ -1642,20 +1642,9 @@
     try {
       const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(src)}`);
       const d = await r.json() as any;
-      for (const [k, p] of Object.entries((d.params ?? {}) as Record<string, any>)) {
-        // Profile-typed args (r_revolve / r_extrude) carry a {kind, params}
-        // DESCRIPTOR as their default — not a number. Encode as an `expr`
-        // ArgValue: emit injects the literal object syntax, the body's
-        // resolveProfile(...) call inside the primitive collapses it to
-        // points. The profile-picker chip in the Call card (#119) reads
-        // the descriptor + offers a kind swap; absent the picker the user
-        // can still hand-edit the JSON in the ƒ popup.
-        if (p && typeof p === 'object' && p.type === 'profile' && p.default && typeof p.default === 'object') {
-          args[k] = asExpr(JSON.stringify(p.default));
-        } else {
-          args[k] = asLiteral(p?.default ?? 0);
-        }
-      }
+      // Pure args-from-params (profile-descriptor → expr, else literal) lives in
+      // node-palette.ts + is unit-tested; the fetch + drift-cache ingest stay here.
+      args = buildCallArgs(d.params ?? {});
       // Cache expected params (keys/defaults/profile set) for drift detection —
       // same fetch we just did; shared singleton in graph-editor-bake.svelte.ts.
       ingestMeta(src, d.params ?? {});
