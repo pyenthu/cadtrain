@@ -99,7 +99,15 @@ function getWorker(): Worker {
       if (data.ok) {
         const t = (data as any).timings;
         if (t && timingsOn()) { try { console.log(`[bake-worker] build=${(t.build ?? 0).toFixed(1)} · mesh=${(t.mesh ?? 0).toFixed(1)} · cutaway=${(t.cutaway ?? 0).toFixed(1)} · serialize=${(t.serialize ?? 0).toFixed(1)} ms`); } catch {} }
-        const payload: TransferableComponentResult = { full: data.full, cutVC: data.cutVC, instanced: data.instanced };
+        const payload: TransferableComponentResult = {
+          full: data.full, cutVC: data.cutVC, instanced: data.instanced,
+          // Per-part meshes (transparent-composite / color-by-source path). The
+          // worker packs these into the reply; carry them through so the scene's
+          // per-part arm renders (dropping them here → single merged mesh → an
+          // opacity<1 subpart like bw_open_hole renders OPAQUE). Also cached below.
+          ...(data.parts ? { parts: data.parts } : {}),
+          ...(data.cutParts ? { cutParts: data.cutParts } : {}),
+        };
         // Cache even a SUPERSEDED bake — it's a valid mesh; storing it makes the
         // next identical request instant. Best-effort (cache failure is benign).
         void idbPut(job.key, payload);
