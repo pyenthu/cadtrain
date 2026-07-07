@@ -245,11 +245,6 @@ export async function runCompiledManifold(
 export interface TransferableComponentResult {
   full: SerializedGeometry;
   cutVC: SerializedGeometry;
-  /** Per-source-part meshes (#1 unify-transparency) — appearance-bearing
-   *  composites only. Each part's geometry is packed onto transferable buffers
-   *  just like full/cutVC; the appearance is a small plain object (structured
-   *  clone). */
-  parts?: { geo: SerializedGeometry; appearance: Record<string, unknown> }[];
   instanced?: { instances: number[][]; count: number };
 }
 
@@ -274,9 +269,6 @@ export function packTransferable(
     full: packGeo(s.full),
     cutVC: packGeo(s.cutVC),
   };
-  if (s.parts && s.parts.length > 0) {
-    payload.parts = s.parts.map((p) => ({ geo: packGeo(p.geo), appearance: p.appearance as Record<string, unknown> }));
-  }
   if (s.instanced) payload.instanced = s.instanced;
   if ((s as any).timings) (payload as any).timings = (s as any).timings;
   return { payload, transfer };
