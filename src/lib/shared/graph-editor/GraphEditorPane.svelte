@@ -188,7 +188,7 @@
   // (NOT a singleton — /primitives mounts all tab panes at once); `wire` is
   // constructed below once `graph`/`clientToGraph` are in scope.
   import { WireState } from './wire-state.svelte';
-  import { GraphHistory } from './graph-history.svelte';
+  import { GraphEditorController } from './controller.svelte';
   import { SketchState } from './sketch-state.svelte';
   import { SplineState } from './spline-state.svelte';
   import { CanvasInteractionState } from './canvas-interaction.svelte';
@@ -265,11 +265,12 @@
   // id input mutate it locally. The `id` prop only seeds it; once mounted
   // we stop reading the prop so the user's typed value isn't reverted.
   let graph = $state<Graph>(newGraph());
-  // Phase 3 (docs/plans/hierarchical-class-design.md §5.2): per-pane undo/redo.
-  // Snapshot-based — records the previous graph whenever `graph` changes (a
-  // committed transaction); ⌘/Ctrl+Z / ⇧+Z restore. reset() on part load.
-  const history = new GraphHistory();
-  $effect(() => history.record(graph));
+  // Phase 4 (§5.1): the per-pane TRUNK — owns the graph accessor + undo history
+  // (Phase 3 snapshot undo/redo) + the leaf-state members (attached below as they
+  // construct). The shell reads/writes its own `graph` $state through the trunk's
+  // closures. `$effect(() => ctrl.recordGraph())` records committed transactions.
+  const ctrl = new GraphEditorController(() => graph, (g) => { graph = g; });
+  $effect(() => ctrl.recordGraph());
   let exemplarId = $state<string>(props.id ?? 'test_graph_a');
   let saveStatus = $state<string | null>(null);
   /** Embed mode — when the editor is mounted inside another surface (the
@@ -679,9 +680,7 @@
       const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || (t as any).isContentEditable);
       if (inField) return;
       ev.preventDefault();
-      const redo = ev.key === 'y' || ev.key === 'Y' || ev.shiftKey;
-      const g = redo ? history.redo(graph) : history.undo(graph);
-      if (g) graph = g;
+      if (ev.key === 'y' || ev.key === 'Y' || ev.shiftKey) ctrl.redo(); else ctrl.undo();
       return;
     }
     if (ev.key !== 'Enter') return;
@@ -1053,7 +1052,7 @@
           exemplarId = id;
           // Seed the undo baseline AFTER load settles (hydrate + auto-layout +
           // viewport) so the initial load isn't undoable back to the empty graph.
-          history.reset(graph);
+          ctrl.resetHistory();
         } else {
           legacyLoad = { id, reason: 'no-graph', origin: d.origin };
           exemplarId = id;
@@ -1075,6 +1074,7 @@
   // clientToGraph lives on `ci` and is handed to `wire`.
   let canvasEl: SVGSVGElement | undefined = $state();
   const ci = new CanvasInteractionState(() => canvasEl);
+  ctrl.canvas = ci;   // attach to the Phase-4 trunk
   /** Pan the canvas so a given node id is centered in the viewport — used
    *  by the broken-reference banner chips to scroll a deleted-ref node into
    *  view. No-op when the node has no layout entry (legacy graphs). */
@@ -1378,9 +1378,11 @@
   // GEP's canvas + sketch-stage pointer handlers read/write `wire.*`.
   // clientToGraph lives on `ci` (needs canvasEl/pan/zoom) and is handed to `wire`.
   const wire = new WireState(() => graph, (g) => { graph = g; }, ci.clientToGraph);
+  ctrl.wire = wire;   // attach to the Phase-4 trunk
   // Per-instance full-tab sketch editor state (Phase E). Shared home for the
   // sketch state referenced by BOTH the node-card arm and the full-tab editor.
   const sketch = new SketchState(() => graph, (g) => { graph = g; }, wire, () => pcs, () => PARAM_W);
+  ctrl.sketch = sketch;   // attach to the Phase-4 trunk
   /** Names of the graph's params (PARAMS card) — the wireable `p.*` set. Shared
    *  by the main-graph param markup AND the sketch overlay. */
   const paramNames = $derived(Object.keys(graph.params ?? {}));
@@ -1832,6 +1834,7 @@
    *  (the inline handlers' `bakeNonce++`). NOT a module singleton — /primitives
    *  mounts N panes, an open popup + overlays are per-pane. */
   const spline = new SplineState(() => graph, (g) => { graph = g; }, () => { bakeNonce++; });
+  ctrl.spline = spline;   // attach to the Phase-4 trunk
   /** Picker "ƒ expr" item (B.7 v3) — route to the Expressions MENU (the expr-def
    *  manager) instead of silently dropping an instance of a (possibly empty,
    *  unwireable) def. The menu is where you define a named expr with params/
@@ -2578,12 +2581,10 @@
       data-tip="Fetch a part — primitives library">+</button>
     <!-- Undo / redo — Phase 3 (docs/plans/hierarchical-class-design.md §5.2).
          Keyboard is ⌘/Ctrl+Z / ⌘/Ctrl+⇧+Z; these are the discoverable buttons. -->
-    <button class="ge-vrail-btn" type="button" disabled={!history.canUndo}
-      onclick={() => { const g = history.undo(graph); if (g) graph = g; }}
-      data-tip="Undo (⌘Z)">↶</button>
-    <button class="ge-vrail-btn" type="button" disabled={!history.canRedo}
-      onclick={() => { const g = history.redo(graph); if (g) graph = g; }}
-      data-tip="Redo (⌘⇧Z)">↷</button>
+    <button class="ge-vrail-btn" type="button" disabled={!ctrl.history.canUndo}
+      onclick={() => ctrl.undo()} data-tip="Undo (⌘Z)">↶</button>
+    <button class="ge-vrail-btn" type="button" disabled={!ctrl.history.canRedo}
+      onclick={() => ctrl.redo()} data-tip="Redo (⌘⇧Z)">↷</button>
     <!-- Click-to-connect: tap a source socket, then a target socket — no
          dragging. Always available on touch; this toggle turns it on for the
          mouse too. Drag-to-wire still works regardless. -->
