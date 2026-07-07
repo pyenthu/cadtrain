@@ -162,6 +162,9 @@ export const POST = async ({ request, fetch }) => {
           ok: true,
           full: hit.full,
           cutVC: hit.cutVC,
+          // Per-source-part meshes (#1 unify-transparency) — cached alongside
+          // full/cutVC; present only for an appearance-bearing composite.
+          ...(hit.parts ? { parts: hit.parts } : {}),
           cutawaySkipped: hit.cutawaySkipped === true,
           cached: true,
           cacheHash,
@@ -355,6 +358,7 @@ export const POST = async ({ request, fetch }) => {
     writeBakeCache(name, cacheHash, {
       full: serialized.full,
       cutVC: serialized.cutVC,
+      ...(serialized.parts ? { parts: serialized.parts } : {}),
       cutawaySkipped,
       _t: T,
     }, cacheableParams, cacheOpts).catch((e) => {
@@ -366,6 +370,10 @@ export const POST = async ({ request, fetch }) => {
     ok: true,
     full: serialized.full,
     cutVC: serialized.cutVC,
+    // Per-source-part meshes (#1 unify-transparency) — present only for an
+    // appearance-bearing (transparent-subpart) composite; the scene prefers
+    // `parts` over the single-mesh `full` when present.
+    ...(serialized.parts ? { parts: serialized.parts } : {}),
     // Present only when instancing was requested AND applied (uniform repeat):
     // full/cutVC are then the canonical child + this carries the N transforms.
     // Omitted entirely otherwise → response shape is the normal merged mesh.

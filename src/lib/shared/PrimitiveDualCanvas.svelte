@@ -376,7 +376,7 @@
     const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: cutFlag, colorOuter, colorInner, instanced: true, ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}), ...(crease ? { creaseAngle: crease } : {}), ...(smooth ? { smooth } : {}) });
     const cached = bust ? undefined : cacheGet(`mesh:${body}`);
     if (cached) {
-      geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC, instanced: cached.instanced });
+      geo = deserializeComponentResult({ full: cached.full, cutVC: cached.cutVC, parts: cached.parts, instanced: cached.instanced });
       geoVersion++; meshStatus = 'ok'; err = null;
       return;
     }
@@ -426,8 +426,8 @@
       if (ac.signal.aborted) return;
       if (!r.ok) { err = `Preview ${r.status}`; meshStatus = 'error'; return; }
       const data = await r.json();
-      cachePut(`mesh:${body}`, { full: data.full, cutVC: data.cutVC, instanced: data.instanced });
-      geo = deserializeComponentResult({ full: data.full, cutVC: data.cutVC, instanced: data.instanced });
+      cachePut(`mesh:${body}`, { full: data.full, cutVC: data.cutVC, parts: data.parts, instanced: data.instanced });
+      geo = deserializeComponentResult({ full: data.full, cutVC: data.cutVC, parts: data.parts, instanced: data.instanced });
       geoVersion++; meshStatus = 'ok'; err = null; meshBackend = 'server';
     } catch (e: any) { if (e?.name !== 'AbortError') { err = String(e?.message ?? e); meshStatus = 'error'; } }
   }

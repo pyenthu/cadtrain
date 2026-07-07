@@ -44,10 +44,42 @@ function rgbMap(hexById: Record<number, string>): Map<number, [number, number, n
 
 // ═══ BUILD + CONVERT ═══
 
+/** Per-part render appearance — the shape `PrimitiveDualScene`'s per-part arm
+ *  reads (`p.appearance = { colorOuter, opacity, material, texture }`). Mirrors
+ *  TF's `TfAppearance` (graph-to-tf.ts) so the Manifold per-part path feeds the
+ *  SAME scene branch. Manifold's source is the `PartColorLUT`, which today only
+ *  carries per-part colour + opacity — `material`/`texture` are reserved for when
+ *  the LUT grows to carry them (they stay undefined for now). */
+export interface RenderPartAppearance {
+  colorOuter?: string;
+  colorInner?: string;
+  opacity?: number;
+  material?: string;
+  texture?: string;
+}
+
+/** One source-part mesh + its appearance — the Manifold analogue of TF's
+ *  `{ data, appearance }`. Emitted by finalizeManifold as `ComponentResult.parts`
+ *  ONLY for appearance-bearing composites (see `buildSourceParts`). */
+export interface RenderPart {
+  geo: THREE.BufferGeometry;
+  appearance: RenderPartAppearance;
+}
+
 export interface ComponentResult {
   full: THREE.BufferGeometry;
   cutVC: THREE.BufferGeometry;
   manifold: any;
+  /** Per-SOURCE-PART meshes (#1 unify-transparency fix). Present ONLY when a
+   *  color-by-source LUT is active AND at least one subpart is transparent
+   *  (opacity < 1) — the exact case the single-mesh RGBA-vertex-alpha +
+   *  `splitMesh` machinery exists to handle. When present the scene renders each
+   *  part as its OWN mesh with its OWN material/opacity (per-part arm), so a
+   *  transparent open-hole no longer clouds an opaque stand. ABSENT on every
+   *  other bake (no LUT / all-opaque composite / instanced) → the single-mesh
+   *  `full` path is byte-identical (golden). `full` stays populated as the
+   *  fallback; the scene prefers `parts` when present. */
+  parts?: RenderPart[];
   /** True when finalize auto-skipped the cutaway CSG step (manifold too
    *  large, > 120k tris — a genuinely huge SINGLE connected body where the
    *  per-body decompose-and-cut win can't apply). cutVC will be an empty
@@ -334,12 +366,25 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   const _t2 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const timings = { full: _t1 - _t0, cut: skipCutaway ? 0 : _t2 - _t1 };
   if ((globalThis as any).__bakeTimings) { try { console.log(`[bake-finalize] mesh=${timings.full.toFixed(1)}ms · cutaway=${timings.cut.toFixed(1)}ms${skipCutaway ? ' (skipped)' : ''}`); } catch {} }
+  // #1 unify-transparency: emit per-source-part meshes for an appearance-bearing
+  // (transparent-subpart) composite so the scene gives each part its own material
+  // + opacity (retiring the mixed-alpha single-mesh clouding). GATED inside
+  // buildSourceParts (LUT active + some subpart opacity<1) → null on every other
+  // bake, keeping `full` byte-identical. Guarded: any failure just omits `parts`
+  // and falls back to the single-mesh `full` path. cutParts stays null (v1) — the
+  // cutaway keeps its merged grey/red `cutVC` section.
+  let sourceParts: RenderPart[] | undefined;
+  if (lut && lut.active) {
+    try { sourceParts = buildSourceParts(warped, lut, crease) ?? undefined; }
+    catch { sourceParts = undefined; }
+  }
   return {
     full,
     cutVC,
     manifold: warped,
     cutawaySkipped: skipCutaway,
     timings,
+    ...(sourceParts ? { parts: sourceParts } : {}),
   } as ComponentResult & { cutawaySkipped: boolean; timings: { full: number; cut: number } };
 }
 
@@ -975,4 +1020,102 @@ function colorBySourceGeo(
   geo.setAttribute('color', new THREE.BufferAttribute(outCol, comps));
   geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
   return geo;
+}
+
+/**
+ * Partition the combined welded manifold into ONE mesh PER SOURCE PART, keyed by
+ * the SAME `originalID`→hashId relation `colorBySourceGeo` colours by — the #1
+ * unify-transparency fix (docs/findings/manifold-vs-tf-audit.md §1 + fix #1). The
+ * Manifold path historically bakes ONE combined mesh whose transparency is a
+ * 4-component RGBA vertex-colour + a 2-group `splitMesh`; a transparent subpart
+ * (open-hole) then clouds the opaque subparts (the stand) because it's all one
+ * mesh with one whole-mesh material. Splitting into per-part meshes lets the scene
+ * give each part its OWN material + opacity (the per-part arm, exactly like TF).
+ *
+ * THE GATE (`wantParts`, mirrors TF's `appearance.some(Boolean)`): return null —
+ * so the caller stays on the byte-identical single-mesh `full` path — UNLESS the
+ * LUT is active AND at least one subpart is TRANSPARENT (opacity < 1). That is the
+ * precise condition that triggers the RGBA-vertex-alpha + splitMesh machinery this
+ * replaces; an all-opaque colour-by-source composite still renders correctly via
+ * the vertex-colour single mesh (no bug there), so it is deliberately NOT moved —
+ * the strongest no-regression guarantee (golden green).
+ *
+ * PARTITION: group triangles by their OWNER hashId. An outer-skin triangle owns
+ * its own source part; a subtractive tool's bore/cut wall and the SECTION reveal
+ * fold into the BODY part (they render with the body's appearance). Each group
+ * becomes a NON-INDEXED position + crease-aware-normal BufferGeometry (reusing
+ * `creaseAwareCornerNormals` so seams within a part read right — adjacency is over
+ * ONLY that group's triangles, so parts never smear into each other). No vertex
+ * colour: the per-part arm paints a UNIFORM `appearance.colorOuter` (matching TF's
+ * full-view per-part meshes). Appearance = { colorOuter, opacity } from the LUT.
+ *
+ * TOPOLOGY LIMIT: union/stack composites (the transparency case — an open-hole
+ * around a stand) partition cleanly because each part keeps a distinct originalID
+ * run through compose. This is NOT used on the cutaway (cutParts stays null → the
+ * merged `cutVC` single-mesh section is kept) nor the instanced path.
+ */
+function buildSourceParts(warped: any, lut: PartColorLUT, crease: number): RenderPart[] | null {
+  const opac: Record<number, number> = lut.opacity ?? {};
+  // GATE: only appearance-bearing (transparent) composites get per-part meshes.
+  const alphaOn = Object.keys(opac).some((k) => opac[Number(k)] < 1);
+  if (!alphaOn) return null;
+
+  let withNormals: any;
+  try { withNormals = warped.calculateNormals(0, crease); }
+  catch { withNormals = warped; }
+  const mesh = withNormals.getMesh();
+  const vp = mesh.vertProperties as Float32Array;
+  const tri = mesh.triVerts as Uint32Array;
+  const np = mesh.numProp;
+  const nv = (vp.length / np) | 0;
+  const nt = (tri.length / 3) | 0;
+  if (nt === 0) return null;
+  const ids = triSourceIds(mesh);
+  const subtractive = new Set(lut.subtractive);
+  const bodyId = lut.bodyId;
+
+  // Deduped positions (crease-aware normals weld by POSITION over the group's tris).
+  const pos = new Float32Array(nv * 3);
+  for (let i = 0; i < nv; i++) { pos[i * 3] = vp[i * np]; pos[i * 3 + 1] = vp[i * np + 1]; pos[i * 3 + 2] = vp[i * np + 2]; }
+
+  // Owner of a triangle: outer skin → its own part; bore/cut wall (subtractive)
+  // and SECTION reveal → the body part (they wear the body's appearance).
+  const ownerOf = (id: number): number => {
+    if (id === SECTION_ID) return bodyId ?? id;
+    if (subtractive.has(id)) return bodyId ?? id;
+    return id;
+  };
+  const groups = new Map<number, number[]>(); // ownerId → triangle indices
+  for (let t = 0; t < nt; t++) {
+    const owner = ownerOf(ids[t]);
+    (groups.get(owner) ?? groups.set(owner, []).get(owner)!).push(t);
+  }
+  if (groups.size < 1) return null;
+
+  const bodyColor = lut.bodyColor;
+  const bodyAlpha = (bodyId != null ? opac[bodyId] : undefined) ?? 1;
+  const parts: RenderPart[] = [];
+  for (const [owner, triList] of groups) {
+    // Group index buffer (into `pos`), then per-corner crease-aware normals +
+    // a matching non-indexed position buffer (same corner ordering as the helper).
+    const gTri = new Uint32Array(triList.length * 3);
+    for (let k = 0; k < triList.length; k++) {
+      const t = triList[k];
+      gTri[k * 3] = tri[t * 3]; gTri[k * 3 + 1] = tri[t * 3 + 1]; gTri[k * 3 + 2] = tri[t * 3 + 2];
+    }
+    const outNrm = creaseAwareCornerNormals(pos, gTri, crease); // nt_g * 9
+    const outPos = new Float32Array(gTri.length * 3);
+    for (let c = 0; c < gTri.length; c++) {
+      const vi = gTri[c];
+      outPos[c * 3] = pos[vi * 3]; outPos[c * 3 + 1] = pos[vi * 3 + 1]; outPos[c * 3 + 2] = pos[vi * 3 + 2];
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
+    const isBody = bodyId != null && owner === bodyId;
+    const colorOuter = isBody ? bodyColor : (lut.outer[owner] ?? bodyColor);
+    const opacity = opac[owner] ?? (isBody ? bodyAlpha : 1);
+    parts.push({ geo, appearance: { colorOuter, opacity } });
+  }
+  return parts;
 }
