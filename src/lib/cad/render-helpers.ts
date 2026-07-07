@@ -12,30 +12,12 @@ import * as THREE from 'three';
 import { getCutBox, tagManifold } from './manifold-helpers';
 import { SECTION_ID, triSourceIds } from './part-id';
 import { warpVertex, type WarpSpec } from './warp-geom';
+import type { PartColorLUT } from './part-lut-types';
+import type { PartAppearance, PartMesh } from '$lib/shared/part-appearance';
+export type { PartColorLUT } from './part-lut-types';
+export type { PartAppearance, PartMesh } from '$lib/shared/part-appearance';
+
 export { CIRCULAR_SEGMENTS_DEFAULT, CIRCULAR_SEGMENTS_COMPOSE, setCircularSegmentMode, initManifold } from './manifold-helpers';
-
-/** Per-part color table (built server-side by analyzeParts). When present
- *  + active, the renderers color each triangle by its source part via the
- *  Manifold relation instead of the material/heuristic path.
- *  outer = external skin per part; inner = the part's cut-surface color;
- *  subtractive ids draw their faces with `inner`; SECTION_ID → bodyInner. */
-export interface PartColorLUT {
-  outer: Record<number, string>;
-  inner: Record<number, string>;
-  /** hashId → render OPACITY (0–1). #61 stage C — present only for subparts
-   *  whose authored opacity is <1; absent → opaque. When ANY entry is <1 the
-   *  colour-by-source bake emits a 4-component (RGBA) vertex-colour attribute
-   *  (alpha = the owning subpart's opacity) so one composed mesh can render a
-   *  transparent subpart beside opaque ones. Empty/absent → RGB, byte-identical. */
-  opacity?: Record<number, number>;
-  subtractive: number[];
-  bodyId: number | null;
-  bodyInner: string;
-  bodyColor: string;
-  active: boolean;
-}
-
-/** hashId → [r,g,b] floats, from a hex map. */
 function rgbMap(hexById: Record<number, string>): Map<number, [number, number, number]> {
   const m = new Map<number, [number, number, number]>();
   for (const k of Object.keys(hexById)) m.set(Number(k), hexToRgb(hexById[Number(k)]));
@@ -48,20 +30,13 @@ export interface ComponentResult {
   full: THREE.BufferGeometry;
   cutVC: THREE.BufferGeometry;
   manifold: any;
-  /** True when finalize auto-skipped the cutaway CSG step (manifold too
-   *  large, > 120k tris — a genuinely huge SINGLE connected body where the
-   *  per-body decompose-and-cut win can't apply). cutVC will be an empty
-   *  BufferGeometry in that case. The bake panel can surface a "cutaway
-   *  disabled" hint. */
   cutawaySkipped?: boolean;
-  /** GPU-instancing payload — present ONLY when `opts.instanced` was set AND
-   *  finalize detected N≥2 identical-up-to-translation bodies (a Stack/Repeat
-   *  of the same child). When present, `full`/`cutVC` carry the CANONICAL CHILD
-   *  mesh ONCE (not the merged N copies), and `instances` is the list of N
-   *  rigid 4×4 transforms (column-major 16-float, THREE.Matrix4 order) placing
-   *  each copy. The renderer draws a single THREE.InstancedMesh. Absent on the
-   *  merged path → callers render `full`/`cutVC` as a single mesh, unchanged. */
   instances?: number[][];
+  /** Per-part meshes for composites (color-by-source LUT active). Scene prefers
+   *  these over the merged `full` mesh — same contract as the TF tab. */
+  parts?: PartMesh[];
+  /** Per-part cut meshes when cutaway ran. */
+  cutParts?: PartMesh[];
 }
 
 /** Appearance pair carried on a primitive's `meta.material`. Mirrors
@@ -334,12 +309,28 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
   const _t2 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const timings = { full: _t1 - _t0, cut: skipCutaway ? 0 : _t2 - _t1 };
   if ((globalThis as any).__bakeTimings) { try { console.log(`[bake-finalize] mesh=${timings.full.toFixed(1)}ms · cutaway=${timings.cut.toFixed(1)}ms${skipCutaway ? ' (skipped)' : ''}`); } catch {} }
+
+  // Per-part mesh path — composites with an active LUT emit geo.parts[] (and
+  // cutParts[] when cutaway ran) so PrimitiveDualScene uses the same arm as TF.
+  let sourceParts: PartMesh[] | undefined;
+  let sourceCutParts: PartMesh[] | undefined;
+  if (lut?.active) {
+    sourceParts = buildSourceParts(warped, lut, crease, maxOD, 'full');
+    if (!skipCutaway) {
+      let cutManifold: any;
+      try { cutManifold = warped.subtract(cutBox); } catch { cutManifold = null; }
+      if (cutManifold) sourceCutParts = buildSourceParts(cutManifold, lut, crease, maxOD, 'cut');
+    }
+  }
+
   return {
     full,
     cutVC,
     manifold: warped,
     cutawaySkipped: skipCutaway,
     timings,
+    ...(sourceParts && sourceParts.length ? { parts: sourceParts } : {}),
+    ...(sourceCutParts && sourceCutParts.length ? { cutParts: sourceCutParts } : {}),
   } as ComponentResult & { cutawaySkipped: boolean; timings: { full: number; cut: number } };
 }
 
@@ -975,4 +966,119 @@ function colorBySourceGeo(
   geo.setAttribute('color', new THREE.BufferAttribute(outCol, comps));
   geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
   return geo;
+}
+
+/** Partition a finalized Manifold into per-source-part meshes for the scene's
+ *  `geo.parts[]` / `cutParts[]` arms (TF parity). Full mode → position+normal
+ *  only (appearance on material); cut mode → vertex colours (section grey). */
+function buildSourceParts(
+  manifold: any,
+  lut: PartColorLUT,
+  crease: number,
+  maxOD: number,
+  mode: 'full' | 'cut',
+): PartMesh[] {
+  let withNormals: any;
+  try { withNormals = manifold.calculateNormals(0, crease); }
+  catch { withNormals = manifold; }
+  const mesh = withNormals.getMesh();
+  const vp = mesh.vertProperties as Float32Array;
+  const tri = mesh.triVerts as Uint32Array;
+  const np = mesh.numProp;
+  const nt = (tri.length / 3) | 0;
+  if (nt === 0) return [];
+  const triIds = triSourceIds(mesh);
+  const outerRgb = rgbMap(lut.outer);
+  const innerRgb = rgbMap(lut.inner);
+  const subtractive = new Set(lut.subtractive);
+  const bodyInnerRgb = hexToRgb(lut.bodyInner);
+  const bodyOuterRgb: [number, number, number] =
+    (lut.bodyId != null && outerRgb.get(lut.bodyId)) || hexToRgb(lut.bodyColor);
+
+  const buckets = new Map<number, number[]>();
+  const assignTri = (hashId: number, triIdx: number) => {
+    let b = buckets.get(hashId);
+    if (!b) { b = []; buckets.set(hashId, b); }
+    b.push(triIdx);
+  };
+  for (let i = 0; i < nt; i++) {
+    const id = triIds[i];
+    if (mode === 'full') {
+      if (id === SECTION_ID || lut.outer[id] == null) continue;
+      assignTri(id, i);
+    } else {
+      if (id === SECTION_ID) {
+        if (lut.bodyId != null) assignTri(lut.bodyId, i);
+      } else if (lut.outer[id] != null) {
+        assignTri(id, i);
+      }
+    }
+  }
+
+  const nv = vp.length / np;
+  let creaseNrm: Float32Array | null = null;
+  const hasNrm = np >= 6;
+  if (nv <= CREASE_AWARE_MAX_VERTS || !hasNrm || bakedNormalsDegenerate(vp, np, nv)) {
+    const p = new Float32Array(nv * 3);
+    for (let i = 0; i < nv; i++) {
+      p[i * 3] = vp[i * np]; p[i * 3 + 1] = vp[i * np + 1]; p[i * 3 + 2] = vp[i * np + 2];
+    }
+    creaseNrm = creaseAwareCornerNormals(p, tri, crease);
+  }
+
+  const partIds = Object.keys(lut.outer).map(Number);
+  const out: PartMesh[] = [];
+  for (const hashId of partIds) {
+    const tris = buckets.get(hashId);
+    if (!tris || tris.length === 0) continue;
+    const nTris = tris.length;
+    const outPos = new Float32Array(nTris * 9);
+    const outNrm = new Float32Array(nTris * 9);
+    const outCol = mode === 'cut' ? new Float32Array(nTris * 9) : null;
+    for (let j = 0; j < nTris; j++) {
+      const i = tris[j];
+      const id = triIds[i];
+      let rgb: [number, number, number];
+      if (id === SECTION_ID) rgb = bodyInnerRgb;
+      else if (subtractive.has(id)) rgb = innerRgb.get(id) ?? bodyInnerRgb;
+      else rgb = outerRgb.get(id) ?? bodyOuterRgb;
+      const idx = j * 9;
+      for (let v = 0; v < 3; v++) {
+        const vi = tri[i * 3 + v];
+        outPos[idx + v * 3]     = vp[vi * np];
+        outPos[idx + v * 3 + 1] = vp[vi * np + 1];
+        outPos[idx + v * 3 + 2] = vp[vi * np + 2];
+        if (creaseNrm) {
+          const src = i * 9 + v * 3;
+          outNrm[idx + v * 3]     = creaseNrm[src];
+          outNrm[idx + v * 3 + 1] = creaseNrm[src + 1];
+          outNrm[idx + v * 3 + 2] = creaseNrm[src + 2];
+        } else if (hasNrm) {
+          outNrm[idx + v * 3]     = vp[vi * np + 3];
+          outNrm[idx + v * 3 + 1] = vp[vi * np + 4];
+          outNrm[idx + v * 3 + 2] = vp[vi * np + 5];
+        }
+        if (outCol) {
+          outCol[idx + v * 3]     = rgb[0];
+          outCol[idx + v * 3 + 1] = rgb[1];
+          outCol[idx + v * 3 + 2] = rgb[2];
+        }
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(outPos, 3));
+    geo.setAttribute('normal', new THREE.BufferAttribute(outNrm, 3));
+    if (outCol) geo.setAttribute('color', new THREE.BufferAttribute(outCol, 3));
+    const appearance: PartAppearance = lut.appearance?.[hashId] ?? {
+      colorOuter: lut.outer[hashId],
+      colorInner: lut.inner[hashId],
+      ...(lut.opacity?.[hashId] != null ? { opacity: lut.opacity[hashId] } : {}),
+    };
+    out.push({
+      geo,
+      appearance,
+      id: lut.names?.[hashId],
+    });
+  }
+  return out;
 }

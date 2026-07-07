@@ -31,6 +31,8 @@ export interface BakeGeo {
   full: THREE.BufferGeometry;
   cutVC: THREE.BufferGeometry;
   instanced?: { instances: number[][]; count: number };
+  parts?: { geo: THREE.BufferGeometry; appearance?: import('$lib/shared/part-appearance').PartAppearance; id?: string }[];
+  cutParts?: { geo: THREE.BufferGeometry; appearance?: import('$lib/shared/part-appearance').PartAppearance; id?: string }[];
 }
 
 export type BakeResult = BakeGeo | typeof BAKE_CANCELLED;

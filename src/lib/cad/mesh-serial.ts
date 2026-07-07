@@ -13,12 +13,19 @@
  */
 
 import * as THREE from 'three';
+import type { PartAppearance } from '$lib/shared/part-appearance';
 
 export interface SerializedGeometry {
   positions: number[];
   normals?: number[];
   colors?: number[];
   index?: number[];
+}
+
+export interface SerializedPartMesh {
+  geo: SerializedGeometry;
+  appearance?: PartAppearance;
+  id?: string;
 }
 
 export interface SerializedComponentResult {
@@ -34,6 +41,10 @@ export interface SerializedComponentResult {
     instances: number[][];
     count: number;
   };
+  /** Per-part meshes (Manifold composites + TF parity). Optional — old cache
+   *  entries omit these and the scene falls back to merged `full`. */
+  parts?: SerializedPartMesh[];
+  cutParts?: SerializedPartMesh[];
 }
 
 function serializeGeometry(geo: THREE.BufferGeometry): SerializedGeometry {
@@ -84,12 +95,32 @@ function deserializeGeometry(s: SerializedGeometry): THREE.BufferGeometry {
   return geo;
 }
 
+function serializePartMeshes(parts?: { geo: THREE.BufferGeometry; appearance?: PartAppearance; id?: string }[]): SerializedPartMesh[] | undefined {
+  if (!parts || parts.length === 0) return undefined;
+  return parts.map((p) => ({
+    geo: serializeGeometry(p.geo),
+    ...(p.appearance ? { appearance: p.appearance } : {}),
+    ...(p.id ? { id: p.id } : {}),
+  }));
+}
+
+function deserializePartMeshes(parts?: SerializedPartMesh[]): { geo: THREE.BufferGeometry; appearance?: PartAppearance; id?: string }[] | undefined {
+  if (!parts || parts.length === 0) return undefined;
+  return parts.map((p) => ({
+    geo: deserializeGeometry(p.geo),
+    ...(p.appearance ? { appearance: p.appearance } : {}),
+    ...(p.id ? { id: p.id } : {}),
+  }));
+}
+
 export function serializeComponentResult(r: {
   full: THREE.BufferGeometry;
   cutVC: THREE.BufferGeometry;
   /** When present (instancing applied), full/cutVC are the canonical child
    *  and these are the N per-copy 16-float column-major transforms. */
   instances?: number[][];
+  parts?: { geo: THREE.BufferGeometry; appearance?: PartAppearance; id?: string }[];
+  cutParts?: { geo: THREE.BufferGeometry; appearance?: PartAppearance; id?: string }[];
 }): SerializedComponentResult {
   const out: SerializedComponentResult = {
     full: serializeGeometry(r.full),
@@ -98,6 +129,10 @@ export function serializeComponentResult(r: {
   if (r.instances && r.instances.length > 0) {
     out.instanced = { instances: r.instances, count: r.instances.length };
   }
+  const parts = serializePartMeshes(r.parts);
+  const cutParts = serializePartMeshes(r.cutParts);
+  if (parts) out.parts = parts;
+  if (cutParts) out.cutParts = cutParts;
   return out;
 }
 
@@ -105,11 +140,15 @@ export function deserializeComponentResult(s: SerializedComponentResult): {
   full: THREE.BufferGeometry;
   cutVC: THREE.BufferGeometry;
   instanced?: { instances: number[][]; count: number };
+  parts?: { geo: THREE.BufferGeometry; appearance?: PartAppearance; id?: string }[];
+  cutParts?: { geo: THREE.BufferGeometry; appearance?: PartAppearance; id?: string }[];
 } {
   const out: {
     full: THREE.BufferGeometry;
     cutVC: THREE.BufferGeometry;
     instanced?: { instances: number[][]; count: number };
+    parts?: { geo: THREE.BufferGeometry; appearance?: PartAppearance; id?: string }[];
+    cutParts?: { geo: THREE.BufferGeometry; appearance?: PartAppearance; id?: string }[];
   } = {
     full: deserializeGeometry(s.full),
     cutVC: deserializeGeometry(s.cutVC),
@@ -117,5 +156,9 @@ export function deserializeComponentResult(s: SerializedComponentResult): {
   if (s.instanced && Array.isArray(s.instanced.instances) && s.instanced.instances.length > 0) {
     out.instanced = { instances: s.instanced.instances, count: s.instanced.count };
   }
+  const parts = deserializePartMeshes(s.parts);
+  const cutParts = deserializePartMeshes(s.cutParts);
+  if (parts) out.parts = parts;
+  if (cutParts) out.cutParts = cutParts;
   return out;
 }

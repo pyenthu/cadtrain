@@ -419,7 +419,7 @@
         <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
           args={displayBake.args ?? paramDefaults}
           source={displayBake.source}
-          colorOuter={graph.colorOuter} colorInner={graph.colorInner} opacity={graph.opacity} texture={graph.texture}
+          colorOuter={graph.colorOuter} colorInner={graph.colorInner} opacity={graph.opacity} texture={graph.texture} material={graph.material}
           viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
           bakeGlb={false}
           overlays={splineOverlays}

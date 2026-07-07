@@ -356,6 +356,8 @@ export const POST = async ({ request, fetch }) => {
       full: serialized.full,
       cutVC: serialized.cutVC,
       cutawaySkipped,
+      ...(serialized.parts ? { parts: serialized.parts } : {}),
+      ...(serialized.cutParts ? { cutParts: serialized.cutParts } : {}),
       _t: T,
     }, cacheableParams, cacheOpts).catch((e) => {
       console.warn('[bake-cache] write failed:', e?.message ?? e);
@@ -370,6 +372,8 @@ export const POST = async ({ request, fetch }) => {
     // full/cutVC are then the canonical child + this carries the N transforms.
     // Omitted entirely otherwise → response shape is the normal merged mesh.
     ...(serialized.instanced ? { instanced: serialized.instanced } : {}),
+    ...(serialized.parts ? { parts: serialized.parts } : {}),
+    ...(serialized.cutParts ? { cutParts: serialized.cutParts } : {}),
     cutawaySkipped,
     cached: false,
     cacheHash,

@@ -246,6 +246,8 @@ export interface TransferableComponentResult {
   full: SerializedGeometry;
   cutVC: SerializedGeometry;
   instanced?: { instances: number[][]; count: number };
+  parts?: import('./mesh-serial').SerializedPartMesh[];
+  cutParts?: import('./mesh-serial').SerializedPartMesh[];
 }
 
 /** Pack a SerializedComponentResult (plain number[] arrays) onto typed-array
@@ -270,6 +272,8 @@ export function packTransferable(
     cutVC: packGeo(s.cutVC),
   };
   if (s.instanced) payload.instanced = s.instanced;
+  if (s.parts?.length) payload.parts = s.parts.map((p) => ({ geo: packGeo(p.geo), ...(p.appearance ? { appearance: p.appearance } : {}), ...(p.id ? { id: p.id } : {}) }));
+  if (s.cutParts?.length) payload.cutParts = s.cutParts.map((p) => ({ geo: packGeo(p.geo), ...(p.appearance ? { appearance: p.appearance } : {}), ...(p.id ? { id: p.id } : {}) }));
   if ((s as any).timings) (payload as any).timings = (s as any).timings;
   return { payload, transfer };
 }
