@@ -63,6 +63,15 @@ export type ResolveComposite = (id: string) => { graph: Graph; params?: Record<s
 export type Vec3 = [number, number, number];
 export type ProfilePt = [number, number];
 
+/** A NURBS/Taubin smoothing request carried on a swept instr (#51). Plain data so
+ *  the recipe stays serializable + pure; the executor (`tf_examples/sweep-section`)
+ *  interprets it. Falsy/absent ⇒ smoothing OFF (the default). */
+export type TfSmooth =
+  | boolean
+  | 'taubin'
+  | 'laplacian'
+  | { kind?: 'taubin' | 'laplacian'; iterations?: number; lambda?: number; mu?: number };
+
 /** A single node lowered to its TrueForm equivalent. A tree: booleans / transforms
  *  / containers hold child `TfInstr`s, mirroring the graph's expression nesting. */
 export type TfInstr =
@@ -75,6 +84,11 @@ export type TfInstr =
   | { op: 'box'; w: number; h: number; d: number }
   | { op: 'cylinder'; radius: number; height: number; segments: number }
   | { op: 'sweep'; path: Vec3[]; radius: number; radialSegments: number; capped?: boolean }
+  // ARBITRARY-SECTION SWEEP (#50 — r_sweep with a NON-circular section →
+  // tfSweepSection). The real 2D `section` loop is transported along the path's
+  // RMF frames + welded (matches Manifold's sweepAlongPath) instead of tubeMesh's
+  // fixed circular section. `smooth` (#51) is an OPTIONAL NURBS/Taubin relax pass.
+  | { op: 'sweep_section'; path: Vec3[]; section: ProfilePt[]; closedPath?: boolean; closedSection?: boolean; capped?: boolean; smooth?: TfSmooth; note?: string }
   | { op: 'booleanDifference'; obj: TfInstr; arg: TfInstr }
   | { op: 'booleanUnion'; obj: TfInstr; arg: TfInstr }
   | { op: 'booleanIntersection'; obj: TfInstr; arg: TfInstr }
@@ -166,6 +180,17 @@ function evalBool(v: ArgValue | undefined, fallback: boolean): boolean {
   if (val === 'true' || val === 1) return true;
   if (val === 'false' || val === 0) return false;
   return fallback;
+}
+
+/** Read a `smooth` ArgValue → a {@link TfSmooth} for a swept instr (#51). A literal
+ *  `'taubin'`/`'laplacian'` selects the kernel; literal `true`/`1` picks the default
+ *  (taubin); anything else (absent / false) ⇒ undefined = smoothing OFF. */
+function tfSmoothFromArg(v: ArgValue | undefined): TfSmooth | undefined {
+  if (!v || v.kind !== 'literal') return undefined;
+  const val: any = (v as any).value;
+  if (val === 'taubin' || val === 'laplacian') return val;
+  if (val === true || val === 'true' || val === 1) return true;
+  return undefined;
 }
 
 // ─── profile resolution (polygon / sketch → [r,z] points) ───────────────────
@@ -396,6 +421,25 @@ function sectionRadiusOf(
   return null;
 }
 
+/** Resolve a sweep SECTION spline → its ARBITRARY 2D loop `[[x,y]…]` (for the
+ *  non-circular case `sectionRadiusOf` rejects — a rounded-rect, hex, airfoil…).
+ *  Uses the spline's LITERAL control points (their x,y), which is what an r_sweep
+ *  section polygon carries. Returns null when there are < 3 finite points (nothing
+ *  to sweep). A wired circle-expr section is handled by `sectionRadiusOf` (circular
+ *  fast path); this is only the literal non-circular fallback. */
+function sectionLoopOf(spline: SplineNode | null): ProfilePt[] | null {
+  if (!spline) return null;
+  const pts = spline.points;
+  if (!Array.isArray(pts) || pts.length < 3) return null;
+  const loop: ProfilePt[] = [];
+  for (const p of pts) {
+    const x = Number(p?.[0]);
+    const y = Number(p?.[1]);
+    if (Number.isFinite(x) && Number.isFinite(y)) loop.push([x, y]);
+  }
+  return loop.length >= 3 ? loop : null;
+}
+
 // ─── engine vs composite classification ──────────────────────────────────────
 
 /** Engine `src` ids that have NO TrueForm generator (loft / the STALE plain
@@ -587,25 +631,41 @@ function lowerNode(
         // the caller falls back to the Manifold mesh-import path.
         const pathNode = resolveSplineNode(args.path, graph);
         const secSpline = resolveSplineNode(args.section, graph);
-        const radius = sectionRadiusOf(secSpline, graph, scope, notes);
-        if (!pathNode || radius == null) {
-          const why = !pathNode
-            ? 'path arg is not a resolvable spline node'
-            : 'section is not a resolvable circular profile';
-          notes.push(`call ${node.id} (r_sweep): ${why} — UNSUPPORTED (mesh-import fallback)`);
-          return {
-            op: 'UNSUPPORTED',
-            nodeType: 'call:r_sweep',
-            detail: !pathNode ? 'path not resolvable' : 'non-circular/unresolved section',
-          };
+        if (!pathNode) {
+          notes.push(`call ${node.id} (r_sweep): path arg is not a resolvable spline node — UNSUPPORTED (mesh-import fallback)`);
+          return { op: 'UNSUPPORTED', nodeType: 'call:r_sweep', detail: 'path not resolvable' };
         }
         const closedPath = evalBool(args.closedPath, pathNode.closed ?? false);
         const capped = evalBool(args.caps, !closedPath);
         const samples = Math.max(2, evalInt(pathNode.samples, scope, 32));
         const ctrl = (pathNode.points ?? []).map((p) => [p[0], p[1], p[2]] as Vec3);
         const path = resampleCatmullRom(ctrl, samples, closedPath);
-        const radialSegments = Math.max(3, evalInt(secSpline?.samples, scope, 32));
-        return { op: 'sweep', path, radius, radialSegments, capped };
+        // An OPTIONAL NURBS/Taubin relax pass (#51) — set via a `smooth` arg
+        // (literal `true` / 'taubin' / 'laplacian'); absent ⇒ off.
+        const smooth = tfSmoothFromArg(args.smooth);
+        // (1) CIRCULAR section → the tubeMesh fast path (byte-identical, unchanged).
+        const radius = sectionRadiusOf(secSpline, graph, scope, notes);
+        if (radius != null) {
+          const radialSegments = Math.max(3, evalInt(secSpline?.samples, scope, 32));
+          return { op: 'sweep', path, radius, radialSegments, capped };
+        }
+        // (2) NON-circular literal section → transport the real 2D loop along the
+        //     path's RMF frames (tfSweepSection), matching Manifold's sweepAlongPath
+        //     — previously this whole case was UNSUPPORTED (mesh-import fallback).
+        const section = sectionLoopOf(secSpline);
+        if (section) {
+          return {
+            op: 'sweep_section',
+            path,
+            section,
+            closedPath,
+            closedSection: true,
+            capped,
+            ...(smooth ? { smooth } : {}),
+          };
+        }
+        notes.push(`call ${node.id} (r_sweep): section is neither a resolvable circular profile nor a literal ≥3-pt loop — UNSUPPORTED (mesh-import fallback)`);
+        return { op: 'UNSUPPORTED', nodeType: 'call:r_sweep', detail: 'non-circular/unresolved section' };
       }
       if (/cyl/i.test(src)) {
         // A cylinder-like engine → cylinderMesh(radius, height, segments). Best-effort
@@ -890,6 +950,8 @@ function fmtInstr(inst: TfInstr, indent: number): string {
       return `${pad}cylinderMesh(radius=${fmtNum(inst.radius)}, height=${fmtNum(inst.height)}, segments=${inst.segments})`;
     case 'sweep':
       return `${pad}tubeMesh(radius=${fmtNum(inst.radius)}, radialSegments=${inst.radialSegments}, capped=${inst.capped !== false}) along a ${inst.path.length}-pt swept path`;
+    case 'sweep_section':
+      return `${pad}tfSweepSection(section=${inst.section.length}-pt loop, capped=${inst.capped !== false}, closedPath=${inst.closedPath === true}${inst.smooth ? `, smooth=${typeof inst.smooth === 'string' ? inst.smooth : 'taubin'}` : ''}) along a ${inst.path.length}-pt RMF-framed path`;
     case 'booleanDifference':
     case 'booleanUnion':
     case 'booleanIntersection':

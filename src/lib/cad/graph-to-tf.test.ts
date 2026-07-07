@@ -208,6 +208,50 @@ describe('graphToTf', () => {
     expect(inst.path[31][2]).toBeCloseTo(7.531, 3);
   });
 
+  it('r_sweep of a NON-circular literal section → a sweep_section instr (not UNSUPPORTED), #50', () => {
+    // A section spline with LITERAL, non-circular points (a rounded rectangle-ish
+    // loop) that sectionRadiusOf rejects — now lowers to the arbitrary-section
+    // sweep (tfSweepSection) instead of the old UNSUPPORTED mesh-import fallback.
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_sweep'] },
+        n_sec: {
+          id: 'n_sec', type: 'spline',
+          // A rectangle WITH edge midpoints — the midpoints sit at r=0.5 vs the
+          // corners at r≈1.118, so sectionRadiusOf reads it as NON-circular.
+          points: [[-1, -0.5, 0], [0, -0.5, 0], [1, -0.5, 0], [1, 0.5, 0], [0, 0.5, 0], [-1, 0.5, 0]],
+          samples: { kind: 'literal', value: 6 }, closed: true,
+        },
+        n_path: {
+          id: 'n_path', type: 'spline',
+          points: [[0, 0, 0], [0, 0, 2], [0.5, 0, 4], [0.5, 0, 6]],
+          samples: { kind: 'literal', value: 8 }, closed: false,
+        },
+        n_sweep: {
+          id: 'n_sweep', type: 'call', src: 'r_sweep', alias: 'body',
+          args: {
+            path: { kind: 'expr', expr: '_x_n_path_path' },
+            section: { kind: 'expr', expr: '_x_n_sec_path' },
+            caps: { kind: 'literal', value: true },
+            smooth: { kind: 'literal', value: 'taubin' }, // exercises the #51 hook plumbing
+          },
+        },
+      },
+      'n_root',
+      {},
+    );
+
+    const recipe = graphToTf(g);
+    expect(recipe.instrs).toHaveLength(1);
+    const inst = recipe.instrs[0] as Extract<TfInstr, { op: 'sweep_section' }>;
+    expect(inst.op).toBe('sweep_section');
+    expect(inst.section).toEqual([[-1, -0.5], [0, -0.5], [1, -0.5], [1, 0.5], [0, 0.5], [-1, 0.5]]); // 2D loop (x,y)
+    expect(inst.path).toHaveLength(8);      // resampled to `samples`
+    expect(inst.capped).toBe(true);
+    expect(inst.closedSection).toBe(true);
+    expect(inst.smooth).toBe('taubin');     // smoothing request threaded through
+  });
+
   it('recurses into a COMPOSITE Call, mapping args → the sub-part scope + splicing its instrs', () => {
     // Sub-part B: a box whose width IS its `rad` param (default 9).
     const subB: Graph = mkGraph(

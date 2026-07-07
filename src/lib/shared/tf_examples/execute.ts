@@ -25,6 +25,7 @@
  */
 import { tfRevolveProfile } from './revolve';
 import { tfExtrudeProfile } from './extrude';
+import { tfSweepSection } from './sweep-section';
 import { tfResult, tfMeshData, buildOpenCurve, capOpenEnds, runTfGuarded, weldMeshByPosition, applyTfCutaway, type TfDemoResult } from '../trueform-client';
 import type { TfRecipe, TfInstr, Vec3 } from '$lib/cad/graph-to-tf';
 import { warpMeshJS, subdivideAxialAdaptive, densifyProfileAxial } from '$lib/cad/warp-spline';
@@ -288,6 +289,17 @@ function buildInstr(t: any, instr: TfInstr): any {
       // Rom curve, then capped into a closed solid (the tf_examples/s_tube_demo
       // pattern). `capped === false` (e.g. a closed-loop path) leaves it open.
       return buildSweep(t, instr);
+    case 'sweep_section':
+      // An ARBITRARY 2D section transported along the path's RMF frames + welded
+      // (tf_examples/sweep-section) — the native analogue of Manifold's
+      // sweepAlongPath, for a NON-circular r_sweep section. Optional #51 smoothing
+      // pass is applied inside tfSweepSection (guarded, default off).
+      return tfSweepSection(t, instr.section, instr.path, {
+        closedPath: instr.closedPath,
+        closedSection: instr.closedSection,
+        caps: instr.capped,
+        smooth: instr.smooth,
+      });
     case 'booleanDifference':
       // Extend a swept SUBTRAHEND's path so its bore punches through the outer
       // caps (no coincident tilted caps → clean χ=0, not defect-2).
@@ -519,6 +531,9 @@ function instrHasUnsupported(instr: TfInstr): boolean {
     case 'sweep':
       // A sweep needs at least a start + end point to define a curve.
       return (instr.path?.length ?? 0) < 2;
+    case 'sweep_section':
+      // An arbitrary-section sweep needs a ≥2-pt path AND a ≥3-pt closed section.
+      return (instr.path?.length ?? 0) < 2 || (instr.section?.length ?? 0) < 3;
     case 'booleanDifference':
     case 'booleanUnion':
     case 'booleanIntersection':
