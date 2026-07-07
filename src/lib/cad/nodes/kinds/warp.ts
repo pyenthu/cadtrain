@@ -52,10 +52,12 @@ export const WarpKind: NodeKind<WarpNode> = {
   },
   inputRefs: (n) => warpChildren(n),
   size: (n, ctx) => {
-    const k = warpChildren(n).length;
-    // Single (or unwired) keeps the historical 112px card; each EXTRA solid adds a
-    // 22px socket row so the multi-input drop slots have room.
-    return { w: ctx.width, h: k <= 1 ? 112 : 112 + (k - 1) * 22 };
+    // Rows of solid sockets = wired solids + 1 "＋ solid" append slot (mirror
+    // geom.warpSolidRows / warpPathCY: path sits at 40 + rows*22, then the path
+    // label row + the opts row). Duplicated (not imported) — cad can't depend on
+    // the shared graph-editor layer.
+    const rows = Math.max(1, warpChildren(n).length) + 1;
+    return { w: ctx.width, h: 40 + rows * 22 + 48 };
   },
   sockets: (n) => {
     const kids = warpChildren(n);

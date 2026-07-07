@@ -10,7 +10,7 @@
   import {
     bezier, paramSocketPos, nodeSize, exprOutputSockY, exprInputSockY,
     polySockR, polySockZ, polySockRef, sketchSockR, sketchSockZ, sketchSockVal,
-    rootOutputSockY, extractParamRefs, WARP_PATH_CY,
+    rootOutputSockY, extractParamRefs, WARP_PATH_CY, warpPathCY,
   } from './geom';
   import { exprBlockMember } from '$lib/cad/graph-exprs';
 
@@ -463,15 +463,18 @@
                    left child socket, same as mv/rot) + the `path` wire (a wired
                    spline / expr output → the lower-left path socket at
                    WARP_PATH_CY). -->
-              {#if (n as any).child && graph.nodes[(n as any).child]}
-                {@const src = outSock((n as any).child)}
-                {@const tgt = inSock(n.id, 'child')}
-                <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
-              {/if}
+              {@const warpKids = (Array.isArray((n as any).children) && (n as any).children.length) ? (n as any).children : ((n as any).child ? [(n as any).child] : [])}
+              {#each warpKids as kid, ki (ki)}
+                {#if kid && graph.nodes[kid]}
+                  {@const src = outSock(kid)}
+                  {@const tgt = inSock(n.id, warpKids.length > 1 ? `children[${ki}]` : 'child')}
+                  <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                {/if}
+              {/each}
               {@const wpath = (n as any).path}
               {#if wpath?.kind === 'expr'}
                 {@const wpos = nodePos(n.id)}
-                {@const ptgtY = wpos.y + WARP_PATH_CY}
+                {@const ptgtY = wpos.y + warpPathCY(n)}
                 <!-- SPLINE path source → warp path socket. -->
                 {#each allNodes as sn (sn.id)}
                   {#if sn.type === 'spline' && String(wpath.expr ?? '').includes(exprBlockMember(sn.id, 'path'))}

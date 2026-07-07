@@ -1458,6 +1458,40 @@ export function setWarpChild(graph: Graph, warpId: NodeId, childId: NodeId): Gra
   return setTransformChild(graph, warpId, childId);
 }
 
+/** Current solids wired into a warp — `children[]` if present, else legacy `child`. */
+function warpKids(n: WarpNode): NodeId[] {
+  if (Array.isArray(n.children) && n.children.length) return n.children.filter(Boolean) as NodeId[];
+  return n.child ? [n.child] : [];
+}
+
+/** Wire a solid into the warp's i-th input, GROWING `children[]` (#36b multi-input).
+ *  `index >= length` ⇒ APPEND (the "＋ solid" drop slot). Keeps `child` in sync as
+ *  children[0] so any legacy single-`child` reader still sees a solid; the kind
+ *  descriptor prefers `children`. A single wired solid still emits the byte-identical
+ *  `warpSpline(child, path)` (only ≥2 becomes the list-producer array). */
+export function setWarpChildAt(graph: Graph, warpId: NodeId, index: number, childId: NodeId): Graph {
+  return updateWarp(graph, warpId, (n) => {
+    const kids = warpKids(n);
+    if (index >= kids.length) kids.push(childId); else kids[index] = childId;
+    return { ...n, children: kids, child: kids[0] ?? null };
+  });
+}
+
+/** Remove the warp's i-th input solid. Collapses back to a single `child` (dropping
+ *  the `children` array) when ≤1 remains, so the single-warp emit stays byte-identical. */
+export function removeWarpChild(graph: Graph, warpId: NodeId, index: number): Graph {
+  return updateWarp(graph, warpId, (n) => {
+    const kids = warpKids(n);
+    kids.splice(index, 1);
+    if (kids.length <= 1) {
+      const out = { ...n, child: kids[0] ?? null } as any;
+      delete out.children;
+      return out;
+    }
+    return { ...n, children: kids, child: kids[0] };
+  });
+}
+
 /** Set the warp's `path` arg — an expr referencing a wired SplineNode's output
  *  (`_x_<id>_path`), a param, or a literal points-array expr. */
 export function setWarpPath(graph: Graph, warpId: NodeId, path: ArgValue): Graph {

@@ -41,6 +41,7 @@ import {
   setExprInputBinding,
   setSplinePointsExpr,
   setWarpPath,
+  setWarpChildAt,
   bindMaterial,
   type Graph,
   type NodeId,
@@ -311,6 +312,20 @@ export class WireState {
       this.#setGraph(setWarpPath(this.#getGraph(), warpId, asParam(from.paramName)));
     } else if (from.kind === 'out' && from.outName != null && from.nodeId !== warpId) {
       this.#setGraph(setWarpPath(this.#getGraph(), warpId, asExpr(exprBlockMember(from.nodeId, from.outName))));
+    }
+    this.from = null; this.mouse = null;
+  };
+
+  /** Drop a solid onto a warp's i-th SOLID input socket (#36b multi-input). Any
+   *  node OUTPUT can be bent; `index === current count` = the "＋ solid" append
+   *  slot (grows children[]), else it rebinds that slot. ≥2 solids ⇒ each is warped
+   *  SEPARATELY along the shared path (no compose → no fusion). */
+  endWireOnWarpSolid = (ev: PointerEvent, warpId: NodeId, index: number) => {
+    ev.stopPropagation();
+    const from = this.from;
+    if (!from) return;
+    if (from.kind === 'out' && from.nodeId !== warpId) {
+      this.#setGraph(setWarpChildAt(this.#getGraph(), warpId, index, from.nodeId));
     }
     this.from = null; this.mouse = null;
   };

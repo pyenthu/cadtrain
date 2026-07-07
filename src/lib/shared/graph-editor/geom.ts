@@ -249,8 +249,21 @@ export function cardMinWidth(node: any): number {
 // the bent solid out the RIGHT, and a compact opts row. The two left-socket Y's
 // are shared by the NodeCard render AND the WireLayer wire endpoints so they
 // can't drift.
-export const WARP_CHILD_CY = 40;   // `solid` (child) input socket cy
-export const WARP_PATH_CY = 64;    // `path` input socket cy
+export const WARP_CHILD_CY = 40;   // `solid` (child) input socket cy (index 0)
+export const WARP_PATH_CY = 64;    // LEGACY single-solid `path` cy (kept for old refs)
+export const WARP_SOLID_DY = 22;   // vertical pitch between stacked solid sockets
+
+/** #36b multi-input: number of `solid` input rows a warp shows = wired solids +
+ *  1 trailing "＋ solid" append slot (min 2 rows: one child + the append slot). */
+export function warpSolidRows(node: any): number {
+  const kids = node?.children?.length ? node.children : (node?.child ? [node.child] : []);
+  return Math.max(1, kids.length) + 1;
+}
+/** cy of the i-th `solid` input socket (index 0 == WARP_CHILD_CY). */
+export function warpSolidCY(i: number): number { return WARP_CHILD_CY + i * WARP_SOLID_DY; }
+/** cy of the `path` input socket — sits BELOW all solid rows (dynamic with count).
+ *  Shared by the NodeCard render AND the WireLayer path endpoint so they can't drift. */
+export function warpPathCY(node: any): number { return WARP_CHILD_CY + warpSolidRows(node) * WARP_SOLID_DY; }
 
 /** Auto-fit width from the card's content (title + longest arg key + value
  *  footprint). The DEFAULT width when no user override is set. */
@@ -444,10 +457,15 @@ export function inputSocketAt(graph: Graph, id: NodeId, slot: 'obj' | 'arg' | 'c
   if (slot === 'child' && node.type === 'txfmn') {
     return { x: p.x, y: p.y + 16 };
   }
-  // warp: the `solid` (child) input sits on the LEFT edge at WARP_CHILD_CY (the
-  // `path` input is a separate socket WireLayer positions directly).
-  if (slot === 'child' && node.type === 'warp') {
-    return { x: p.x, y: p.y + WARP_CHILD_CY };
+  // warp: `solid` inputs on the LEFT edge — the legacy single `child` at
+  // WARP_CHILD_CY, or the i-th multi-input slot `children[i]` stacked below it
+  // (#36b). The `path` input is a separate socket WireLayer positions directly.
+  if (node.type === 'warp') {
+    if (slot === 'child') return { x: p.x, y: p.y + WARP_CHILD_CY };
+    if (slot.startsWith('children[')) {
+      const i = Number(slot.slice(9, -1)) || 0;
+      return { x: p.x, y: p.y + warpSolidCY(i) };
+    }
   }
   /* child (legacy left-edge for method/repeat) */
   return { x: p.x, y: p.y + 50 };

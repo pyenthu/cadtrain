@@ -47,6 +47,7 @@
     setWarpRefine,
     setWarpStretch,
     setWarpValidate,
+    removeWarpChild,
     setPartsMapSrc,
     setPartsMapList,
     setPartsMapArg,
@@ -66,7 +67,7 @@
     exprInputSockY, exprOutputSockY,
     containerSlotY, rootOutputSockY,
     OUTPUT_ARROW_W,
-    WARP_CHILD_CY, WARP_PATH_CY,
+    WARP_CHILD_CY, WARP_PATH_CY, warpSolidCY, warpPathCY,
   } from './geom';
   import { isCallDrifted, refreshCallArgs } from './graph-editor-bake.svelte';
   import { portType, listOf, structColor } from '$lib/cad/port-types';
@@ -1675,18 +1676,20 @@
 
               {:else if n.type === 'warp'}
                 {@const w = n as any}
-                {@const childWired = typeof w.child === 'string' && !!w.child && !!graph.nodes[w.child]}
+                {@const warpKids = (Array.isArray(w.children) && w.children.length) ? w.children : (w.child ? [w.child] : [])}
+                {@const pathCY = warpPathCY(w)}
                 {@const pathWired = (w.path?.kind === 'expr' && String(w.path.expr) !== '[]' && String(w.path.expr).trim() !== '')
                   || w.path?.kind === 'param'}
                 {@const refineVal = w.refine?.kind === 'literal' ? Number(w.refine.value) : (w.refine ? NaN : 0)}
-                <!-- Warp / bend MODIFIER (#36) — bends the wired `solid` (child)
-                     along the wired spline `path`, emitting warpSpline(child,path,
-                     opts). solid + path wire in on the LEFT, bent result out the
-                     RIGHT; refine / stretch / validate opts in the body row. -->
+                <!-- Warp / bend MODIFIER (#36 / #36b multi-input) — bends EACH wired
+                     `solid` along the wired spline `path`. 1 solid → warpSpline(child,
+                     path); ≥2 → each warped SEPARATELY (a part inside a transparent
+                     open-hole stays independent). Solids stack on the LEFT (+ a ＋ append
+                     slot), path below them, bent result out the RIGHT. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg warp"
                   width={size.w} height={size.h} rx="6"
-                  data-tip="Warp: bend a built solid along a spline. Wire the SOLID into the top-left socket + a SPLINE'S path into the lower-left socket. refine = build-time subdivision (smoother bend); stretch = span the whole spline; validate = warn on an inverted/self-intersecting bend."
+                  data-tip="Warp: bend built solids along a spline. Wire one or MORE solids into the left sockets (＋ adds another) + a SPLINE'S path into the lower-left socket. Each solid is warped separately (no fusion). refine = smoother bend; stretch = span the whole spline; validate = warn on an inverted bend."
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
@@ -1698,22 +1701,39 @@
                   class:armed={del.isArmed(n.id)}
                   data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
                   onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
-                <!-- SOLID (child) input — LEFT, WARP_CHILD_CY -->
-                <text x="14" y={WARP_CHILD_CY + 4} class="ge-warp-lbl" class:wired={childWired}>solid</text>
+                <!-- SOLID inputs — one per wired solid, stacked from WARP_CHILD_CY -->
+                {#each warpKids as kid, ki (ki)}
+                  {@const kw = typeof kid === 'string' && !!kid && !!graph.nodes[kid]}
+                  <text x="14" y={warpSolidCY(ki) + 4} class="ge-warp-lbl" class:wired={kw}>solid{warpKids.length > 1 ? ` ${ki + 1}` : ''}</text>
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <circle role="button" tabindex="-1" class="ge-sock in child" class:wired={kw}
+                    cx="0" cy={warpSolidCY(ki)} r="6"
+                    data-tip="solid: wire a built part to bend (any node's output); drop another to repoint"
+                    onpointerup={(ev) => wire.endWireOnWarpSolid(ev, n.id, ki)}/>
+                  {#if warpKids.length > 1}
+                    <!-- remove this solid (collapses back to single when 1 remains) -->
+                    <!-- svelte-ignore a11y_no_static_element_interactions -->
+                    <text role="button" tabindex="-1" x={size.w - 30} y={warpSolidCY(ki) + 4} class="ge-warp-rm"
+                      data-tip="Remove this solid from the warp"
+                      onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeWarpChild(graph, n.id, ki)); }}>×</text>
+                  {/if}
+                {/each}
+                <!-- ＋ append slot — wire another solid into the warp -->
+                <text x="14" y={warpSolidCY(warpKids.length) + 4} class="ge-warp-lbl add">＋ solid</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in child" class:wired={childWired}
-                  cx="0" cy={WARP_CHILD_CY} r="6"
-                  data-tip="solid: wire the built part to bend (any node's output)"
-                  onpointerup={(ev) => wire.endWireOnInput(ev, n.id, 'child')}/>
-                <!-- PATH input — LEFT, WARP_PATH_CY -->
-                <text x="14" y={WARP_PATH_CY + 4} class="ge-warp-lbl" class:wired={pathWired}>path</text>
+                <circle role="button" tabindex="-1" class="ge-sock in child add"
+                  cx="0" cy={warpSolidCY(warpKids.length)} r="6"
+                  data-tip="Wire another solid to bend along the SAME spline (each warped separately)"
+                  onpointerup={(ev) => wire.endWireOnWarpSolid(ev, n.id, warpKids.length)}/>
+                <!-- PATH input — LEFT, below all solids -->
+                <text x="14" y={pathCY + 4} class="ge-warp-lbl" class:wired={pathWired}>path</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock in expr-in list" class:wired={pathWired}
-                  cx="0" cy={WARP_PATH_CY} r="6"
+                  cx="0" cy={pathCY} r="6"
                   data-tip={pathWired ? 'path: wired to a spline — drop another to repoint' : 'path: wire a spline’s output (list of points) here'}
                   onpointerup={(ev) => wire.endWireOnWarpPath(ev, n.id)}/>
                 <!-- OPTS row: refine number + stretch / validate toggles -->
-                <foreignObject x="10" y={WARP_PATH_CY + 12} width={size.w - 16} height="34">
+                <foreignObject x="10" y={pathCY + 12} width={size.w - 16} height="34">
                   <div class="ge-warp-opts" xmlns="http://www.w3.org/1999/xhtml">
                     <label class="ge-warp-refine" title="Build-time subdivision so flat walls bend as arcs (0 = adaptive)">
                       ref
