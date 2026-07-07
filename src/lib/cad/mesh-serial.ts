@@ -21,9 +21,27 @@ export interface SerializedGeometry {
   index?: number[];
 }
 
+/** One serialized per-source-part mesh + its appearance (#1 unify-transparency).
+ *  Mirrors `RenderPart` in render-helpers.ts / TF's `{ data, appearance }`. */
+export interface SerializedRenderPart {
+  geo: SerializedGeometry;
+  appearance: {
+    colorOuter?: string;
+    colorInner?: string;
+    opacity?: number;
+    material?: string;
+    texture?: string;
+  };
+}
+
 export interface SerializedComponentResult {
   full: SerializedGeometry;
   cutVC: SerializedGeometry;
+  /** OPTIONAL per-source-part meshes — present ONLY for an appearance-bearing
+   *  (transparent-subpart) composite (see render-helpers `buildSourceParts`).
+   *  Old consumers ignore it and render `full` as a single mesh; the scene
+   *  prefers `parts` when present. */
+  parts?: SerializedRenderPart[];
   /** OPTIONAL GPU-instancing payload (versioned/optional — old consumers
    *  ignore it and render `full`/`cutVC` as a single mesh). When present,
    *  `full`/`cutVC` are the CANONICAL CHILD mesh (serialized ONCE) and
@@ -87,6 +105,9 @@ function deserializeGeometry(s: SerializedGeometry): THREE.BufferGeometry {
 export function serializeComponentResult(r: {
   full: THREE.BufferGeometry;
   cutVC: THREE.BufferGeometry;
+  /** Per-source-part meshes (#1 unify-transparency) — appearance-bearing
+   *  composites only; absent otherwise. */
+  parts?: { geo: THREE.BufferGeometry; appearance: SerializedRenderPart['appearance'] }[];
   /** When present (instancing applied), full/cutVC are the canonical child
    *  and these are the N per-copy 16-float column-major transforms. */
   instances?: number[][];
@@ -95,6 +116,9 @@ export function serializeComponentResult(r: {
     full: serializeGeometry(r.full),
     cutVC: serializeGeometry(r.cutVC),
   };
+  if (r.parts && r.parts.length > 0) {
+    out.parts = r.parts.map((p) => ({ geo: serializeGeometry(p.geo), appearance: p.appearance }));
+  }
   if (r.instances && r.instances.length > 0) {
     out.instanced = { instances: r.instances, count: r.instances.length };
   }
@@ -104,16 +128,21 @@ export function serializeComponentResult(r: {
 export function deserializeComponentResult(s: SerializedComponentResult): {
   full: THREE.BufferGeometry;
   cutVC: THREE.BufferGeometry;
+  parts?: { geo: THREE.BufferGeometry; appearance: SerializedRenderPart['appearance'] }[];
   instanced?: { instances: number[][]; count: number };
 } {
   const out: {
     full: THREE.BufferGeometry;
     cutVC: THREE.BufferGeometry;
+    parts?: { geo: THREE.BufferGeometry; appearance: SerializedRenderPart['appearance'] }[];
     instanced?: { instances: number[][]; count: number };
   } = {
     full: deserializeGeometry(s.full),
     cutVC: deserializeGeometry(s.cutVC),
   };
+  if (s.parts && Array.isArray(s.parts) && s.parts.length > 0) {
+    out.parts = s.parts.map((p) => ({ geo: deserializeGeometry(p.geo), appearance: p.appearance }));
+  }
   if (s.instanced && Array.isArray(s.instanced.instances) && s.instanced.instances.length > 0) {
     out.instanced = { instances: s.instanced.instances, count: s.instanced.count };
   }
