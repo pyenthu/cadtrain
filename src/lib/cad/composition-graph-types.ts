@@ -36,8 +36,13 @@ export type ArgValue =
   | { kind: 'expr'; expr: string }
   /** Typed edge — wires from a meta.params row to this slot. Bake time
    *  resolves to the param's current value (or its default). Removing the
-   *  param surfaces every slot referencing it as "orphaned". */
-  | { kind: 'param'; param: string };
+   *  param surfaces every slot referencing it as "orphaned".
+   *
+   *  `field` (#38 complex params) — OPTIONAL dotted access into a RECORD
+   *  param: `{param:'spec', field:'od'}` emits `p.spec.od`. Sparse/optional →
+   *  absent ⇒ the whole param (`p.<name>`), byte-identical to every existing
+   *  param slot. */
+  | { kind: 'param'; param: string; field?: string };
 
 export function asLiteral(v: number | string | boolean): ArgValue { return { kind: 'literal', value: v }; }
 export function asExpr(expr: string): ArgValue { return { kind: 'expr', expr }; }
@@ -516,7 +521,22 @@ export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode
 
 // ─── graph ────────────────────────────────────────────────────────────────
 
-export type ParamSchema = {
+// ─── params — a discriminated union on an OPTIONAL `kind` (#38) ──────────────
+//
+// A param row carries one of THREE shapes: a scalar (today's number param), a
+// RECORD (an object keyed by a volume `types/<id>.json` TypeDef's fields), or a
+// LIST (of records or scalars — the rows that drive a data-driven producer).
+// The discriminant `kind` is OPTIONAL on the number variant so EVERY existing
+// file — which has NO `kind` field — reads back as a NumberParam, byte-identical
+// (serialize + hydrate stay structural: `stringifyTyped` already emits nested
+// object/array defaults, hydrate round-trips them). `hasKind(p)` is the single
+// narrowing point (`p.kind ?? 'number'`). Editor + producer node are Phases 2/3.
+// Plan: docs/plans/complex-params-list-of-parts.md §1.
+
+/** A scalar param — today's ParamSchema, verbatim. `kind` absent on every
+ *  legacy file ⇒ treated as 'number' (no migration write). */
+export type NumberParam = {
+  kind?: 'number';
   default: number | string | boolean;
   min?: number;
   max?: number;
@@ -524,6 +544,38 @@ export type ParamSchema = {
   unit?: string;
   label?: string;
 };
+/** A RECORD param — an object whose fields come from a volume `types/<id>.json`
+ *  TypeDef (`typeId`). Field access into it emits `p.<name>.<field>` via the
+ *  ArgValue `field?`. */
+export type RecordParam = {
+  kind: 'record';
+  typeId: string;                                       // → a <volume>/types/<id>.json TypeDef
+  default: Record<string, number | string | boolean>;   // { od: 9.625, wall: 0.5, … }
+  label?: string;
+};
+/** A LIST param — the rows that drive a data-driven `list<part>` producer. `of`
+ *  names the element type: a record (`{record:'Casing'}` → list<Casing>) or the
+ *  degenerate scalar list (`{scalar:true}` → list<number>). */
+export type ListParam = {
+  kind: 'list';
+  of: { record: string } | { scalar: true };
+  default: Array<Record<string, number | string | boolean> | number>;
+  label?: string;
+};
+
+export type ParamSchema = NumberParam | RecordParam | ListParam;
+
+/** The single narrowing point — the EFFECTIVE kind of a param (absent ⇒
+ *  'number'). Every reader that branches on the union goes through here so a
+ *  legacy `{default:5}` (no `kind`) reads as a number param. */
+export function hasKind(p: ParamSchema): 'number' | 'record' | 'list' {
+  return (p as { kind?: 'number' | 'record' | 'list' }).kind ?? 'number';
+}
+/** Narrowing type-guards over the ParamSchema union — all routed through
+ *  `hasKind` so absent-kind ⇒ number. */
+export function isNumberParam(p: ParamSchema): p is NumberParam { return hasKind(p) === 'number'; }
+export function isRecordParam(p: ParamSchema): p is RecordParam { return hasKind(p) === 'record'; }
+export function isListParam(p: ParamSchema): p is ListParam { return hasKind(p) === 'list'; }
 
 export type Edge = {
   from: string;   // 'p.<paramName>' (param wired into a slot)

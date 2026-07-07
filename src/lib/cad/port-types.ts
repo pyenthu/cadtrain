@@ -154,6 +154,14 @@ export const PT_POINT3 = registerPortType({
 export const PT_GEOMETRY = registerPortType({
   id: 'geometry', elem: 'geometry', card: 'one', label: 'geometry', color: '#cc2222',
 });
+/** A flat list of baked solids — the future `list<part>` producer output (#38,
+ *  docs/plans/complex-params-list-of-parts.md §2). Registration only in Phase 1;
+ *  the `parts_map` producer + its wire path land in Phase 3. Nominal (checked by
+ *  `canFeed`, geometry is outside the structural model), `[]`-glyphed. */
+export const PT_LIST_GEOMETRY = registerPortType({
+  id: 'list<geometry>', elem: 'geometry', card: 'list', of: 'geometry',
+  label: 'list of geometry', color: PT_GEOMETRY.color, glyph: '[]',
+});
 
 // ── arity-specific point lists (typed-expression-outputs, Phase B) ────────────
 // `list<point>` (PT_LIST_POINT) is arity-agnostic [r,z]/[x,y]. These two pin the
