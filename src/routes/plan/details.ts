@@ -299,22 +299,72 @@ export const details: Record<number, PlanDetail> = {
 
   948: {
     summary:
-      'Warp-trajectory + data-driven-params tails (from the 2026-07-07 batch, #972).\n\n' +
+      'Warp-trajectory originZ + #38 P2 param-editor tails (from the 2026-07-07 batch, ' +
+      '#972). The parts_map NODE-CARD + pm_demo volume part shipped separately — see #973. ' +
+      'What is LEFT:\n\n' +
       ' #36c — the warp spline tangent-extension to ±∞ shipped; the originZ PLACEMENT ' +
-      'option exists in the geometry core but is not wired through to the warp node UI. ' +
+      'option exists in warp-spline.ts but NO caller feeds it through to the warp node. ' +
       'Wire it.\n' +
-      ' #38 — data-driven params: P1 (ParamSchema discriminated union number|record|list) ' +
-      'and P3 (parts_map producer: list<record> → N part instances + the bakeable pm_demo) ' +
-      'shipped. LEFT: the GEP node-card UI for the new param kinds + the P2 param editor.',
+      ' #38 P2 — the ParamsCard list<record> TABLE editor (the "add object / add row" ' +
+      'param editor) for the new record|list param kinds. P1 (ParamSchema discriminated ' +
+      'union number|record|list), P3 (parts_map producer + the bakeable pm_demo), and the ' +
+      'parts_map node-card (#973) all shipped — this is the remaining param-authoring UI.',
     acceptance: [
       'The warp node exposes + applies the originZ placement option',
-      'A record/list param is authored + edited from the GEP node-card (P2 editor)',
+      'A record/list param is authored + edited from the ParamsCard table editor (add object / add row)',
     ],
     refs: [
       'docs/plans/warp-part-along-spline.md (items: originZ wiring)',
       'docs/plans/complex-params-list-of-parts.md',
       'docs/plans/parts-params.md',
       'src/lib/cad/nodes/kinds/parts-map.ts (P3, shipped)',
+    ],
+    recorded: false,
+  },
+
+  973: {
+    summary:
+      'parts_map GEP node-card + pm_demo live volume part — SHIPPED 2026-07-07 (bdc2595).\n\n' +
+      'The authoring surface for the #38 data-driven-params work: a graph node that maps a ' +
+      'list<record> → N part instances, editable directly in the graph editor.\n\n' +
+      ' • NodeCard.svelte — a VIOLET parts_map branch (src part · rows source · arg→field ' +
+      'binding rows · list/stack/place op toggle · output socket · delete).\n' +
+      ' • composition-graph-mutate.ts — addPartsMap + setPartsMapSrc/List/Arg/Op + ' +
+      'add/removePartsMapArg.\n' +
+      ' • GraphEditorPane.svelte — dropPartsMap + the ✎ → container → parts_map picker item.\n\n' +
+      'Plus pm_demo promoted to a LIVE VOLUME PART (basic/pm_demo.asm.ts, bakes 3 solids) — ' +
+      'not just the golden fixture. Split out of the old #948 tail; what remains there is the ' +
+      'P2 ParamsCard table editor + a TF parts_map builder (#974).',
+    acceptance: [
+      'A parts_map node can be dropped, wired to a list<record>, and bound arg→field in the editor',
+      'pm_demo resolves as a volume part and bakes 3 solids',
+    ],
+    refs: [
+      'src/lib/shared/graph-editor/NodeCard.svelte (parts_map branch)',
+      'src/lib/cad/composition-graph-mutate.ts (addPartsMap + setters)',
+      'src/lib/shared/graph-editor/GraphEditorPane.svelte (dropPartsMap + picker)',
+      'src/lib/cad/nodes/kinds/parts-map.ts',
+    ],
+    recorded: false,
+  },
+
+  974: {
+    summary:
+      'TF parts_map builder.\n\n' +
+      'The TF (native-only) engine cannot build a parts_map node yet: graph-to-tf.ts has NO ' +
+      'parts_map case, so the node falls through to the default branch → ' +
+      'UNSUPPORTED ("node <id>: type \'parts_map\' has no TF mapping") and the tab reports no ' +
+      'builder for it. Add a lowerNode case that expands the list<record> producer into N ' +
+      'transformed part instances (union / stack / place per the node\'s op), mirroring the ' +
+      'Manifold executeTfRecipe path, so a pm_demo-style part builds NATIVELY in TF. Extends ' +
+      'the parts_map node-card (#973) + the r_weld_extrude / composite TF builders (#942).',
+    acceptance: [
+      'A parts_map node lowers to a TF recipe (no UNSUPPORTED note)',
+      'pm_demo builds natively in the TF tab (3 solids, not blank)',
+    ],
+    refs: [
+      'src/lib/cad/graph-to-tf.ts (add the parts_map lowerNode case)',
+      'src/lib/cad/nodes/kinds/parts-map.ts',
     ],
     recorded: false,
   },
