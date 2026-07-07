@@ -38,6 +38,7 @@ import {
   topoOrder,
   resolveEffectiveAppearance,
   STACK_REF_PARAM,
+  hasKind,
 } from './composition-graph';
 import {
   emitExprConsts, rewriteExprRefs,
@@ -215,7 +216,8 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   // so the part's intended mate survives even unwired. Parts without the param
   // emit nothing → no behaviour change. An array return is composed via
   // place() FIRST so the stamp survives the loader's autoPlace boundary.
-  if (Object.prototype.hasOwnProperty.call(graph.params, STACK_REF_PARAM) && returnExpr !== 'undefined') {
+  if (Object.prototype.hasOwnProperty.call(graph.params, STACK_REF_PARAM) && returnExpr !== 'undefined'
+      && hasKind(graph.params[STACK_REF_PARAM]!) === 'number') {
     const rawDef = (graph.params as any)[STACK_REF_PARAM]?.default;
     const def = Number.isFinite(Number(rawDef)) ? Number(rawDef) : 0;
     const primary = returnExpr.startsWith('[') ? `place(${returnExpr})` : returnExpr;
@@ -603,7 +605,10 @@ function emitValueExpr(v: ArgValue): string {
     case 'expr':
       return v.expr;
     case 'param':
-      return `p.${v.param}`;
+      // `field` (#38) — dotted access into a RECORD param (`p.spec.od`).
+      // Sparse/optional: absent ⇒ the bare `p.<name>`, byte-identical to every
+      // legacy param slot (golden-emit safety net).
+      return `p.${v.param}${v.field ? '.' + v.field : ''}`;
   }
 }
 

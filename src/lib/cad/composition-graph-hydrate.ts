@@ -14,11 +14,39 @@ import { absToChord } from './sketch';
 
 import type {
   Graph, GraphNode, ContainerNode, LayoutXY, Viewport, PolygonNode, PolygonEntry,
-  PolyRepeatNode, SketchNode, ArgValue, GraphExpr, ExprDef, ExprOut,
+  PolyRepeatNode, SketchNode, ArgValue, GraphExpr, ExprDef, ExprOut, ParamSchema,
 } from './composition-graph-types';
-import { newNodeId, asLiteral } from './composition-graph-types';
+import { newNodeId, asLiteral, hasKind } from './composition-graph-types';
 import { setLayout, defaultCallPosition, collectEdges } from './composition-graph-mutate';
 import { deriveInputNames } from './graph-exprs';
+
+/** DEFAULT-FILL the params map on load (#38 complex params). A NUMBER param is
+ *  passed through UNTOUCHED (byte-identical — no `kind`, no default synthesis),
+ *  so every existing file round-trips exactly. A RECORD / LIST param that lost
+ *  its `default` (hand-edited / partial write) is back-filled with the empty
+ *  container (`{}` / `[]`) so downstream readers never hit `undefined`. Pure —
+ *  keeps the same object identity for the common number-only case. */
+export function hydrateParams(
+  raw: Record<string, ParamSchema> | undefined,
+): Record<string, ParamSchema> {
+  if (!raw) return {};
+  let mutated = false;
+  const out: Record<string, ParamSchema> = {};
+  for (const [name, p] of Object.entries(raw)) {
+    if (!p || typeof p !== 'object') { out[name] = p; continue; }
+    const kind = hasKind(p);
+    if (kind === 'record' && (p as any).default == null) {
+      out[name] = { ...(p as any), default: {} };
+      mutated = true;
+    } else if (kind === 'list' && (p as any).default == null) {
+      out[name] = { ...(p as any), default: [] };
+      mutated = true;
+    } else {
+      out[name] = p;   // number param — verbatim; record/list with a default — verbatim
+    }
+  }
+  return mutated ? out : raw;   // preserve identity when nothing changed
+}
 
 export function newGraph(): Graph {
   const rootId = newNodeId();
@@ -431,7 +459,7 @@ export function hydrateGraph(serialised: any): Graph {
   let g: Graph = {
     nodes: migratedNodes,
     root: serialised.root,
-    params: serialised.params ?? {},
+    params: hydrateParams(serialised.params),
     edges: [],
     imports: serialised.imports ?? [],
     layout: migratedLayout,

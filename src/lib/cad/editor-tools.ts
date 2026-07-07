@@ -23,6 +23,7 @@ import {
   type NodeId,
   type ArgValue,
   type ParamSchema,
+  type NumberParam,
   type CallNode,
   type PolygonNode,
   asLiteral,
@@ -102,7 +103,10 @@ function buildParamSchema(args: Record<string, unknown>): ParamSchema | string {
   if (typeof def !== 'number' && typeof def !== 'string' && typeof def !== 'boolean') {
     return '`default` is required (number/string/boolean)';
   }
-  const schema: ParamSchema = { default: def };
+  // This tool authors NUMBER params only (the min/max/step/unit fields live on
+  // NumberParam); record/list params come from the editor UI (Phase 2). Typing
+  // as NumberParam keeps the union honest.
+  const schema: NumberParam = { default: def };
   if (typeof args.min === 'number') schema.min = args.min;
   if (typeof args.max === 'number') schema.max = args.max;
   if (typeof args.step === 'number') schema.step = args.step;
