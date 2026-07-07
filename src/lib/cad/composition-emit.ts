@@ -280,6 +280,9 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   const usesSet = new Set<string>();
   for (const n of Object.values(graph.nodes)) {
     if (n.type === 'call') usesSet.add(n.src);
+    // A parts_map INSTANTIATES its `src` part per row (#38) — it's a dependency
+    // exactly like a Call's src, so the loader fetches the template part.
+    if (n.type === 'parts_map' && n.src) usesSet.add(n.src);
   }
   for (const i of graph.imports) usesSet.add(i);
 
@@ -637,6 +640,9 @@ function computeListProducers(graph: Graph): Set<NodeId> {
   const set = new Set<NodeId>();
   for (const n of Object.values(graph.nodes)) {
     if (n.type === 'repeat' && (n as any).op === 'list') set.add(n.id);
+    // A parts_map with op:'list' (its DEFAULT) emits a bare `Array.from(...)` of
+    // N part instances (#38) — a parent Stack `...`-spreads it just like a Repeat.
+    if (n.type === 'parts_map' && ((n as any).op ?? 'list') === 'list') set.add(n.id);
     // (Future: bare list nodes that aren't the root list, group containers, etc.)
   }
   return set;
@@ -690,6 +696,7 @@ function assignVarNames(graph: Graph, order: NodeId[]): Map<NodeId, string> {
         node.type === 'polygon' ? 'poly' :
         node.type === 'sketch'  ? 'sketch' :
         node.type === 'warp'    ? 'warp_obj' :
+        node.type === 'parts_map' ? 'parts' :
                                    'rot_obj';
       counters[prefix] = (counters[prefix] ?? 0) + 1;
       name = `_${prefix}_${counters[prefix]}`;

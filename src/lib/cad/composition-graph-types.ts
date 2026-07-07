@@ -517,7 +517,37 @@ export type MaterialNode = {
   texture?: string;
 };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode | MaterialNode;
+/** PARTS-MAP producer node (#38 Phase 3) — the geometry-valued sibling of the
+ *  `list<point>` expression builder. Maps a `list<record>` param to N part
+ *  INSTANCES via ONE node: `Array.from(p.<list>, (s, i) => <src>({…}))`, replacing
+ *  a hand-wired wall of Call cards (the 18-string well → 1 producer).
+ *
+ *  - `src` — the volume part id to instantiate per row (`g_casing`); also added
+ *    to `meta.uses` so the loader fetches it as a dependency.
+ *  - `list` — the ROWS to iterate; normally `{kind:'param', param:'strings'}` (a
+ *    `list<record>` param), but any ArgValue resolving to an array works.
+ *  - `loopVar` (default `'s'`) — the per-row binding; the index is always `i`
+ *    (like Repeat). Record-field access in `argMap` reads `s.<field>` via an
+ *    `expr` ArgValue (`{kind:'expr', expr:'s.od'}`).
+ *  - `argMap` — part-arg NAME → how to fill it from the row `s` / index `i`. Each
+ *    value is an ArgValue: an `expr` for a field (`s.od`), or a literal/param.
+ *  - `op` (default `'list'`) — `'list'` returns the bare array (spread by a parent
+ *    Stack / returned from the root list for the loader to autoPlace); `'stack'`
+ *    mates the copies end-to-end; `'place'` composes without mating.
+ *
+ *  Marked a LIST PRODUCER (op:'list') in computeListProducers so a parent Stack
+ *  spreads its N results with `...`, exactly like a Repeat with op:'list'. */
+export type PartsMapNode = {
+  id: NodeId;
+  type: 'parts_map';
+  src: string;
+  list: ArgValue;
+  loopVar?: string;
+  argMap: Record<string, ArgValue>;
+  op?: 'list' | 'stack' | 'place';
+};
+
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode | MaterialNode | PartsMapNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 

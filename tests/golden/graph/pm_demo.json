@@ -1,0 +1,37 @@
+{
+  "nodes": {
+    "n_root": {
+      "id": "n_root",
+      "type": "list",
+      "children": ["n_pm000"]
+    },
+    "n_pm000": {
+      "id": "n_pm000",
+      "type": "parts_map",
+      "src": "g_cube",
+      "list": { "kind": "param", "param": "blocks" },
+      "loopVar": "s",
+      "argMap": {
+        "size": { "kind": "expr", "expr": "s.size" }
+      },
+      "op": "list"
+    }
+  },
+  "root": "n_root",
+  "params": {
+    "blocks": {
+      "kind": "list",
+      "of": { "record": "Block" },
+      "default": [
+        { "size": 2 },
+        { "size": 3 },
+        { "size": 4 }
+      ]
+    }
+  },
+  "imports": ["g_cube"],
+  "layout": {
+    "n_root": { "x": 520, "y": 120 },
+    "n_pm000": { "x": 200, "y": 120 }
+  }
+}
