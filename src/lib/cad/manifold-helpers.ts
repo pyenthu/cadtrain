@@ -585,3 +585,46 @@ export function getCutBox(bbox?: { min: number[]; max: number[] }): any {
   const zlen = (bbox.max[2] - bbox.min[2]) + 2 * MARGIN;
   return M.cube([xspan, yspan, zlen], false).translate([0, 0, bbox.min[2] - MARGIN]);
 }
+
+/**
+ * sectionCut — subtract an AUTHORED angular WEDGE from a solid (the `cutaway`
+ * MODIFIER node's emitted body). Removes a pie-slice of `az` DEGREES of the
+ * revolution around the part's Z axis (Z-down convention), positioned at
+ * `offset` along Z. `az` = HOW MUCH to cut: `<= 0` → the solid unchanged (no
+ * cut); `>= 360` → fully removed (an empty-ish guard). The wedge covers the
+ * part's FULL Z height (+ margin) so a partial `az` reveals the interior across
+ * the whole part — exactly like the view-only quarter cutaway (`getCutBox`) but
+ * with an authored sweep. `offset` translates the wedge along Z (+ moves
+ * down-hole) so the author can nudge where the section lands.
+ *
+ * Built via a CrossSection pie-slice (centre + CCW arc 0..az°) extruded over the
+ * Z span, then subtracted — one clean CSG op, no post-hoc mesh surgery. Reuses
+ * the `getCutBox` bbox+margin discipline so warp displacement / z-scale can't
+ * leave an uncut sliver.
+ */
+export function sectionCut(solid: any, opts?: { az?: number; offset?: number }): any {
+  if (!solid) return solid;
+  const az = Number(opts?.az ?? 180);
+  const offset = Number(opts?.offset ?? 0);
+  if (!(az > 0)) return solid;                    // az <= 0 → no cut
+  if (!G.__cadtrain_manifold__.M) return solid;   // no kernel → passthrough
+  if (az >= 360) return empty();                  // full removal guard
+  const bb = solid.boundingBox();
+  const MARGIN = 20;
+  const R = Math.max(
+    Math.abs(bb.min[0]), Math.abs(bb.max[0]),
+    Math.abs(bb.min[1]), Math.abs(bb.max[1]),
+  ) + MARGIN;
+  const zlen = (bb.max[2] - bb.min[2]) + 2 * MARGIN;
+  const z0 = bb.min[2] - MARGIN + offset;
+  // Pie-slice cross-section: centre + a CCW arc from 0..az° (CCW winding →
+  // positive fill). One point every ~5° for a smooth wedge edge.
+  const seg = Math.max(2, Math.ceil(az / 5));
+  const pts: [number, number][] = [[0, 0]];
+  for (let i = 0; i <= seg; i++) {
+    const a = ((az * i) / seg) * Math.PI / 180;
+    pts.push([R * Math.cos(a), R * Math.sin(a)]);
+  }
+  const wedge = new CS([pts]).extrude(zlen).translate([0, 0, z0]);
+  return solid.subtract(wedge);
+}

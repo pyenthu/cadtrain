@@ -13,7 +13,7 @@ import type {
   RepeatOp, RepeatNode, NodeTransform, PolygonPoint, PolygonRepeat, PolygonRepeatRef, PolygonExprListRef, PolygonEntry,
   PolygonNode, PolyRepeatBinding, PolyRepeatNode, SketchOpEntry, SketchNode,
   SketchRepeatNode, SketchRepeatRef, SketchExprListRef,
-  ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem, SplineNode, WarpNode,
+  ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem, SplineNode, WarpNode, CutawayNode,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph, MaterialNode, PartAppearance,
   PartsMapNode,
 } from './composition-graph-types';
@@ -34,7 +34,8 @@ export function defaultCallPosition(graph: Graph): LayoutXY {
   const dropped = Object.values(graph.nodes).filter((n) =>
     n.type === 'call' || n.type === 'polygon' || n.type === 'method' ||
     n.type === 'mv'   || n.type === 'rot'     || n.type === 'repeat' ||
-    n.type === 'txfmn' || n.type === 'poly_repeat' || n.type === 'warp',
+    n.type === 'txfmn' || n.type === 'poly_repeat' || n.type === 'warp' ||
+    n.type === 'cutaway',
   ).length;
   return { x: 80 + (dropped % 4) * 240, y: 80 + Math.floor(dropped / 4) * 180 };
 }
@@ -184,6 +185,11 @@ export function collectEdges(graph: Graph): Edge[] {
       // control-points array or the build-time subdivision count).
       if (node.path?.kind === 'param')   edges.push({ from: `p.${node.path.param}`,   to: `${node.id}.path` });
       if (node.refine?.kind === 'param') edges.push({ from: `p.${node.refine.param}`, to: `${node.id}.refine` });
+    } else if (node.type === 'cutaway') {
+      // The cutaway's `az` (angular sweep) + `offset` (axial position) slots can
+      // each be wired to a param.
+      if (node.az?.kind === 'param')     edges.push({ from: `p.${node.az.param}`,     to: `${node.id}.az` });
+      if (node.offset?.kind === 'param') edges.push({ from: `p.${node.offset.param}`, to: `${node.id}.offset` });
     }
   }
   return edges;
@@ -1493,6 +1499,65 @@ export function setWarpValidate(graph: Graph, warpId: NodeId, validate: boolean)
   });
 }
 
+// ─── Cutaway / cross-section MODIFIER helpers ───────────────────────────────
+//
+// A `cutaway` node SUBTRACTS an authored angular wedge from a built solid
+// (`child`), emitting `sectionCut(<child>, { az: <az>, offset: <offset> })`.
+// Like a transform it appends to the root (a geometry OUTPUT) and its child
+// wires in on the LEFT edge; `az` (angular sweep in degrees) + `offset` (axial
+// position) are ArgValues so they can be param/expr-driven. All mutations
+// return a NEW Graph.
+
+/** Add a cutaway node sectioning `child`. Appends to the root list (a geometry
+ *  output, like addWarp). `child` may be '' / null for an unwired drop; `az`
+ *  defaults to a 180° half-section, `offset` to 0. */
+export function addCutaway(
+  graph: Graph,
+  child: NodeId | null = null,
+  az: ArgValue = asLiteral(180),
+  offset: ArgValue = asLiteral(0),
+  parentId?: NodeId,
+): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const node: CutawayNode = { id, type: 'cutaway', child: child || null, az, offset };
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
+  const final = appendChild(next, parentId ?? graph.root, id);
+  return { graph: finalize(final), id };
+}
+
+/** Drop an UNWIRED cutaway node — child null + default az/offset until the user
+ *  wires a solid into the LEFT socket. */
+export function addCutawayPlaceholder(graph: Graph, parentId?: NodeId) {
+  return addCutaway(graph, null, asLiteral(180), asLiteral(0), parentId);
+}
+
+/** Internal: apply `fn` to the cutaway node at `id`, no-op when it isn't one. */
+function updateCutaway(graph: Graph, cutId: NodeId, fn: (n: CutawayNode) => CutawayNode): Graph {
+  const node = graph.nodes[cutId];
+  if (!node || node.type !== 'cutaway') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [cutId]: fn(node) } });
+}
+
+/** Rebind a cutaway's `child` (the solid being sectioned). Thin alias over the
+ *  generic setTransformChild (which now also accepts a cutaway). */
+export function setCutawayChild(graph: Graph, cutId: NodeId, childId: NodeId): Graph {
+  return setTransformChild(graph, cutId, childId);
+}
+
+/** Set the cutaway's `az` — the angular sweep of the removed wedge (degrees;
+ *  0 = no cut, 180 = half-section, 360 = full removal). An ArgValue so it can be
+ *  literal / param / expr-driven. */
+export function setCutawayAz(graph: Graph, cutId: NodeId, az: ArgValue): Graph {
+  return updateCutaway(graph, cutId, (n) => ({ ...n, az }));
+}
+
+/** Set the cutaway's `offset` — the axial (Z) position of the cut. An ArgValue
+ *  so it can be literal / param / expr-driven. */
+export function setCutawayOffset(graph: Graph, cutId: NodeId, offset: ArgValue): Graph {
+  return updateCutaway(graph, cutId, (n) => ({ ...n, offset }));
+}
+
 // ─── parts_map (#38 Phase 3 — the list<record> → N part-instances producer) ──
 /** Drop an UNWIRED parts_map: no template, empty rows, op 'list'. The user then
  *  picks the template part (`src`), points `list` at a list<record> param, and
@@ -1837,11 +1902,11 @@ export function addRotPlaceholder(graph: Graph, parentId?: NodeId) {
  *  legacy mv/rot wrappers AND the unified txfmn node. */
 export function setTransformChild(graph: Graph, transformId: NodeId, childId: NodeId): Graph {
   const node = graph.nodes[transformId];
-  // Also accepts a `warp` node — its `child` (the solid being bent) wires in on
-  // the LEFT edge like a transform, so the shared endWireOnInput('child') path
-  // Just Works for it too.
-  if (!node || (node.type !== 'mv' && node.type !== 'rot' && node.type !== 'txfmn' && node.type !== 'warp')) return graph;
-  const updated = { ...node, child: childId } as MvNode | RotNode | TxfmnNode | WarpNode;
+  // Also accepts a `warp` / `cutaway` node — its `child` (the solid being bent /
+  // sectioned) wires in on the LEFT edge like a transform, so the shared
+  // endWireOnInput('child') path Just Works for it too.
+  if (!node || (node.type !== 'mv' && node.type !== 'rot' && node.type !== 'txfmn' && node.type !== 'warp' && node.type !== 'cutaway')) return graph;
+  const updated = { ...node, child: childId } as MvNode | RotNode | TxfmnNode | WarpNode | CutawayNode;
   return finalize({ ...graph, nodes: { ...graph.nodes, [transformId]: updated } });
 }
 
@@ -2029,6 +2094,12 @@ export function removeNode(graph: Graph, id: NodeId): Graph {
       // A warp with its bent solid removed is orphaned — drop it too (mirrors
       // the mv/rot cascade). A removed spline PATH source only clears the
       // wired-ref (the warp keeps its literal points), so it isn't cascaded.
+      if (n.child === id) continue;
+      next[nid] = n;
+    } else if (n.type === 'cutaway') {
+      // A cutaway with its sectioned solid removed is orphaned — drop it too
+      // (mirrors the warp cascade). `az`/`offset` are literals/params, not
+      // node refs, so they're never cascaded.
       if (n.child === id) continue;
       next[nid] = n;
     } else {
@@ -2286,6 +2357,11 @@ export function topoOrder(graph: Graph): NodeId[] {
       // Visit the bent solid first so its `const` emits before the
       // `warpSpline(child, …)` call that consumes it (TDZ). The spline PATH
       // source is a free-floating node emitted as a prelude const, not visited.
+      if (node.child) visit(node.child);
+    } else if (node.type === 'cutaway') {
+      // Visit the sectioned solid first so its `const` emits before the
+      // `sectionCut(child, …)` call that consumes it (TDZ). `az`/`offset` are
+      // literals/params, not node refs, so nothing else to visit.
       if (node.child) visit(node.child);
     } else if (node.type === 'repeat') {
       for (const c of node.children ?? []) visit(c);

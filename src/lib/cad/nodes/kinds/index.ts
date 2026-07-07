@@ -8,6 +8,7 @@ export { MvKind } from './mv';
 export { RotKind } from './rot';
 export { SplineKind } from './spline';
 export { WarpKind } from './warp';
+export { CutawayKind } from './cutaway';
 export { ContainerKind, containerSize } from './container';
 export { StackKind } from './stack';
 export { RepeatKind } from './repeat';

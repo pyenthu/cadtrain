@@ -74,6 +74,7 @@
     addExprInstance,
     addSpline,
     addWarpPlaceholder,
+    addCutawayPlaceholder,
     addPartsMap,
     addMaterialNode,
     updateMaterialNode,
@@ -1405,7 +1406,8 @@
       : c.type === 'method' ? `${c.op}(…)`
       : c.type === 'repeat' ? `repeat × ${c.count?.kind === 'literal' ? c.count.value : '…'}`
       : c.type === 'sketch' ? '✐ sketch'
-      : c.type === 'warp' ? '≈ warp' : c.type;
+      : c.type === 'warp' ? '≈ warp'
+      : c.type === 'cutaway' ? '✂ section' : c.type;
   }
   // endWireOnInput / endWireOnCallArg / endWireOnPolygonCoord /
   // endWireOnPolyRepeatCount / endWireOnPolygonRepeatRef / endWireOnTransformAxis
@@ -1767,6 +1769,10 @@
    *  Wire the SOLID into the top-left socket + a SPLINE's path into the lower-
    *  left socket; emits warpSpline(solid, path, opts). */
   function dropWarp() { closePicker(); graph = addWarpPlaceholder(graph).graph; }
+  /** Drop a `cutaway` cross-section MODIFIER — subtracts an authored angular
+   *  wedge from a built solid. Wire the SOLID into the left socket; emits
+   *  sectionCut(solid, { az, offset }). */
+  function dropCutaway() { closePicker(); graph = addCutawayPlaceholder(graph).graph; }
   /** Drop a `parts_map` PRODUCER (#38 Phase 3) — instantiates a template part
    *  once per row of a list<record> param. Set src + rows + arg→field mappings on
    *  the card; wire its list<geometry> output into a Stack / Output. */
@@ -3317,6 +3323,10 @@
         <!-- Warp / bend a built solid along a spline (#36). -->
         <button class="ge-pick-item" type="button" onclick={() => { dropWarp(); submenuKey = null; }}>
           <span class="ge-pick-icon">≈</span><span class="ge-pick-name">warp</span><span class="ge-pick-hint">bend on path</span>
+        </button>
+        <!-- Cutaway / cross-section: subtract an authored angular wedge. -->
+        <button class="ge-pick-item" type="button" onclick={() => { dropCutaway(); submenuKey = null; }}>
+          <span class="ge-pick-icon">✂</span><span class="ge-pick-name">section</span><span class="ge-pick-hint">cutaway az°</span>
         </button>
       </div>
     {:else if submenuKey === 'container'}

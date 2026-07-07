@@ -493,6 +493,27 @@ export type WarpNode = {
   validate?: boolean;
 };
 
+/** CUTAWAY / cross-section MODIFIER node — subtracts an AUTHORED angular wedge
+ *  from a built solid (`child`), emitting `sectionCut(child, { az, offset })`.
+ *  Unlike the view-only bake-time cutaway (a render toggle), this is a real
+ *  geometry op baked into the part: it removes a pie-wedge of `az` degrees of
+ *  the revolution around the part's Z axis (Z-down), positioned at `offset`
+ *  along Z. `az` = HOW MUCH to cut (0 = no cut, 180 = half-section, 360 = full
+ *  removal); `offset` = the axial position of the cut.
+ *
+ *  Structural sibling of WarpNode: appended to the root (a geometry OUTPUT), its
+ *  `child` (the solid being sectioned) wires in on the LEFT edge, and both `az`
+ *  and `offset` are ArgValues (literal/param/expr) so they can be param/expr-
+ *  driven exactly like the warp card's `refine`. `child` is nullable for an
+ *  unwired placeholder drop (mirrors WarpNode / TxfmnNode). */
+export type CutawayNode = {
+  id: NodeId;
+  type: 'cutaway';
+  child: NodeId | null;
+  az: ArgValue;
+  offset: ArgValue;
+};
+
 /** MATERIAL node (G-MAT-CARD) — a FLOATING, view-only node holding a reusable
  *  appearance bundle (same fields as PartAppearance) plus a user `name`. It is
  *  NOT part of the render tree and emits NO body: like a param source it lives
@@ -547,7 +568,7 @@ export type PartsMapNode = {
   op?: 'list' | 'stack' | 'place';
 };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode | MaterialNode | PartsMapNode;
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode | CutawayNode | MaterialNode | PartsMapNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 
