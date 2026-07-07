@@ -71,6 +71,10 @@ export const DOMAIN_CLASS_DIAGRAM = `classDiagram
     class MaterialNode { +string material; +string colorOuter; +number opacity }
   }
 
+  namespace Uncategorized {
+    class PartsMapNode { +NodeId id; +string type }
+  }
+
   ArgValue <|-- Literal
   ArgValue <|-- Expr
   ArgValue <|-- Param
@@ -90,6 +94,7 @@ export const DOMAIN_CLASS_DIAGRAM = `classDiagram
   GraphNode <|-- ContainerNode
   GraphNode <|-- RepeatNode
   GraphNode <|-- MaterialNode
+  GraphNode <|-- PartsMapNode
 
   Graph "1" o-- "*" GraphNode : nodes
   Graph "1" o-- "*" ParamSchema : params

@@ -52,9 +52,11 @@ export const GEP_CLUSTERS: GepCluster[] = [
 
 export const GEP_MODULE_NODES: GepModuleNode[] = [
   // ── Shell ──
-  { id: 'GraphEditorPane.svelte', label: 'GraphEditorPane', cluster: 'shell', loc: 4389, kind: 'shell',
+  { id: 'GraphEditorPane.svelte', label: 'GraphEditorPane', cluster: 'shell', loc: 4379, kind: 'shell',
     role: 'Root editor pane: canvas, state orchestration, node-drop/bake/keyboard actions; mounts everything',
     split: '7 extraction candidates: node-palette · canvas-interaction · expr-actions · bake-orchestration · part-actions · keymap/save · CSS' },
+  { id: 'controller.svelte.ts', label: 'controller', cluster: 'shell', loc: 58, kind: 'state',
+    role: '' },
   { id: 'graph-history.svelte.ts', label: 'graph-history', cluster: 'shell', loc: 78, kind: 'state',
     role: '' },
   // ── Node cards ──
@@ -148,7 +150,7 @@ export const GEP_MODULE_NODES: GepModuleNode[] = [
     role: 'Arg/profile producer label + expr parse helpers' },
   { id: 'graph-layout-actions.ts', label: 'graph-layout-actions', cluster: 'geometry', loc: 175, kind: 'logic',
     role: 'Auto-layout / push-apart / obstacle separation' },
-  { id: 'node-palette.ts', label: 'node-palette', cluster: 'geometry', loc: 116, kind: 'logic',
+  { id: 'node-palette.ts', label: 'node-palette', cluster: 'geometry', loc: 136, kind: 'logic',
     role: 'Pure node-drop graph builders (buildSolidDrop, …) extracted from the GEP shell' },
 ];
 
@@ -192,4 +194,8 @@ export const GEP_MODULE_LINKS: GepModuleLink[] = [
   M('ProfilePreview.svelte', 'profile-preview-state.svelte.ts'),
   M('profile-preview-state.svelte.ts', 'poly-preview-state.svelte.ts'),
   M('AiMenu.svelte', 'ge-assist.svelte.ts'),
+  M('controller.svelte.ts', 'wire-state.svelte.ts'),
+  M('controller.svelte.ts', 'canvas-interaction.svelte.ts'),
+  M('controller.svelte.ts', 'sketch-state.svelte.ts'),
+  M('controller.svelte.ts', 'spline-state.svelte.ts'),
 ];

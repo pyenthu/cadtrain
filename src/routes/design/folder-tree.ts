@@ -3,7 +3,7 @@
 // /design "Folder tree" hierarchy views. Regenerate with:
 //   bun scripts/gen-folder-tree.mjs      (this file alone)
 //   bun scripts/gen-design-diagrams.mjs  (all three /design snapshots)
-// Stats at generation: 476 files · 105 folders · 96,475 LOC.
+// Stats at generation: 486 files · 109 folders · 98,382 LOC.
 
 export interface FolderNode {
   name: string;
@@ -12,7 +12,7 @@ export interface FolderNode {
   children?: FolderNode[];
 }
 
-export const FOLDER_TREE_STATS = { files: 476, folders: 105, loc: 96475 } as const;
+export const FOLDER_TREE_STATS = { files: 486, folders: 109, loc: 98382 } as const;
 
 export const FOLDER_TREE: FolderNode = {
   "name": "src",
@@ -88,7 +88,7 @@ export const FOLDER_TREE: FolderNode = {
                     {
                       "name": "index.ts",
                       "path": "src/lib/cad/nodes/kinds/index.ts",
-                      "loc": 19
+                      "loc": 20
                     },
                     {
                       "name": "material.test.ts",
@@ -119,6 +119,16 @@ export const FOLDER_TREE: FolderNode = {
                       "name": "mv.ts",
                       "path": "src/lib/cad/nodes/kinds/mv.ts",
                       "loc": 20
+                    },
+                    {
+                      "name": "parts-map.test.ts",
+                      "path": "src/lib/cad/nodes/kinds/parts-map.test.ts",
+                      "loc": 184
+                    },
+                    {
+                      "name": "parts-map.ts",
+                      "path": "src/lib/cad/nodes/kinds/parts-map.ts",
+                      "loc": 68
                     },
                     {
                       "name": "poly-repeat.ts",
@@ -210,7 +220,7 @@ export const FOLDER_TREE: FolderNode = {
                 {
                   "name": "registry.ts",
                   "path": "src/lib/cad/nodes/registry.ts",
-                  "loc": 38
+                  "loc": 39
                 }
               ]
             },
@@ -339,12 +349,12 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "composition-emit.ts",
               "path": "src/lib/cad/composition-emit.ts",
-              "loc": 778
+              "loc": 790
             },
             {
               "name": "composition-graph-hydrate.ts",
               "path": "src/lib/cad/composition-graph-hydrate.ts",
-              "loc": 474
+              "loc": 522
             },
             {
               "name": "composition-graph-mutate.ts",
@@ -354,7 +364,7 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "composition-graph-types.ts",
               "path": "src/lib/cad/composition-graph-types.ts",
-              "loc": 655
+              "loc": 737
             },
             {
               "name": "composition-graph.test.ts",
@@ -419,7 +429,7 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "editor-tools.ts",
               "path": "src/lib/cad/editor-tools.ts",
-              "loc": 295
+              "loc": 299
             },
             {
               "name": "expr-emit.test.ts",
@@ -527,6 +537,11 @@ export const FOLDER_TREE: FolderNode = {
               "loc": 101
             },
             {
+              "name": "param-kind.test.ts",
+              "path": "src/lib/cad/param-kind.test.ts",
+              "loc": 147
+            },
+            {
               "name": "part-id.ts",
               "path": "src/lib/cad/part-id.ts",
               "loc": 71
@@ -549,7 +564,7 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "port-types.ts",
               "path": "src/lib/cad/port-types.ts",
-              "loc": 226
+              "loc": 234
             },
             {
               "name": "primitive-sandbox.ts",
@@ -904,6 +919,11 @@ export const FOLDER_TREE: FolderNode = {
                   "loc": 119
                 },
                 {
+                  "name": "controller.svelte.ts",
+                  "path": "src/lib/shared/graph-editor/controller.svelte.ts",
+                  "loc": 58
+                },
+                {
                   "name": "delete-confirm.svelte.ts",
                   "path": "src/lib/shared/graph-editor/delete-confirm.svelte.ts",
                   "loc": 78
@@ -961,7 +981,7 @@ export const FOLDER_TREE: FolderNode = {
                 {
                   "name": "GraphEditorPane.svelte",
                   "path": "src/lib/shared/graph-editor/GraphEditorPane.svelte",
-                  "loc": 4389
+                  "loc": 4379
                 },
                 {
                   "name": "MaterialEditorPopover.svelte",
@@ -971,12 +991,12 @@ export const FOLDER_TREE: FolderNode = {
                 {
                   "name": "node-palette.test.ts",
                   "path": "src/lib/shared/graph-editor/node-palette.test.ts",
-                  "loc": 64
+                  "loc": 83
                 },
                 {
                   "name": "node-palette.ts",
                   "path": "src/lib/shared/graph-editor/node-palette.ts",
-                  "loc": 116
+                  "loc": 136
                 },
                 {
                   "name": "NodeCard.svelte",
@@ -1152,7 +1172,7 @@ export const FOLDER_TREE: FolderNode = {
                 {
                   "name": "execute.ts",
                   "path": "src/lib/shared/tf_examples/execute.ts",
-                  "loc": 466
+                  "loc": 537
                 },
                 {
                   "name": "extrude.test.ts",
@@ -1263,6 +1283,11 @@ export const FOLDER_TREE: FolderNode = {
                   "name": "tf-weld.ts",
                   "path": "src/lib/shared/tf_examples/tf-weld.ts",
                   "loc": 172
+                },
+                {
+                  "name": "warp-composite.test.ts",
+                  "path": "src/lib/shared/tf_examples/warp-composite.test.ts",
+                  "loc": 80
                 },
                 {
                   "name": "warp-densify.test.ts",
@@ -1759,6 +1784,50 @@ export const FOLDER_TREE: FolderNode = {
                       "loc": 25
                     }
                   ]
+                }
+              ]
+            },
+            {
+              "name": "design",
+              "path": "src/routes/api/design",
+              "children": [
+                {
+                  "name": "graphify",
+                  "path": "src/routes/api/design/graphify",
+                  "children": [
+                    {
+                      "name": "+server.ts",
+                      "path": "src/routes/api/design/graphify/+server.ts",
+                      "loc": 68
+                    }
+                  ]
+                },
+                {
+                  "name": "graphify-graph",
+                  "path": "src/routes/api/design/graphify-graph",
+                  "children": [
+                    {
+                      "name": "+server.ts",
+                      "path": "src/routes/api/design/graphify-graph/+server.ts",
+                      "loc": 31
+                    }
+                  ]
+                },
+                {
+                  "name": "rebuild-diagrams",
+                  "path": "src/routes/api/design/rebuild-diagrams",
+                  "children": [
+                    {
+                      "name": "+server.ts",
+                      "path": "src/routes/api/design/rebuild-diagrams/+server.ts",
+                      "loc": 32
+                    }
+                  ]
+                },
+                {
+                  "name": "_lib.ts",
+                  "path": "src/routes/api/design/_lib.ts",
+                  "loc": 95
                 }
               ]
             },
@@ -2296,7 +2365,7 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "+page.svelte",
               "path": "src/routes/design/+page.svelte",
-              "loc": 709
+              "loc": 866
             },
             {
               "name": "ArchGraph.svelte",
@@ -2319,6 +2388,11 @@ export const FOLDER_TREE: FolderNode = {
               "loc": 483
             },
             {
+              "name": "CodeGraph.svelte",
+              "path": "src/routes/design/CodeGraph.svelte",
+              "loc": 362
+            },
+            {
               "name": "domain-classes.ts",
               "path": "src/routes/design/domain-classes.ts",
               "loc": 102
@@ -2331,7 +2405,7 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "folder-tree.ts",
               "path": "src/routes/design/folder-tree.ts",
-              "loc": 2658
+              "loc": 3027
             },
             {
               "name": "FolderArc.svelte",
