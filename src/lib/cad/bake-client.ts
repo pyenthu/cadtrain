@@ -97,7 +97,7 @@ function getWorker(): Worker {
       if (data.ok) {
         const t = (data as any).timings;
         if (t && timingsOn()) { try { console.log(`[bake-worker] build=${(t.build ?? 0).toFixed(1)} · mesh=${(t.mesh ?? 0).toFixed(1)} · cutaway=${(t.cutaway ?? 0).toFixed(1)} · serialize=${(t.serialize ?? 0).toFixed(1)} ms`); } catch {} }
-        const payload: TransferableComponentResult = { full: data.full, cutVC: data.cutVC, instanced: data.instanced };
+        const payload: TransferableComponentResult = { full: data.full, cutVC: data.cutVC, parts: data.parts, instanced: data.instanced };
         // Cache even a SUPERSEDED bake — it's a valid mesh; storing it makes the
         // next identical request instant. Best-effort (cache failure is benign).
         void idbPut(job.key, payload);
