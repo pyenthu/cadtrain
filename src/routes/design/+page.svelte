@@ -18,6 +18,7 @@
   import FolderHierarchy from './FolderHierarchy.svelte';
   import UmlClassDiagram from './UmlClassDiagram.svelte';
   import CodeGraph, { type GraphJson } from './CodeGraph.svelte';
+  import DesignPhilosophy from './DesignPhilosophy.svelte';
 
   // ── Architecture view tabs: Tree | C4 | GEP module | Folder tree | Class model | Code graph ──
   const LS_ARCH_TAB = 'design-arch-tab';
@@ -103,9 +104,10 @@
   const PAGE_SECTIONS = [
     { id: 'what',   num: '01', label: 'What it is' },
     { id: 'arch',   num: '02', label: 'Architecture' },
-    { id: 'cap',    num: '03', label: 'Capabilities' },
-    { id: 'stack',  num: '04', label: 'Tech stack' },
-    { id: 'routes', num: '05', label: 'Routes' },
+    { id: 'philo',  num: '03', label: 'Design philosophy' },
+    { id: 'cap',    num: '04', label: 'Capabilities' },
+    { id: 'stack',  num: '05', label: 'Tech stack' },
+    { id: 'routes', num: '06', label: 'Routes' },
   ] as const;
   type PageSection = (typeof PAGE_SECTIONS)[number]['id'];
   const LS_PAGE_SECTION = 'design-page-section';
@@ -350,11 +352,21 @@
     {/if}
   </section>
 
+  {:else if pageSection === 'philo'}
+  <!-- ───────────────────────── Design philosophy ───────────────────────── -->
+  <section class="section" aria-labelledby="philo-h">
+    <div class="section-head">
+      <span class="num">03</span>
+      <h2 id="philo-h">Design philosophy</h2>
+    </div>
+    <DesignPhilosophy />
+  </section>
+
   {:else if pageSection === 'cap'}
   <!-- ───────────────────────── Capabilities ───────────────────────── -->
   <section class="section" aria-labelledby="cap-h">
     <div class="section-head">
-      <span class="num">03</span>
+      <span class="num">04</span>
       <h2 id="cap-h">Capabilities</h2>
     </div>
     <div class="cards">
@@ -375,7 +387,7 @@
   <!-- ───────────────────────── Tech stack ───────────────────────── -->
   <section class="section" aria-labelledby="stack-h">
     <div class="section-head">
-      <span class="num">04</span>
+      <span class="num">05</span>
       <h2 id="stack-h">Tech stack</h2>
     </div>
     <ul class="stack-list">
@@ -392,7 +404,7 @@
   <!-- ───────────────────────── Routes ───────────────────────── -->
   <section class="section" aria-labelledby="routes-h">
     <div class="section-head">
-      <span class="num">05</span>
+      <span class="num">06</span>
       <h2 id="routes-h">The routes</h2>
     </div>
     <p class="prose">
