@@ -16,3 +16,4 @@ export { PolyRepeatKind } from './poly-repeat';
 export { SketchKind } from './sketch';
 export { SketchRepeatKind } from './sketch-repeat';
 export { ExprKind } from './expr';
+export { PartsMapKind } from './parts-map';
