@@ -92,10 +92,6 @@ export interface BakeCachePayload {
   full: any;
   /** Serialized cutaway mesh (empty when cutaway was skipped). */
   cutVC: any;
-  /** Per-source-part meshes (#1 unify-transparency) — same shape as
-   *  serializeComponentResult.parts; present only for an appearance-bearing
-   *  (transparent-subpart) composite. */
-  parts?: any;
   /** True when finalizeManifold skipped the cutaway CSG step. */
   cutawaySkipped?: boolean;
   /** Materializing the prim function and Manifold-compose took this much,
