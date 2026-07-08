@@ -377,30 +377,30 @@
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="ge-wire-shade" onclick={closeWarpPop}></div>
-    <div class="ge-wire-pop ge-tx-pop"
-      style="left: {Math.min(warpPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 220)}px; top: {warpPop.y}px">
+    <div class="ge-wire-pop ge-warp-pop"
+      style="left: {Math.min(warpPop.x, (typeof window !== 'undefined' ? window.innerWidth : 1200) - 210)}px; top: {warpPop.y}px">
       <div class="ge-wire-head ge-tx-head">
-        <span>≈ warp · options</span>
+        <span>≈ warp options</span>
         <button class="ge-tx-headx" type="button" onclick={closeWarpPop} title="Close">×</button>
       </div>
-      <div class="ge-tx-row">
-        <span class="ge-tx-key" title="Build-time subdivision so flat walls bend as arcs (0 = adaptive)">refine</span>
-        <input class="ge-tx-input" type="number" min="0" step="1"
+      <div class="ge-warp-optrow">
+        <span class="ge-warp-optk" data-tip="Build-time subdivision so flat walls bend as arcs, not chords (0 = adaptive)">refine</span>
+        <input class="ge-warp-optn" type="number" min="0" step="1"
           value={Number.isFinite(refineVal) ? refineVal : 0}
           oninput={(e) => { const v = Number((e.target as HTMLInputElement).value); graph = setWarpRefine(graph, warpPop!.nodeId, v > 0 ? asLiteral(v) : null); }} />
       </div>
-      <div class="ge-tx-row">
-        <span class="ge-tx-key" title="Stretch the part to span the whole spline (else keep its own length)">stretch</span>
-        <button class="ge-warp-tog" class:on={wn.stretch === true} type="button"
+      <div class="ge-warp-optrow">
+        <span class="ge-warp-optk" data-tip="Stretch the part to span the whole spline (else keep its own length)">stretch</span>
+        <button class="ge-warp-optt" class:on={wn.stretch === true} type="button"
           onclick={() => { graph = setWarpStretch(graph, warpPop!.nodeId, wn.stretch !== true); }}>{wn.stretch === true ? 'on' : 'off'}</button>
       </div>
-      <div class="ge-tx-row">
-        <span class="ge-tx-key" title="Warn on an inverted / self-intersecting bend (genus/volume check)">validate</span>
-        <button class="ge-warp-tog" class:on={wn.validate === true} type="button"
+      <div class="ge-warp-optrow">
+        <span class="ge-warp-optk" data-tip="Warn on an inverted / self-intersecting bend (genus / volume check)">validate</span>
+        <button class="ge-warp-optt" class:on={wn.validate === true} type="button"
           onclick={() => { graph = setWarpValidate(graph, warpPop!.nodeId, wn.validate !== true); }}>{wn.validate === true ? 'on' : 'off'}</button>
       </div>
       <div class="ge-expr-pop-row right">
-        <button class="ge-param-add" type="button" onclick={closeWarpPop}>done</button>
+        <button class="ge-param-add sm" type="button" onclick={closeWarpPop}>done</button>
       </div>
     </div>
   {/if}
@@ -581,6 +581,17 @@
   .ge-tx-pin { font-size: 12px; filter: grayscale(1); }
   .ge-tx-pin.on { opacity: 1; filter: none; }
   .ge-tx-headx { font: 700 14px Arial; color: #b91c1c; }
+  /* ── Warp options popover (#36b): compact 2-column grid — label | control ── */
+  .ge-warp-pop { min-width: 176px; max-width: 208px; }
+  .ge-warp-optrow { display: grid; grid-template-columns: 60px 1fr; align-items: center; column-gap: 8px; padding: 3px 10px; }
+  .ge-warp-optk { font: 600 11px ui-sans-serif, system-ui; color: #6d28d9; white-space: nowrap; }
+  .ge-warp-optn { width: 100%; box-sizing: border-box; padding: 2px 6px; font: 12px ui-monospace, monospace; color: #1f2937; border: 1px solid #d6d3d1; border-radius: 4px; }
+  .ge-warp-optn:focus { outline: 1px solid #6d28d9; }
+  .ge-warp-optt { justify-self: start; min-width: 44px; padding: 2px 0; font: 600 11px ui-sans-serif, system-ui; text-align: center; color: #64748b; background: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; cursor: pointer; }
+  .ge-warp-optt:hover { border-color: #0e7490; color: #0e7490; }
+  .ge-warp-optt.on { background: #0e7490; border-color: #0e7490; color: #fff; }
+  .ge-warp-optt.on:hover { color: #fff; }
+  .ge-param-add.sm { padding: 2px 12px; font-size: 11px; }
   .ge-tx-row { display: flex; align-items: center; gap: 6px; padding: 1px 4px; }
   .ge-tx-key { width: 22px; flex: 0 0 auto; font: 600 12px ui-monospace, monospace; color: #6d28d9; }
   .ge-tx-input { flex: 1 1 auto; min-width: 0; box-sizing: border-box; padding: 3px 6px; font: 12px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 4px; color: #1f2937; }
