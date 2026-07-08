@@ -52,7 +52,7 @@ export const GEP_CLUSTERS: GepCluster[] = [
 
 export const GEP_MODULE_NODES: GepModuleNode[] = [
   // ── Shell ──
-  { id: 'GraphEditorPane.svelte', label: 'GraphEditorPane', cluster: 'shell', loc: 4379, kind: 'shell',
+  { id: 'GraphEditorPane.svelte', label: 'GraphEditorPane', cluster: 'shell', loc: 4398, kind: 'shell',
     role: 'Root editor pane: canvas, state orchestration, node-drop/bake/keyboard actions; mounts everything',
     split: '7 extraction candidates: node-palette · canvas-interaction · expr-actions · bake-orchestration · part-actions · keymap/save · CSS' },
   { id: 'controller.svelte.ts', label: 'controller', cluster: 'shell', loc: 58, kind: 'state',
@@ -60,15 +60,15 @@ export const GEP_MODULE_NODES: GepModuleNode[] = [
   { id: 'graph-history.svelte.ts', label: 'graph-history', cluster: 'shell', loc: 78, kind: 'state',
     role: '' },
   // ── Node cards ──
-  { id: 'NodeCard.svelte', label: 'NodeCard', cluster: 'nodecard', loc: 2454, kind: 'component',
+  { id: 'NodeCard.svelte', label: 'NodeCard', cluster: 'nodecard', loc: 2594, kind: 'component',
     role: 'Per-node-type SVG card renderer (call/method/mv/rot/txfmn/repeat/list/polygon/sketch/expr/spline/material/warp)',
     split: '6 candidates: split the {#if n.type} chain into NodeCard.<Type>.svelte per card' },
   { id: 'RepeatEditorPane.svelte', label: 'RepeatEditorPane', cluster: 'nodecard', loc: 299, kind: 'component',
     role: 'Repeat-node pattern editor pane' },
   // ── Wiring ──
-  { id: 'wire-state.svelte.ts', label: 'wire-state', cluster: 'wiring', loc: 445, kind: 'state',
+  { id: 'wire-state.svelte.ts', label: 'wire-state', cluster: 'wiring', loc: 460, kind: 'state',
     role: 'Wire drag/connect state machine (per-instance class)' },
-  { id: 'WireLayer.svelte', label: 'WireLayer', cluster: 'wiring', loc: 552, kind: 'component',
+  { id: 'WireLayer.svelte', label: 'WireLayer', cluster: 'wiring', loc: 564, kind: 'component',
     role: 'SVG wire/edge rendering layer' },
   { id: 'canvas-interaction.svelte.ts', label: 'canvas-interaction', cluster: 'wiring', loc: 97, kind: 'state',
     role: 'Canvas pan/zoom/pointer interaction state' },
@@ -118,7 +118,7 @@ export const GEP_MODULE_NODES: GepModuleNode[] = [
   { id: 'BakeMenu.svelte', label: 'BakeMenu', cluster: 'bake', loc: 106, kind: 'component',
     role: 'Bake options menu' },
   // ── Menus / popovers ──
-  { id: 'Popovers.svelte', label: 'Popovers', cluster: 'menus', loc: 570, kind: 'component',
+  { id: 'Popovers.svelte', label: 'Popovers', cluster: 'menus', loc: 627, kind: 'component',
     role: 'Aggregated popovers (profile picker, expr, etc.)' },
   { id: 'CanvasMenu.svelte', label: 'CanvasMenu', cluster: 'menus', loc: 119, kind: 'component',
     role: 'Canvas context/add menu' },
@@ -144,7 +144,7 @@ export const GEP_MODULE_NODES: GepModuleNode[] = [
   { id: 'ParamsCard.svelte', label: 'ParamsCard', cluster: 'rightrail', loc: 169, kind: 'component',
     role: 'Params list card with delete-confirm' },
   // ── Geometry ──
-  { id: 'geom.ts', label: 'geom', cluster: 'geometry', loc: 531, kind: 'logic',
+  { id: 'geom.ts', label: 'geom', cluster: 'geometry', loc: 563, kind: 'logic',
     role: 'Socket/card layout geometry math (positions, sizes) — the shared hub' },
   { id: 'args.ts', label: 'args', cluster: 'geometry', loc: 80, kind: 'logic',
     role: 'Arg/profile producer label + expr parse helpers' },

@@ -72,6 +72,7 @@ export const DOMAIN_CLASS_DIAGRAM = `classDiagram
   }
 
   namespace Uncategorized {
+    class CutawayNode { +NodeId id; +string type }
     class PartsMapNode { +NodeId id; +string type }
   }
 
@@ -94,6 +95,7 @@ export const DOMAIN_CLASS_DIAGRAM = `classDiagram
   GraphNode <|-- ContainerNode
   GraphNode <|-- RepeatNode
   GraphNode <|-- MaterialNode
+  GraphNode <|-- CutawayNode
   GraphNode <|-- PartsMapNode
 
   Graph "1" o-- "*" GraphNode : nodes
