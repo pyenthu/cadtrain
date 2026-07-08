@@ -848,6 +848,71 @@ function lowerNode(
       };
     }
 
+    case 'parts_map': {
+      // A `list<record>` → N part INSTANCES (#38 Phase 3). Native lowering: resolve
+      // the rows (a list-param default), evaluate each row's argMap (`s.field`/`i`
+      // exprs) → a numeric arg map, and lower each as a synthetic Call to `src` (so
+      // engine + composite handling is reused verbatim). `op` wraps the N children:
+      // `list` (default) + `place` → a union; `stack` → a mated stack-union (the
+      // executor spaces the copies by Z-extent, like the Stack container).
+      const pm = node as any;
+      const src = pm.src as string;
+      if (!src || typeof src !== 'string') {
+        notes.push(`parts_map ${node.id}: no template src selected — UNSUPPORTED`);
+        return { op: 'UNSUPPORTED', nodeType: 'parts_map', detail: 'no src' };
+      }
+      const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(pm.loopVar || '')) ? String(pm.loopVar) : 's';
+      // Rows come from the `list` ArgValue — a literal array or (usually) a
+      // list<record> PARAM whose default holds the row objects. An `expr` list
+      // can't be resolved to concrete rows here (no object scope) → UNSUPPORTED.
+      let rows: any[] = [];
+      const listV = pm.list as ArgValue | undefined;
+      if (listV?.kind === 'literal' && Array.isArray((listV as any).value)) {
+        rows = (listV as any).value;
+      } else if (listV?.kind === 'param') {
+        const def = (graph.params?.[(listV as any).param] as any)?.default;
+        if (Array.isArray(def)) rows = def;
+      }
+      if (!Array.isArray(rows) || rows.length === 0) {
+        notes.push(`parts_map ${node.id}: list did not resolve to a concrete row array (needs a list<record> param with a default, or a literal array) — UNSUPPORTED`);
+        return { op: 'UNSUPPORTED', nodeType: 'parts_map', detail: 'rows not resolvable' };
+      }
+      const argMap = (pm.argMap ?? {}) as Record<string, ArgValue>;
+      const op: string = pm.op ?? 'list';
+      // Evaluate one argMap value against a specific row (`s`/loopVar → the record
+      // object) + `i` (the index) — mirrors the emitted `Array.from(rows,(s,i)=>…)`.
+      const evalRowArg = (v: ArgValue | undefined, row: any, i: number): number => {
+        if (!v) return NaN;
+        if (v.kind === 'literal') return Number((v as any).value);
+        if (v.kind === 'param') return Number(scope[(v as any).param]);
+        if (v.kind === 'expr') {
+          try {
+            // eslint-disable-next-line no-new-func
+            const fn = new Function('p', 'Math', loopVar, 'i', `"use strict"; return (${(v as any).expr});`);
+            return Number(fn(scope, Math, row, i));
+          } catch { return NaN; }
+        }
+        return NaN;
+      };
+      const children: TfInstr[] = rows.map((row, i) => {
+        const litArgs: Record<string, ArgValue> = {};
+        for (const [k, v] of Object.entries(argMap)) {
+          const n = evalRowArg(v, row, i);
+          litArgs[k] = { kind: 'literal', value: Number.isFinite(n) ? n : 0 } as ArgValue;
+        }
+        // Synthetic Call → reuse the full engine/composite lowering (incl. resolve).
+        const synth = { id: `${node.id}__row${i}`, type: 'call', src, args: litArgs };
+        return lowerNode(synth as any, graph, scope, notes, resolve, seen, depth);
+      });
+      if (op === 'place') {
+        notes.push(`parts_map ${node.id}: op=place positioning is not applied natively (TF unions the ${children.length} instances at their local origins)`);
+      }
+      if (op === 'stack') {
+        return { op: 'union', children, mated: true, offsets: children.map(() => null) };
+      }
+      return { op: 'union', children };
+    }
+
     case 'polygon':
       return { op: 'profile', profile: resolvePolygon(node as PolygonNode, graph, scope, notes) };
 

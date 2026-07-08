@@ -513,11 +513,12 @@
       // `tfMeshToGeo` runs below. The pure `recipeHasUnsupported` guard stays here
       // (no WASM) so the native-only error path is instant + the worker only ever
       // gets buildable work.
-      const [{ tfMeshToGeo, hexToRgb01 }, { recipeHasUnsupported }, { tfBakeClient, isTfCancelled }, { materialPreset }] = await Promise.all([
+      const [{ tfMeshToGeo, hexToRgb01 }, { recipeHasUnsupported }, { tfBakeClient, isTfCancelled }, { materialPreset }, { warpVertex }] = await Promise.all([
         import('$lib/shared/trueform-adapter'),
         import('$lib/shared/tf_examples/execute'),
         import('$lib/shared/tf-bake-client'),
         import('$lib/shared/material-preset'),
+        import('$lib/cad/warp-geom'),
       ]);
       const importsMs = performance.now() - _tImp0; // dynamic-import cost (0 after 1st)
       if (ac.signal.aborted) return;
@@ -565,6 +566,33 @@
       const warmMs = tim?.warm ?? 0;
       const buildMs = tim?.build ?? (performance.now() - t0);
       const { data, stats, cutPlanes, fullData, parts, cutParts } = result;
+      // Scene SINE-WARP → bake it into the TF mesh vertices (mirrors Manifold's
+      // finalizeManifold `applyWarp`, the SAME `amp·sin(z·freq)` math via the shared
+      // `warpVertex`). TF returns raw point arrays, so we displace them IN PLACE
+      // before `tfMeshToGeo` (which recomputes normals from the warped positions).
+      // A pure per-vertex position transform — NOT a subdivision/mesh-rewrite, so
+      // Rule 25's OOB warning (subdividing a welded MeshGL) doesn't apply. The
+      // toggle re-triggers this bake via `warpNonce` in the effect key above.
+      // CAVEAT (needs live check): a coarse native TF build may chord the sine
+      // (no build-time Z-densify like Manifold's `_axialMaxZSpan`), and cutaway+warp
+      // together can slightly mis-classify the grey interior (cutPlanes aren't warped).
+      const sceneWarp = scene.warpEnabled ? { amp: scene.warpAmp, freq: scene.warpFreq, axis: (scene.warpAxis === 'y' ? 'y' : 'x') as 'x' | 'y' } : undefined;
+      if (sceneWarp) {
+        const seen = new Set<object>();
+        const t: [number, number, number] = [0, 0, 0];
+        const warpPts = (pts?: number[] | Float32Array) => {
+          if (!pts || seen.has(pts as object)) return;
+          seen.add(pts as object);
+          for (let i = 0; i + 2 < pts.length; i += 3) {
+            t[0] = pts[i]; t[1] = pts[i + 1]; t[2] = pts[i + 2];
+            warpVertex(t, sceneWarp.amp, sceneWarp.freq, sceneWarp.axis);
+            pts[i] = t[0]; pts[i + 1] = t[1]; pts[i + 2] = t[2];
+          }
+        };
+        warpPts(data?.points); warpPts(fullData?.points);
+        parts?.forEach((p) => warpPts(p.data?.points));
+        cutParts?.forEach((p) => warpPts(p.data?.points));
+      }
       const _tMesh0 = performance.now();
       // Assemble BOTH meshes + parts TOGETHER (mirrors Manifold's {full,cutVC}) so
       // the cross-section toggle is a pure VIEW-SWITCH with NO re-bake and never
@@ -710,7 +738,7 @@
       // (composites → UNSUPPORTED) for the server-inlined one ASYNCHRONOUSLY, and
       // only the NESTED ops change (s_tube stays booleanDifference at the root), so
       // the whole recipe must be in the key or the native re-bake never fires.
-      ? JSON.stringify({ b: 'tf', actual: tfActual, demo: tfActual ? '' : tfDemo, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), rcp: tfActual && tfRecipe ? tfRecipe : '', seg: effSegments, cli: scene.clientBake, cut: scene.showCutaway })
+      ? JSON.stringify({ b: 'tf', actual: tfActual, demo: tfActual ? '' : tfDemo, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), rcp: tfActual && tfRecipe ? tfRecipe : '', seg: effSegments, cli: scene.clientBake, cut: scene.showCutaway, warpNonce: scene.warpBakeNonce })
       : isBrep
       ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
       : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, clientBake: scene.clientBake });
