@@ -1155,51 +1155,6 @@ export const FOLDER_TREE: FolderNode = {
               "path": "src/lib/shared/tf_examples",
               "children": [
                 {
-                  "name": "bored_pipe.ts",
-                  "path": "src/lib/shared/tf_examples/bored_pipe.ts",
-                  "loc": 27
-                },
-                {
-                  "name": "box.ts",
-                  "path": "src/lib/shared/tf_examples/box.ts",
-                  "loc": 20
-                },
-                {
-                  "name": "cone.ts",
-                  "path": "src/lib/shared/tf_examples/cone.ts",
-                  "loc": 33
-                },
-                {
-                  "name": "dp_joint.test.ts",
-                  "path": "src/lib/shared/tf_examples/dp_joint.test.ts",
-                  "loc": 89
-                },
-                {
-                  "name": "dp_joint.ts",
-                  "path": "src/lib/shared/tf_examples/dp_joint.ts",
-                  "loc": 114
-                },
-                {
-                  "name": "dp_pin.ts",
-                  "path": "src/lib/shared/tf_examples/dp_pin.ts",
-                  "loc": 43
-                },
-                {
-                  "name": "dp_stand.test.ts",
-                  "path": "src/lib/shared/tf_examples/dp_stand.test.ts",
-                  "loc": 121
-                },
-                {
-                  "name": "dp_stand.ts",
-                  "path": "src/lib/shared/tf_examples/dp_stand.ts",
-                  "loc": 103
-                },
-                {
-                  "name": "excluded.ts",
-                  "path": "src/lib/shared/tf_examples/excluded.ts",
-                  "loc": 29
-                },
-                {
                   "name": "execute.test.ts",
                   "path": "src/lib/shared/tf_examples/execute.test.ts",
                   "loc": 475
@@ -1220,56 +1175,6 @@ export const FOLDER_TREE: FolderNode = {
                   "loc": 155
                 },
                 {
-                  "name": "helix.ts",
-                  "path": "src/lib/shared/tf_examples/helix.ts",
-                  "loc": 33
-                },
-                {
-                  "name": "index.test.ts",
-                  "path": "src/lib/shared/tf_examples/index.test.ts",
-                  "loc": 56
-                },
-                {
-                  "name": "index.ts",
-                  "path": "src/lib/shared/tf_examples/index.ts",
-                  "loc": 84
-                },
-                {
-                  "name": "mandrel.test.ts",
-                  "path": "src/lib/shared/tf_examples/mandrel.test.ts",
-                  "loc": 94
-                },
-                {
-                  "name": "mandrel.ts",
-                  "path": "src/lib/shared/tf_examples/mandrel.ts",
-                  "loc": 57
-                },
-                {
-                  "name": "mule_shoe.test.ts",
-                  "path": "src/lib/shared/tf_examples/mule_shoe.test.ts",
-                  "loc": 58
-                },
-                {
-                  "name": "mule_shoe.ts",
-                  "path": "src/lib/shared/tf_examples/mule_shoe.ts",
-                  "loc": 71
-                },
-                {
-                  "name": "nipple_f.test.ts",
-                  "path": "src/lib/shared/tf_examples/nipple_f.test.ts",
-                  "loc": 88
-                },
-                {
-                  "name": "nipple_f.ts",
-                  "path": "src/lib/shared/tf_examples/nipple_f.ts",
-                  "loc": 69
-                },
-                {
-                  "name": "r_cyl.ts",
-                  "path": "src/lib/shared/tf_examples/r_cyl.ts",
-                  "loc": 21
-                },
-                {
                   "name": "revolve.test.ts",
                   "path": "src/lib/shared/tf_examples/revolve.test.ts",
                   "loc": 93
@@ -1278,41 +1183,6 @@ export const FOLDER_TREE: FolderNode = {
                   "name": "revolve.ts",
                   "path": "src/lib/shared/tf_examples/revolve.ts",
                   "loc": 114
-                },
-                {
-                  "name": "s_cyl.ts",
-                  "path": "src/lib/shared/tf_examples/s_cyl.ts",
-                  "loc": 29
-                },
-                {
-                  "name": "s_tub_st.test.ts",
-                  "path": "src/lib/shared/tf_examples/s_tub_st.test.ts",
-                  "loc": 50
-                },
-                {
-                  "name": "s_tub_st.ts",
-                  "path": "src/lib/shared/tf_examples/s_tub_st.ts",
-                  "loc": 106
-                },
-                {
-                  "name": "s_tube_demo.test.ts",
-                  "path": "src/lib/shared/tf_examples/s_tube_demo.test.ts",
-                  "loc": 56
-                },
-                {
-                  "name": "s_tube_demo.ts",
-                  "path": "src/lib/shared/tf_examples/s_tube_demo.ts",
-                  "loc": 113
-                },
-                {
-                  "name": "s_tube_no_ext.ts",
-                  "path": "src/lib/shared/tf_examples/s_tube_no_ext.ts",
-                  "loc": 60
-                },
-                {
-                  "name": "sweep_section_demo.ts",
-                  "path": "src/lib/shared/tf_examples/sweep_section_demo.ts",
-                  "loc": 48
                 },
                 {
                   "name": "sweep-section.test.ts",
@@ -1348,11 +1218,6 @@ export const FOLDER_TREE: FolderNode = {
                   "name": "warp-pipeline.test.ts",
                   "path": "src/lib/shared/tf_examples/warp-pipeline.test.ts",
                   "loc": 132
-                },
-                {
-                  "name": "weld_extrude_demo.ts",
-                  "path": "src/lib/shared/tf_examples/weld_extrude_demo.ts",
-                  "loc": 62
                 }
               ]
             },

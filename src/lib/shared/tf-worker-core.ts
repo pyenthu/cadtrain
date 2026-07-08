@@ -30,22 +30,19 @@
  * isolation, so the actual WASM bake is verified in the browser, not headlessly).
  */
 import { executeTfRecipe } from './tf_examples/execute';
-import { getTfExample } from './tf_examples';
 import type { TfDemoResult, TfMeshStats, TfCutPlane } from './trueform-client';
 import type { TfRecipe, TfAppearance } from '$lib/cad/graph-to-tf';
 
 /** A build request — the JSON-cloneable message the main thread posts to the
- *  worker. `native` executes a graph→TF recipe (the "actual" part path); `demo`
- *  dispatches a `tf_examples/` builder by name. Both honour `cutaway`. */
+ *  worker. Executes a graph→TF recipe (the "actual" part path) and honours
+ *  `cutaway`. */
 export interface TfWorkerRequest {
   /** Monotonic job id (worker echoes it back so the client matches the reply). */
   id: number;
-  /** native = execute `recipe` in TF; demo = run the named `tf_examples` builder. */
-  mode: 'native' | 'demo';
-  /** native mode: the compiled graph→TF recipe (data-only, JSON-cloneable). */
+  /** Always 'native' — execute `recipe` in TF. */
+  mode: 'native';
+  /** The compiled graph→TF recipe (data-only, JSON-cloneable). */
   recipe?: TfRecipe;
-  /** demo mode: the `tf_examples/` builder name (falls back to `r_cyl`). */
-  tfDemo?: string;
   /** Mirror the Manifold cutaway — a half-quadrant boolean section cut. */
   cutaway: boolean;
   /** Opt-in perf logging (worker warm + build). */
@@ -56,23 +53,12 @@ export interface TfWorkerRequest {
  * Dispatch a build request against an ALREADY-INITIALISED TrueForm kernel handle
  * → a {@link TfDemoResult} (raw mesh data + tf's topology verdict + optional
  * cutPlanes/parts). Injects `tf`/`t` (never calls `ensureTf` itself) so the
- * NATIVE path is unit-testable with a mock kernel, exactly like `executeTfRecipe`.
- *
- * The DEMO path calls the registered builder's `build()`, which ensures the
- * kernel internally (idempotent/cached) — so it is exercised in-browser, not in
- * the mock test (which only drives the native path).
+ * native path is unit-testable with a mock kernel, exactly like `executeTfRecipe`.
  */
 export async function buildTfRecipe(tf: any, req: TfWorkerRequest): Promise<TfDemoResult> {
-  if (req.mode === 'native') {
-    if (!req.recipe) throw new Error('native TF build requires a recipe');
-    // Same call shape rebuildTf used inline: executeTfRecipe(tf, tf, recipe, opts).
-    return executeTfRecipe(tf, tf, req.recipe, { cutaway: req.cutaway });
-  }
-  // DEMO: registry dispatch, falling back to r_cyl on an unknown name (mirrors
-  // rebuildTf's `getTfExample(tfDemo) ?? getTfExample('r_cyl')`).
-  const ex = getTfExample(req.tfDemo ?? 'r_cyl') ?? getTfExample('r_cyl');
-  if (!ex) throw new Error(`unknown TF demo: ${req.tfDemo}`);
-  return ex.build({ cutaway: req.cutaway });
+  if (!req.recipe) throw new Error('native TF build requires a recipe');
+  // Same call shape rebuildTf used inline: executeTfRecipe(tf, tf, recipe, opts).
+  return executeTfRecipe(tf, tf, req.recipe, { cutaway: req.cutaway });
 }
 
 /** The transfer-ready shape of a TF build result — flat typed arrays on their OWN

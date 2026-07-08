@@ -37,11 +37,10 @@ export function isTfCancelled(r: TfBakeResult): r is typeof TF_CANCELLED {
   return r === TF_CANCELLED;
 }
 
-/** What the caller asks for — a native recipe build or a demo, honouring cutaway. */
+/** What the caller asks for — a native recipe build, honouring cutaway. */
 export interface TfBakeArgs {
-  mode: 'native' | 'demo';
+  mode: 'native';
   recipe?: import('$lib/cad/graph-to-tf').TfRecipe;
-  tfDemo?: string;
   cutaway: boolean;
 }
 
@@ -169,7 +168,7 @@ async function runOnMainThread(job: Job): Promise<void> {
   try {
     const tf = await ensureTf();
     if (job.settled) return; // superseded during warm
-    const req: TfWorkerRequest = { id: job.id, mode: job.args.mode, recipe: job.args.recipe, tfDemo: job.args.tfDemo, cutaway: job.args.cutaway };
+    const req: TfWorkerRequest = { id: job.id, mode: job.args.mode, recipe: job.args.recipe, cutaway: job.args.cutaway };
     const result = await buildTfRecipe(tf, req);
     if (job.settled) return; // superseded during build
     // packTfResult copies into owned typed arrays; on the main thread we don't need
@@ -210,7 +209,7 @@ async function dispatch(): Promise<void> {
     // — a JSON round-trip yields plain cloneable data (structured-clone rejects
     // proxies with DataCloneError, same trap bake-client guards).
     const recipe = job.args.recipe ? JSON.parse(JSON.stringify(job.args.recipe)) : undefined;
-    const msg: TfWorkerRequest = { id: job.id, mode: job.args.mode, recipe, tfDemo: job.args.tfDemo, cutaway: job.args.cutaway, timings: timingsOn() };
+    const msg: TfWorkerRequest = { id: job.id, mode: job.args.mode, recipe, cutaway: job.args.cutaway, timings: timingsOn() };
     try {
       getWorker().postMessage(msg);
     } catch (e) {

@@ -16,7 +16,7 @@
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, material = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfDemo = 'r_cyl', tfActual = false, tfRecipe = undefined, tfPending = false }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, material = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfActual = false, tfRecipe = undefined, tfPending = false }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
     /** Spline DIAGNOSTIC overlays (TODO #24) — plotted splines' resolved curves +
      *  control points, drawn INSIDE the live-mesh group so they align with the
@@ -95,11 +95,7 @@
      *  GLB/BREP secondary canvases pass false so two mounted scenes can't
      *  ping-pong the shared scene.xScale/zScale (freeze fix, 2026-07-02). */
     autoScaleOwner?: boolean;
-    /** TF backend only: which client-side TrueForm demo to render — a name from
-     *  the `tf_examples/` registry (box · r_cyl · s_cyl · helix · bored_pipe ·
-     *  dp_pin · cone). Resolved via `getTfExample(name)`; unknown → r_cyl. */
-    tfDemo?: import('$lib/shared/tf_examples').TfExampleName;
-    /** TF backend only: when true, IGNORE `tfDemo` and instead import the part's
+    /** TF backend only: when true, import the part's
      *  OWN baked Manifold mesh into the TF kernel — the user sees their real
      *  geometry in TrueForm + tf's independent watertight/manifold/χ verdict. */
     tfActual?: boolean;
@@ -502,7 +498,7 @@
     tfAc?.abort(); const ac = new AbortController(); tfAc = ac;
     try {
       const _tImp0 = performance.now();
-      // The geometry BUILD (executeTfRecipe / demo / warpMeshJS / boolean fold)
+      // The geometry BUILD (executeTfRecipe / warpMeshJS / boolean fold)
       // now runs OFF the main thread in `tf-worker.ts` via `tf-bake-client` — the
       // TF tab used to jank the UI because it built inline here (like the pre-worker
       // Manifold bake). THREE stays main-thread: the worker returns RAW mesh data,
@@ -549,11 +545,8 @@
       // The worker warms the kernel + builds; on a worker-TRANSPORT failure the
       // client transparently re-runs the same build on the main thread. A genuine
       // BUILD failure REJECTS → the outer catch blanks the canvas + shows the reason.
-      const builtVia: 'native TF' | 'demo' = useNative ? 'native TF' : 'demo';
       const result = await tfBakeClient.run(
-        useNative
-          ? { mode: 'native', recipe: tfRecipe!, cutaway: scene.showCutaway }
-          : { mode: 'demo', tfDemo, cutaway: scene.showCutaway },
+        { mode: 'native', recipe: tfRecipe!, cutaway: scene.showCutaway },
       );
       if (ac.signal.aborted || isTfCancelled(result)) return;
       // Worker-reported timings: warm (one-time ~31MB WASM + pthread pool) + build
@@ -632,15 +625,15 @@
       // Surface tf's OWN topology verdict (the watertightness check) as the
       // reason line + console — the KNOWN TrueForm weakness is non-watertight
       // booleans / uncapped sweeps. A clean half-cut solid stays closed+manifold.
-      // The mesh shown is ALWAYS built by TrueForm now (native or demo) — no
-      // Manifold import path — so the verdict always leads with "TF BAKE".
-      const label = tfActual ? `TF BAKE · ${name ?? id}` : `TF BAKE · ${tfDemo}`;
+      // The mesh shown is ALWAYS built by TrueForm natively — no Manifold import
+      // path — so the verdict always leads with "TF BAKE".
+      const label = `TF BAKE · ${name ?? id}`;
       if (stats) {
         brepReason =
           `${label}${cutPlanes ? ' · cutaway' : ''} · ${stats.closed ? 'watertight (closed)' : `open (${stats.boundaryLoops} boundary loop${stats.boundaryLoops === 1 ? '' : 's'})`}` +
           ` · ${stats.manifold ? 'manifold' : 'NON-manifold'} · χ=${stats.euler}` +
           (stats.closed ? ` · vol=${stats.volume.toFixed(2)}` : '');
-        console.log('[tf]', builtVia, label, cutPlanes ? '(cutaway)' : '', stats);
+        console.log('[tf]', label, cutPlanes ? '(cutaway)' : '', stats);
       }
       onBakeMeta?.({ cached: false, ms: tfMs, tris, verts, supported: true,
         steps: { imports: importsMs, warm: warmMs, build: buildMs, mesh: meshMs } });
@@ -734,7 +727,7 @@
       // (composites → UNSUPPORTED) for the server-inlined one ASYNCHRONOUSLY, and
       // only the NESTED ops change (s_tube stays booleanDifference at the root), so
       // the whole recipe must be in the key or the native re-bake never fires.
-      ? JSON.stringify({ b: 'tf', actual: tfActual, demo: tfActual ? '' : tfDemo, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), rcp: tfActual && tfRecipe ? tfRecipe : '', seg: effSegments, cli: scene.clientBake, cut: scene.showCutaway, warpNonce: scene.warpBakeNonce })
+      ? JSON.stringify({ b: 'tf', actual: tfActual, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), rcp: tfActual && tfRecipe ? tfRecipe : '', seg: effSegments, cli: scene.clientBake, cut: scene.showCutaway, warpNonce: scene.warpBakeNonce })
       : isBrep
       ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
       : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, clientBake: scene.clientBake });
