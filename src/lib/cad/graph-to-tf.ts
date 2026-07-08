@@ -635,12 +635,12 @@ function lowerNode(
         // `path` arg wires to a spline node (control points → concrete Catmull-
         // Rom resample, mirroring tf_examples/s_tube_demo); the `section` arg
         // wires to a circle → its scalar radius. Anything tf's tubeMesh can't
-        // do (no wired spline path, non-circular section) stays UNSUPPORTED so
-        // the caller falls back to the Manifold mesh-import path.
+        // do (no wired spline path, non-circular section) stays UNSUPPORTED —
+        // TF is native-only, so the canvas blanks with this reason (no fallback).
         const pathNode = resolveSplineNode(args.path, graph);
         const secSpline = resolveSplineNode(args.section, graph);
         if (!pathNode) {
-          notes.push(`call ${node.id} (r_sweep): path arg is not a resolvable spline node — UNSUPPORTED (mesh-import fallback)`);
+          notes.push(`call ${node.id} (r_sweep): path arg is not a resolvable spline node — UNSUPPORTED (native-only: TF blanks with this reason)`);
           return { op: 'UNSUPPORTED', nodeType: 'call:r_sweep', detail: 'path not resolvable' };
         }
         const closedPath = evalBool(args.closedPath, pathNode.closed ?? false);
@@ -659,7 +659,7 @@ function lowerNode(
         }
         // (2) NON-circular literal section → transport the real 2D loop along the
         //     path's RMF frames (tfSweepSection), matching Manifold's sweepAlongPath
-        //     — previously this whole case was UNSUPPORTED (mesh-import fallback).
+        //     — previously this whole case was UNSUPPORTED (native-only: TF blanks with this reason).
         const section = sectionLoopOf(secSpline);
         if (section) {
           return {
@@ -672,7 +672,7 @@ function lowerNode(
             ...(smooth ? { smooth } : {}),
           };
         }
-        notes.push(`call ${node.id} (r_sweep): section is neither a resolvable circular profile nor a literal ≥3-pt loop — UNSUPPORTED (mesh-import fallback)`);
+        notes.push(`call ${node.id} (r_sweep): section is neither a resolvable circular profile nor a literal ≥3-pt loop — UNSUPPORTED (native-only: TF blanks with this reason)`);
         return { op: 'UNSUPPORTED', nodeType: 'call:r_sweep', detail: 'non-circular/unresolved section' };
       }
       if (/cyl/i.test(src)) {
