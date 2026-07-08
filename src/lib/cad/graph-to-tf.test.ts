@@ -348,6 +348,50 @@ describe('graphToTf', () => {
     expect(rep.child).toEqual({ op: 'box', w: 4, h: 4, d: 20 });
   });
 
+  it('a parts_map (op:list) lowers a list<record> param to a union of N synthetic-Call instances', () => {
+    // #38 Phase 3 — a `list<record>` param of 2 rows mapped over r_cuboid, each row
+    // feeding s.size into w/h/d. Native lowering must resolve the rows from the
+    // param default, evaluate `s.size` per row, and union the 2 boxes.
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_pm'] },
+        n_pm: {
+          id: 'n_pm', type: 'parts_map', src: 'r_cuboid', list: { kind: 'param', param: 'blocks' },
+          argMap: { w: { kind: 'expr', expr: 's.size' }, h: { kind: 'expr', expr: 's.size' }, d: { kind: 'expr', expr: 's.size' } },
+          op: 'list',
+        },
+      },
+      'n_root',
+      { blocks: { kind: 'list', of: { record: 'Block' }, default: [{ size: 2 }, { size: 3 }] } },
+    );
+    const recipe = graphToTf(g);
+    expect(recipe.instrs).toHaveLength(1);
+    const top = recipe.instrs[0] as Extract<TfInstr, { op: 'union' }>;
+    expect(top.op).toBe('union');
+    expect(top.children).toEqual([
+      { op: 'box', w: 2, h: 2, d: 2 },
+      { op: 'box', w: 3, h: 3, d: 3 },
+    ]);
+    expect(recipe.notes.every((n) => !n.includes('UNSUPPORTED'))).toBe(true);
+  });
+
+  it('a parts_map (op:stack) unions its instances mated; a blank src / unresolvable rows → UNSUPPORTED', () => {
+    const g = (op: string, list: any) => mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_pm'] },
+        n_pm: { id: 'n_pm', type: 'parts_map', src: 'r_cuboid', list, argMap: { w: { kind: 'expr', expr: 's.size' }, h: { kind: 'literal', value: 1 }, d: { kind: 'literal', value: 1 } }, op },
+      },
+      'n_root',
+      { blocks: { kind: 'list', of: { record: 'Block' }, default: [{ size: 4 }] } },
+    );
+    const stacked = graphToTf(g('stack', { kind: 'param', param: 'blocks' })).instrs[0] as Extract<TfInstr, { op: 'union' }>;
+    expect(stacked.op).toBe('union');
+    expect(stacked.mated).toBe(true);
+    expect(stacked.children).toEqual([{ op: 'box', w: 4, h: 1, d: 1 }]);
+    // A param with no resolvable array default → UNSUPPORTED (native-only blanks).
+    expect(graphToTf(g('list', { kind: 'param', param: 'missing' })).instrs[0].op).toBe('UNSUPPORTED');
+  });
+
   it('a count of 1 (or an absent childCounts entry) lowers the child directly — no repeat wrapper', () => {
     const g = mkGraph(
       {
