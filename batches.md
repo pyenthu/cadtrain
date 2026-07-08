@@ -27,9 +27,8 @@ The cluster of small TF-tab issues. All in `PrimitiveDualCanvas.svelte` / `graph
 - **"show cutter" overlay** (L34) — a toggle on the ✂ section card to render the cutting wedge semi-transparent (view-only, not baked) so you see what `az`/`offset` removes.
 ▶ **Run Batch 4: add the section-card "show cutter" overlay toggle.**
 
-## Batch 5b — SVG smoothness (silhouette outlines)  ·  Effort M · Risk med · Verify B
-Phase 1 of `docs/plans/svg-projection-perf.md` — silhouette/crease-outline extraction, anti-aliased strokes (`stroke-linejoin:round`, non-scaling-stroke), fewer facet chords, curve-aware. Plus #63 (c) `<pattern>` textures.
-▶ **Run Batch 5b: SVG silhouette-outline smoothing (Phase 1) + `<pattern>` textures.**
+## Batch 5b — SVG smoothness (silhouette outlines)  ·  ✅ DONE (7bb0127)
+Phase 1 of `docs/plans/svg-projection-perf.md` — silhouette/crease-outline extraction (`svg-silhouette.ts`), anti-aliased strokes (`stroke-linejoin:round`, non-scaling-stroke, geometricPrecision), collinear-merge (fewer facet chords), curve-aware. Plus #63 (c) `<pattern>` textures (rock/cement/steel). 19 tests green.
 
 ## Batch 6 — Material system  ·  Effort M · Risk low-med · Verify B
 - **#61 Material CARD** (L37) — (a) opacity/transparency [in progress]; (b) textures via `meta.texture`; (c) a Material Card (sibling to Properties/Params) authoring colour·opacity·texture·preset per PART+SUBPART.
