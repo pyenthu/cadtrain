@@ -11,10 +11,6 @@ the end" for max speed. Batches are independent unless a **needs** note says oth
 Legend — **Effort**: S(<1h) · M(half-day) · L(multi-session). **Risk**: how likely to
 break other things. **Verify**: H=headless test/build · B=browser check needed.
 
-**Shipped 2026-07-08:** Batch 2 (dead-code cleanup) · Batch 3 (spline editor overhaul) ·
-Batch 5 P2+P0 (SVG per-part transparency + project/shade cache). Numbers kept stable;
-remaining SVG smoothness is **Batch 5b** below.
-
 ---
 
 ## Batch 1 — TF quick bugs + gaps  ·  Effort M · Risk low · Verify H+B
@@ -32,7 +28,7 @@ The cluster of small TF-tab issues. All in `PrimitiveDualCanvas.svelte` / `graph
 ▶ **Run Batch 4: add the section-card "show cutter" overlay toggle.**
 
 ## Batch 5b — SVG smoothness (silhouette outlines)  ·  Effort M · Risk med · Verify B
-*(Batch 5 P2 per-part transparency + P0 project/shade cache SHIPPED 2026-07-08.)* LEFT: Phase 1 of `docs/plans/svg-projection-perf.md` — silhouette/crease-outline extraction, anti-aliased strokes (`stroke-linejoin:round`, non-scaling-stroke), fewer facet chords, curve-aware. Plus #63 (c) `<pattern>` textures.
+Phase 1 of `docs/plans/svg-projection-perf.md` — silhouette/crease-outline extraction, anti-aliased strokes (`stroke-linejoin:round`, non-scaling-stroke), fewer facet chords, curve-aware. Plus #63 (c) `<pattern>` textures.
 ▶ **Run Batch 5b: SVG silhouette-outline smoothing (Phase 1) + `<pattern>` textures.**
 
 ## Batch 6 — Material system  ·  Effort M · Risk low-med · Verify B
