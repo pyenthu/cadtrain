@@ -17,9 +17,6 @@
   import { onMount } from 'svelte';
   import type { Snippet } from 'svelte';
   // TF-tab demo registry — the dropdown list + dispatch names (one file per demo
-  // in $lib/shared/tf_examples/). Static import is metadata only; no WASM loads
-  // until a builder's build() runs inside PrimitiveDualCanvas.
-  import { tfExamples } from '$lib/shared/tf_examples';
   // graph → TrueForm recipe compiler (pure, no WASM). Lets the TF tab's "actual"
   // mode build the part NATIVELY in tf from its graph ops instead of importing
   // the baked Manifold mesh.
@@ -148,11 +145,9 @@
   // tf_examples registry (box · r_cyl · s_cyl · helix · bored_pipe · dp_pin · cone).
   // TrueForm has no revolve/loft/extrude, so these show what tf CAN build directly
   // (primitives, tubeMesh sweeps, CSG) + the two revolved parts (lathe via tf.mesh).
-  let tfDemoKind = $state<string>('r_cyl');
-  // "actual" mode: import the OPEN part's OWN baked Manifold mesh into the TF
-  // kernel (instead of a demo) and show tf's independent topology verdict. When
-  // ON the demo dropdown is disabled; OFF → back to the selected demo.
-  let tfActualOn = $state<boolean>(true);
+  // TF always builds THIS part natively now (the demo selector was removed
+  // 2026-07-08); `tfActualOn` stays true to drive the server-compile path below.
+  const tfActualOn = true;
   // Param name → current value (graph.params order ↔ bake.args / paramDefaults).
   let brepParamValues = $derived.by(() => {
     const vals = (bake?.args ?? paramDefaults) as number[];
@@ -608,35 +603,15 @@
            pane bakes. (active ?? true) keeps single /graph-editor unchanged. -->
       {#if rightTab === 'tf' && (active ?? true)}
         {#if PrimitiveDualCanvas && bake && typeof bake === 'object' && bake.source}
-          <!-- Demo selector: populated from the $lib/shared/tf_examples registry
-               (one file per demo). TrueForm has no revolve/loft/extrude, so these
-               show what tf CAN build directly — primitives, tubeMesh sweeps, CSG —
-               plus the revolved parts (dp_pin/cone) built via the tf.mesh lathe. -->
-          <!-- ACTUAL (this part built natively in TF) is the DEFAULT. The DEMO
-               button flips to the tf_examples registry; its example selector is
-               only live in demo mode. Title + selector + toggle share one row. -->
-          <div class="ge-tf-demo-row">
-            <span class="ge-tf-demo-label">tf demo</span>
-            <select class="ge-tf-demo-select" bind:value={tfDemoKind} disabled={tfActualOn} aria-label="TrueForm demo geometry">
-              {#each tfExamples as ex (ex.name)}
-                <option value={ex.name}>{ex.label}</option>
-              {/each}
-            </select>
-            <!-- Toggle: labelled with the mode it switches TO. ACTUAL default →
-                 shows "demo"; in demo → shows "actual". -->
-            <button type="button" class="ge-tf-actual-btn" class:on={!tfActualOn}
-              aria-pressed={!tfActualOn}
-              title={tfActualOn
-                ? 'Switch to a TrueForm DEMO (pick an example from the selector) instead of this part'
-                : 'Build THIS part natively in TrueForm from its graph (composites/sweeps resolve via the server compile); shows tf’s watertight/manifold/χ verdict. Native-only — if TF can’t build an op, the canvas blanks with the reason (no Manifold-mesh fallback).'}
-              onclick={() => (tfActualOn = !tfActualOn)}>{tfActualOn ? 'demo' : 'actual'}</button>
-          </div>
+          <!-- TF is a native engine surface now: THIS part is always built natively
+               in TrueForm from its graph (native-only — if TF can't build an op the
+               canvas blanks with the reason). The old demo-example selector/toggle
+               was removed 2026-07-08. -->
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
             args={bake.args ?? paramDefaults}
             source={bake.source}
             backend="tf"
-            tfDemo={tfDemoKind}
-            tfActual={tfActualOn}
+            tfActual={true}
             tfRecipe={tfRecipe}
             tfPending={tfRecipePending}
             brepSource={bake.source}
@@ -758,14 +733,6 @@
   /* Bake cache status row + Rebuild button */
   .ge-bake-meta { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: #fafaf9; border-top: 1px solid #e7e5e4; font: 11px Arial; }
   .ge-bake-meta-spacer { flex: 1 1 auto; }
-  .ge-tf-demo-row { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; padding: 5px 8px; background: #faf9f8; border-bottom: 1px solid #e7e5e4; font: 600 11px Arial; color: #57534e; }
-  .ge-tf-demo-row .ge-tf-demo-label { text-transform: uppercase; letter-spacing: 0.5px; color: #a8a29e; flex: 0 0 auto; white-space: nowrap; }
-  .ge-tf-demo-row .ge-tf-demo-select { font: 600 11px Arial; color: #57534e; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; padding: 3px 6px; cursor: pointer; accent-color: #7c3aed; flex: 1 1 auto; min-width: 0; }
-  .ge-tf-demo-row .ge-tf-demo-select:focus { outline: none; border-color: #7c3aed; }
-  .ge-tf-demo-row .ge-tf-demo-select:disabled { opacity: 0.5; cursor: not-allowed; }
-  .ge-tf-demo-row .ge-tf-actual-btn { font: 600 11px Arial; color: #57534e; background: #fff; border: 1px solid #d6d3d1; border-radius: 5px; padding: 3px 10px; cursor: pointer; text-transform: uppercase; letter-spacing: 0.5px; flex: 0 0 auto; white-space: nowrap; }
-  .ge-tf-demo-row .ge-tf-actual-btn:hover { border-color: #7c3aed; color: #6d28d9; }
-  .ge-tf-demo-row .ge-tf-actual-btn.on { background: #7c3aed; border-color: #7c3aed; color: #fff; }
   .ge-draft-toggle { display: inline-flex; align-items: center; gap: 3px; font: 600 11px Arial; color: #57534e; cursor: pointer; user-select: none; }
   .ge-draft-toggle input { margin: 0; cursor: pointer; appearance: auto; -webkit-appearance: auto; accent-color: #d97706; width: 13px; height: 13px; }
   .ge-cache-badge { padding: 2px 8px; border-radius: 12px; font: 600 10px ui-monospace, monospace; }

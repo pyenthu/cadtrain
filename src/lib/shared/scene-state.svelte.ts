@@ -122,7 +122,7 @@ export const scene = $state({
   /** Cutaway toggle — when true, the cross-sectioned `cutVC` geometry
    *  renders (per-vertex RGB: red outer / grey bore). When false, the
    *  solid `full` mesh renders in flat red. UI in SceneControls. */
-  showCutaway: true,
+  showCutaway: false,   // cross-section OFF by default; toggle on when needed (2026-07-08)
   /** Black edge overlay on the mesh, drawn at a 20° threshold. UI in
    *  SceneControls. */
   showEdges: true,
