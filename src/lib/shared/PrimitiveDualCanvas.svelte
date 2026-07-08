@@ -16,7 +16,7 @@
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, sceneStackAxis = 'x', colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, material = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfDemo = 'r_cyl', tfActual = false, tfRecipe = undefined, tfPending = false }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, material = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfDemo = 'r_cyl', tfActual = false, tfRecipe = undefined, tfPending = false }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
     /** Spline DIAGNOSTIC overlays (TODO #24) — plotted splines' resolved curves +
      *  control points, drawn INSIDE the live-mesh group so they align with the
@@ -88,13 +88,9 @@
      *  hidden — used by the typed-builder panes where the labels add
      *  visual clutter without information value (only one scene anyway). */
     showLabels?: boolean;
-    /** Half-separation between the live mesh (-offset) and the GLB (+offset),
-     *  along the axis chosen by sceneStackAxis. Default 4.5 (side-by-side). */
+    /** Half-separation between the live mesh (-offset) and the GLB (+offset)
+     *  along the drilling (Z) axis. Default 4.5. */
     sceneOffset?: number;
-    /** Which axis to stack along. 'x' = side-by-side (default), 'z' = vertical
-     *  along the drilling axis — typed builders use this with a small offset
-     *  so the user can orbit up/down to see mesh vs GLB. */
-    sceneStackAxis?: 'x' | 'z';
     /** Only the PRIMARY 3D-bake canvas owns the shared auto-normalize scale.
      *  GLB/BREP secondary canvases pass false so two mounted scenes can't
      *  ping-pong the shared scene.xScale/zScale (freeze fix, 2026-07-02). */
@@ -941,7 +937,7 @@
       : smoothShadeAuto}
     <Canvas {createRenderer}>
       <!-- Only one of mesh/GLB is baked per tab now → centre it (offset 0). -->
-      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} {autoScaleOwner} opacity={opacity ?? 1} {texture} {colorOuter} {colorInner} {material} overlays={overlays ?? []} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} stackAxis={sceneStackAxis} />
+      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} {autoScaleOwner} opacity={opacity ?? 1} {texture} {colorOuter} {colorInner} {material} overlays={overlays ?? []} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} />
     </Canvas>
     {#if showControls && SceneControls}{@const Controls = SceneControls}<Controls />{/if}
   {:else}

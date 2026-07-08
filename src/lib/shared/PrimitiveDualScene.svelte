@@ -56,7 +56,6 @@
     glbUrl = null,
     showCutaway = false,
     offset = 4.5,
-    stackAxis = 'x',
     overlays = [],
     smoothShade = false,
     opacity = 1,
@@ -72,11 +71,6 @@
     offset?: number;        // FALLBACK half-separation, used only before the
     // live-mesh bbox is known (sep then = 2·offset). Once geometry loads the
     // separation is auto-computed as (part Z-extent + ~12% gap).
-    /** RETAINED for call-site compatibility but no longer drives layout: the
-     *  scene now ALWAYS stacks the mesh + GLB one-above-the-other on the part
-     *  (Z / drilling) axis, separated by the part's own extent plus a small
-     *  gap, with the camera auto-fit to the combined bounding box. */
-    stackAxis?: 'x' | 'z';
     /** Per-spline DIAGNOSTIC overlays (TODO #24) — each plotted spline's resolved
      *  curve + control points, drawn as a coloured tube + spheres INSIDE the
      *  live-mesh group so they align with (and scale with) the baked geometry.
