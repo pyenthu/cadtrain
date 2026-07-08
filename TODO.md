@@ -11,6 +11,13 @@
   - [ ] **C · RENDER polish** — 3D center/fill · label banks + anchor option · white scene bg · element-rail icons
   - [ ] **D · CHROME** — toolbar actions · ruler MD/TVD · camera presets
 - **#42c Completion element library (`bw_*`)** — `bw_packer` + a tubing element, then the rest of the completion jewelry. Feeds the wells element registry (A2).
+- **#42d Wells CAD-parts API browser + WBG Wizard** — model on [AIDE WBG Wizard](https://aide.mwdstd.com/) (screenshot: `docs/plans/refs/aide-wbg-wizard.png`):
+  - **WBG Wizard panel** — section-by-section well bore geometry design: each section = alternating Hole size row + Casing row; standard API sizes shown as clickable pills in a horizontal grid (6½ → 26 in); selected size highlighted teal; curved arrows between rows show clearance relationship between drill bit and casing OD.
+  - **CAD-parts picker** — browse/search `/primitives` from the /wells canvas; drop a part into a section with auto-populated params (from `meta.params`); dynamic GUI matching the graph-editor param card (live scrub/edit); wells-specific additions: depth anchor, string assignment, orientation.
+  - **Left nav sections**: WBG Wizard · Tubulars · Rig · Trajectory (Auto Design + Cost Model) · Summary (Well Cost · WBG · Report) — section list with + Add section + section count badge.
+  - **Auto Design** — trajectory auto-generation given surface location + target TVD/inclination.
+  - **Toolbar**: Reset · Apply · Save locally · New · Import · Export · Feedback.
+  - See: `docs/plans/wells-cad-parts-browser.md`.
 
 ### Open — engines
 - **#39 Multi-engine matrix** — BREP client-side. (`docs/architecture/geometry-engines.md`)
