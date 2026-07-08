@@ -34,6 +34,10 @@
 
 import * as THREE from 'three';
 import { triangleKeepMask } from '$lib/shared/svg-reduce';
+import {
+  buildWelded, classifyOutlineEdges, chainEdges,
+  mergeCollinearPolyline, polylineToPath,
+} from '$lib/shared/svg-silhouette';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
@@ -127,6 +131,11 @@ export interface ShadeOptions {
    *  opaque part). Missing/false → opaque bucket, no fill-opacity (byte-identical
    *  to the pre-transparency emitter). */
   partTrans?: boolean[];
+  /** Per-part texture name (#63c), indexed by ProjTri.pi. A recognised texture
+   *  (`rock` | `cement` | `steel`) makes that part's polys fill with a procedural
+   *  SVG `<pattern>` (defined ONCE per part) instead of the Gouraud gradient.
+   *  Missing / unknown → the normal shaded fill (byte-identical to before). */
+  partTexture?: (string | undefined)[];
 }
 
 // ── Legacy single-call options (emitSvg wrapper) ─────────────────────────────
@@ -163,6 +172,68 @@ function rgbHex(r: number, g: number, b: number): string {
 function alphaStr(a: number): string {
   const s = a.toFixed(3).replace(/0+$/, '').replace(/\.$/, '');
   return s === '' ? '0' : s;
+}
+// r×k clamped to 1 → hex (a lighter/darker shade of a base colour).
+function scaleHex(r: number, g: number, b: number, k: number): string {
+  return rgbHex(r * k, g * k, b * k);
+}
+
+/**
+ * Build a small procedural `<pattern>` for a material texture (#63c). Returns a
+ * `<pattern userSpaceOnUse>` tile of `<rect>`/`<circle>`/`<line>` marks over a
+ * base-coloured background, or `null` for an unrecognised name (→ the caller
+ * falls back to the normal shaded fill). The tile is intentionally coarse so it
+ * reads at the ortho SVG's natural pixel size. PURE (only builds a detached DOM
+ * subtree — no module state, the id is passed in with the per-mount prefix).
+ */
+function buildTexturePattern(
+  id: string, texture: string, r: number, g: number, b: number,
+): SVGElement | null {
+  const tex = texture.toLowerCase();
+  if (tex !== 'rock' && tex !== 'cement' && tex !== 'steel') return null;
+  const TILE = tex === 'steel' ? 8 : 7;
+  const pat = document.createElementNS(SVG_NS, 'pattern');
+  pat.setAttribute('id', id);
+  pat.setAttribute('patternUnits', 'userSpaceOnUse');
+  pat.setAttribute('width', String(TILE));
+  pat.setAttribute('height', String(TILE));
+  // Background = the base colour.
+  const bg = document.createElementNS(SVG_NS, 'rect');
+  bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
+  bg.setAttribute('width', String(TILE)); bg.setAttribute('height', String(TILE));
+  bg.setAttribute('fill', rgbHex(r, g, b));
+  pat.appendChild(bg);
+
+  const dot = (cx: number, cy: number, rad: number, k: number) => {
+    const c = document.createElementNS(SVG_NS, 'circle');
+    c.setAttribute('cx', String(cx)); c.setAttribute('cy', String(cy));
+    c.setAttribute('r', String(rad)); c.setAttribute('fill', scaleHex(r, g, b, k));
+    pat.appendChild(c);
+  };
+  const line = (x1: number, y1: number, x2: number, y2: number, k: number, w: number) => {
+    const l = document.createElementNS(SVG_NS, 'line');
+    l.setAttribute('x1', String(x1)); l.setAttribute('y1', String(y1));
+    l.setAttribute('x2', String(x2)); l.setAttribute('y2', String(y2));
+    l.setAttribute('stroke', scaleHex(r, g, b, k)); l.setAttribute('stroke-width', String(w));
+    pat.appendChild(l);
+  };
+
+  if (tex === 'rock') {
+    // irregular speckle — a few dark + light grains.
+    dot(1.6, 1.9, 1.1, 0.7); dot(5.0, 3.1, 0.9, 0.6);
+    dot(3.4, 5.4, 1.0, 0.72); dot(6.0, 6.1, 0.6, 1.22);
+    dot(2.2, 4.3, 0.5, 1.25);
+  } else if (tex === 'cement') {
+    // fine even stipple — small dark specks.
+    dot(1.4, 1.6, 0.55, 0.82); dot(4.2, 2.3, 0.5, 0.86);
+    dot(5.6, 5.0, 0.55, 0.8); dot(2.6, 5.2, 0.5, 0.85);
+    dot(3.6, 3.6, 0.45, 1.12);
+  } else {
+    // steel — light diagonal brushed hatch (two offset lines for a seamless tile).
+    line(-1, 9, 9, -1, 1.18, 0.9);
+    line(3, 11, 11, 3, 0.86, 0.7);
+  }
+  return pat;
 }
 
 /**
@@ -203,6 +274,10 @@ export function projectScene(
   const TARGET = 0.05;       // ~2.9° per sub-step — finer than the eye resolves
   const SUBDIV_PX = 10;      // min on-screen sub-triangle edge (px)
   const EMIT_BUDGET = 16000; // ceiling on emitted polys (per entry)
+
+  // Outline (silhouette + crease) extraction constants.
+  const CREASE_COS = Math.cos((20 * Math.PI) / 180); // hard-edge threshold (matches the old EdgesGeometry(geo,20))
+  const COLLINEAR_TOL = (6 * Math.PI) / 180;         // merge near-straight facet chords on curves
 
   for (const entry of entries) {
     const geo = entry.geo;
@@ -378,21 +453,25 @@ export function projectScene(
       }
     }
 
-    // ── Crease/silhouette edge path (per entry, projected once) ──────────────
+    // ── Silhouette + crease outline (per entry, projected once) ──────────────
     // Depends only on geometry + camera — cached with the scene, so a light-dial
-    // drag never rebuilds EdgesGeometry (was the P3 per-render cost).
-    const eg = new THREE.EdgesGeometry(geo, 20);
-    const ep = eg.getAttribute('position') as THREE.BufferAttribute;
-    const segs = Math.floor(ep.count / 2);
-    for (let s = 0; s < segs; s++) {
-      const i0 = 2 * s, i1 = i0 + 1;
-      pe.set(ep.getX(i0) * sX, ep.getY(i0) * sX, ep.getZ(i0) * sZ).project(camera);
-      const x0 = (pe.x * 0.5 + 0.5) * renderW, y0 = (-pe.y * 0.5 + 0.5) * renderH;
-      pe.set(ep.getX(i1) * sX, ep.getY(i1) * sX, ep.getZ(i1) * sZ).project(camera);
-      const x1 = (pe.x * 0.5 + 0.5) * renderW, y1 = (-pe.y * 0.5 + 0.5) * renderH;
-      edgePath += `M${x0.toFixed(2)},${y0.toFixed(2)}L${x1.toFixed(2)},${y1.toFixed(2)}`;
+    // drag never rebuilds the outline (was the P3 per-render EdgesGeometry cost).
+    // Extract only the DRAWABLE lines: SILHOUETTE (a front/back-facing pair),
+    // CREASE (hard dihedral ≥ 20°) + BOUNDARY (open/cut rim) — so a smooth
+    // revolved surface reads as a clean contour, not a triangle web. Chain the
+    // edges into polylines, project each, and collinear-merge the facet chords.
+    const adj = buildWelded({ triN, a, b, c, pos: posAttr.array as ArrayLike<number> });
+    const classified = classifyOutlineEdges(adj, [V.x, V.y, V.z], CREASE_COS);
+    const chains = chainEdges(classified.map((e) => [e.v0, e.v1] as [number, number]));
+    for (const chain of chains) {
+      const raw: number[] = [];
+      for (const vid of chain) {
+        pe.set(adj.vpos[3 * vid] * sX, adj.vpos[3 * vid + 1] * sX, adj.vpos[3 * vid + 2] * sZ).project(camera);
+        raw.push((pe.x * 0.5 + 0.5) * renderW, (-pe.y * 0.5 + 0.5) * renderH);
+      }
+      const merged = mergeCollinearPolyline(raw, COLLINEAR_TOL);
+      edgePath += polylineToPath(merged);
     }
-    eg.dispose();
   }
 
   return {
@@ -409,7 +488,7 @@ export function projectScene(
 export function shadeAndEmit(scene: ProjectedScene, opts: ShadeOptions): SvgEmitResult {
   const {
     idPrefix, lightAngle, showEdges, AMBIENT, KEY, FILL, DESAT, BRIGHT,
-    partAlpha, partTrans,
+    partAlpha, partTrans, partTexture,
   } = opts;
   const { renderW, renderH, fitToContainer } = scene;
 
@@ -452,6 +531,27 @@ export function shadeAndEmit(scene: ProjectedScene, opts: ShadeOptions): SvgEmit
   // (PrimitiveDualScene). So a transparent casing shows the tubing through it.
   let gid = 0;
   const draws: { z: number; bucket: 0 | 1; poly: SVGElement; grad?: SVGElement }[] = [];
+
+  // ── Procedural texture patterns (#63c) ─────────────────────────────────────
+  // A part with a recognised `texture` fills with an SVG <pattern> (defined ONCE
+  // per part, in defs, with the per-mount idPrefix) rather than the Gouraud
+  // gradient — rock/cement/steel read as a material, not smooth shading. Lazy:
+  // built on the first triangle of a textured part, using its muted base colour.
+  const patternIds = new Map<number, string | null>();
+  let pcount = 0;
+  function patternFor(pi: number, r0: number, g0: number, b0: number): string | null {
+    const cached = patternIds.get(pi);
+    if (cached !== undefined) return cached;
+    const tex = partTexture?.[pi];
+    const [r, g, b] = mute(r0, g0, b0);
+    const pat = tex ? buildTexturePattern(`${idPrefix}tex${pcount}`, tex, r, g, b) : null;
+    if (!pat) { patternIds.set(pi, null); return null; }
+    pcount++;
+    defs.appendChild(pat);
+    const id = pat.getAttribute('id');
+    patternIds.set(pi, id);
+    return id;
+  }
 
   // Emit ONE screen-space triangle as an exact 2-stop Gouraud gradient (flat
   // fill when its 3 shades are ~equal or it's degenerate). `alpha < 1` sets
@@ -513,6 +613,19 @@ export function shadeAndEmit(scene: ProjectedScene, opts: ShadeOptions): SvgEmit
   for (const t of scene.tris) {
     const alpha = partAlpha?.[t.pi] ?? 1;
     const bucket: 0 | 1 = (partTrans?.[t.pi] ?? false) ? 1 : 0;
+    // TEXTURED part (#63c) → flat procedural <pattern> fill, no Gouraud gradient.
+    const patId = partTexture ? patternFor(t.pi, t.r, t.g, t.b) : null;
+    if (patId) {
+      const det = (t.bx - t.ax) * (t.cy - t.ay) - (t.by - t.ay) * (t.cx - t.ax);
+      if (!Number.isFinite(det) || Math.abs(det) < 1e-7) continue;
+      const poly = document.createElementNS(SVG_NS, 'polygon');
+      poly.setAttribute('points', `${t.ax.toFixed(2)},${t.ay.toFixed(2)} ${t.bx.toFixed(2)},${t.by.toFixed(2)} ${t.cx.toFixed(2)},${t.cy.toFixed(2)}`);
+      poly.setAttribute('fill', `url(#${patId})`);
+      if (alpha < 1) poly.setAttribute('fill-opacity', alphaStr(alpha));
+      draws.push({ z: t.z, bucket, poly });
+      emitted++;
+      continue;
+    }
     if (t.flat) {
       // Monster-mesh flat face — mean of the 3 corner shades, one flat fill.
       const s = (
@@ -553,8 +666,14 @@ export function shadeAndEmit(scene: ProjectedScene, opts: ShadeOptions): SvgEmit
     path.setAttribute('stroke', '#000000');
     path.setAttribute('stroke-width', '1');
     path.setAttribute('fill', 'none');
+    // Stroke QUALITY (Phase 1): round joins/caps smooth the polyline corners;
+    // non-scaling-stroke keeps the outline a crisp 1px at ANY zoom (the ortho
+    // SVG grows to thousands of px, so a user-space stroke would hairline away);
+    // geometricPrecision hints the AA renderer to smooth over speed.
     path.setAttribute('stroke-linecap', 'round');
     path.setAttribute('stroke-linejoin', 'round');
+    path.setAttribute('vector-effect', 'non-scaling-stroke');
+    path.setAttribute('shape-rendering', 'geometricPrecision');
     svg.appendChild(path);
   }
 

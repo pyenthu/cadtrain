@@ -290,6 +290,9 @@
     // light/x-ray drag without re-projecting).
     const partAlpha: number[] = [];
     const partTrans: boolean[] = [];
+    // Per-part material texture (#63c) — the SVG <pattern> fill mirrors the
+    // part's appearance.texture (rock/cement/steel). Undefined → shaded fill.
+    const partTexture: (string | undefined)[] = [];
     if (hasParts) {
       partList!.forEach((pm, i) => {
         const a = pm.appearance ?? {};
@@ -297,10 +300,12 @@
         const pOp = Math.max(0.02, Math.min(1, rawOp * (scene.xrayOpacity ?? 1)));
         partAlpha[i] = pOp;
         partTrans[i] = pOp < 1 || rawOp < 1;
+        partTexture[i] = a.texture;
       });
     } else {
       partAlpha[0] = 1; partTrans[0] = false;
     }
+    const hasTexture = partTexture.some((t) => !!t);
 
     // 2a) PROJECT (geometry + camera + scale) — cached across light/x-ray drags.
     //     Key excludes lightAngle / showEdges / opacity (all shade-time only).
@@ -335,6 +340,7 @@
       AMBIENT, KEY, FILL,
       DESAT, BRIGHT,
       partAlpha, partTrans,
+      partTexture: hasTexture ? partTexture : undefined,
     });
     triCount = out.triCount;
     emitCount = out.emitCount;

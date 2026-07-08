@@ -11,6 +11,24 @@ import * as THREE from 'three';
 import {
   projectScene, shadeAndEmit, type ProjectedScene, type ProjTri,
 } from './svg-emit';
+import {
+  buildWelded, classifyOutlineEdges, chainEdges, mergeCollinearPolyline,
+  type SilhouetteInput,
+} from './svg-silhouette';
+
+// Extract a SilhouetteInput (pos + non-indexed a/b/c) from a THREE geometry.
+function silInput(geo: THREE.BufferGeometry): SilhouetteInput {
+  const posAttr = geo.getAttribute('position') as THREE.BufferAttribute;
+  const idx = geo.index;
+  const triN = idx ? idx.count / 3 : posAttr.count / 3;
+  const a = new Int32Array(triN), b = new Int32Array(triN), c = new Int32Array(triN);
+  for (let t = 0; t < triN; t++) {
+    if (idx) { a[t] = idx.getX(3 * t); b[t] = idx.getX(3 * t + 1); c[t] = idx.getX(3 * t + 2); }
+    else { a[t] = 3 * t; b[t] = 3 * t + 1; c[t] = 3 * t + 2; }
+  }
+  return { triN, a, b, c, pos: posAttr.array as ArrayLike<number> };
+}
+const cosDeg = (deg: number) => Math.cos((deg * Math.PI) / 180);
 
 // --- a THREE camera looking at the origin (deterministic project()) ----------
 function orthoCam(): THREE.Camera {
@@ -155,5 +173,145 @@ describe('shadeAndEmit — per-part transparency (Phase 2)', () => {
     const out = shadeAndEmit(s, { ...shadeOpts, partAlpha: [1, 1], partTrans: [false, false] }) as any;
     const polys = out.svg.children.filter((c: FakeEl) => c.tagName === 'polygon');
     for (const p of polys) expect(p.getAttribute('fill-opacity')).toBeNull();
+  });
+});
+
+// ── Phase 1: silhouette / crease outline extraction (svg-silhouette, PURE) ────
+describe('svg-silhouette — outline extraction (Phase 1)', () => {
+  it('welds a non-indexed cube to 8 corners + 12 unique box edges', () => {
+    const geo = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+    const adj = buildWelded(silInput(geo));
+    expect(adj.vpos.length / 3).toBe(8);          // 36 duped verts → 8 welded corners
+    expect(adj.fn.length).toBe(12 * 3);           // 12 face normals
+    // 12 box edges (2 faces each) + 6 face diagonals (1 per square face, 2 tris).
+    const interior = adj.edges.filter((e) => e.f1 >= 0);
+    expect(interior.length).toBe(18);
+  });
+
+  it('classifies all 12 cube edges as CREASE (90° ≫ 20°), 0 boundary', () => {
+    const geo = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+    const adj = buildWelded(silInput(geo));
+    // View direction is irrelevant here — every box edge is a hard crease.
+    const cls = classifyOutlineEdges(adj, [0, 0, 1], cosDeg(20));
+    const creases = cls.filter((e) => e.kind === 'crease');
+    const boundary = cls.filter((e) => e.kind === 'boundary');
+    expect(creases.length).toBe(12);              // the cube's 12 hard edges
+    expect(boundary.length).toBe(0);              // closed solid → no rim
+    // face diagonals are coplanar → neither crease nor silhouette → excluded.
+    expect(cls.length).toBe(12);
+  });
+
+  it('a lone triangle → 3 BOUNDARY edges', () => {
+    const input: SilhouetteInput = {
+      triN: 1, a: [0], b: [1], c: [2],
+      pos: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+    };
+    const adj = buildWelded(input);
+    const cls = classifyOutlineEdges(adj, [0, 0, 1], cosDeg(20));
+    expect(cls.every((e) => e.kind === 'boundary')).toBe(true);
+    expect(cls.length).toBe(3);
+  });
+
+  it('an open 13-seg cylinder viewed side-on → exactly 2 SILHOUETTE edges', () => {
+    // radialSegments 13 (odd → no facet exactly edge-on), openEnded (no caps).
+    const geo = new THREE.CylinderGeometry(1, 1, 2, 13, 1, true).toNonIndexed();
+    const adj = buildWelded(silInput(geo));
+    // crease threshold 40° > the 27.7° facet step, so facets are NOT creases —
+    // only the true front/back-facing boundary shows. View along +Z (side-on to
+    // the Y axis). The two vertical lines where the surface turns away = 2 edges.
+    const cls = classifyOutlineEdges(adj, [0, 0, 1], cosDeg(40));
+    const sil = cls.filter((e) => e.kind === 'silhouette');
+    expect(sil.length).toBe(2);
+  });
+
+  it('buildWelded is deterministic (same input → identical adjacency)', () => {
+    const geo = new THREE.BoxGeometry(2, 1, 3).toNonIndexed();
+    const a = buildWelded(silInput(geo));
+    const b = buildWelded(silInput(geo));
+    expect(a.vpos).toEqual(b.vpos);
+    expect(Array.from(a.fn)).toEqual(Array.from(b.fn));
+    expect(a.edges).toEqual(b.edges);
+  });
+
+  it('chainEdges links contiguous edges + splits disjoint runs', () => {
+    // one open run
+    const c1 = chainEdges([[0, 1], [1, 2], [2, 3]]);
+    expect(c1.length).toBe(1);
+    expect(c1[0].length).toBe(4);                 // 0-1-2-3 (some direction)
+    // one closed loop (3 edges → 4 vertices incl. the repeat)
+    const c2 = chainEdges([[0, 1], [1, 2], [2, 0]]);
+    expect(c2.length).toBe(1);
+    expect(c2[0].length).toBe(4);
+    // two disjoint segments → two chains
+    const c3 = chainEdges([[0, 1], [5, 6]]);
+    expect(c3.length).toBe(2);
+  });
+
+  it('mergeCollinearPolyline collapses a straight run to ONE segment, keeps corners', () => {
+    const tol = (6 * Math.PI) / 180;
+    // 4 collinear points → 2 endpoints
+    expect(mergeCollinearPolyline([0, 0, 1, 0, 2, 0, 3, 0], tol)).toEqual([0, 0, 3, 0]);
+    // near-collinear (0.57° jitter) also collapses
+    expect(mergeCollinearPolyline([0, 0, 1, 0, 2, 0.01, 3, 0], tol)).toEqual([0, 0, 3, 0]);
+    // a 90° corner is preserved (all 3 points kept)
+    expect(mergeCollinearPolyline([0, 0, 1, 0, 1, 1], tol)).toEqual([0, 0, 1, 0, 1, 1]);
+  });
+});
+
+// ── Phase 1: stroke quality + #63c pattern textures (shadeAndEmit) ────────────
+describe('shadeAndEmit — stroke quality + texture patterns (Phase 1 / #63c)', () => {
+  const savedDoc = (globalThis as any).document;
+  beforeAll(() => {
+    (globalThis as any).document = { createElementNS: (_ns: string, tag: string) => new FakeEl(tag) };
+  });
+  afterAll(() => { (globalThis as any).document = savedDoc; });
+
+  const baseScene = (): ProjectedScene => ({
+    tris: [{
+      ax: 0, ay: 0, bx: 100, by: 0, cx: 0, cy: 100,
+      n: [0, 0, -1, 0, 0, -1, 0, 0, -1], z: 0.5, r: 0.6, g: 0.6, b: 0.6, pi: 0, flat: false,
+    }],
+    edgePath: 'M0,0L100,0L100,100',
+    viewDir: [0, 0, 1], renderW: 200, renderH: 200, fitToContainer: false,
+    triCount: 1, culledCount: 0, flatFill: false,
+  });
+  const opts = {
+    idPrefix: 'PFX-', lightAngle: 0, showEdges: true,
+    AMBIENT: 0.25, KEY: 0.55, FILL: 0.28, DESAT: 0.45, BRIGHT: 0.82,
+  };
+
+  it('outline path carries round joins + non-scaling AA stroke', () => {
+    const out = shadeAndEmit(baseScene(), opts) as any;
+    const path = out.svg.children.find((c: FakeEl) => c.tagName === 'path');
+    expect(path).toBeTruthy();
+    expect(path.getAttribute('stroke-linejoin')).toBe('round');
+    expect(path.getAttribute('stroke-linecap')).toBe('round');
+    expect(path.getAttribute('vector-effect')).toBe('non-scaling-stroke');
+    expect(path.getAttribute('shape-rendering')).toBe('geometricPrecision');
+  });
+
+  it('a textured part fills with a <pattern> (namespaced), NOT a gradient', () => {
+    const out = shadeAndEmit(baseScene(), { ...opts, partTexture: ['rock'] }) as any;
+    const defs = out.svg.children.find((c: FakeEl) => c.tagName === 'defs');
+    const patterns = defs.children.filter((c: FakeEl) => c.tagName === 'pattern');
+    expect(patterns.length).toBe(1);                          // ONE pattern per textured part
+    expect(patterns[0].getAttribute('id').startsWith('PFX-')).toBe(true); // collision guard
+    const poly = out.svg.children.find((c: FakeEl) => c.tagName === 'polygon');
+    expect(poly.getAttribute('fill')).toBe(`url(#${patterns[0].getAttribute('id')})`);
+  });
+
+  it('an unknown texture name falls back to the normal shaded fill', () => {
+    const out = shadeAndEmit(baseScene(), { ...opts, partTexture: ['plaid'] }) as any;
+    const defs = out.svg.children.find((c: FakeEl) => c.tagName === 'defs');
+    const patterns = defs.children.filter((c: FakeEl) => c.tagName === 'pattern');
+    expect(patterns.length).toBe(0);
+    const poly = out.svg.children.find((c: FakeEl) => c.tagName === 'polygon');
+    expect(poly.getAttribute('fill').startsWith('#')).toBe(true); // flat/gradient, not a pattern
+  });
+
+  it('no partTexture → byte-identical (no patterns emitted)', () => {
+    const out = shadeAndEmit(baseScene(), opts) as any;
+    const defs = out.svg.children.find((c: FakeEl) => c.tagName === 'defs');
+    expect(defs.children.filter((c: FakeEl) => c.tagName === 'pattern').length).toBe(0);
   });
 });
