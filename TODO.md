@@ -19,10 +19,8 @@
 - **#50 Arbitrary-section swept-mesh** (subsumed by #51) — transport the 2D section loop along RMF frames + weld → `tf.mesh` (today `tubeMesh` is circle-only).
 - **#48/#49 Server compile** — a ⚡client/☁server toggle UI. `#47` parked (per-part WASM `build`).
 - **TF double-bake per change (CHECK)** — TF tab bakes/updates TWICE per edit; find the `$effect` firing twice (args identity? geoVersion? active-pane gate?). Repro on a param scrub, count `[bake-client]`/TF-worker calls.
-- **TF timing measured wrong (CHECK)** — audit the warm/build split in `PrimitiveDualCanvas` tf branch ~L562-607 (`tim.warm`/`tim.build`, `buildMs`); likely double-counts the kernel warm or is skewed by the double-bake.
-- **TF `parts_map` builder** — `graph-to-tf.ts` has no `parts_map` case → native-only TF reports "no builder". Add a native builder (or documented fallback).
 - **FUTURE: opt-in `compose` toggle (separate vs fused parts)** — expose an explicit per-part/per-list toggle (`list` = separate render parts vs `compose`/`weld` = one solid) instead of the implicit `place()` compose. Mirror in TF (union-fold vs separate instrs).
-- **Manifold↔TF bake consistency** (audit `docs/findings/manifold-vs-tf-audit.md`) — (a) x-ray slider no-ops on TF parts — multiply `scene.xrayOpacity` into `pOp` (`PrimitiveDualScene:988,1018`); (b) scene sine-warp toggle no-ops on the TF tab (`PrimitiveDualCanvas:367`); (c) converge warp densification (Manifold fixed `WARP_AXIAL_MAX_ZSPAN` → curvature-adaptive `planAxialStations` like TF); (d) share graph-lowering primitives (`consumed-set`/`stack_ref`/`poly_repeat`) between `graph-to-tf.ts` + `composition-emit.ts`; (e) port bore-extend defect-2 prevention to Manifold hollow sweeps. DEAD CODE: dedup `creaseAwareCornerNormals` (`render-helpers:529` ≈ `trueform-adapter:271`, ~70 LOC — RISKY: differ by a `weldTol` param, not a safe delete).
+- **Manifold↔TF bake consistency** (audit `docs/findings/manifold-vs-tf-audit.md`) — (a) converge warp densification (Manifold's fixed `WARP_AXIAL_MAX_ZSPAN` → curvature-adaptive `planAxialStations` like TF); (b) share graph-lowering primitives (`consumed-set`/`stack_ref`/`poly_repeat`) between `graph-to-tf.ts` + `composition-emit.ts`; (c) port bore-extend defect-2 prevention to Manifold hollow sweeps. DEAD CODE: dedup `creaseAwareCornerNormals` (`render-helpers:529` ≈ `trueform-adapter:271`, ~70 LOC — RISKY: differ by a `weldTol` param, not a safe delete).
 
 ### Open — editor
 - **Section card — "show cutter" option** — a view-only toggle on the ✂ section card to render the CUTTING wedge/cube semi-transparent (overlay, not baked) so the author sees what `az`/`offset` removes.
@@ -39,14 +37,12 @@
 - **#11 Expression-as-builder** — unify the 3 repeats (list<op>→sketch · list<transform>→repeat); lacing; 2D preview.
 - **#31 Visual expression editor** — finish `ExprImperativeBlocks` + `if`; text-DSL mirror.
 - **#36 Warp node** — after #940: **#12** repeat-as-sweep · **#23** generalize r_sweep (varying section) · **#24/#26** spline as generic point-source · **#13** typed ports propagation · **#8** repeat editor popover · **#86** subpart colors (view-only tint) · **#30** custom tabs + local/cloud folders.
-- **#36c Warp trajectory — z-offset placement** — **(b) wire `originZ` to a caller** — feed a part's z-offset into the warp (`s = z − splineOrigin`) so multiple strings place on ONE spline by depth. GATE: golden untouched (sampler/render, not emit).
 - **#38 Data-driven params** — **P2 · list<record> table editor** — `ParamsCard` gains "add object/row" to build a list<record> inline (strings table); the well rebuilds with N strings, zero card-wiring. Payoff: `w_multi_string_dev` 18 cards → 1 list param + 1 producer.
 - **#18 r_surface_grid** (unmerged `feat/surface-grid-expr`) · **#21 sweep_demo** (fix on a worktree branch, pending apply) · **#17 Loop·x/y toolbar drop**.
 
 ### /design architecture views
 Tabs: Tree · C4 · GEP module · Folder tree (6 layouts) · Class model · Code graph · Design philosophy — plus a dev toolbar (↻ Rebuild diagrams · Run graphify · Build tree).
 - [ ] **API docs from graphify** — `scripts/gen-api-docs.mjs` consuming `graphify-out/graph.json` (2,132 nodes) → repo API/reference docs (public exports · endpoint catalog · module responsibilities) in a buried /design "Docs" tab. Regenerate alongside `gen-design-diagrams.mjs`.
-- [ ] **`src/volume_backup/`** (~22k LOC, surfaced by the treemap) — decide whether to move/remove it out of `src/`.
 
 ### AI (umbrella #0 — local-first; `docs/plans/ai-master-plan.md`)
 - **#0** registry → cloud schema/prompt + local CFG → multishot loop → feedback corpus → WebLLM (#1/#2/#27/#28/#29 are its phases).

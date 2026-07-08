@@ -1,13 +1,13 @@
 /**
  * POST /api/volume/backup
  *
- * Snapshot the ENTIRE volume into the repo at `src/volume_backup/`.
+ * Snapshot the ENTIRE volume into the repo at `volume_backup/`.
  *
  * Reads through the app's own `/api/volume` endpoint via SvelteKit's
  * server `fetch`, so when `CADTRAIN_VOLUME_REMOTE_URL` is set (local dev)
  * the read transparently proxies to PRODUCTION — i.e. this copies the
  * live Railway volume down into the working tree. The write side is a
- * plain local-FS write to `src/volume_backup/` (NOT the volume), so the
+ * plain local-FS write to `volume_backup/` (NOT the volume), so the
  * snapshot lands in the repo where the user can review / commit it.
  *
  * Dev-only: on prod the volume IS the local FS and there's no point
@@ -25,7 +25,9 @@ import { promises as fsp } from 'node:fs';
 import { resolve, dirname, sep } from 'node:path';
 import { dev } from '$app/environment';
 
-const BACKUP_ROOT = resolve(process.cwd(), 'src', 'volume_backup');
+// Repo-root (NOT src/) so a local snapshot never pollutes the source tree / treemap.
+// Gitignored; the volume is normally an external resource so this is an opt-in copy.
+const BACKUP_ROOT = resolve(process.cwd(), 'volume_backup');
 
 /** Dirs we never want in the snapshot even if they somehow appear at the
  *  volume root (matters only when the local root is the project cwd). */
@@ -100,7 +102,7 @@ export const POST: RequestHandler = async ({ fetch }) => {
 
   return json({
     ok: errors.length === 0,
-    dest: 'src/volume_backup',
+    dest: 'volume_backup',
     dirs,
     files,
     bytes,

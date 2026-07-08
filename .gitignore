@@ -126,8 +126,8 @@ Thumbs.db
 # Playwright test output (regenerable)
 test-results/
 
-# Volume snapshot backup (created by the backup-to-src endpoint) — data, not source
-/src/volume_backup/
+# Volume snapshot backup (opt-in local copy via the backup endpoint) — data, not source
+/volume_backup/
 
 # Temp/scratch scripts
 /scripts/_*tmp*.mjs

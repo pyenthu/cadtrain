@@ -36,10 +36,6 @@ Phase 1 of `docs/plans/svg-projection-perf.md` — silhouette/crease-outline ext
 ▶ **Run Batch 6: build the Material Card (per-part+subpart colour/opacity/texture/preset).**
 *Pairs with Batch 5's #63. Say "do 6 then 5" if you want materials driving SVG too.*
 
-## Batch 7 — Warp trajectory originZ (multi-string on one spline)  ·  Effort S · Risk low · Verify H
-- **#36c (b)** (L44) — wire `originZ` to a caller so `s = z − splineOrigin`; many strings place on ONE spline by depth. Golden untouched (sampler/render change). Pairs with the now-done #36b.
-▶ **Run Batch 7: wire warp `originZ` so multiple parts place on one spline by z-offset.**
-
 ## Batch 8 — Data-driven params P2 (list<record> table editor)  ·  Effort M · Risk low · Verify B
 - **#38 P2** (L45) — `ParamsCard` gains "add object/row" to build a `list<record>` inline (a strings table). Payoff: `w_multi_string_dev` 18 cards → 1 list param + 1 producer. Producer (`parts_map`) + schema already shipped.
 ▶ **Run Batch 8: add the list<record> table editor to ParamsCard (#38 P2).**

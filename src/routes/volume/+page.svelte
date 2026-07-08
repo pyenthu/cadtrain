@@ -38,7 +38,7 @@
   let editSaving = $state(false);
   let fileInput: HTMLInputElement | null = $state(null);
 
-  // ── Backup (volume → src/volume_backup) ─────────────────────────────
+  // ── Backup (volume → volume_backup) ─────────────────────────────
   let backing = $state(false);
   let backupMsg = $state<string | null>(null);
   async function runBackup() {
@@ -50,7 +50,7 @@
       const j = await r.json().catch(() => null);
       if (!r.ok) throw new Error(j?.message || `${r.status}`);
       const ok = j?.errorCount ? ` (${j.errorCount} errors)` : '';
-      backupMsg = `Copied ${j.files} files · ${humanSize(j.bytes)} → src/volume_backup${ok}`;
+      backupMsg = `Copied ${j.files} files · ${humanSize(j.bytes)} → volume_backup${ok}`;
     } catch (e: any) {
       backupMsg = `Backup failed: ${e?.message ?? e}`;
     } finally {
@@ -454,7 +454,7 @@
         class="vol-backup"
         type="button"
         disabled={backing}
-        title="Copy the entire volume into the repo at src/volume_backup/ (dev only)"
+        title="Copy the entire volume into the repo at volume_backup/ (dev only)"
         onclick={runBackup}
       >{backing ? '⏳ Backing up…' : '⬇ Backup → src'}</button>
       <button
