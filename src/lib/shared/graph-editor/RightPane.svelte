@@ -247,7 +247,12 @@
   // fetch it from /api/primitives/preview only when the SVG tab is active
   // (active-tab-only discipline) and the body changes, so it never duplicates
   // work while hidden.
-  let svgMeshJson = $state<{ full: any; cutVC: any } | null>(null);
+  // Carries `parts`/`cutParts` too (batch-5 Phase 2) — the per-part meshes +
+  // their PartAppearance (opacity/colour) that the SVG view needs for per-part
+  // transparency. The server already serializes them; dropping them here was the
+  // root cause of the SVG ignoring per-part opacity (same class as the earlier
+  // bake-client drop).
+  let svgMeshJson = $state<import('$lib/cad/mesh-serial').SerializedComponentResult | null>(null);
   let svgMeshKey = $state<string>('');
   let svgMeshBusy = $state(false);
   // SVG resolution: 'coarse' (32 segments, DEFAULT — a vector drawing doesn't
@@ -325,7 +330,14 @@
         });
         if (!r.ok) { svgMeshJson = null; return; }
         const data = await r.json();
-        svgMeshJson = { full: data.full, cutVC: data.cutVC };
+        // Thread parts/cutParts (+ PartAppearance opacity) through to the SVG
+        // view so a transparent sub-part renders see-through (Phase 2). NB no
+        // `instanced` was requested, so the merged full/cutVC are the real mesh.
+        svgMeshJson = {
+          full: data.full, cutVC: data.cutVC,
+          ...(data.parts ? { parts: data.parts } : {}),
+          ...(data.cutParts ? { cutParts: data.cutParts } : {}),
+        };
       } catch { svgMeshJson = null; }
       finally { svgMeshBusy = false; }
     })();

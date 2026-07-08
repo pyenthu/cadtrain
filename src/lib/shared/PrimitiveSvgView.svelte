@@ -51,7 +51,7 @@
     type SerializedComponentResult,
   } from '$lib/cad/mesh-serial';
   import { buildSvgCamera } from '$lib/shared/svg-camera';
-  import { emitSvg } from '$lib/shared/svg-emit';
+  import { projectScene, shadeAndEmit, type ProjectedScene, type ProjectEntry } from '$lib/shared/svg-emit';
 
   let {
     meshJson = null,
@@ -127,6 +127,31 @@
   let container = $state<HTMLDivElement | null>(null);
   // The <svg> we built last render (download target; replaced each render).
   let svgEl: SVGSVGElement | null = null;
+
+  // --- PROJECTION CACHE (batch-5 Phase 0) ---
+  // The projected/sorted triangle list + edge path depend only on geometry +
+  // camera + scale, NOT on the light angle or per-part opacity. Cache it keyed
+  // by those inputs so a light-dial / x-ray drag re-runs ONLY the (cheap) shade
+  // pass — no re-projection, no EdgesGeometry rebuild.
+  let cachedProj: ProjectedScene | null = null;
+  let cachedProjKey = '';
+  // Stable identity per rehydrated geometry object (part of the cache key so a
+  // fresh bake invalidates the projection without a deep content hash).
+  let geoIdCounter = 0;
+  const geoIds = new WeakMap<object, number>();
+  function geoIdOf(o: object): number {
+    let id = geoIds.get(o);
+    if (id === undefined) { id = ++geoIdCounter; geoIds.set(o, id); }
+    return id;
+  }
+  // `#rrggbb` → [r,g,b] in 0..1, or null when unparseable (→ default base).
+  function hexToRgb01(hex?: string): [number, number, number] | null {
+    if (!hex) return null;
+    const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+    if (!m) return null;
+    const n = parseInt(m[1], 16);
+    return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+  }
 
   // ortho (default) vs persp projection — persisted so the choice sticks across
   // tab/part switches. Ortho is the technical-drawing projection (no foreshorten),
@@ -217,7 +242,7 @@
   }
 
   function renderToSvg(
-    pair: { full: THREE.BufferGeometry; cutVC: THREE.BufferGeometry },
+    pair: NonNullable<ReturnType<typeof deserializeComponentResult>>,
     w: number,
     h: number,
   ) {
@@ -225,21 +250,32 @@
 
     // Pick cutaway (red outer / grey bore) when toggled + present, else solid.
     const useCut = scene.showCutaway && vertCount(pair.cutVC) > 0;
+    // PER-PART path (batch-5 Phase 2): the composite parts for THIS section —
+    // full-view `parts` (colour on the appearance) vs cut-view `cutParts`
+    // (vertex-coloured section). Present → each sub-part gets its own opacity;
+    // absent → fall back to the merged full/cutVC mesh (byte-identical to before).
+    const partList = useCut ? pair.cutParts : pair.parts;
+    const hasParts = !!partList && partList.length > 0;
     const geo = useCut
-      ? pair.cutVC
-      : vertCount(pair.full) > 0
-        ? pair.full
-        : null;
-    if (!geo) { errorMsg = 'No geometry to render'; return; }
+      ? (vertCount(pair.cutVC) > 0 ? pair.cutVC : null)
+      : (vertCount(pair.full) > 0 ? pair.full : null);
+    if (!geo && !hasParts) { errorMsg = 'No geometry to render'; return; }
 
     // View-only exaggeration [xScale, xScale, zScale] — mirrors PrimitiveDualScene
     // so the SVG frames long thin tools the same way the 3D pane does. Applied to
     // POSITIONS only (lighting stays in unscaled local space).
     const sX = scene.xScale, sZ = scene.zScale;
+    // Back-face cull halves the fill count on a CLOSED solid (visually identical).
+    // OFF for the cutaway: its exposed inner walls face away yet must render.
+    const backfaceCull = !useCut;
+
+    // Frame off the merged mesh when present (matches the 3D pane's bbox); else
+    // the first part. buildSvgCamera only reads the bbox → sizing is identical.
+    const camGeo = geo ?? partList![0].geo;
 
     // 1) Build the ortho/persp camera + SVG pixel size from the geometry bbox +
     //    the (read-here) scene view params.
-    const cam = buildSvgCamera(geo, {
+    const cam = buildSvgCamera(camGeo, {
       projection,
       w, h,
       sX, sZ,
@@ -248,21 +284,57 @@
       zFocus: scene.zFocus,
     });
 
-    // 2) Emit the Gouraud <svg> (project · shade · gradient · painter-sort ·
-    //    edges). Pure — all tuning constants + view params passed in.
-    const out = emitSvg(geo, cam.camera, cam.renderW, cam.renderH, cam.fitToContainer, {
+    // Per-part effective opacity + transparency bucket — the SAME formula as
+    // PrimitiveDualScene (`rawOp × xrayOpacity`, clamped) so the SVG tracks the
+    // x-ray slider AND matches the 3D pane. Shade-time inputs (recomputed on a
+    // light/x-ray drag without re-projecting).
+    const partAlpha: number[] = [];
+    const partTrans: boolean[] = [];
+    if (hasParts) {
+      partList!.forEach((pm, i) => {
+        const a = pm.appearance ?? {};
+        const rawOp = (typeof a.opacity === 'number' && a.opacity > 0 && a.opacity < 1) ? a.opacity : 1;
+        const pOp = Math.max(0.02, Math.min(1, rawOp * (scene.xrayOpacity ?? 1)));
+        partAlpha[i] = pOp;
+        partTrans[i] = pOp < 1 || rawOp < 1;
+      });
+    } else {
+      partAlpha[0] = 1; partTrans[0] = false;
+    }
+
+    // 2a) PROJECT (geometry + camera + scale) — cached across light/x-ray drags.
+    //     Key excludes lightAngle / showEdges / opacity (all shade-time only).
+    const projKey = JSON.stringify({
+      g: geoIdOf(pair), useCut, hasParts, np: partList?.length ?? 0, backfaceCull,
+      proj: projection, w, h, sX, sZ,
+      c: [scene.cam.x, scene.cam.y, scene.cam.z],
+      pc: [scene.partCenter.x, scene.partCenter.y, scene.partCenter.z],
+      zf: scene.zFocus,
+    });
+    if (!cachedProj || projKey !== cachedProjKey) {
+      const entries: ProjectEntry[] = hasParts
+        ? partList!.map((pm, i) => ({
+            geo: pm.geo,
+            pi: i,
+            base: hexToRgb01(pm.appearance?.colorOuter) ?? [DEF_R, DEF_G, DEF_B],
+          }))
+        : [{ geo: geo!, pi: 0, base: [DEF_R, DEF_G, DEF_B] }];
+      cachedProj = projectScene(
+        entries, cam.camera, cam.renderW, cam.renderH, cam.fitToContainer,
+        { sX, sZ, backfaceCull, HIGH_TRI },
+      );
+      cachedProjKey = projKey;
+    }
+
+    // 2b) SHADE + emit — light-dependent only. Painter's order: OPAQUE parts
+    //     first, TRANSPARENT parts (fill-opacity) over the top.
+    const out = shadeAndEmit(cachedProj, {
       idPrefix: svgUid,
-      sX, sZ,
       lightAngle,
       showEdges: scene.showEdges,
-      HIGH_TRI,
-      // Back-face cull halves the fill count on a CLOSED solid (visually
-      // identical — occluded faces). OFF for the cutaway: its exposed inner
-      // walls face away from the lens yet must still render.
-      backfaceCull: !useCut,
       AMBIENT, KEY, FILL,
-      DEF_R, DEF_G, DEF_B,
       DESAT, BRIGHT,
+      partAlpha, partTrans,
     });
     triCount = out.triCount;
     emitCount = out.emitCount;
@@ -288,6 +360,7 @@
     void scene.partCenter.x; void scene.partCenter.y; void scene.partCenter.z;
     void scene.zFocus; void scene.xScale; void scene.zScale;
     void scene.showCutaway; void scene.showEdges;
+    void scene.xrayOpacity; // per-part opacity (shade-time; re-shades only)
     void projection;
     void lightAngle;
 
