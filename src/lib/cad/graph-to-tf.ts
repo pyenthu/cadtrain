@@ -1020,7 +1020,11 @@ function graphToTfInner(
     const node = graph.nodes[id] as any;
     if (node && node.type === 'warp' && Array.isArray(node.children) && node.children.length > 1) {
       for (const c of node.children as NodeId[]) {
-        const single = { ...node, child: c, children: undefined };
+        // Multi-input warp → ABSOLUTE placement (originZ default 0), mirroring the
+        // Manifold emit (warp.ts): each child's own z (incl. its mv-z) sets its
+        // distance along the spline, instead of the per-part bbox re-zero cancelling
+        // an mv-z. An explicit node.originZ still wins.
+        const single = { ...node, child: c, children: undefined, originZ: node.originZ ?? { kind: 'literal', value: 0 } };
         instrs.push(lowerNode(single, graph, scope, notes, resolve, seen, depth));
         partAppearance.push(apprOf(c));
       }
