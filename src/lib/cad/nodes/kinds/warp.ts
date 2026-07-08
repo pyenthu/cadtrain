@@ -31,6 +31,9 @@ export const WarpKind: NodeKind<WarpNode> = {
     if (n.refine != null) optParts.push(`refine: ${c.emitValue(n.refine)}`);
     if (n.stretch) optParts.push('stretch: true');
     if (n.validate) optParts.push('validate: true');
+    // Absolute depth placement (#36c b): emitted ONLY when set, so existing warp
+    // parts (no originZ) emit byte-identically (the golden gate).
+    if (n.originZ != null) optParts.push(`originZ: ${c.emitValue(n.originZ)}`);
     const opts = optParts.length ? `, { ${optParts.join(', ')} }` : '';
     const one = (childId: string, slot: string) => `warpSpline(${c.ref(childId, slot)}, ${pathExpr}${opts})`;
     // 1 solid → the historical single expr (byte-identical). ≥2 → a bare array of
@@ -48,6 +51,7 @@ export const WarpKind: NodeKind<WarpNode> = {
       ...childErrs,
       ...checkArg(n.id, 'path', n.path, g),
       ...(n.refine != null ? checkArg(n.id, 'refine', n.refine, g) : []),
+      ...(n.originZ != null ? checkArg(n.id, 'originZ', n.originZ, g) : []),
     ];
   },
   inputRefs: (n) => warpChildren(n),

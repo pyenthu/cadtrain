@@ -501,6 +501,12 @@ export type WarpNode = {
   refine?: ArgValue;
   stretch?: boolean;
   validate?: boolean;
+  /** Absolute depth-origin for the z→arc-length map (#36c b): the child's local z is
+   *  measured from `z − originZ` so a part placed down-hole at depth `originZ` (via
+   *  mv) bends at its TRUE arc-length station on the spline. This lets several parts
+   *  share ONE spline at different depths. Sparse — ABSENT ⇒ the legacy part-relative
+   *  map (`s = z − boundingBox.min.z`), byte-identical emit. */
+  originZ?: ArgValue;
 };
 
 /** CUTAWAY / cross-section MODIFIER node — subtracts an AUTHORED angular wedge

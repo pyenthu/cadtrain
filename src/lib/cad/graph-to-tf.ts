@@ -100,7 +100,7 @@ export type TfInstr =
   // WARP (#6) — bend the CHILD solid along a spline `path` (control points), in
   // PURE JS (warpMeshJS: positions + normals by the local frame). Unlocks TF warp
   // ('TF can't build ops: warp') — TF builds the child mesh, warpMeshJS bends it.
-  | { op: 'warp'; child: TfInstr; path: Vec3[]; stretch?: boolean }
+  | { op: 'warp'; child: TfInstr; path: Vec3[]; stretch?: boolean; originZ?: number }
   // Authored angular cross-section (the graph `cutaway` modifier → Manifold
   // `sectionCut`). TF builds a pie-slice wedge extruded over the solid's Z span
   // and boolean-subtracts it (mirrors manifold-helpers.sectionCut).
@@ -827,7 +827,16 @@ function lowerNode(
         notes.push(`warp ${node.id}: no resolvable spline path (needs a wired spline with ≥2 points) — UNSUPPORTED`);
         return { op: 'UNSUPPORTED', nodeType: 'warp', detail: 'no spline path' };
       }
-      return { op: 'warp', child: childInst, path: cp, ...(w.stretch ? { stretch: true } : {}) };
+      // Absolute depth placement (#36c b): resolve originZ to a number and thread it
+      // to warpMeshJS so a part offset down-hole bends at its true arc-length station.
+      const originZ = w.originZ != null ? evalArg(w.originZ, scope) : NaN;
+      return {
+        op: 'warp',
+        child: childInst,
+        path: cp,
+        ...(w.stretch ? { stretch: true } : {}),
+        ...(Number.isFinite(originZ) ? { originZ } : {}),
+      };
     }
 
     case 'cutaway': {

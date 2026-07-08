@@ -33,6 +33,18 @@ describe('WarpKind', () => {
       .toBe('warpSpline(C, _x_s_path, { refine: 4, stretch: true, validate: true })');
     expect(WarpKind.emitExpr(warp({ stretch: true }), ctx())).toBe('warpSpline(C, _x_s_path, { stretch: true })');
   });
+  it('originZ (#36c b): emitted into opts ONLY when set; absent ⇒ bare emit (golden gate)', () => {
+    // absent → byte-identical to today (no opts object at all)
+    expect(WarpKind.emitExpr(warp(), ctx())).toBe('warpSpline(C, _x_s_path)');
+    // set → threaded after the other levers
+    expect(WarpKind.emitExpr(warp({ originZ: lit(30) }), ctx()))
+      .toBe('warpSpline(C, _x_s_path, { originZ: 30 })');
+    expect(WarpKind.emitExpr(warp({ stretch: true, originZ: lit(30) }), ctx()))
+      .toBe('warpSpline(C, _x_s_path, { stretch: true, originZ: 30 })');
+    // a param-driven originZ emits the param name
+    expect(WarpKind.emitExpr(warp({ originZ: par('depth') }), ctx()))
+      .toBe('warpSpline(C, _x_s_path, { originZ: depth })');
+  });
   it('validate flags null child + a since-deleted path/refine param', () => {
     expect(WarpKind.validate(warp(), graph({ c: {} }))).toEqual([]);
     const errs = WarpKind.validate(warp({ child: null, path: par('gone'), refine: par('r') }), graph({}));
