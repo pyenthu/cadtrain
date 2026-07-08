@@ -1,0 +1,87 @@
+# Execution batches
+
+Grouped, issue-and-execute units built from `TODO.md` (which stays the canonical
+list). Each batch is sized to ONE build+commit cycle so you can say **"run Batch N
+to completion"** and I do the whole thing (edit → build → test → commit) without
+per-step check-ins.
+
+**How to issue a batch:** copy the **▶** line. Add "don't check in with me, verify at
+the end" for max speed. Batches are independent unless a **needs** note says otherwise.
+
+Legend — **Effort**: S(<1h) · M(half-day) · L(multi-session). **Risk**: how likely to
+break other things. **Verify**: H=headless test/build · B=browser check needed.
+
+---
+
+## Batch 1 — TF quick bugs + gaps  ·  Effort M · Risk low · Verify H+B
+The cluster of small TF-tab issues. All in `PrimitiveDualCanvas.svelte` / `graph-to-tf.ts` / `PrimitiveDualScene.svelte`.
+- **TF double-bake per change** (TODO L20) — repro on a param scrub, count `[bake-client]`/TF-worker calls; find the `$effect` firing twice (args identity? geoVersion? active-pane gate?). *Specificity: needs a repro count first — I'll instrument, then fix.*
+- **TF timing measured wrong** (L21) — audit `PrimitiveDualCanvas` tf branch ~L562-607 (`tim.warm`/`tim.build`, `buildMs`); likely double-counts the kernel warm or is skewed by the double-bake.
+- **x-ray slider no-ops on TF parts** (L24a) — multiply `scene.xrayOpacity` into `pOp` at `PrimitiveDualScene:988,1018`. *(Precise, S.)*
+- **scene sine-warp toggle no-ops on the TF tab** (L24b) — `PrimitiveDualCanvas:367`.
+- **TF `parts_map` builder** (L22) — `graph-to-tf.ts` has no `parts_map` case → "no builder". Add a native builder or a documented passthrough (mirror the cutaway passthrough just shipped).
+▶ **Run Batch 1: fix the TF double-bake, timing, x-ray-on-TF, sine-warp-on-TF, and the parts_map builder — instrument first where noted, then verify.**
+*Split option: "just do the two precise ones (x-ray + sine-warp)" = S, skip the CHECK items.*
+
+## Batch 2 — Dead-code / cleanup sweep  ·  Effort S · Risk low · Verify H
+Mechanical, from the Manifold↔TF audit (L24 "DEAD CODE"). Pure deletions/renames, golden-gated.
+- Dedup `creaseAwareCornerNormals` (`render-helpers:508` ≡ `trueform-adapter:271`, ~70 LOC → shared).
+- Drop the dead `stackAxis` prop.
+- Fold/retire the GLB render-time `warp.ts`.
+- Fix the stale `graph-to-tf:679` comment.
+- Also fold in: remove leftover `src/lib/cad/__*.test.ts` / `_shaft_bisect.test.ts` spike files (they hang full test runs).
+▶ **Run Batch 2: the dead-code cleanup sweep (dedup crease normals, drop stackAxis, retire warp.ts, fix stale comment, remove spike test files) — build + golden gate, one commit.**
+
+## Batch 3 — Spline editor overhaul  ·  Effort L · Risk med (UI) · Verify B
+One cohesive UI area (`ProfileFn3DCanvas`/the spline editor). TODO L27-33. Sub-items, do in order:
+- (a) FLAT ortho projection views XY/YZ/XZ; drag in-plane locks the 3rd axis.
+- (b) Grid sized to the control-point bbox (not fixed).
+- (c) Zoom-stable handles — constant screen-size line/dots.
+- (d) ＋point/−point AND option toggles INSIDE the canvas via Threlte `<HTML>`.
+- (e) XYZ button → scrollable control-point table popover (edit x/y/z per row).
+- (f) Trim on-canvas verbiage; help to the bottom.
+▶ **Run Batch 3 to completion: the full spline-editor overhaul (a–f). Browser-verify at the end, one commit — or tell me a sub-set (e.g. "just a, b, c").**
+*Needs: first turn = I locate the spline-editor component + report the file, then execute (it's not yet pinned in the TODO).*
+
+## Batch 4 — Section card polish  ·  Effort S · Risk low · Verify B
+- **"show cutter" overlay** (L34) — a toggle on the ✂ section card to render the cutting wedge semi-transparent (view-only, not baked) so you see what `az`/`offset` removes.
+▶ **Run Batch 4: add the section-card "show cutter" overlay toggle.**
+
+## Batch 5 — SVG projection (perf + smoothness + transparency)  ·  Effort L · Risk med · Verify H+B
+Plan already written: `docs/plans/svg-projection-perf.md` (phased). Also absorbs **#63 SVG↔material** (L38: per-subpart colour, `meta.opacity`→`fill-opacity`, `<pattern>` textures). Highest value-to-effort per the plan: the transparency 1-liner + Phase 0 project/shade cache.
+▶ **Run Batch 5 Phase 0+2: the SVG per-part transparency fix (RightPane drops `data.parts`/`cutParts` — the same class as the bake-client bug) + the project/shade cache, per docs/plans/svg-projection-perf.md.**
+*Do the full plan as "Batch 5 all phases" (L) or one phase at a time.*
+
+## Batch 6 — Material system  ·  Effort M · Risk low-med · Verify B
+- **#61 Material CARD** (L37) — (a) opacity/transparency [in progress]; (b) textures via `meta.texture`; (c) a Material Card (sibling to Properties/Params) authoring colour·opacity·texture·preset per PART+SUBPART.
+▶ **Run Batch 6: build the Material Card (per-part+subpart colour/opacity/texture/preset).**
+*Pairs with Batch 5's #63. Say "do 6 then 5" if you want materials driving SVG too.*
+
+## Batch 7 — Warp trajectory originZ (multi-string on one spline)  ·  Effort S · Risk low · Verify H
+- **#36c (b)** (L44) — wire `originZ` to a caller so `s = z − splineOrigin`; many strings place on ONE spline by depth. Golden untouched (sampler/render change). Pairs with the now-done #36b.
+▶ **Run Batch 7: wire warp `originZ` so multiple parts place on one spline by z-offset.**
+
+## Batch 8 — Data-driven params P2 (list<record> table editor)  ·  Effort M · Risk low · Verify B
+- **#38 P2** (L45) — `ParamsCard` gains "add object/row" to build a `list<record>` inline (a strings table). Payoff: `w_multi_string_dev` 18 cards → 1 list param + 1 producer. Producer (`parts_map`) + schema already shipped.
+▶ **Run Batch 8: add the list<record> table editor to ParamsCard (#38 P2).**
+
+## Batch 9 — Small merges / stragglers  ·  Effort S each · Risk low · Verify H
+- **#18 r_surface_grid** — merge `feat/surface-grid-expr`.
+- **#21 sweep_demo** — apply the fix on its worktree branch.
+- **#17 Loop·x/y toolbar drop.**
+- **#19 BUG** `casing_schematic` "BREP is deleted" — investigate.
+- **`compose` opt-in toggle** (L23) — separate vs fused overlapping parts (author picks list vs weld). Mirror in TF.
+▶ **Run Batch 9: pick which — "merge #18", "apply #21", "the #19 BREP-deleted bug", or "the compose toggle".** *(These are unrelated; issue individually.)*
+
+---
+
+## Bigger tracks (not single-batch — scope first, then sub-batch)
+- **#42b Wells → ewells parity** (L7-11): A build-arch (WellBakePool + clip-plane cutaway) · B editing (mutation/undo, Completions+Survey editors) · C render polish · D chrome. Each is its own multi-batch track. Plan: `wells-build-architecture.md`.
+- **#940 GEP modularization Phase 4** (L4): inline-only, browser-verify each cut — pull the 7 candidates onto `controller.svelte.ts` + a GraphCommand undo layer. **#52 RightPane** modularize rides along.
+- **AI umbrella #0** (L54-56): registry → cloud schema → local CFG → multishot → feedback → WebLLM. Local-first constraint. Plan: `ai-master-plan.md`.
+- **/design docs** (L50-52): API docs from `graphify-out/graph.json`; decide `src/volume_backup/` fate.
+
+## Where I need more specificity from you (can't execute blind)
+- **Batch 3 spline editor** — which component file is the spline editor? (I'll find it first turn, but confirm you mean the warp/`r_sweep` path spline, not the profile sketcher.)
+- **Batch 1 double-bake** — is it every part or only multi-tab `/primitives`? (changes where I instrument.)
+- **Batch 6 vs 5** — do you want materials to drive the SVG render too, or 3D/TF only for now?

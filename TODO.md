@@ -1,4 +1,5 @@
 # TODO — crisp. Full detail in `/plan` (Gantt) + `docs/plans/*`.
+> **Execution:** `docs/plans/batches.md` groups these into issue-and-run batches ("run Batch N to completion").
 
 ### Active focus
 - **#940/#22 Modularize GraphEditorPane** — GEP ~4.3k lines. Phases 0–3 shipped (node-kind registry + golden-emit byte-gate + undo/redo + `GraphEditorController` trunk, 2026-07-07). NEXT (Phase 4, inline, browser-verify each cut): pull the 7 candidates (part-actions · bake-orchestration · expr-actions · keymap/save · canvas-interaction · CSS) onto `controller.svelte.ts` + a `GraphCommand` labeled-undo layer; NodeCard per-type split. Diminishing per-step payoff. (`graph-editor-pane.md`, `modularize-round2.md`, `hierarchical-class-design.md`)
