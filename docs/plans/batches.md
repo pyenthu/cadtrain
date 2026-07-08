@@ -11,6 +11,10 @@ the end" for max speed. Batches are independent unless a **needs** note says oth
 Legend — **Effort**: S(<1h) · M(half-day) · L(multi-session). **Risk**: how likely to
 break other things. **Verify**: H=headless test/build · B=browser check needed.
 
+**Shipped 2026-07-08:** Batch 2 (dead-code cleanup) · Batch 3 (spline editor overhaul) ·
+Batch 5 P2+P0 (SVG per-part transparency + project/shade cache). Numbers kept stable;
+remaining SVG smoothness is **Batch 5b** below.
+
 ---
 
 ## Batch 1 — TF quick bugs + gaps  ·  Effort M · Risk low · Verify H+B
@@ -23,34 +27,13 @@ The cluster of small TF-tab issues. All in `PrimitiveDualCanvas.svelte` / `graph
 ▶ **Run Batch 1: fix the TF double-bake, timing, x-ray-on-TF, sine-warp-on-TF, and the parts_map builder — instrument first where noted, then verify.**
 *Split option: "just do the two precise ones (x-ray + sine-warp)" = S, skip the CHECK items.*
 
-## Batch 2 — Dead-code / cleanup sweep  ·  Effort S · Risk low · Verify H
-Mechanical, from the Manifold↔TF audit (L24 "DEAD CODE"). Pure deletions/renames, golden-gated.
-- Dedup `creaseAwareCornerNormals` (`render-helpers:508` ≡ `trueform-adapter:271`, ~70 LOC → shared).
-- Drop the dead `stackAxis` prop.
-- Fold/retire the GLB render-time `warp.ts`.
-- Fix the stale `graph-to-tf:679` comment.
-- Also fold in: remove leftover `src/lib/cad/__*.test.ts` / `_shaft_bisect.test.ts` spike files (they hang full test runs).
-▶ **Run Batch 2: the dead-code cleanup sweep (dedup crease normals, drop stackAxis, retire warp.ts, fix stale comment, remove spike test files) — build + golden gate, one commit.**
-
-## Batch 3 — Spline editor overhaul  ·  Effort L · Risk med (UI) · Verify B
-One cohesive UI area (`ProfileFn3DCanvas`/the spline editor). TODO L27-33. Sub-items, do in order:
-- (a) FLAT ortho projection views XY/YZ/XZ; drag in-plane locks the 3rd axis.
-- (b) Grid sized to the control-point bbox (not fixed).
-- (c) Zoom-stable handles — constant screen-size line/dots.
-- (d) ＋point/−point AND option toggles INSIDE the canvas via Threlte `<HTML>`.
-- (e) XYZ button → scrollable control-point table popover (edit x/y/z per row).
-- (f) Trim on-canvas verbiage; help to the bottom.
-▶ **Run Batch 3 to completion: the full spline-editor overhaul (a–f). Browser-verify at the end, one commit — or tell me a sub-set (e.g. "just a, b, c").**
-*Needs: first turn = I locate the spline-editor component + report the file, then execute (it's not yet pinned in the TODO).*
-
 ## Batch 4 — Section card polish  ·  Effort S · Risk low · Verify B
 - **"show cutter" overlay** (L34) — a toggle on the ✂ section card to render the cutting wedge semi-transparent (view-only, not baked) so you see what `az`/`offset` removes.
 ▶ **Run Batch 4: add the section-card "show cutter" overlay toggle.**
 
-## Batch 5 — SVG projection (perf + smoothness + transparency)  ·  Effort L · Risk med · Verify H+B
-Plan already written: `docs/plans/svg-projection-perf.md` (phased). Also absorbs **#63 SVG↔material** (L38: per-subpart colour, `meta.opacity`→`fill-opacity`, `<pattern>` textures). Highest value-to-effort per the plan: the transparency 1-liner + Phase 0 project/shade cache.
-▶ **Run Batch 5 Phase 0+2: the SVG per-part transparency fix (RightPane drops `data.parts`/`cutParts` — the same class as the bake-client bug) + the project/shade cache, per docs/plans/svg-projection-perf.md.**
-*Do the full plan as "Batch 5 all phases" (L) or one phase at a time.*
+## Batch 5b — SVG smoothness (silhouette outlines)  ·  Effort M · Risk med · Verify B
+*(Batch 5 P2 per-part transparency + P0 project/shade cache SHIPPED 2026-07-08.)* LEFT: Phase 1 of `docs/plans/svg-projection-perf.md` — silhouette/crease-outline extraction, anti-aliased strokes (`stroke-linejoin:round`, non-scaling-stroke), fewer facet chords, curve-aware. Plus #63 (c) `<pattern>` textures.
+▶ **Run Batch 5b: SVG silhouette-outline smoothing (Phase 1) + `<pattern>` textures.**
 
 ## Batch 6 — Material system  ·  Effort M · Risk low-med · Verify B
 - **#61 Material CARD** (L37) — (a) opacity/transparency [in progress]; (b) textures via `meta.texture`; (c) a Material Card (sibling to Properties/Params) authoring colour·opacity·texture·preset per PART+SUBPART.
