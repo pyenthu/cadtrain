@@ -3309,6 +3309,10 @@
         <button class="ge-pick-item" type="button" onclick={() => { dropCsg('intersect'); submenuKey = null; }}>
           <span class="ge-pick-icon">⊗</span><span class="ge-pick-name">intersect</span>
         </button>
+        <!-- Cutaway / cross-section: subtract an authored angular wedge (#cutaway). -->
+        <button class="ge-pick-item" type="button" onclick={() => { dropCutaway(); submenuKey = null; }}>
+          <span class="ge-pick-icon">✂</span><span class="ge-pick-name">section</span><span class="ge-pick-hint">cutaway az°</span>
+        </button>
       </div>
     {:else if submenuKey === 'position'}
       <div class="ge-picker ge-picker-flyout"
@@ -3323,10 +3327,6 @@
         <!-- Warp / bend a built solid along a spline (#36). -->
         <button class="ge-pick-item" type="button" onclick={() => { dropWarp(); submenuKey = null; }}>
           <span class="ge-pick-icon">≈</span><span class="ge-pick-name">warp</span><span class="ge-pick-hint">bend on path</span>
-        </button>
-        <!-- Cutaway / cross-section: subtract an authored angular wedge. -->
-        <button class="ge-pick-item" type="button" onclick={() => { dropCutaway(); submenuKey = null; }}>
-          <span class="ge-pick-icon">✂</span><span class="ge-pick-name">section</span><span class="ge-pick-hint">cutaway az°</span>
         </button>
       </div>
     {:else if submenuKey === 'container'}

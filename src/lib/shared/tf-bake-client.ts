@@ -67,7 +67,9 @@ let nextId = 0;
 const pending = new Map<number, Job>(); // dispatched to the worker, awaiting reply
 let waiting: Job | null = null;          // newest job not yet dispatched
 let dispatching = false;
-let workerBroken = false;                // transport failed → main-thread fallback
+let workerBroken = false;                // gave up on the worker → main-thread fallback
+let workerDeaths = 0;                     // consecutive worker deaths w/o a healthy reply
+const MAX_WORKER_RESPAWNS = 3;            // after this many, stop respawning → main thread
 
 function timingsOn(): boolean {
   try { return typeof localStorage !== 'undefined' && localStorage.getItem('cad-bake-timings') === '1'; } catch { return false; }
@@ -87,6 +89,7 @@ function getWorker(): Worker {
       if (!job) return;
       pending.delete(data.id);
       if (data.ok) {
+        workerDeaths = 0;   // a healthy reply — restore the respawn budget
         const t = (data as WorkerOk).timings;
         if (t && timingsOn()) { try { console.log(`[tf-worker] warm=${(t.warm ?? 0).toFixed(1)} · build=${(t.build ?? 0).toFixed(1)} ms`); } catch { /* noop */ } }
         const payload: TfTransferable = { data: data.data, stats: data.stats, cutPlanes: data.cutPlanes, fullData: data.fullData, parts: data.parts, cutParts: data.cutParts };
@@ -98,24 +101,46 @@ function getWorker(): Worker {
         job.reject(new Error(data.error));
       }
     };
-    // TRANSPORT failure (spawn / script load / uncloneable) → mark broken + retry
-    // every in-flight + waiting job on the MAIN THREAD (not reject — the worker is
-    // an optimisation, not a correctness dependency).
-    const onTransportFail = (detail: string) => {
-      try { console.warn(`[tf-worker] transport failure → main-thread fallback: ${detail}`); } catch { /* noop */ }
-      workerBroken = true;
+    // A worker DEATH — either a WASM trap that escaped runTfGuarded (memory OOB /
+    // unreachable during a bake) OR a genuine transport failure (script won't
+    // load). We can't reliably tell them apart from the ErrorEvent, and it matters
+    // because the MAIN-THREAD fallback's TF self-heal (`?tfgen=N` cache-bust
+    // re-import) is BROKEN under Vite dev — a bare specifier + query with
+    // @vite-ignore doesn't resolve, so ONE trap on the main thread poisons EVERY
+    // later bake ("Failed to resolve module specifier '@polydera/trueform?tfgen=1'")
+    // until a page reload. A fresh WORKER, by contrast, is a NEW module realm → a
+    // clean TF kernel via the plain gen-0 import (resolves in dev + prod). So on a
+    // worker death we RESPAWN a fresh worker (up to a cap) instead of latching onto
+    // the broken main thread:
+    //   • reject the IN-FLIGHT job(s) (the one that trapped) with the reason —
+    //     re-running the same bad geometry would just re-trap the fresh worker;
+    //   • re-dispatch the newest WAITING job (the user's current request) onto it;
+    //   • only after MAX_WORKER_RESPAWNS consecutive deaths (a worker that
+    //     genuinely won't stay up) give up and latch to the main-thread fallback.
+    // A healthy reply resets workerDeaths (see onmessage).
+    const onWorkerDeath = (detail: string) => {
       try { worker?.terminate(); } catch { /* noop */ }
       worker = null;
-      const stranded = [...pending.values(), ...(waiting ? [waiting] : [])];
+      workerDeaths++;
+      const giveUp = workerDeaths > MAX_WORKER_RESPAWNS;
+      try { console.warn(`[tf-worker] worker died (#${workerDeaths}) → ${giveUp ? 'main-thread fallback' : 'respawn fresh worker'}: ${detail}`); } catch { /* noop */ }
+      // The in-flight job(s) crashed the worker → reject with the reason (matches
+      // the worker's deliberate {ok:false} blank+reason for a bad bake).
+      const inflight = [...pending.values()];
       pending.clear();
-      waiting = null;
-      for (const job of stranded) if (!job.settled) void runOnMainThread(job);
+      for (const job of inflight) if (!job.settled) { job.settled = true; job.reject(new Error(detail)); }
+      if (giveUp) {
+        workerBroken = true;
+        if (waiting) { const w = waiting; waiting = null; void runOnMainThread(w); }
+      } else if (waiting) {
+        void dispatch();   // fresh getWorker() picks up the newest request
+      }
     };
     worker.onerror = (ev) => {
       const e = ev as ErrorEvent;
-      onTransportFail([e?.message, e?.filename && `@ ${e.filename}:${e.lineno ?? '?'}`].filter(Boolean).join(' ') || 'worker script failed to load');
+      onWorkerDeath([e?.message, e?.filename && `@ ${e.filename}:${e.lineno ?? '?'}`].filter(Boolean).join(' ') || 'worker crashed (WASM trap or script load failure)');
     };
-    worker.onmessageerror = () => onTransportFail('uncloneable reply (messageerror)');
+    worker.onmessageerror = () => onWorkerDeath('uncloneable reply (messageerror)');
   }
   return worker;
 }
