@@ -31,9 +31,14 @@ export const WarpKind: NodeKind<WarpNode> = {
     if (n.refine != null) optParts.push(`refine: ${c.emitValue(n.refine)}`);
     if (n.stretch) optParts.push('stretch: true');
     if (n.validate) optParts.push('validate: true');
-    // Absolute depth placement (#36c b): emitted ONLY when set, so existing warp
-    // parts (no originZ) emit byte-identically (the golden gate).
+    // Absolute depth placement (#36c b): emitted ONLY when set, so existing single
+    // warp parts (no originZ) emit byte-identically (the golden gate). MULTI-input
+    // warps default to ABSOLUTE (originZ 0) so each child's own z — including its
+    // mv-z — sets its distance ALONG the spline (s = z); otherwise the per-part
+    // bbox re-zero cancels an mv-z and children stack at the spline start. Single
+    // child keeps the part-relative default (starts at the spline origin).
     if (n.originZ != null) optParts.push(`originZ: ${c.emitValue(n.originZ)}`);
+    else if (kids.length > 1) optParts.push('originZ: 0');
     const opts = optParts.length ? `, { ${optParts.join(', ')} }` : '';
     const one = (childId: string, slot: string) => `warpSpline(${c.ref(childId, slot)}, ${pathExpr}${opts})`;
     // 1 solid → the historical single expr (byte-identical). ≥2 → a bare array of
