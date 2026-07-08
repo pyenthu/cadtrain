@@ -430,6 +430,25 @@ describe('executeTfRecipe — per-part CUT (v2: per-part material on the cutaway
   });
 });
 
+describe('executeTfRecipe — authored cutaway (graph cutaway node)', () => {
+  it('walks a cutaway instr → builds wedge + booleanDifference on the child', () => {
+    const t = makeMockTf();
+    const child: TfInstr = { op: 'box', w: 4, h: 4, d: 8 };
+    const out = executeTfRecipe(t, t, recipe([{ op: 'cutaway', child, az: 90, offset: 0 }]));
+    const fns = t.calls.map((c: any) => c.fn);
+    expect(fns).toContain('boxMesh');
+    expect(fns).toContain('mesh');          // tfExtrudeProfile wedge
+    expect(fns).toContain('booleanDifference');
+    expect(out.stats.closed).toBe(true);
+  });
+
+  it('recipeHasUnsupported is false for a cutaway wrapping a supported child', () => {
+    expect(recipeHasUnsupported(recipe([
+      { op: 'cutaway', az: 90, offset: 0, child: { op: 'box', w: 2, h: 2, d: 4 } },
+    ]))).toBe(false);
+  });
+});
+
 describe('recipeHasUnsupported', () => {
   it('is false for a clean revolve/boolean recipe', () => {
     expect(recipeHasUnsupported(recipe([

@@ -115,6 +115,7 @@ export function isRevolveTree(instr: any): boolean {
       return Array.isArray(instr.profile) && instr.profile.length >= MIN_PROFILE_PTS;
     case 'translate':
     case 'rotate':
+    case 'cutaway':
       return isRevolveTree(instr.child);
     case 'booleanDifference':
     case 'booleanUnion':
@@ -141,6 +142,7 @@ export function densifyRevolveTree(instr: any, path: any): any {
       return { ...instr, profile: densifyProfileAxial(instr.profile, path, {}) };
     case 'translate':
     case 'rotate':
+    case 'cutaway':
       return { ...instr, child: densifyRevolveTree(instr.child, path) };
     case 'booleanDifference':
     case 'booleanUnion':
@@ -173,6 +175,52 @@ function applyTransform(t: any, mesh: any, mat: any): void {
  * is the child's intrinsic length regardless of where it will be placed. Returns
  * `{min:0,max:0}` for an empty/degenerate buffer (a zero-length child just doesn't
  * advance the cursor). */
+/** Axis-aligned bbox of a built mesh's LOCAL point buffer (ignores `.transformation`). */
+function meshBbox(mesh: any): {
+  minX: number; maxX: number; minY: number; maxY: number; minZ: number; maxZ: number;
+} {
+  const d = mesh?.points?.data as ArrayLike<number> | undefined;
+  if (!d || d.length < 3) {
+    return { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
+  }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (let i = 0; i < d.length; i += 3) {
+    const x = d[i], y = d[i + 1], z = d[i + 2];
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  }
+  if (!Number.isFinite(minX)) {
+    return { minX: 0, maxX: 0, minY: 0, maxY: 0, minZ: 0, maxZ: 0 };
+  }
+  return { minX, maxX, minY, maxY, minZ, maxZ };
+}
+
+/**
+ * TF mirror of Manifold's `sectionCut` — subtract an authored angular wedge
+ * (pie slice of `az` degrees CCW from +X, full Z height + margin) from `solid`.
+ */
+function buildSectionCut(t: any, solid: any, az: number, offset: number): any {
+  if (!(az > 0) || az >= 360) return solid;
+  const bb = meshBbox(solid);
+  const MARGIN = 20;
+  const R = Math.max(
+    Math.abs(bb.minX), Math.abs(bb.maxX),
+    Math.abs(bb.minY), Math.abs(bb.maxY),
+  ) + MARGIN;
+  const zlen = (bb.maxZ - bb.minZ) + 2 * MARGIN;
+  const z0 = bb.minZ - MARGIN + offset;
+  const seg = Math.max(2, Math.ceil(az / 5));
+  const section: [number, number][] = [[0, 0]];
+  for (let i = 0; i <= seg; i++) {
+    const a = ((az * i) / seg) * Math.PI / 180;
+    section.push([R * Math.cos(a), R * Math.sin(a)]);
+  }
+  const wedge = tfExtrudeProfile(t, section, { length: zlen });
+  applyTransform(t, wedge, t.makeTranslation(0, 0, z0));
+  return t.booleanDifference(solid, wedge).mesh;
+}
+
 function localZExtent(mesh: any): { min: number; max: number } {
   const d = mesh?.points?.data as ArrayLike<number> | undefined;
   if (!d || d.length < 3) return { min: 0, max: 0 };
@@ -419,6 +467,8 @@ function buildInstr(t: any, instr: TfInstr): any {
       const { positions } = warpMeshJS(welded.points, null, instr.path as any, { stretch: instr.stretch });
       return t.mesh(welded.faces, positions);
     }
+    case 'cutaway':
+      return buildSectionCut(t, buildInstr(t, instr.child), instr.az, instr.offset);
     case 'UNSUPPORTED':
       throw new TfUnsupportedError(instr.nodeType);
     default:
@@ -544,6 +594,7 @@ function instrHasUnsupported(instr: TfInstr): boolean {
     case 'rotate':
     case 'repeat':
     case 'warp':
+    case 'cutaway':
       return instrHasUnsupported(instr.child);
     default:
       return false;

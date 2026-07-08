@@ -437,4 +437,37 @@ describe('graphToTf', () => {
     expect(text).toContain('booleanDifference');
     expect(text).toContain('boxMesh');
   });
+
+  it('a cutaway modifier → a cutaway instr (not UNSUPPORTED), child consumed', () => {
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_cut'] },
+        n_shaft: {
+          id: 'n_shaft', type: 'call', src: 'r_revolve', alias: 'shaft',
+          args: { profile: { kind: 'literal', value: 0 }, segments: { kind: 'literal', value: 32 } },
+        },
+        n_poly: {
+          id: 'n_poly', type: 'polygon',
+          points: [
+            { r: { kind: 'literal', value: 1 }, z: { kind: 'literal', value: 0 } },
+            { r: { kind: 'literal', value: 1 }, z: { kind: 'literal', value: 4 } },
+            { r: { kind: 'literal', value: 0.5 }, z: { kind: 'literal', value: 4 } },
+            { r: { kind: 'literal', value: 0.5 }, z: { kind: 'literal', value: 0 } },
+          ],
+        },
+        n_cut: {
+          id: 'n_cut', type: 'cutaway', child: 'n_shaft',
+          az: { kind: 'literal', value: 90 }, offset: { kind: 'literal', value: 0 },
+        },
+      },
+      'n_root',
+    );
+    (g.nodes.n_shaft as any).args.profile = { kind: 'ref', ref: 'n_poly' };
+    const recipe = graphToTf(g);
+    expect(recipe.instrs).toHaveLength(1);
+    expect(recipe.instrs[0].op).toBe('cutaway');
+    expect((recipe.instrs[0] as any).az).toBe(90);
+    expect(recipe.notes.every((n) => !n.includes('UNSUPPORTED'))).toBe(true);
+    expect(tfRecipeText(recipe)).toContain('sectionCut(az=90');
+  });
 });

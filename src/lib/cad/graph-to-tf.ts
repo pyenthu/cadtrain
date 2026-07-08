@@ -101,6 +101,10 @@ export type TfInstr =
   // PURE JS (warpMeshJS: positions + normals by the local frame). Unlocks TF warp
   // ('TF can't build ops: warp') — TF builds the child mesh, warpMeshJS bends it.
   | { op: 'warp'; child: TfInstr; path: Vec3[]; stretch?: boolean }
+  // Authored angular cross-section (the graph `cutaway` modifier → Manifold
+  // `sectionCut`). TF builds a pie-slice wedge extruded over the solid's Z span
+  // and boolean-subtracts it (mirrors manifold-helpers.sectionCut).
+  | { op: 'cutaway'; child: TfInstr; az: number; offset: number }
   | { op: 'UNSUPPORTED'; nodeType: string; detail?: string };
 
 /** One part's render appearance (per-part-mesh TF path). colour + opacity +
@@ -827,12 +831,21 @@ function lowerNode(
     }
 
     case 'cutaway': {
-      // Authored angular cross-section cut. No clean TF wedge-subtract path yet
-      // (the wedge is a Manifold-side pie-slice extrude in `sectionCut`), so the
-      // node is UNSUPPORTED in TF — the child is already consumed above, so the
-      // TF view shows blank + this reason rather than the un-sectioned solid.
-      notes.push(`cutaway ${node.id}: angular sectionCut has no TF mapping — UNSUPPORTED`);
-      return { op: 'UNSUPPORTED', nodeType: 'cutaway', detail: 'sectionCut' };
+      const w = node as any;
+      const az = evalArg(w.az, scope);
+      const offset = evalArg(w.offset, scope);
+      const child = ref(w.child ?? '');
+      if (!(az > 0)) return child;
+      if (az >= 360) {
+        notes.push(`cutaway ${node.id}: az≥360 — Manifold returns empty(); TF passthrough child`);
+        return child;
+      }
+      return {
+        op: 'cutaway',
+        child,
+        az,
+        offset: Number.isFinite(offset) ? offset : 0,
+      };
     }
 
     case 'polygon':
@@ -1008,6 +1021,9 @@ function fmtInstr(inst: TfInstr, indent: number): string {
         `${fmtInstr(inst.child, indent + 1)}`;
     case 'profile':
       return `${pad}profile ${fmtProfile(inst.profile)}${inst.note ? `  // ${inst.note}` : ''}`;
+    case 'cutaway':
+      return `${pad}sectionCut(az=${fmtNum(inst.az)}°, offset=${fmtNum(inst.offset)}) of\n` +
+        `${fmtInstr(inst.child, indent + 1)}`;
     case 'UNSUPPORTED':
       return `${pad}⛔ UNSUPPORTED <${inst.nodeType}>${inst.detail ? ` — ${inst.detail}` : ''}`;
   }
