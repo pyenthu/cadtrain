@@ -9,7 +9,7 @@
  */
 import type { GraphNode } from '../composition-graph-types';
 import type { NodeKind } from './node-kind';
-import { CallKind, MethodKind, TxfmnKind, MaterialKind, MvKind, RotKind, SplineKind, WarpKind, ContainerKind, StackKind, RepeatKind, PolygonKind, PolyRepeatKind, SketchKind, SketchRepeatKind, ExprKind, PartsMapKind } from './kinds';
+import { CallKind, MethodKind, TxfmnKind, MaterialKind, MvKind, RotKind, SplineKind, WarpKind, CutawayKind, ContainerKind, StackKind, RepeatKind, PolygonKind, PolyRepeatKind, SketchKind, SketchRepeatKind, ExprKind, PartsMapKind } from './kinds';
 
 const KINDS: Partial<Record<GraphNode['type'], NodeKind>> = {
   call: CallKind as NodeKind,
@@ -20,6 +20,7 @@ const KINDS: Partial<Record<GraphNode['type'], NodeKind>> = {
   rot: RotKind as NodeKind,
   spline: SplineKind as NodeKind,
   warp: WarpKind as NodeKind,
+  cutaway: CutawayKind as NodeKind,
   // ContainerKind covers the two NON-stack containers; StackKind is separate
   // (its emit differs) but shares containerSize.
   list: ContainerKind as NodeKind,

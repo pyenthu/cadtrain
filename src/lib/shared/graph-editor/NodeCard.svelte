@@ -45,6 +45,8 @@
     removeMaterialNode,
     setSplinePlot,
     removeWarpChild,
+    setCutawayAz,
+    setCutawayOffset,
     setPartsMapSrc,
     setPartsMapList,
     setPartsMapArg,
@@ -64,7 +66,7 @@
     exprInputSockY, exprOutputSockY,
     containerSlotY, rootOutputSockY,
     OUTPUT_ARROW_W,
-    WARP_CHILD_CY, WARP_PATH_CY, warpSolidCY,
+    WARP_CHILD_CY, WARP_PATH_CY, warpSolidCY, CUTAWAY_CHILD_CY,
   } from './geom';
   import { isCallDrifted, refreshCallArgs } from './graph-editor-bake.svelte';
   import { portType, listOf, structColor } from '$lib/cad/port-types';
@@ -1737,6 +1739,61 @@
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
                   data-tip="the bent solid — wire into Output, a CSG op, or another modifier"
                   onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
+
+              {:else if n.type === 'cutaway'}
+                {@const cu = n as any}
+                {@const cuChildWired = typeof cu.child === 'string' && !!cu.child && !!graph.nodes[cu.child]}
+                {@const azVal = cu.az?.kind === 'literal' ? Number(cu.az.value) : NaN}
+                {@const offVal = cu.offset?.kind === 'literal' ? Number(cu.offset.value) : NaN}
+                <!-- Cutaway / cross-section MODIFIER — subtracts an authored
+                     angular wedge from the wired `solid` (child), emitting
+                     sectionCut(child, { az, offset }). solid wires in on the
+                     LEFT, sectioned result out the RIGHT; az (angular sweep) +
+                     offset (axial position) in the body row. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg cutaway"
+                  width={size.w} height={size.h} rx="6"
+                  data-tip="Cutaway: subtract an authored angular cross-section wedge from a built solid. Wire the SOLID into the left socket. az = how much to cut (0 = none, 180 = half-section, 360 = full removal); offset = axial (Z) position of the cut."
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <text x="12" y="20" class="ge-node-title">✂ section</text>
+                <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
+                <!-- delete × (top-right) -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 18} y="20" class="ge-node-x"
+                  class:armed={del.isArmed(n.id)}
+                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
+                <!-- SOLID (child) input — LEFT, CUTAWAY_CHILD_CY -->
+                <text x="14" y={CUTAWAY_CHILD_CY + 4} class="ge-cut-lbl" class:wired={cuChildWired}>solid</text>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock in child" class:wired={cuChildWired}
+                  cx="0" cy={CUTAWAY_CHILD_CY} r="6"
+                  data-tip="solid: wire the built part to section (any node's output)"
+                  onpointerup={(ev) => wire.endWireOnInput(ev, n.id, 'child')}/>
+                <!-- OPTS row: az (angular sweep) + offset (axial position) -->
+                <foreignObject x="10" y={CUTAWAY_CHILD_CY + 22} width={size.w - 16} height="34">
+                  <div class="ge-cut-opts" xmlns="http://www.w3.org/1999/xhtml">
+                    <label class="ge-cut-fld" title="Angular sweep of the removed wedge (degrees): 0 = no cut, 180 = half-section, 360 = full removal">
+                      az
+                      <input class="ge-arg-input" type="number" min="0" max="360" step="5"
+                        value={Number.isFinite(azVal) ? azVal : 180}
+                        oninput={(e) => setGraph(setCutawayAz(graph, n.id, asLiteral(Number((e.target as HTMLInputElement).value))))}/>
+                    </label>
+                    <label class="ge-cut-fld" title="Axial (Z) position of the cut (Z-down: + moves down-hole)">
+                      off
+                      <input class="ge-arg-input" type="number" step="1"
+                        value={Number.isFinite(offVal) ? offVal : 0}
+                        oninput={(e) => setGraph(setCutawayOffset(graph, n.id, asLiteral(Number((e.target as HTMLInputElement).value))))}/>
+                    </label>
+                  </div>
+                </foreignObject>
+                <!-- OUTPUT — RIGHT edge, vertically centred -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                  data-tip="the sectioned solid — wire into Output, a CSG op, or another modifier"
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
               {:else if n.type === 'parts_map'}
                 {@const pm = n as any}
                 {@const pmArgs = Object.keys(pm.argMap ?? {})}
@@ -1860,6 +1917,12 @@
     padding: 1px 5px; font: 600 10px Arial; cursor: pointer;
   }
   .ge-warp-tog.on { background: #0e7490; color: #fff; border-color: #0e7490; }
+  .ge-node-bg.cutaway { fill: #fef2f2; stroke: #b91c1c; stroke-width: 2; }
+  .ge-cut-lbl { fill: #b91c1c; font: 600 11px Arial; pointer-events: none; user-select: none; }
+  .ge-cut-lbl.wired { fill: #991b1b; font-weight: 700; }
+  .ge-cut-opts { display: flex; align-items: center; gap: 6px; font: 10px Arial; }
+  .ge-cut-fld { display: flex; align-items: center; gap: 2px; color: #b91c1c; font-weight: 600; }
+  .ge-cut-fld .ge-arg-input { width: 40px; }
   /* parts_map card (#38 Phase 3) — violet, matching the data-driven / list family. */
   .ge-node-bg.parts-map { fill: #f5f3ff; stroke: #6d28d9; stroke-width: 2; }
   .ge-pm { display: flex; flex-direction: column; gap: 3px; font: 10px Arial; overflow: auto; height: 100%; }

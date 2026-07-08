@@ -708,6 +708,7 @@ function assignVarNames(graph: Graph, order: NodeId[]): Map<NodeId, string> {
         node.type === 'polygon' ? 'poly' :
         node.type === 'sketch'  ? 'sketch' :
         node.type === 'warp'    ? 'warp_obj' :
+        node.type === 'cutaway' ? 'cut_obj' :
         node.type === 'parts_map' ? 'parts' :
                                    'rot_obj';
       counters[prefix] = (counters[prefix] ?? 0) + 1;

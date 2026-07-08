@@ -474,12 +474,13 @@ function computeConsumed(graph: Graph): Set<NodeId> {
     if (n.type === 'method') {
       if ((n as any).obj) consumed.add((n as any).obj);
       if ((n as any).arg) consumed.add((n as any).arg);
-    } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'warp') {
-      // warp's bent solid is an INPUT — consume it so the un-warped child does
-      // NOT double-emit as its own root output (mirrors composition-emit's
-      // computeConsumedSet; without this the TF view shows the straight tube
-      // AND the warped tube as two parts). #36b: a multi-input warp consumes ALL
-      // its `children[]` (else the extra solid stays a straight output).
+    } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'warp' || n.type === 'cutaway') {
+      // warp's bent solid(s) + cutaway's sectioned solid are INPUTS — consume them
+      // so the un-modified child does NOT double-emit as its own root output
+      // (mirrors composition-emit's computeConsumedSet; without this the TF view
+      // shows the straight tube AND the warped/sectioned tube as two parts). #36b:
+      // a multi-input warp consumes ALL its `children[]` (else the extra solid
+      // stays a straight output); single-child nodes use `child`.
       const wc = (n as any);
       const kids = (Array.isArray(wc.children) && wc.children.length) ? wc.children : (wc.child ? [wc.child] : []);
       for (const c of kids) consumed.add(c);
@@ -825,6 +826,15 @@ function lowerNode(
       return { op: 'warp', child: childInst, path: cp, ...(w.stretch ? { stretch: true } : {}) };
     }
 
+    case 'cutaway': {
+      // Authored angular cross-section cut. No clean TF wedge-subtract path yet
+      // (the wedge is a Manifold-side pie-slice extrude in `sectionCut`), so the
+      // node is UNSUPPORTED in TF — the child is already consumed above, so the
+      // TF view shows blank + this reason rather than the un-sectioned solid.
+      notes.push(`cutaway ${node.id}: angular sectionCut has no TF mapping — UNSUPPORTED`);
+      return { op: 'UNSUPPORTED', nodeType: 'cutaway', detail: 'sectionCut' };
+    }
+
     case 'polygon':
       return { op: 'profile', profile: resolvePolygon(node as PolygonNode, graph, scope, notes) };
 
@@ -860,7 +870,7 @@ function outputAppearanceThroughWrappers(graph: Graph, id: NodeId) {
     if (!n) break;
     const eff = resolveEffectiveAppearance(graph, cur);
     if (Object.keys(eff).length) return eff;
-    if ((n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'warp')
+    if ((n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn' || n.type === 'warp' || n.type === 'cutaway')
         && typeof (n as any).child === 'string') {
       cur = (n as any).child as NodeId;
     } else break;

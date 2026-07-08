@@ -275,6 +275,24 @@ export function hydrateGraph(serialised: any): Graph {
     migratedNodes[id] = n;
   }
 
+  // Cutaway / cross-section MODIFIER nodes — defensive normalisation so a
+  // hand-edited / partial file always has a nullable `child` + well-formed
+  // `az` / `offset` ArgValues. Idempotent; files with no cutaway nodes ⇒ no-op.
+  for (const id of Object.keys(migratedNodes)) {
+    const n = migratedNodes[id] as any;
+    if (n?.type !== 'cutaway') continue;
+    if (typeof n.child !== 'string' || !n.child) n.child = null;
+    // `az` / `offset` must be ArgValues; lift a bare number, default az → 180
+    // (half-section) and offset → 0.
+    const fixArg = (v: any, dflt: number) =>
+      (v && (v.kind === 'literal' || v.kind === 'param' || v.kind === 'expr'))
+        ? v
+        : (typeof v === 'number' ? { kind: 'literal', value: v } : { kind: 'literal', value: dflt });
+    n.az = fixArg(n.az, 180);
+    n.offset = fixArg(n.offset, 0);
+    migratedNodes[id] = n;
+  }
+
   // PARTS-MAP producer nodes (#38 Phase 3) — defensive normalisation so a
   // hand-edited / partial file always has a well-formed shape: a string `src`, a
   // `list` ArgValue (the rows), an object `argMap`, and a valid `op` (default

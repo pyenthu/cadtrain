@@ -241,6 +241,7 @@ export function cardMinWidth(node: any): number {
   if (node.type === 'expr') return 200;    // input-col + output-row (name=formula)
   if (node.type === 'spline') return 92;   // min width — inline row (+20%, bigger click targets)
   if (node.type === 'warp') return 150;    // title + solid/path sockets + opts
+  if (node.type === 'cutaway') return 150;  // title + solid socket + az/offset
   return 130;
 }
 
@@ -266,6 +267,12 @@ export function warpSolidCY(i: number): number { return WARP_CHILD_CY + i * WARP
  *  Shared by the NodeCard render AND the WireLayer path endpoint so they can't drift. */
 export function warpPathCY(_node?: any): number { return WARP_PATH_CY; }
 
+// ─── Cutaway / cross-section node card geometry ─────────────────────────────
+// A small card: title row + a `solid` child input on the LEFT, the sectioned
+// solid out the RIGHT, and an az / offset opts row. The left-socket Y is shared
+// by the NodeCard render AND the WireLayer wire endpoint so they can't drift.
+export const CUTAWAY_CHILD_CY = 40;  // `solid` (child) input socket cy
+
 /** Auto-fit width from the card's content (title + longest arg key + value
  *  footprint). The DEFAULT width when no user override is set. */
 export function cardAutoWidth(graph: Graph, node: any): number {
@@ -288,6 +295,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
   if (node.type === 'expr') return 260;    // input gutter + name=formula row
   if (node.type === 'spline') return 110;  // inline row: edit | curve | x | socket (+20%)
   if (node.type === 'warp') return 148;    // title (path on title row) + solid rows; opts in ⚙ popover
+  if (node.type === 'cutaway') return 178;  // solid label + az/offset opts row
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
     const labels: string[] = [];
     for (const cid of (node as any).children ?? []) {
@@ -300,6 +308,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
         child.type === 'rot'    ? 'rot(…)' :
         child.type === 'txfmn'  ? 'xform(…)' :
         child.type === 'warp'   ? 'warp(…)' :
+        child.type === 'cutaway' ? 'section(…)' :
         child.type === 'stack'  ? 'stack(…)' :
         child.type === 'repeat' ? `repeat × ${(child as any).count?.kind === 'literal' ? (child as any).count.value : '…'}` :
         '(missing)',
@@ -467,6 +476,10 @@ export function inputSocketAt(graph: Graph, id: NodeId, slot: 'obj' | 'arg' | 'c
       const i = Number(slot.slice(9, -1)) || 0;
       return { x: p.x, y: p.y + warpSolidCY(i) };
     }
+  }
+  // cutaway: the `solid` (child) input sits on the LEFT edge at CUTAWAY_CHILD_CY.
+  if (slot === 'child' && node.type === 'cutaway') {
+    return { x: p.x, y: p.y + CUTAWAY_CHILD_CY };
   }
   /* child (legacy left-edge for method/repeat) */
   return { x: p.x, y: p.y + 50 };

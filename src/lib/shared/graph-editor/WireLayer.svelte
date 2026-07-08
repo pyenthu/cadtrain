@@ -497,6 +497,15 @@
                   {/if}
                 {/each}
               {/if}
+            {:else if n.type === 'cutaway'}
+              <!-- Cutaway modifier: the `solid` child wire (child output →
+                   left child socket, same as mv/rot/warp). `az`/`offset` are
+                   literals/params, not node refs, so there's no data wire. -->
+              {#if (n as any).child && graph.nodes[(n as any).child]}
+                {@const src = outSock((n as any).child)}
+                {@const tgt = inSock(n.id, 'child')}
+                <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+              {/if}
             {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
               <!-- Container wires: each visible child of a container shows as
                    a bezier from the child's output socket → the container's
