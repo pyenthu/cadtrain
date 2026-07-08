@@ -169,6 +169,36 @@ function applyTransform(t: any, mesh: any, mat: any): void {
 }
 
 /**
+ * Bake a TF mesh's LAZY `transformation` (a row-major 4×4 NDArray — translation in
+ * m[3],m[7],m[11]) into a flat world-space point buffer.
+ *
+ * TF stores transforms lazily on the mesh HANDLE, not baked into the vertex buffer;
+ * a boolean op bakes them as a side effect, but `tfMeshData` reads the RAW LOCAL
+ * buffer. The warp path extracts points to bend them, so any transform NOT followed
+ * by a boolean is silently lost — specifically an OUTER `mv`/`rot`/`txfmn` on a warp
+ * child (e.g. `w1_oh_warp`: `mv([0,10,20], casing)` → warp): the mv is the outermost
+ * transform, no boolean bakes it, so the casing warped at arc-length 0 (the spline
+ * top) instead of advancing to its mv-z station — the "z-offset no-ops on TF warp,
+ * works in 3D bake" bug. Baking it here makes the TF warp match the Manifold path,
+ * where transforms bake into vertices immediately. Absent/identity transform → the
+ * buffer is returned unchanged (golden: an un-moved warp child is byte-identical).
+ */
+function bakeTransformIntoPoints(mesh: any, pts: Float32Array): Float32Array {
+  const has = typeof mesh?.has_transformation === 'function' ? mesh.has_transformation() : !!mesh?.transformation;
+  if (!has) return pts;
+  const m = mesh.transformation?.data as ArrayLike<number> | undefined;
+  if (!m || m.length < 16) return pts;
+  const out = new Float32Array(pts.length);
+  for (let i = 0; i < pts.length; i += 3) {
+    const x = pts[i], y = pts[i + 1], z = pts[i + 2];
+    out[i]     = m[0] * x + m[1] * y + m[2] * z + m[3];
+    out[i + 1] = m[4] * x + m[5] * y + m[6] * z + m[7];
+    out[i + 2] = m[8] * x + m[9] * y + m[10] * z + m[11];
+  }
+  return out;
+}
+
+/**
  * Local Z-extent (min/max of a built mesh's own vertex buffer) — the axial size
  * used to stack a MATED container end-to-end. Reads `mesh.points.data` directly
  * (the LOCAL point buffer, before any `.transformation` the mesh carries), so it
@@ -449,7 +479,10 @@ function buildInstr(t: any, instr: TfInstr): any {
       if (isRevolveTree(childInstr)) {
         const built = buildInstr(t, densifyRevolveTree(childInstr, instr.path as any));
         const md = tfMeshData(built);
-        const src = md.points instanceof Float32Array ? md.points : new Float32Array(md.points);
+        const local = md.points instanceof Float32Array ? md.points : new Float32Array(md.points);
+        // Bake the child's lazy transform (an outer mv/rot) into world coords BEFORE
+        // warping — else warpMeshJS bends the un-moved local points (see bug note above).
+        const src = bakeTransformIntoPoints(built, local);
         const { positions } = warpMeshJS(src, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ });
         return t.mesh(md.faces, positions);
       }
@@ -461,7 +494,8 @@ function buildInstr(t: any, instr: TfInstr): any {
       // smooth normals.
       const child = buildInstr(t, instr.child);
       const md = tfMeshData(child); // { points: Float(32|64)Array, faces: Int32Array }
-      const src = md.points instanceof Float32Array ? md.points : new Float32Array(md.points);
+      const local = md.points instanceof Float32Array ? md.points : new Float32Array(md.points);
+      const src = bakeTransformIntoPoints(child, local); // honor an outer mv/rot (see bug note above)
       const dense = subdivideAxialAdaptive(src, null, md.faces, instr.path as any, { maxStations: GENERIC_WARP_MAX_STATIONS });
       const welded = weldMeshByPosition(dense.positions, dense.faces);
       const { positions } = warpMeshJS(welded.points, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ });
