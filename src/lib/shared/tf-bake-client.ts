@@ -23,7 +23,7 @@
  * Client-only: references `Worker`. Import it from browser code (lazy-import in a
  * Svelte component). The pure core (`tf-worker-core.ts`) is what the tests drive.
  */
-import { ensureTf } from './trueform-client';
+import { ensureTf, isTfFatalTrap } from './trueform-client';
 import { buildTfRecipe, type TfWorkerRequest, type TfTransferable } from './tf-worker-core';
 
 /** Sentinel a superseded (cancelled) bake resolves to — a fast param/spline drag
@@ -118,29 +118,46 @@ function getWorker(): Worker {
     //   • only after MAX_WORKER_RESPAWNS consecutive deaths (a worker that
     //     genuinely won't stay up) give up and latch to the main-thread fallback.
     // A healthy reply resets workerDeaths (see onmessage).
-    const onWorkerDeath = (detail: string) => {
+    const onWorkerDeath = (detail: string, isTrap: boolean) => {
       try { worker?.terminate(); } catch { /* noop */ }
       worker = null;
-      workerDeaths++;
-      const giveUp = workerDeaths > MAX_WORKER_RESPAWNS;
-      try { console.warn(`[tf-worker] worker died (#${workerDeaths}) → ${giveUp ? 'main-thread fallback' : 'respawn fresh worker'}: ${detail}`); } catch { /* noop */ }
       // The in-flight job(s) crashed the worker → reject with the reason (matches
       // the worker's deliberate {ok:false} blank+reason for a bad bake).
       const inflight = [...pending.values()];
       pending.clear();
       for (const job of inflight) if (!job.settled) { job.settled = true; job.reject(new Error(detail)); }
-      if (giveUp) {
-        workerBroken = true;
-        if (waiting) { const w = waiting; waiting = null; void runOnMainThread(w); }
-      } else if (waiting) {
-        void dispatch();   // fresh getWorker() picks up the newest request
+      if (isTrap) {
+        // A WASM TRAP (bad geometry). NEVER main-thread — its `?tfgen` self-heal is
+        // broken under Vite dev and a single main-thread trap poisons EVERY later
+        // bake. A fresh worker is a clean realm (gen-0 import resolves), so respawn
+        // for the NEWEST request. A soft cap stops re-dispatch thrash if a part traps
+        // every bake (still no main-thread); a healthy reply resets the counter.
+        workerDeaths++;
+        try { console.warn(`[tf-worker] WASM trap (#${workerDeaths}) → fresh worker: ${detail}`); } catch { /* noop */ }
+        if (waiting) {
+          if (workerDeaths <= MAX_WORKER_RESPAWNS) { void dispatch(); }        // fresh getWorker() for the newest request
+          else { const w = waiting; waiting = null; if (!w.settled) { w.settled = true; w.reject(new Error(detail)); } } // thrash guard: reject, still no main-thread
+        }
+        return;
       }
+      // A genuine TRANSPORT failure (worker script won't load / uncloneable clone)
+      // — the main thread's gen-0 TF import resolves fine (only traps poison it, and
+      // this isn't one), so fall back there.
+      try { console.warn(`[tf-worker] transport failure → main-thread fallback: ${detail}`); } catch { /* noop */ }
+      workerBroken = true;
+      if (waiting) { const w = waiting; waiting = null; void runOnMainThread(w); }
     };
     worker.onerror = (ev) => {
       const e = ev as ErrorEvent;
-      onWorkerDeath([e?.message, e?.filename && `@ ${e.filename}:${e.lineno ?? '?'}`].filter(Boolean).join(' ') || 'worker crashed (WASM trap or script load failure)');
+      // A worker ErrorEvent's `message` is often empty for a WASM trap — recover it
+      // from `error.message`, and classify a trap by message OR a trueform-wasm
+      // filename (the trap's origin), so a bare `[object ErrorEvent]` still counts.
+      const msg = String(e?.message || (e as any)?.error?.message || (e as any)?.error || '');
+      const fromWasm = /trueform_wasm|\.wasm(\?|$|:)/i.test(e?.filename ?? '');
+      const detail = [msg, e?.filename && `@ ${e.filename}:${e.lineno ?? '?'}`].filter(Boolean).join(' ') || 'worker crashed (WASM trap or script load failure)';
+      onWorkerDeath(detail, isTfFatalTrap(msg) || fromWasm);
     };
-    worker.onmessageerror = () => onWorkerDeath('uncloneable reply (messageerror)');
+    worker.onmessageerror = () => onWorkerDeath('uncloneable reply (messageerror)', false);
   }
   return worker;
 }
