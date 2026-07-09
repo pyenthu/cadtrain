@@ -152,6 +152,7 @@
   import RightPane from './RightPane.svelte';
   import WireLayer from './WireLayer.svelte';
   import { unwireGraph, describeWireRef, type WireRef } from './wire-delete';
+  import { spliceNodeIntoWire, canSplice, spliceWireKey, type SpliceWire } from './wire-splice';
   // The 4 self-contained popovers (container reorder · arg ƒ-expr · profile-kind
   // · profile-node-ref) live in Popovers.svelte (modularize K.65 Phase A). GEP
   // drives them via `bind:this={popovers}` from its node-render arms. The
@@ -328,6 +329,46 @@
   function confirmWireDelete() {
     if (wireDelPop) graph = unwireGraph(graph, wireDelPop.ref);
     wireDelPop = null;
+  }
+
+  // ─── Drop-a-node-on-a-wire → auto-splice (bisect + insert; wire-splice.ts) ──
+  // Dragging an existing node card D over a structural wire (S→T) and releasing
+  // there inserts D between them: S→D, D→T. The wire it would bisect lights up
+  // (spliceHoverKey → WireLayer `.splice-target`). Detection uses elementsFromPoint
+  // in the shell (the dragged card holds pointer capture, so the wire's own
+  // pointerup can't fire) — but WireLayer's onWireDrop is wired too as a direct-hit
+  // fast path; `didSplice` makes the two paths idempotent within one gesture.
+  let spliceHoverKey = $state<string | null>(null);
+  let didSplice = false;
+  /** Hit-test the pointer against the structural wire hit-paths (which carry a
+   *  JSON `data-splice` = {ref, sourceId}). Returns the first VALID splice target
+   *  under the cursor, or null. Ignores wires the dragged node already touches. */
+  function findSpliceWireAt(clientX: number, clientY: number): SpliceWire | null {
+    const d = dragging;
+    if (!d || typeof document === 'undefined') return null;
+    const els = document.elementsFromPoint(clientX, clientY);
+    for (const el of els) {
+      const raw = (el as Element).getAttribute?.('data-splice');
+      if (!raw) continue;
+      let wire: SpliceWire;
+      try { wire = JSON.parse(raw) as SpliceWire; } catch { continue; }
+      if (canSplice(graph, d, wire)) return wire;
+    }
+    return null;
+  }
+  /** Apply a splice once per drag gesture (idempotent via `didSplice`). Keeps the
+   *  dragged node's dropped canvas position (committed separately on pointerup). */
+  function doSplice(wire: SpliceWire) {
+    const d = dragging;
+    if (didSplice || !d) return;
+    if (!canSplice(graph, d, wire)) return;
+    graph = spliceNodeIntoWire(graph, d, wire);
+    didSplice = true;
+  }
+  /** WireLayer direct-hit fast path (fires only when pointer capture didn't
+   *  swallow the wire's pointerup). */
+  function onWireDrop(wire: SpliceWire, _ev: PointerEvent) {
+    doSplice(wire);
   }
   // The Expressions MENU (B.7 v3 PR-3) — lists graph.exprDefs and is the home
   // of the define → instance → wire flow (the expr-def MANAGER: add/edit/drop/
@@ -1226,7 +1267,10 @@
     aiSelectedId = id;
     dragging = id;
     dragMoved = false;
+    didSplice = false;          // reset the once-per-gesture splice guard
+    spliceHoverKey = null;
     dragStart = { x: ev.clientX, y: ev.clientY };
+    dragClient = { x: ev.clientX, y: ev.clientY };
     dragOrig = graph.layout[id] ?? { x: 0, y: 0 };
     (ev.currentTarget as Element).setPointerCapture(ev.pointerId);
     ev.stopPropagation();
@@ -1243,13 +1287,20 @@
   // 60×/sec → the card trailed the cursor + the constant re-render dropped the
   // pointer capture ("slips"). We commit to `graph` once, on pointerup.
   let dragLive = $state<{ x: number; y: number; w?: number } | null>(null);
+  // Last pointer position in CLIENT coords — used by the rAF flush to hit-test
+  // the wire under the cursor for the drop-on-wire splice highlight.
+  let dragClient = { x: 0, y: 0 };
   function flushDrag() {
     dragRaf = 0;
     if (!dragging || !dragPending) return;
     dragLive = dragPending;
+    // Once the drag has actually MOVED, light up the wire the node would bisect.
+    const hoverWire = dragMoved ? findSpliceWireAt(dragClient.x, dragClient.y) : null;
+    spliceHoverKey = hoverWire ? spliceWireKey(hoverWire) : null;
   }
   function onNodePointerMove(ev: PointerEvent) {
     if (!dragging) return;
+    dragClient = { x: ev.clientX, y: ev.clientY };
     const dx = (ev.clientX - dragStart.x) / ci.zoom;
     const dy = (ev.clientY - dragStart.y) / ci.zoom;
     if (Math.abs(dx) > 3 || Math.abs(dy) > 3) dragMoved = true;
@@ -1262,8 +1313,18 @@
       const id = dragging;
       // Flush the final position so the card lands exactly where released.
       if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = 0; }
+      // Drop-on-wire: if released over a wire (and the drag actually moved),
+      // splice the node in. `dragging` is still set here — doSplice reads it.
+      // The card holds pointer capture, so the wire's own pointerup can't fire;
+      // hit-test with elementsFromPoint. `didSplice` guards against a double
+      // apply if WireLayer's onWireDrop also fired.
+      if (dragMoved && !didSplice) {
+        const wire = findSpliceWireAt(ev.clientX, ev.clientY);
+        if (wire) doSplice(wire);
+      }
       if (dragPending) { graph = setLayout(graph, dragging, dragPending); dragPending = null; }
       dragLive = null; // drop the transient overlay; graph is now the source of truth
+      spliceHoverKey = null;
       (ev.currentTarget as Element).releasePointerCapture(ev.pointerId);
       dragging = null;
       // NOW pop to front (z-order) — the gesture is finished, so the DOM reorder
@@ -2824,7 +2885,7 @@
             <text x="120" y="35" class="ge-canvas-hint">← drop an outer dial here; drag its socket onto an arg.</text>
           {/if}
 
-          <WireLayer {allNodes} {paramEntries} {leftTab} {graph} {nodePos} {outSock} {inSock} {slotIn} {cardObstacles} pan={ci.pan} zoom={ci.zoom} {PARAM_W} {CARD_Y0} {consumedSet} {onWireClick} />
+          <WireLayer {allNodes} {paramEntries} {leftTab} {graph} {nodePos} {outSock} {inSock} {slotIn} {cardObstacles} pan={ci.pan} zoom={ci.zoom} {PARAM_W} {CARD_Y0} {consumedSet} {onWireClick} {onWireDrop} dragActive={!!dragging} spliceTargetKey={spliceHoverKey} />
 
           <!-- In-flight wire being dragged -->
           {#if wire.from && wire.mouse}
