@@ -1715,7 +1715,7 @@
                      a solid by clicking its wire → delete). A count badge shows how
                      many are wired, so the card stays small no matter how many. -->
                 {@const nSolids = warpKids.length}
-                <text x="16" y={WARP_CHILD_CY + 4} class="ge-warp-lbl" class:wired={nSolids > 0}>solids{nSolids > 0 ? ` ×${nSolids}` : ''}</text>
+                <text x="16" y={WARP_CHILD_CY + 4} class="ge-warp-lbl" class:wired={nSolids > 0}>{nSolids > 0 ? `×${nSolids}` : ''}</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <ellipse role="button" tabindex="-1" class="ge-sock in child multi" class:wired={nSolids > 0}
                   cx="0" cy={WARP_CHILD_CY} rx="8" ry="6"
