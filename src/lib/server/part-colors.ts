@@ -175,6 +175,33 @@ function appearanceFromOverride(entry: unknown, dep?: DepColor, colors?: { outer
   };
 }
 
+/** #86 / own-colour precedence — layer a part's OWN explicit colour
+ *  (`meta.colorOuter` / `meta.colorInner`) OVER the colour it INHERITS from a
+ *  body dep (`depColors[call]`). The part's explicit colour wins PER SIDE;
+ *  whichever side the part leaves unset falls back to the inherited dep colour,
+ *  and the dep's opacity / material / texture always ride along untouched (that
+ *  inheritance is the #86 feature — only an explicit part COLOUR overrides it).
+ *  Returns the dep unchanged when the part sets NO explicit colour, so a part
+ *  that colours nothing stays byte-identical to the pre-fix inherited output.
+ *  Used only where the parent has no MORE-specific per-instance override
+ *  (`instanceColors[name]`), which still wins over both. */
+function preferOwnColor(
+  ownOuter: string | undefined,
+  ownInner: string | undefined,
+  dep: DepColor | undefined,
+): DepColor | undefined {
+  if (!ownOuter && !ownInner) return dep;
+  const outer = ownOuter ?? dep?.outer;
+  const inner = ownInner ?? dep?.inner;
+  return {
+    ...(outer ? { outer } : {}),
+    ...(inner ? { inner } : {}),
+    ...(dep?.opacity !== undefined ? { opacity: dep.opacity } : {}),
+    ...(dep?.material ? { material: dep.material } : {}),
+    ...(dep?.texture ? { texture: dep.texture } : {}),
+  };
+}
+
 function finalizeLut(
   outer: Record<number, string>,
   inner: Record<number, string>,
@@ -220,9 +247,18 @@ export function analyzeParts(source: string, depColors?: DepColorMap): PartColor
   if (!instances.length) return INACTIVE;
 
   let instanceColors: Record<string, any> = {};
+  // The composite's OWN explicit appearance (#86 own-colour precedence): an
+  // explicitly-set meta.colorOuter/colorInner must beat the colour INHERITED
+  // from a body dep — e.g. bw_casing (colorOuter set) built on g_shaft (green)
+  // renders in bw_casing's colour, not g_shaft's. Only the part's EXPLICIT
+  // colour overrides; unset → the dep colour still carries up (the feature).
+  let ownOuter: string | undefined;
+  let ownInner: string | undefined;
   try {
     const meta = evalMetaLiteral(source);
     if (meta?.instanceColors && typeof meta.instanceColors === 'object') instanceColors = meta.instanceColors;
+    ownOuter = hexOrUndef(meta?.colorOuter);
+    ownInner = hexOrUndef(meta?.colorInner);
   } catch { /* meta-less / unparseable → palette only */ }
 
   // Roles from the composition chain(s). An operand referenced by name in a
@@ -248,7 +284,8 @@ export function analyzeParts(source: string, depColors?: DepColorMap): PartColor
   // colorsForInstance's fallback). `?? undefined` on the dep lookup keeps a leaf
   // / unresolved dep byte-identical to the pre-#86 palette output.
   const bodyCall = instances.find((i: any) => i.name === bodyName)?.call as string | undefined;
-  const bodyOverride = instanceColors[bodyName] ?? (bodyCall ? depColors?.[bodyCall] : undefined);
+  const bodyOverride = instanceColors[bodyName]
+    ?? preferOwnColor(ownOuter, ownInner, bodyCall ? depColors?.[bodyCall] : undefined);
   const bodyPair = colorsForInstance(bodyName, bodyOverride);
 
   const outer: Record<number, string> = {};
@@ -259,12 +296,17 @@ export function analyzeParts(source: string, depColors?: DepColorMap): PartColor
   const appearance: Record<number, PartAppearance> = {};
   for (const inst of instances) {
     const id = partHashId(inst.name);
-    const override = instanceColors[inst.name] ?? depColors?.[inst.call];
+    // #86 colour priority per instance: parent's explicit per-instance override
+    // (instanceColors[name]) ▸ the part's OWN explicit colour over the inherited
+    // dep colour (preferOwnColor) ▸ the deterministic palette. preferOwnColor is
+    // a no-op when the part sets no colour, so a leaf/unset part stays byte-identical.
+    const inheritedDep = preferOwnColor(ownOuter, ownInner, depColors?.[inst.call]);
+    const override = instanceColors[inst.name] ?? inheritedDep;
     const c = colorsForInstance(inst.name, override);
     outer[id] = c.outer;
     inner[id] = c.inner;
     names[id] = inst.name;
-    appearance[id] = appearanceFromOverride(instanceColors[inst.name], depColors?.[inst.call], c);
+    appearance[id] = appearanceFromOverride(instanceColors[inst.name], inheritedDep, c);
     // #61 stage C — per-subpart alpha: the parent's explicit override wins,
     // else the subpart's own authored meta.opacity. Absent → opaque (omitted).
     const op = overrideOpacity(instanceColors[inst.name]) ?? depColors?.[inst.call]?.opacity;
@@ -287,6 +329,10 @@ export function analyzeParts(source: string, depColors?: DepColorMap): PartColor
 function analyzeAssembly(meta: any, depColors?: DepColorMap): PartColorLUT {
   const instanceColors: Record<string, any> =
     (meta?.instanceColors && typeof meta.instanceColors === 'object') ? meta.instanceColors : {};
+  // The assembly's OWN explicit appearance beats a colour inherited from a body
+  // dep, per-side (#86 own-colour precedence — same rule as the composite path).
+  const ownOuter = hexOrUndef(meta?.colorOuter);
+  const ownInner = hexOrUndef(meta?.colorInner);
 
   // Walk the composition tree to enumerate Call nodes + their role.
   const additiveOrder: string[] = [];
@@ -326,7 +372,10 @@ function analyzeAssembly(meta: any, depColors?: DepColorMap): PartColorLUT {
   // In the .asm.ts path the Call node's alias IS the dep fn name (n.fn), so the
   // instance name doubles as the dep id — depColors[name] is the subpart's own
   // colour. Parent override (instanceColors[name]) still wins. (#86)
-  const bodyPair = colorsForInstance(bodyName, instanceColors[bodyName] ?? depColors?.[bodyName]);
+  const bodyPair = colorsForInstance(
+    bodyName,
+    instanceColors[bodyName] ?? preferOwnColor(ownOuter, ownInner, depColors?.[bodyName]),
+  );
 
   const outer: Record<number, string> = {};
   const inner: Record<number, string> = {};
@@ -336,11 +385,12 @@ function analyzeAssembly(meta: any, depColors?: DepColorMap): PartColorLUT {
   const appearance: Record<number, PartAppearance> = {};
   for (const name of seen) {
     const id = partHashId(name);
-    const c = colorsForInstance(name, instanceColors[name] ?? depColors?.[name]);
+    const inheritedDep = preferOwnColor(ownOuter, ownInner, depColors?.[name]);
+    const c = colorsForInstance(name, instanceColors[name] ?? inheritedDep);
     outer[id] = c.outer;
     inner[id] = c.inner;
     names[id] = name;
-    appearance[id] = appearanceFromOverride(instanceColors[name], depColors?.[name], c);
+    appearance[id] = appearanceFromOverride(instanceColors[name], inheritedDep, c);
     // #61 stage C — per-subpart alpha (the .asm.ts Call alias doubles as the dep
     // id, so depColors[name] is the subpart's own opacity; parent override wins).
     const op = overrideOpacity(instanceColors[name]) ?? depColors?.[name]?.opacity;
