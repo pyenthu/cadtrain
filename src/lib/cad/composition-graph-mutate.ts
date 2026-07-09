@@ -325,6 +325,34 @@ export function appendContainerChild(graph: Graph, containerId: NodeId, childId:
   return finalize({ ...graph, nodes: detached });
 }
 
+/** Replace the i-th child of a stack/list/group with a different node — used by
+ *  the drop-on-wire splice (wire-splice.ts) to retarget a container output slot
+ *  at the dragged node. Detaches `childId` from any OTHER container it sits in
+ *  (mirrors appendContainerChild) AND drops any duplicate occurrence of it in
+ *  THIS container's own list, so a node never occupies two output slots. The
+ *  node previously at `index` is left in graph.nodes (the splice re-wires it as
+ *  the dragged node's input, so it isn't orphaned). */
+export function setContainerChildAt(graph: Graph, containerId: NodeId, index: number, childId: NodeId): Graph {
+  const node = graph.nodes[containerId];
+  if (!node || (node.type !== 'stack' && node.type !== 'list' && node.type !== 'group')) return graph;
+  if (index < 0 || index >= node.children.length) return graph;
+  // Detach childId from any OTHER container so it isn't double-parented.
+  const nodes = { ...graph.nodes };
+  for (const [pid, p] of Object.entries(nodes)) {
+    if (pid === containerId) continue;
+    if ((p.type === 'list' || p.type === 'stack' || p.type === 'group') && p.children.includes(childId)) {
+      nodes[pid] = { ...p, children: p.children.filter((c) => c !== childId) } as typeof p;
+    }
+  }
+  const target = nodes[containerId] as ContainerNode;
+  // Put childId in the target slot, then drop any OTHER slot that also held it
+  // (a node can't occupy two output slots of the same container).
+  const replaced = target.children.map((c, k) => (k === index ? childId : c));
+  const children = replaced.filter((c, k) => c !== childId || k === index);
+  nodes[containerId] = { ...target, children };
+  return finalize({ ...graph, nodes });
+}
+
 /** Remove the i-th child of a stack/list/group AND reparent it onto the
  *  root list so it doesn't become orphaned (the editor would otherwise
  *  lose track of it). */
