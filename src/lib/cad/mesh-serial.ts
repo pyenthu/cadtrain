@@ -47,7 +47,11 @@ export interface SerializedComponentResult {
   cutParts?: SerializedPartMesh[];
 }
 
-function serializeGeometry(geo: THREE.BufferGeometry): SerializedGeometry {
+/** Serialize a single `THREE.BufferGeometry` to plain JSON (position + optional
+ *  normal/color/index). Exported so single-geometry consumers (the /wells bake
+ *  worker, which returns ONE vertex-coloured mesh — not the `{full,cutVC}` pair)
+ *  can reuse the exact round-trip. */
+export function serializeGeometry(geo: THREE.BufferGeometry): SerializedGeometry {
   const pos = geo.getAttribute('position');
   // Empty BufferGeometry has no position attribute — finalizeManifold uses
   // this for the auto-skipped cutaway (big repeated structures). Serialize
@@ -64,7 +68,11 @@ function serializeGeometry(geo: THREE.BufferGeometry): SerializedGeometry {
   return out;
 }
 
-function deserializeGeometry(s: SerializedGeometry): THREE.BufferGeometry {
+/** Rehydrate a `SerializedGeometry` (from `serializeGeometry`) back into a
+ *  `THREE.BufferGeometry` — infers RGB/RGBA colour stride, recomputes normals
+ *  when absent. Exported alongside `serializeGeometry` for single-geometry
+ *  consumers (the /wells bake worker reply). */
+export function deserializeGeometry(s: SerializedGeometry): THREE.BufferGeometry {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute(
     'position',

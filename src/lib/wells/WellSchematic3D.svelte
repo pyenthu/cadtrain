@@ -216,6 +216,23 @@
   // can bracket a coherent build pass with the manifoldCut phase accumulator and
   // surface a flash badge (pure diagnostic — no behaviour change; the geometry
   // and template outputs are identical to the previous per-layer deriveds).
+  //
+  // ── #42b-A · 3D-FAST bake seam (WellBakePool) ───────────────────────────────
+  // This synchronous, main-thread pass is the REFERENCE path. The parallel,
+  // off-thread replacement lands via `$lib/wells/well-bake-client`
+  // (`bakeWellShells` + `shellJobSpec`), which fans each cutaway shell out to
+  // N Manifold workers (`WellBakePool`, byte-identical geometry — the workers
+  // call these SAME manifoldCut builders). Wiring it here is the P2 progressive-
+  // render swap (docs/plans/wells-build-architecture.md §3d): lift each
+  // oh/ch/cement/tubing/perf row into a `ShellElement` (stable `id`), then
+  //   const pool = getWellBakePool();
+  //   bakeWellShells(pool, elements.map((e)=>shellJobSpec(e, survey)),
+  //                  (id,geo)=> built[id]=geo, (id,err)=> failed[id]=err);
+  // rendering `{#each elements as el (el.id)}` off a stable `$state` map instead
+  // of `{#key geomKey}` (meshes stay mounted; only the geometry swaps as each
+  // worker finishes). Kept OUT of this commit because it needs BROWSER
+  // verification (progressive render / no-remount / <Edges> rebuild) — the pool,
+  // worker + client seam are landed + headless-tested; this is the seam.
   function triCount(g: THREE.BufferGeometry | null | undefined): number {
     if (!g) return 0;
     return g.index ? g.index.count / 3 : (g.attributes.position?.count ?? 0) / 3;
