@@ -60,13 +60,12 @@ export const WarpKind: NodeKind<WarpNode> = {
     ];
   },
   inputRefs: (n) => warpChildren(n),
-  size: (n, ctx) => {
-    // Rows of solid sockets = wired solids + 1 "＋ solid" append slot (mirror
-    // geom.warpSolidRows: first solid at 40, pitch 22). Path wires into the TITLE
-    // row + options moved to a ⚙ popover, so the card is just title + solid rows.
-    // Duplicated (not imported) — cad can't depend on the shared graph-editor layer.
-    const rows = Math.max(1, warpChildren(n).length) + 1;
-    return { w: ctx.width, h: 40 + rows * 22 + 12 };
+  size: (_n, ctx) => {
+    // #31 compact multi-input: ONE `solids` socket regardless of child count —
+    // all solids fan into it (drop appends; remove by clicking a wire → delete),
+    // so the card no longer grows a row per solid. Fixed small card: title row
+    // (path socket + ⚙) + one solids socket at cy=40 + the count badge + pad.
+    return { w: ctx.width, h: 74 };
   },
   sockets: (n) => {
     const kids = warpChildren(n);

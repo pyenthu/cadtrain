@@ -260,8 +260,11 @@ export function warpSolidRows(node: any): number {
   const kids = node?.children?.length ? node.children : (node?.child ? [node.child] : []);
   return Math.max(1, kids.length) + 1;
 }
-/** cy of the i-th `solid` input socket (index 0 == WARP_CHILD_CY). */
-export function warpSolidCY(i: number): number { return WARP_CHILD_CY + i * WARP_SOLID_DY; }
+/** cy of the i-th `solid` input socket. #31 compact multi-input: ALL solids now
+ *  fan into ONE socket at WARP_CHILD_CY (the card no longer grows a row per solid;
+ *  remove a solid by clicking its wire → delete). Returns the constant so every
+ *  `children[i]` wire endpoint (WireLayer via inSock) lands on the single socket. */
+export function warpSolidCY(_i: number): number { return WARP_CHILD_CY; }
 /** cy of the `path` input socket. The path now wires into the TITLE ROW (a fixed
  *  position, independent of the solid count) — the options moved to a ⚙ popover.
  *  Shared by the NodeCard render AND the WireLayer path endpoint so they can't drift. */

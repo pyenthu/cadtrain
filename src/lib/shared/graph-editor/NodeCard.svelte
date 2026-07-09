@@ -1710,29 +1710,16 @@
                   class:armed={del.isArmed(n.id)}
                   data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
                   onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
-                <!-- SOLID inputs — one per wired solid, stacked from WARP_CHILD_CY -->
-                {#each warpKids as kid, ki (ki)}
-                  {@const kw = typeof kid === 'string' && !!kid && !!graph.nodes[kid]}
-                  <text x="14" y={warpSolidCY(ki) + 4} class="ge-warp-lbl" class:wired={kw}>solid{warpKids.length > 1 ? ` ${ki + 1}` : ''}</text>
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <circle role="button" tabindex="-1" class="ge-sock in child" class:wired={kw}
-                    cx="0" cy={warpSolidCY(ki)} r="6"
-                    data-tip="solid: wire a built part to bend (any node's output); drop another to repoint"
-                    onpointerup={(ev) => wire.endWireOnWarpSolid(ev, n.id, ki)}/>
-                  {#if warpKids.length > 1}
-                    <!-- remove this solid (collapses back to single when 1 remains) -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <text role="button" tabindex="-1" x={size.w - 30} y={warpSolidCY(ki) + 4} class="ge-warp-rm"
-                      data-tip="Remove this solid from the warp"
-                      onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeWarpChild(graph, n.id, ki)); }}>×</text>
-                  {/if}
-                {/each}
-                <!-- ＋ append slot — wire another solid into the warp -->
-                <text x="14" y={warpSolidCY(warpKids.length) + 4} class="ge-warp-lbl add">＋ solid</text>
+                <!-- SOLIDS input — ONE compact multi-input socket (#31): every wired
+                     solid fans into this single socket (drop = APPEND another; remove
+                     a solid by clicking its wire → delete). A count badge shows how
+                     many are wired, so the card stays small no matter how many. -->
+                {@const nSolids = warpKids.length}
+                <text x="16" y={WARP_CHILD_CY + 4} class="ge-warp-lbl" class:wired={nSolids > 0}>solids{nSolids > 0 ? ` ×${nSolids}` : ''}</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in child add"
-                  cx="0" cy={warpSolidCY(warpKids.length)} r="6"
-                  data-tip="Wire another solid to bend along the SAME spline (each warped separately)"
+                <ellipse role="button" tabindex="-1" class="ge-sock in child multi" class:wired={nSolids > 0}
+                  cx="0" cy={WARP_CHILD_CY} rx="8" ry="6"
+                  data-tip="solids: wire one or MORE built parts to bend along the SAME spline (drop APPENDS another; each warped separately). Remove a solid by clicking its wire → Delete."
                   onpointerup={(ev) => wire.endWireOnWarpSolid(ev, n.id, warpKids.length)}/>
                 <!-- OUTPUT — RIGHT edge, vertically centred -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1909,6 +1896,10 @@
   .ge-node-bg.warp { fill: #ecfeff; stroke: #0e7490; stroke-width: 2; }
   .ge-warp-lbl { fill: #0e7490; font: 600 11px Arial; pointer-events: none; user-select: none; }
   .ge-warp-lbl.wired { fill: #0369a1; font-weight: 700; }
+  /* #31 compact multi-input socket — an elongated (barred) shape marks a socket
+     that accepts MANY incoming wires, vs the round single-input socket. */
+  .ge-sock.multi { stroke-width: 2; }
+  .ge-sock.multi.wired { fill: #0369a1; }
   .ge-warp-opts { display: flex; align-items: center; gap: 4px; font: 10px Arial; }
   .ge-warp-refine { display: flex; align-items: center; gap: 2px; color: #0e7490; font-weight: 600; }
   .ge-warp-refine .ge-arg-input { width: 34px; }
