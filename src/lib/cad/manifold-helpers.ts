@@ -644,5 +644,18 @@ export function sectionCut(solid: any, opts?: { az?: number; offset?: number }):
   const wedge = (maxZSpan > 0 && zlen > maxZSpan)
     ? flat.refineToLength(maxZSpan).translate([0, 0, z0])
     : flat.translate([0, 0, z0]);
-  return solid.subtract(wedge);
+  const cut = solid.subtract(wedge);
+  // POST-SUBTRACT refine (#64). Refining the WEDGE is not enough: Manifold's
+  // mesh boolean RETRIANGULATES the planar cut faces it creates, discarding the
+  // wedge's z-rings and emitting a few huge triangles whose edges span the whole
+  // part (measured: a 40-long casing goes maxEdgeΔz 1.48 → 40.0 across the
+  // subtract, 208 spanning edges). `warpManifoldAlongSpline` then bends those
+  // full-height edges as straight chords → the bridging triangle.
+  //
+  // Refining the CUT RESULT re-seeds those faces with edges ≤ maxZSpan, so the
+  // warp has real vertices to bend. `refineToLength` splits only edges LONGER
+  // than the target, and the body arrived here already dense (revolveProfile
+  // applies the same dial), so this costs a few hundred tris, not a global
+  // subdivision. Dial off (no warp) → untouched → byte-identical golden bake.
+  return maxZSpan > 0 ? cut.refineToLength(maxZSpan) : cut;
 }

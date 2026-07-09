@@ -19,6 +19,7 @@ import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { initManifold, revolve, sectionCut, M, CS } from './manifold-helpers';
 import { setAxialMaxZSpan, getAxialMaxZSpan } from './manifold-mesh';
 import { warpManifoldAlongSpline } from './warp-spline';
+import { r_revolve } from './stdlib/r_revolve';
 
 beforeAll(async () => {
   await initManifold();
@@ -119,5 +120,89 @@ describe('sectionCut — fix (dial ON): cut faces densify + warp stays manifold'
     assertValidSolid(warpDense);
     // Densified cut faces survive the warp → still more verts than the bare case.
     expect(warpDense.numVert()).toBeGreaterThan(warpBare.numVert());
+  });
+});
+
+/**
+ * #64 — the BRIDGING TRIANGLE, pinned by the property that actually matters.
+ *
+ * The tests above assert "more verts + still manifold", which the pre-fix build
+ * ALSO satisfied — so they never caught the bug. The defect is a SPANNING EDGE:
+ * a triangle edge whose Δz crosses most of the part. Warp only moves existing
+ * vertices, so a full-height edge bends into a straight chord across the cut.
+ *
+ * Refining the WEDGE was not sufficient: Manifold's mesh boolean retriangulates
+ * the planar cut faces it creates and discards those rings. Measured on this
+ * exact 40-long casing, across `subtract`: maxEdgeΔz 1.48 → 40.0, 208 spanning
+ * edges. Hence `sectionCut` refines the CUT RESULT, not just the wedge.
+ */
+describe('#64 sectionCut + warp — no spanning edges survive the cut', () => {
+  const H = 40, RO = 3.5, RI = 3.1, SEG = 24, DIAL = 1.5;
+  const SOLID = (R: number, h: number): [number, number][] => [[0, 0], [R, 0], [R, h], [0, h]];
+  const SPLINE: [number, number][] = [[0, -5], [3, 10], [0, 25], [-3, 45]];
+
+  /** Largest |Δz| over every triangle edge, and how many exceed `limit`. */
+  function edgeSpan(m: any, limit: number): { max: number; over: number } {
+    const mesh = m.getMesh();
+    const vp = mesh.vertProperties, tv = mesh.triVerts, np = mesh.numProp ?? 3;
+    const z = (i: number) => vp[i * np + 2];
+    let max = 0, over = 0;
+    for (let t = 0; t < tv.length / 3; t++) {
+      const [i, j, k] = [tv[t * 3], tv[t * 3 + 1], tv[t * 3 + 2]];
+      for (const [p, q] of [[i, j], [j, k], [k, i]]) {
+        const dz = Math.abs(z(p) - z(q));
+        if (dz > max) max = dz;
+        if (dz > limit) over++;
+      }
+    }
+    return { max, over };
+  }
+
+  /** `bw_casing` on the volume: hollow = r_revolve(outer) − r_revolve(inner). */
+  const casing = () => r_revolve(SOLID(RO, H), SEG).subtract(r_revolve(SOLID(RI, H), SEG));
+
+  it('the revolve itself is already dense — the dial reaches it via revolveProfile', () => {
+    setAxialMaxZSpan(DIAL);
+    const { max, over } = edgeSpan(casing(), DIAL * 2);
+    expect(over).toBe(0);
+    expect(max).toBeLessThanOrEqual(DIAL);
+  });
+
+  it('the SUBTRACT is what reintroduces full-height edges (regression witness)', () => {
+    // Dense body, then cut with the dial off → post-subtract refine skipped.
+    setAxialMaxZSpan(DIAL);
+    const body = casing();
+    setAxialMaxZSpan(null);
+    const cutUnrefined = sectionCut(body, { az: 180 });
+    // The boolean retriangulated the cut faces into full-height triangles.
+    expect(edgeSpan(cutUnrefined, 10).over).toBeGreaterThan(0);
+    expect(edgeSpan(cutUnrefined, 10).max).toBeGreaterThan(H * 0.9);
+  });
+
+  it('dial ON → cut faces carry no spanning edge, before OR after the warp', () => {
+    setAxialMaxZSpan(DIAL);
+    const cut = sectionCut(casing(), { az: 180 });
+    expect(edgeSpan(cut, 5).over).toBe(0);
+
+    const warped = warpManifoldAlongSpline(cut, SPLINE, { validate: true });
+    assertValidSolid(warped);
+    // Bending stretches short edges a little (2.96 → 3.54 measured), but nothing
+    // approaches a chord. Pre-fix this was 104 edges over Δz 10, max 40.49.
+    expect(edgeSpan(warped, 5).over).toBe(0);
+    expect(edgeSpan(warped, 10).max).toBeLessThan(H * 0.25);
+  });
+
+  it('dense warp preserves volume; the lean one loses it to chords', () => {
+    setAxialMaxZSpan(DIAL);
+    const dense = warpManifoldAlongSpline(sectionCut(casing(), { az: 180 }), SPLINE, {});
+    const denseVol = dense.volume();
+
+    setAxialMaxZSpan(null);
+    const lean = warpManifoldAlongSpline(sectionCut(casing(), { az: 180 }), SPLINE, {});
+    const leanVol = lean.volume();
+
+    const trueVol = 163.99; // the unwarped sectioned casing
+    expect(Math.abs(denseVol - trueVol) / trueVol).toBeLessThan(0.01); // ~0.03%
+    expect(Math.abs(leanVol - trueVol) / trueVol).toBeGreaterThan(0.02);  // ~3.8%
   });
 });
