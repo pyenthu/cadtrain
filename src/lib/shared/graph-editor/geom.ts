@@ -240,19 +240,22 @@ export function cardMinWidth(node: any): number {
   if (node.type === 'polygon') return 180; // input + chrome fits at 180
   if (node.type === 'expr') return 200;    // input-col + output-row (name=formula)
   if (node.type === 'spline') return 76;   // min width — inline row (✎ 📈 curve × on ONE row)
-  if (node.type === 'warp') return 150;    // title + solid/path sockets + opts
+  if (node.type === 'warp') return 124;    // compact chip row (×N | ≈ | ⚙ ×) + edge sockets
   if (node.type === 'cutaway') return 150;  // title + solid socket + az/offset
   return 130;
 }
 
 // ─── Warp / bend node card geometry (#36) ───────────────────────────────────
-// A small card: title row + a `solid` child input + a `path` input on the LEFT,
-// the bent solid out the RIGHT, and a compact opts row. The two left-socket Y's
+// A SINGLE compact CHIP ROW (like the mv/rot icon chips), h=40: the ×N `solids`
+// socket on the LEFT edge (vertically centred), the `path` socket on the
+// TOP-MIDDLE, the bent solid out the RIGHT edge (centred). WARP_CHILD_CY is the
+// left-socket cy (= card centre); WARP_PATH_CY is the path-socket cy (top edge)
+// and the path socket's X is the card MIDDLE (size.w/2) — see warpPathCX. These
 // are shared by the NodeCard render AND the WireLayer wire endpoints so they
 // can't drift.
-export const WARP_CHILD_CY = 40;   // first `solid` input socket cy (index 0)
-export const WARP_PATH_CY = 16;    // `path` input socket — now on the TITLE ROW (#36b redesign)
-export const WARP_SOLID_DY = 22;   // vertical pitch between stacked solid sockets
+export const WARP_CHILD_CY = 20;   // `solid` input socket cy — card centre (h/2 of the 40 px chip)
+export const WARP_PATH_CY = 0;     // `path` input socket cy — TOP edge (X = card middle, see warpPathCX)
+export const WARP_SOLID_DY = 22;   // (legacy) vertical pitch — no longer used; solids fan into one socket
 
 /** #36b multi-input: number of `solid` input rows a warp shows = wired solids +
  *  1 trailing "＋ solid" append slot (min 2 rows: one child + the append slot). */
@@ -265,10 +268,13 @@ export function warpSolidRows(node: any): number {
  *  remove a solid by clicking its wire → delete). Returns the constant so every
  *  `children[i]` wire endpoint (WireLayer via inSock) lands on the single socket. */
 export function warpSolidCY(_i: number): number { return WARP_CHILD_CY; }
-/** cy of the `path` input socket. The path now wires into the TITLE ROW (a fixed
- *  position, independent of the solid count) — the options moved to a ⚙ popover.
- *  Shared by the NodeCard render AND the WireLayer path endpoint so they can't drift. */
+/** cy of the `path` input socket — the TOP edge of the compact chip. The path
+ *  socket sits at the card's TOP-MIDDLE (X = size.w/2, see warpPathCX). Shared by
+ *  the NodeCard render AND the WireLayer path endpoint so they can't drift. */
 export function warpPathCY(_node?: any): number { return WARP_PATH_CY; }
+/** cx of the `path` input socket — the card MIDDLE (top-middle placement). Pass
+ *  the card width; the WireLayer path endpoint + the NodeCard socket both use it. */
+export function warpPathCX(width: number): number { return width / 2; }
 
 // ─── Cutaway / cross-section node card geometry ─────────────────────────────
 // A small card: title row + a `solid` child input on the LEFT, the sectioned
@@ -297,7 +303,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
   if (node.type === 'polygon') return 200; // narrowed for the vertical-stack layout
   if (node.type === 'expr') return 260;    // input gutter + name=formula row
   if (node.type === 'spline') return 92;   // inline row: ✎ 📈 | small curve | × | socket
-  if (node.type === 'warp') return 148;    // title (path on title row) + solid rows; opts in ⚙ popover
+  if (node.type === 'warp') return 140;    // compact chip row: ×N | ≈ | ⚙ × + edge sockets
   if (node.type === 'cutaway') return 178;  // solid label + az/offset opts row
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
     const labels: string[] = [];
