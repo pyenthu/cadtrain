@@ -36,6 +36,35 @@ surface. Inverts SVTC/Visio-WBD's 2D-first stance.
   CSG; ewells parity, `docs/research/wells-perf-ewells-vs-cadtrain.md`). Ported
   from SVTC `wsonRender.js`. Tested headless: `wson-2d.test.ts`.
 
+## 3D-FAST bake pool (`well-bake-pool.ts` + worker + client) — #42b-A
+The parallel, off-UI-thread replacement for the synchronous `buildBundle` pass
+in `WellSchematic3D`. Design: `docs/plans/wells-build-architecture.md` §3b/3c/3d.
+- `well-bake-pool.ts` — `WellBakePool`: N = `clamp(hardwareConcurrency-1,1,4)`
+  workers (each its OWN Manifold WASM instance), **keep-all** scheduling (a key
+  change supersedes ONLY the changed element; siblings keep building — the
+  opposite of `bake-client.ts`'s latest-wins), per-element dedup, streaming
+  results, cancellation, worker-crash respawn. PURE scheduling (no THREE/Manifold/
+  DOM) → unit-tested with a MOCK worker (`well-bake-pool.test.ts`). Worker factory
+  is injectable. NO fallback (engine fail = `onError`).
+- `threeD/wells-bake-worker.ts` — the worker: rebuilds `WellDirection` from the
+  cloneable `{profile,td}` survey (min-curvature is cheap) then calls the SAME
+  unmodified `manifoldCut` builders (`cutTube`/`cutCylinder`/`cutSphere`) →
+  byte-identical geometry; serializes + zero-copy-transfers one vertex-coloured
+  mesh. Same `?url` wasm-locate as `bake-worker.ts`. Build-checked only (a real
+  Worker can't run headless). `part` (compiled `g_*` completion) is forward-
+  declared for P3.
+- `well-bake-protocol.ts` — cloneable request/reply shapes (no heavy deps), shared
+  by worker + client.
+- `well-bake-client.ts` — the MAIN-THREAD seam `WellSchematic3D` calls:
+  `getWellBakePool()` (lazy singleton), `shellJobSpec(el, survey)` (id + complete
+  geometry cache key incl. survey fingerprint), `shellReplyToGeometry`, and
+  `bakeWellShells(pool, specs, onGeo, onError)` (streaming keep-all reconcile).
+  THREE lives here. Tested: `well-bake-client.test.ts`.
+- **Reuses** `$lib/cad/mesh-serial` (`serializeGeometry`/`deserializeGeometry`,
+  now exported) for the single-geometry round-trip. The `WellSchematic3D` render-
+  path swap (progressive `$state` map, drop `{#key geomKey}`) is the P2 follow-on
+  needing browser verification — the pool/worker/seam are the foundation.
+
 ## Ported SVTC 3D engine (`threeD/` + `dtx.ts` + `WellSchematic3D.svelte`)
 A high-fidelity PORT of SVTC's real well-diagram engine (`~/code/SVTC/src/lib/
 apps/wson/threeD/`) — the min-curvature + quaternion-slerp + parallel-transport
