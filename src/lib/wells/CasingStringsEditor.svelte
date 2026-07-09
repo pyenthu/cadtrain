@@ -1,9 +1,16 @@
 <script lang="ts">
   /**
-   * CompletionsEditor.svelte — the STRINGS TABLE editor for /wells (#42b-B, gap
-   * doc §B2). Rows = casing / tubing / liner strings (`wson.ch[]`), each with
-   * od / id / top / bottom / grade / weight / type. Add · remove · edit rows,
-   * all WRITING THROUGH the `WellEditStore` (mutation + undo/redo).
+   * CasingStringsEditor.svelte — the CASING-STRINGS TABLE editor for /wells
+   * (#42b-B, gap doc §B2). Rows = casing / tubing / liner strings (`wson.ch[]`),
+   * each with od / id / top / bottom / grade / weight / type. Add · remove · edit
+   * rows, all WRITING THROUGH the `WellEditStore` (mutation + undo/redo).
+   *
+   * NAME NOTE (renamed 2026-07-10 from `CompletionsEditor.svelte`): this edits
+   * the CASING STRINGS array `wson.ch[]`, NOT `wson.completions[]` — the old name
+   * was a misnomer. A real `completions[]` worksheet (the in-string tubing /
+   * packer / nipple jewelry table) does NOT exist yet; when it is built it will
+   * be a separate component driven by the `autoTop` chain model
+   * (`recomputeAutoTops` in `wson.ts`).
    *
    * DUMB component: it takes the row DATA + write CALLBACKS via props; the shell
    * binds the callbacks to `WellEditStore.{addString,updateString,removeString}`

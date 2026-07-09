@@ -209,8 +209,8 @@ describe('wsonToGraph — RUNG 3: a deviated well warps along its survey', () =>
   it('warps EVERY element — children length equals the element (Mv) count', () => {
     const g = wsonToGraph(sample04());
     const warp = nodesOfType(g, 'warp')[0];
-    const elementCount = nodesOfType(g, 'mv').length; // one Mv per oh/cement/casing
-    expect(elementCount).toBe(9); // 3 open holes + 3 cement + 3 casing
+    const elementCount = nodesOfType(g, 'mv').length; // one Mv per structural section + completion
+    expect(elementCount).toBe(14); // 3 open holes + 3 cement + 3 casing + 5 completions (RUNG 5)
     expect(warp.children).toHaveLength(elementCount);
     // Each wired child is an Mv node (the placed element), and the warp bends
     // every one separately along the SAME spline path.
@@ -336,12 +336,18 @@ describe('S2 — 11-vertical-land-producer: the reference VERTICAL well (SVTC)',
     expect(bySrc.filter((s) => s === 'bw_open_hole')).toHaveLength(3);
     expect(bySrc.filter((s) => s === 'bw_cement')).toHaveLength(3);
     expect(bySrc.filter((s) => s === 'bw_casing')).toHaveLength(3);
-    // Emission order: every open hole, then every cement, then every casing.
-    expect(bySrc).toEqual([
+    // Emission order: the STRUCTURAL shells first, outer→inner (every open hole,
+    // then every cement, then every casing) so a transparent casing renders over
+    // its jewelry. The completion string (RUNG 5) follows — assert the structural
+    // prefix, not the whole list, so adding jewelry can't break this rung.
+    expect(bySrc.slice(0, 9)).toEqual([
       'bw_open_hole', 'bw_open_hole', 'bw_open_hole',
       'bw_cement', 'bw_cement', 'bw_cement',
       'bw_casing', 'bw_casing', 'bw_casing',
     ]);
+    // Everything after the structural prefix is the completion string, one Call
+    // per WSON row — derived from the fixture, never a magic number.
+    expect(bySrc.slice(9)).toHaveLength(wson().completions?.length ?? 0);
     expect(nodesOfType(g(), 'call')).toHaveLength(nodesOfType(g(), 'mv').length);
   });
 
@@ -425,13 +431,21 @@ describe('S4 — 13-vertical-land-producer-deviated: the SAME well + one profile
     expect((graph.nodes[graph.root] as any).children).toEqual([warp.id]);
   });
 
-  it('warps EVERY structural element (9 = 3 oh + 3 cement + 3 casing) along ONE spline', () => {
+  it('warps EVERY element — structural AND completion jewelry — along ONE spline', () => {
     const graph = g();
     const warp = nodesOfType(graph, 'warp')[0];
-    const elementCount = nodesOfType(graph, 'mv').length;
-    expect(elementCount).toBe(9);
-    expect(warp.children).toHaveLength(9);
+    // 9 structural (3 oh + 3 cement + 3 casing) + one per completion row. Derived
+    // from the fixture: a deviated well must bend its tubing string with its
+    // casing, so the completion count belongs in this total, not outside it.
+    const structural = 9;
+    const expected = structural + (wson().completions?.length ?? 0);
+    expect(nodesOfType(graph, 'mv')).toHaveLength(expected);
+    expect(warp.children).toHaveLength(expected);
     for (const cid of warp.children) expect(graph.nodes[cid]?.type).toBe('mv');
+    // The jewelry is genuinely inside the warp, not merely present in the graph.
+    const warpedSrc = warp.children.map((cid: string) => graph.nodes[(graph.nodes[cid] as any).child]?.src);
+    expect(warpedSrc).toContain('bw_prod_tubing');
+    expect(warpedSrc).toContain('bw_packer');
     // originZ = 0 → each element bends at its TRUE station.
     expect(warp.originZ).toEqual({ kind: 'literal', value: 0 });
   });
@@ -452,5 +466,109 @@ describe('S4 — 13-vertical-land-producer-deviated: the SAME well + one profile
 
   it('is deterministic — re-translating the deviated well is byte-identical', () => {
     expect(g()).toEqual(g());
+  });
+});
+
+describe('wsonToGraph — RUNG 5: completions become bw_* Calls placed by depth', () => {
+  const sample01 = () => parseWson(
+    readFileSync('src/routes/wells/samples/01-vertical-land-producer.wson', 'utf8'),
+  ).wson;
+
+  /** One casing + one completion — the minimal well for a mapping assertion. */
+  const withComp = (c: Wson['completions']): Wson => ({
+    meta: { wellName: 'c' },
+    ch: [{ od: 9.625, id: 8.681, top: 0, bot: 1000, type: 'production' }],
+    completions: c,
+  });
+
+  it('emits one bw_* Call+Mv per completion, INSIDE the casing (outer→inner order)', () => {
+    const g = wsonToGraph(sample01());
+    const outputs = (g.nodes[g.root] as any).children.map((id: string) => g.nodes[(g.nodes[id] as any).child]);
+    // 3 oh + 3 cement + 3 casing, THEN the 7-item completion string — the
+    // structural shells first so a transparent casing renders over its jewelry.
+    expect(outputs.map((n: any) => n.src)).toEqual([
+      'bw_open_hole', 'bw_open_hole', 'bw_open_hole',
+      'bw_cement', 'bw_cement', 'bw_cement',
+      'bw_casing', 'bw_casing', 'bw_casing',
+      'bw_hanger', 'bw_prod_tubing', 'bw_nipple', 'bw_prod_tubing',
+      'bw_packer', 'bw_prod_tubing', 'bw_mule_shoe',
+    ]);
+  });
+
+  it('maps each tool_comp code to its bw_* part via the explicit map — od + length off the row', () => {
+    const cases: Array<[string, string]> = [
+      ['tbgHanger', 'bw_hanger'],
+      ['MISC.TUBING', 'bw_prod_tubing'],
+      ['MISC.TUBING_PUP', 'bw_prod_tubing'],
+      ['FLOW_CONTROL.NIPPLE_R_LANDING', 'bw_nipple'],
+      ['MISC.MULE_SHOE', 'bw_mule_shoe'],
+      ['PACKERS.PACKER_BAKER_PERMANENT', 'bw_packer'],
+    ];
+    for (const [code, part] of cases) {
+      const g = wsonToGraph(withComp([{ tool_comp: code, od: 2.875, top: 0, bot: 30 }]));
+      const comp = callBySrc(g, part);
+      expect(comp, `${code} → ${part}`).toBeTruthy();
+      expect(comp.args.od).toEqual({ kind: 'literal', value: 2.875 });
+      expect(comp.args.length).toEqual({ kind: 'literal', value: 30 });
+    }
+  });
+
+  it('resolves completion depth through the autoTop chain BEFORE the Mv (manual holds, auto resumes)', () => {
+    const g = wsonToGraph(withComp([
+      { tool_comp: 'MISC.TUBING', od: 2.875, top: 0, bot: 10 },                              // auto (first) → 0..10
+      { tool_comp: 'FLOW_CONTROL.NIPPLE_R_LANDING', od: 2.875, top: 500, bot: 503, autoTop: false }, // manual → holds 500
+      { tool_comp: 'MISC.MULE_SHOE', od: 2.875, top: 0, bot: 2 },                             // auto → resumes 503..505
+    ]));
+    const mvZ = (alias: string) => {
+      const call = nodesOfType(g, 'call').find((n) => n.alias === alias);
+      return nodesOfType(g, 'mv').find((m) => m.child === call.id).offset[2].value;
+    };
+    expect(mvZ('COMP_1')).toBe(0);
+    expect(mvZ('COMP_2')).toBe(500);   // manual anchor held, NOT snapped to the tubing bot (10)
+    expect(mvZ('COMP_3')).toBe(503);   // auto resumed from the manual item's bot
+    // COMP_3's length is its own span (505 - 503), not its absolute depth.
+    expect(nodesOfType(g, 'call').find((n) => n.alias === 'COMP_3').args.length.value).toBe(2);
+  });
+
+  it('NO FALLBACK: an unmapped tool_comp throws naming the code + index', () => {
+    const w = withComp([
+      { tool_comp: 'MISC.TUBING', od: 2.875, top: 0, bot: 10 },
+      { tool_comp: 'MISC.SIDE_POCKET_MANDREL', od: 4, top: 10, bot: 20 }, // no bw_* part exists
+    ]);
+    expect(() => wsonToGraph(w)).toThrow(WsonTranslateError);
+    expect(() => wsonToGraph(w)).toThrow(/completion 1 has an unmapped tool_comp "MISC.SIDE_POCKET_MANDREL"/);
+  });
+
+  it('NO FALLBACK: a missing/empty tool_comp throws naming the index (real reports carry these)', () => {
+    // The xlsxtowson completion reports have rows with NO tool_comp at all.
+    const w = withComp([
+      { tool_comp: 'MISC.TUBING', od: 2.875, top: 0, bot: 10 },
+      { tool_comp: '', od: 3.5, top: 10, bot: 20 },                 // empty → index 1
+      { tool_comp: 'MISC.MULE_SHOE', od: 2.875, top: 20, bot: 22 },
+    ]);
+    expect(() => wsonToGraph(w)).toThrow(/completion 1 has a missing\/empty tool_comp/);
+  });
+
+  it('SKIPS perforations — no bw_* perf part, so none are emitted (reported gap, not invented)', () => {
+    const g = wsonToGraph({
+      meta: { wellName: 'perf' },
+      ch: [{ od: 9.625, id: 8.681, top: 0, bot: 1000, type: 'production' }],
+      perforations: [{ top: 900, bot: 950, label: 'zone' }],
+    });
+    // Only the casing Call — the perforation adds no Call (no stand-in part).
+    expect(nodesOfType(g, 'call').map((n) => n.src)).toEqual(['bw_casing']);
+  });
+
+  it('the completion string compiles through emitGraph — bw_* completion Calls, no errors', () => {
+    const r = emitGraph(hydrateGraph(wsonToGraph(sample01())), { id: 'w_s01c' });
+    expect(r.errors ?? []).toHaveLength(0);
+    for (const src of ['bw_hanger(', 'bw_prod_tubing(', 'bw_nipple(', 'bw_packer(', 'bw_mule_shoe(']) {
+      expect(r.body).toContain(src);
+    }
+    expect((r.meta as any).uses).toContain('bw_nipple');
+  });
+
+  it('is deterministic — re-translating the completion string yields an identical graph', () => {
+    expect(wsonToGraph(sample01())).toEqual(wsonToGraph(sample01()));
   });
 });
