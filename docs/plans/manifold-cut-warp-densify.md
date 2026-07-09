@@ -1,6 +1,53 @@
 # Manifold cut+warp densify (mirror TF) — bridging triangle fix
 
-**Status:** OPEN (diagnosed 2026-07-09; not yet implemented).  
+**Status:** SHIPPED 2026-07-10. **The 2026-07-09 diagnosis below was WRONG** — see
+"Correction" before reading further.  
+
+---
+
+## Correction (2026-07-10) — measured, not theorised
+
+The plan claimed `r_revolve` ignores `getAxialMaxZSpan()` and that fixing that is
+the primary fix. **Both claims are false.** `r_revolve` calls `revolveProfile`,
+which *already* applies the dial (`manifold-mesh.ts:178`, `subdivideProfileAxial`).
+A probe on the real `bw_casing` shape, dial ON:
+
+| stage | maxEdgeΔz | edges with Δz>3 |
+|---|---|---|
+| 1. hollow (`r_revolve − r_revolve`) | **1.48** | **0** |
+| 2. after `sectionCut(180)` | **40.00** | **208** |
+| 3. after `warpSpline` | 40.49 | 208 |
+
+The revolve is already dense. **`solid.subtract(wedge)` is what destroys it**:
+Manifold's mesh boolean RETRIANGULATES the planar cut faces it creates, throwing
+away the refined wedge's z-rings and emitting a handful of full-height triangles.
+Warp then bends those 40-unit edges into the bridging chord.
+
+So the fix is the plan's *secondary* item alone — refine the CUT RESULT:
+
+```ts
+const cut = solid.subtract(wedge);
+return maxZSpan > 0 ? cut.refineToLength(maxZSpan) : cut;
+```
+
+After: stage 2 → maxEdgeΔz **2.96**, 0 spanning edges; stage 3 (warped) → 3.54,
+**0 edges over Δz 5** (was 104 over Δz 10). Warped volume error 3.8% → 0.03%.
+Cost: 624 → 2710 verts on the test casing. `r_revolve` and `primitive-sandbox`
+are UNCHANGED.
+
+**Two caches hid this.** A `manifold-helpers` fix changes neither the part source
+nor `scriptHash`, so (a) the server bake cache (`$APP_DATA_DIR/cache`, keyed on
+body+dep sources) and (b) the client IndexedDB cache (keyed on `KERNEL_VERSION` +
+`scriptHash`) both keep serving the pre-fix mesh. `KERNEL_VERSION` was bumped to
+`+cut2`. Any future engine-internal fix needs the same bump — that is what the
+`+cap1` note in `bake-worker-core.ts` was already warning about.
+
+Tests: `sectioncut-warp-axial.test.ts` gained a `#64` block asserting SPANNING
+EDGES (the old tests asserted "more verts + still manifold", which the pre-fix
+build also satisfied — which is why they never caught it).
+
+---
+
 **TODO:** `#64` in root `TODO.md`.  
 **Rule:** project **Rule 25** — segmentation / warp resolution at BUILD time, never a post-bake MeshGL rewrite.  
 **Repro:** `/primitives` → `w1_oh_warp` → **3D BAKE** (not TF). Refs: `docs/plans/refs/cut-warp-3dbake-deformed.png` vs `cut-warp-tf-ok.png`.

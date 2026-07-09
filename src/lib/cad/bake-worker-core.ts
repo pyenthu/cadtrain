@@ -32,7 +32,7 @@ import { serializeComponentResult, type SerializedComponentResult, type Serializ
 /** Pinned kernel identity — folded into the IndexedDB cache key so a client on
  *  an upgraded WASM build never serves a mesh baked by the old kernel (plan §8
  *  "bust the IndexedDB cache on kernel-version change"). */
-export const KERNEL_VERSION = 'manifold-3d@3.4.1+cap1'; // +cap1: ear-clip r_sweep end caps (fanCap3D, manifold-mesh) — a transitive engine import NOT in scriptHash, so its fix needs a manual kernel bump to bust the stale-cap IndexedDB cache. +nrm4: crease-aware render normals under vert ceiling
+export const KERNEL_VERSION = 'manifold-3d@3.4.1+cut2'; // +cap1: ear-clip r_sweep end caps (fanCap3D, manifold-mesh) — a transitive engine import NOT in scriptHash, so its fix needs a manual kernel bump to bust the stale-cap IndexedDB cache. +nrm4: crease-aware render normals under vert ceiling. +cut2: sectionCut refines the CUT RESULT, not just the wedge (#64 bridging triangle) — same transitive-import problem, same manual bump
 
 /** Max profile Z-span (world units) a WARP-NODE bake allows before re-lathing an
  *  extra axial ring — the density source for a lean revolve under `warpSpline`.
@@ -287,7 +287,7 @@ export function bakeCacheKey(
   params: Array<number | string> | Record<string, unknown>,
   options: BakeOptions = {},
 ): string {
-  return `${KERNEL_VERSION} ${scriptHash} ${JSON.stringify(params)} ${stableStringify(options)}`;
+  return `${KERNEL_VERSION}\u0000${scriptHash}\u0000${JSON.stringify(params)}\u0000${stableStringify(options)}`;
 }
 
 /** Deterministic JSON for the options object (sorted keys) so two logically
