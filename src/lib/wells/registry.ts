@@ -94,6 +94,11 @@ const EXACT: Record<string, { partId: string; category: WellCompCategory }> = {
   // ── Artificial lift ──────────────────────────────────────────────────────
   ARTIFICIAL_LIFT_GAS_LIFT_MANDREL: { partId: 'g_gas_lift_mandrel', category: 'mandrel' },
   ARTIFICIAL_LIFT_SIDE_POCKET_MANDREL: { partId: 'g_side_pocket_mandrel', category: 'mandrel' },
+  // The real corpus files the side-pocket mandrel under MISC., not
+  // ARTIFICIAL_LIFT. Without this alias the CATEGORY fallback cannot rescue it
+  // (it keys on the 'MISC' prefix, which has no entry) and 6 real instances
+  // across wells 03/06 silently degraded to a plain g_tube. Same part.
+  MISC_SIDE_POCKET_MANDREL: { partId: 'g_side_pocket_mandrel', category: 'mandrel' },
   // ── Drill pipe ─────────────────────────────────────────────────────────────
   DRILL_PIPE_JOINT: { partId: 'g_dp_joint', category: 'drillpipe' },
   DRILL_PIPE_BOX: { partId: 'g_dp_box', category: 'drillpipe' },
