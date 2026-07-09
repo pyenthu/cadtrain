@@ -38,10 +38,13 @@ describe('ContainerKind (list / group)', () => {
     expect(ContainerKind.size(list(['a', 'b']), { width: 110, root: 'root', consts: CONSTS }))
       .toEqual({ w: 110, h: 106 });
   });
-  it('size: the ROOT ▶ Output card is the compact box + arrow', () => {
-    // root, 1 child → slots=2 → h = max(56, 22 + 2*22) = 66; w = 24 + 30
+  it('size: the ROOT ▶ Output card is the compact box + arrow, FIXED height (#31 one socket)', () => {
+    // #31 collapsed Output: ONE socket regardless of child count → fixed h = OUTPUT_MIN_H (56); w = 24 + 30.
     expect(ContainerKind.size(list(['a'], 'root'), { width: 999, root: 'root', consts: CONSTS }))
-      .toEqual({ w: 54, h: 66 });
+      .toEqual({ w: 54, h: 56 });
+    // Many children → STILL 56 (no per-output growth).
+    expect(ContainerKind.size(list(['a', 'b', 'c'], 'root'), { width: 999, root: 'root', consts: CONSTS }))
+      .toEqual({ w: 54, h: 56 });
   });
 });
 

@@ -726,25 +726,19 @@
                     onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                     onpointermove={onNodePointerMove}
                     onpointerup={onNodePointerUp}/>
-                  <!-- Input sockets — vertically CENTERED in the box; a small ×
-                       to unwire each. NO labels / title / order / cog (minimal
-                       per the user: the arrow says "output"; order isn't needed). -->
-                  {#each visibleChildren as { cid: childId, origIdx }, i (childId)}
-                    {@const sy = rootOutputSockY(size.h, i, visibleChildren.length)}
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <circle role="button" tabindex="-1" class="ge-sock in child" cx="0" cy={sy} r="5"
-                      onpointerup={(ev) => wire.endWireOnContainerSlot(ev, n.id)}/>
-                    <!-- × unwire this output -->
-                    <!-- svelte-ignore a11y_no_static_element_interactions -->
-                    <text role="button" tabindex="-1" class="ge-container-slot-x" font-size="15"
-                      x={boxW - 8} y={sy + 5}
-                      onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeContainerChildAt(graph, n.id, origIdx)); }}>×</text>
-                  {/each}
-                  <!-- Trailing + drop socket (centered with the rest, no ×). -->
-                  {@const rootTrailY = rootOutputSockY(size.h, visibleChildren.length, visibleChildren.length)}
+                  <!-- #31 collapsed Output — ONE socket on the arrow accepts ALL
+                       output wires (drop APPENDS; remove an output by clicking its
+                       wire → Delete). Fixed height, no per-output row. A count badge
+                       shows how many parts are output when >1. -->
+                  {@const nOut = visibleChildren.length}
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <circle role="button" tabindex="-1" class="ge-sock in child trail" cx="0" cy={rootTrailY} r="5"
+                  <ellipse role="button" tabindex="-1" class="ge-sock in child multi" class:wired={nOut > 0}
+                    cx="0" cy={acy} rx="7" ry="6"
+                    data-tip="output: wire one or MORE parts here (drop APPENDS another; remove by clicking a wire → Delete)."
                     onpointerup={(ev) => wire.endWireOnContainerSlot(ev, n.id)}/>
+                  {#if nOut > 1}
+                    <text x="12" y={acy + 4} class="ge-output-count">×{nOut}</text>
+                  {/if}
                 {:else}
                 {@const title = n.type === 'stack' ? '↕ Stack' : n.type === 'group' ? '{} Group' : '[ ] List'}
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -1701,7 +1695,7 @@
                   onpointerup={(ev) => wire.endWireOnWarpPath(ev, n.id)}/>
                 <!-- ⚙ options (refine / stretch / validate) → popover -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 34} y="20" class="ge-container-cog"
+                <text role="button" tabindex="-1" x={size.w - 38} y="21" class="ge-container-cog ge-warp-cog"
                   data-tip="Warp options — refine · stretch · validate"
                   onpointerdown={(ev) => { ev.stopPropagation(); popovers?.openWarpPop(ev, n.id); }}>⚙</text>
                 <!-- delete × (top-right) -->
@@ -1900,6 +1894,10 @@
      that accepts MANY incoming wires, vs the round single-input socket. */
   .ge-sock.multi { stroke-width: 2; }
   .ge-sock.multi.wired { fill: #0369a1; }
+  /* #31 collapsed Output count badge (×N) next to the single arrow socket. */
+  .ge-output-count { fill: #047857; font: 600 10px Arial; pointer-events: none; user-select: none; }
+  /* Enlarged warp ⚙ options button (user request) — bigger tap target. */
+  .ge-warp-cog { font-size: 17px; }
   .ge-warp-opts { display: flex; align-items: center; gap: 4px; font: 10px Arial; }
   .ge-warp-refine { display: flex; align-items: center; gap: 2px; color: #0e7490; font-weight: 600; }
   .ge-warp-refine .ge-arg-input { width: 34px; }

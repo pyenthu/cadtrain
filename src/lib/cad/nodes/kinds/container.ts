@@ -24,7 +24,10 @@ export function containerSize(node: ContainerNode, ctx: SizeCtx): { w: number; h
   const c = ctx.consts!;
   const slots = (node.children?.length ?? 0) + 1;
   if (node.id === ctx.root) {
-    return { w: c.OUTPUT_BOX_MIN_W + c.OUTPUT_ARROW_W, h: Math.max(c.OUTPUT_MIN_H, 22 + slots * 22) };
+    // #31 collapsed Output: ONE socket on the green arrow accepts ALL output wires,
+    // so the card height is FIXED (no per-output growth). Remove an output by
+    // clicking its wire → Delete.
+    return { w: c.OUTPUT_BOX_MIN_W + c.OUTPUT_ARROW_W, h: c.OUTPUT_MIN_H };
   }
   return { w: ctx.width, h: Math.max(60, 40 + slots * 22) };
 }

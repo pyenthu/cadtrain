@@ -408,8 +408,10 @@ export function containerSlotY(i: number): number { return 40 + i * 22; }
  *  rendered socket circle AND the incoming wire endpoint MUST derive from THIS —
  *  they drifted once: the wire used the top-anchored `containerSlotY(i)` while
  *  the socket render centered, so wires terminated on the wrong socket. */
-export function rootOutputSockY(cardH: number, i: number, count: number): number {
-  return cardH / 2 - (count * 22) / 2 + i * 22;
+export function rootOutputSockY(cardH: number, _i: number, _count: number): number {
+  // #31 collapsed Output: ALL output wires converge on ONE centered socket, so
+  // every slot index maps to the card's vertical centre (was: one row per output).
+  return cardH / 2;
 }
 
 /** Layout position of a node (graph.layout[id], origin fallback).
