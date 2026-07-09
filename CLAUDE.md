@@ -63,46 +63,19 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
 19. **`/plan` is the single source of truth for the roadmap.** Gantt at `src/routes/plan/+page.svelte` (+ `details.ts` popups). Session task-trackers and memory `todo_*.md` are ephemeral — reconcile INTO `/plan` at session end. Marking `done` is a factual claim — verify first. `/plan` edits are source changes → commit + push.
 20. **Authoring a volume part — use the typed-create scaffolds (Extrude Part / Profile Part / Assembly) or the graph editor; don't hand-name engines.** Profiles live INLINE on the part. The geom function is `export function <id>(positional args)` in `meta.params` order — NOT `geom(p)`; parts show in the Parts tab only as NAMED instances (`const body = ...; return body;`). Dependencies in `meta.uses`.
 21. **Engine primitives — canonical in `src/`, read-only, NOT on the volume.** `stdlib/` = active; `stdlib/stale/` = deprecated-but-resolvable so existing `meta.uses` keep baking (origin label stays `'stdstale'`; relocated 2026-06-28 from a top-level `stdstale/` dir). Registry `src/lib/server/stdlib.ts` (`import.meta.glob('?raw')` bakes source into the build; the `stdlib/*.ts` glob is non-recursive so `stale/` is globbed separately). Resolver serves them FIRST + dedupes volume twins; `/api/primitives/{save,delete}` refuse both (403). Add = drop `<id>.ts` into `stdlib/`; deprecate = `git mv` to `stdlib/stale/`. **`r_revolve` is ACTIVE** (the only revolve engine); only `r_extrude` is stale.
-22. _(retired 2026-06 — FEM archived)_ ~~**FEM is encapsulated** — engine `src/lib/fem/`, UI `src/routes/fem/`.~~ FEM + `/forge` moved to `archive/` (`1d90a16`). If revived: engine `src/lib/fem/` (pure logic, no Svelte/DOM/Three), UI `src/routes/fem/` imports formulas from `$lib/fem/*` only; oilfield units (lbf / ft-lbf / in / ksi); new stages = NEW sub-routes, never tabs.
+22. _(retired 2026-06 — FEM + `/forge` archived to `archive/`, `1d90a16`; revival steps in `archive/CADTRAIN_CLEANUP.md`)_
 23. **Non-trivial UI flow rebuilds ship with a subagent test spec** in `.claude/agents/<name>.md` (gitignored) BEFORE "done": drives the real UI via `mcp__claude-in-chrome__*` AND verifies server-side via curl; outputs a summary table + GIF; **must run twice with identical output**; patch the spec in-place when a run surfaces a wrinkle. Reference: `.claude/agents/test-dp-build.md`.
 24. **Generative authoring — RAG-then-translate against the vocabulary first.** On a "new part" request, retrieve from `docs/parts/vocabulary.json` and compose via the deterministic translator (`src/lib/authoring/rule-translator.ts`): (1) synonym match → params only, (2) `extends` parent, (3) `kind:'compose'`, (4) hand-author ONLY when nothing fits — and say so before extending the schema. Save via `/api/primitives/save`; bake-verify via `/api/primitives/preview` (report verts/z-extent/outer-r). Patches via `scripts/promote-to-vocab.ts`; regen `vocabulary-graph.mmd` via `bun scripts/render-vocab-graph.ts`. **NEVER hand-author `/tmp/<id>_swap.ts` ad-hoc scripts when a vocab path exists.**
 25. **The welded-mesh system is the PRIMARY geometry builder.** `src/lib/cad/manifold-mesh.ts` (`gridPatch` / `capFan` / `weldAndBuild`, injected via `primitive-sandbox.ts`; memories `welded_mesh_toolkit_shared` + `raw_mesh_helix_pattern`) builds geometry with **explicit, controllable segmentation** — unlike `CrossSection.revolve`, which gives no axial sampling. It exists specifically to (a) **warp smoothly** (enough Z-samples → a smooth sine, not faceted chords) and (b) **build along a spline** for the coming **deviated / curved profiles**. **Segmentation / warp resolution belongs at BUILD time, never as a post-bake mesh rewrite** — subdividing the final welded Manifold's MeshGL OOB-crashes the WASM core and corrupts the singleton so every later bake fails (why warp-subdivide `d41877b` was reverted in `3fb1fa8`). The old client-side `subdivideAlongZ` (`src/lib/shared/warp.ts`) was a render-time stopgap; the durable fix is build-time Z-segmentation in the weld builders.
 26. **Subagent verification — ASK "headless or worktree dev-server?" BEFORE dispatching.** When a subagent's work needs verifying, confirm the mode first. **HEADLESS** (build + Node/vitest test, no browser — works in a bare worktree; the RIGHT choice for geometry/compile/logic, since TrueForm + Manifold run in Node) vs **WORKTREE DEV-SERVER + browser** (only when the deliverable is UI/interaction/visual/Svelte reactivity that can't be judged headless). Worktree browser-verify is FRAGILE and has STALLED agents repeatedly (2026-07-03): a bare worktree lacks `node_modules`/`.env.local`, and a random dev port COLLIDES with leftover servers → the agent loops on "port in use" and never commits. RULES: (a) default headless; only pay for the browser when the change is genuinely visual — and prefer doing THAT inline on the live `:3333` (per the modularize "GEP inline" rule) or verify it yourself after merging the branch (build-green ≠ visually correct); (b) a worktree that MUST serve uses **`bun run dev:worktree`** (`scripts/dev-worktree.sh`) — a **DETERMINISTIC port hashed from the branch name** (same worktree → same port, no collisions, trackable; logged to `.claude/worktree-ports.log`) + symlinks the parent `node_modules` + copies `.env.local`; (c) POLL liveness (agent output mtime + branch commit count) and if idle >~7 min with no commit, KILL and re-dispatch headless (or do it inline).
 
-## Current focus (2026-07-06 — resume point)
+## Current focus + in-flight architecture
 
-> Keep ≤ 20 lines. Shipped detail → `docs/HISTORY.md` + session-handoff
-> memories; roadmap → `/plan` (Rule 19).
-> **Launch `claude --chrome` for fast visual iteration on /primitives + /vocab.**
+Moved to **`docs/STATUS.md`** — read it at the start of a working session. It
+carries the resume point (latest session-handoff memory, TF tab, Route C lean
+revolve, open follow-ups) and the client-side-execution design. Shipped detail →
+`docs/HISTORY.md` + session-handoff memories; roadmap → `/plan` (Rule 19).
 
-- **Latest session**: memory `session_handoff_2026-07-06` — READ IT FIRST.
-- **TF tab is now a real engine surface** (2026-07-06): runs in a **Web Worker**
-  (`tf-worker*.ts`), **native-only** (no Manifold fallback → blank+reason), per-part
-  **material** on full+cut views, `r_weld_extrude` builds natively (g_cube/star/
-  spiral/barrel), cutaway = view-switch (no blank), and **only the ACTIVE /primitives
-  pane bakes** (shared TF worker supersede was blanking all-but-one on open). Compile
-  caches: `/api/tf/compile` + `resolveDepColors` (302/940ms → ~1/0.1ms); 🔄 = true fresh.
-- **⚠ Route C lean revolve**: `g_shaft` `zSegments 10→0` edited on the VOLUME (backup
-  `.route-c-backup/`); warp re-densifies at build time via `_axialMaxZSpan` dial (span
-  1.5) in `bake-worker-core.ts` + `preview/+server.ts`. Straight 528→96, warped 8448→2640
-  smooth. Rule-25 clean. NEXT: curvature-adaptive span. `docs/plans/manifold-revolve-lean.md`.
-- Open follow-ups: `docs/plans/{tf-compile-perf (BFS-parallelize + save-invalidation),
-  tf-wasm-tab, manifold-revolve-lean}.md`; per-SUBPART material needs color-by-source.
-- **GraphEditorPane modularization** (#940) still open; **typed expression outputs** (#926);
-  **/wells** re-plan (`session_handoff_2026-07-04-wells`). Plans in `docs/plans/`.
-
-## Client-side execution (in progress)
-
-Geometry **execution** is moving off the server into a browser **Web Worker**
-(`src/lib/cad/bake-worker.ts` + `bake-client.ts`): the server stays the COMPILER
-(`/api/primitives/compile` → dep-inlined Manifold script + `scriptHash`), the
-client EXECUTOR bakes the script. **Toggle:** 💻/☁ button in the graph-editor
-left rail (or `localStorage.cad-client-bake`) → `scene.clientBake`; the bake pane
-shows a `⚡client`/`☁server` badge, and the SRC tab has a `⚡compiled` subtab.
-Client-first is now the DEFAULT (server `/preview` fallback intact); the prod
-COOP/COEP + static-asset headers that unblock it shipped 2026-07-02. Kills the
-deja-vu stale-bake bug structurally. PR1–3 shipped; plan
-`docs/plans/client-side-execution.md`; memory `client_side_execution`.
 **Tests: `bun run test` (vitest), NOT `bun test`.**
 
 ## Tech stack + commands
