@@ -1597,23 +1597,23 @@
                   <!-- wired badge — the manual editor is overridden by the expr -->
                   <text x="11" y="12" class="ge-sp-wired-badge">ƒ pts</text>
                 {/if}
-                <!-- inline row: ✎ (left) · curved-spline glyph (middle) · × (right) -->
+                <!-- inline row (ONE row): ✎ edit · 📈 plot-toggle · small spline glyph · × -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x="13" y={sh / 2 + 5} class="ge-node-x ge-sp-glyph"
+                <text role="button" tabindex="-1" x="11" y={sh / 2 + 5} class="ge-node-x ge-sp-glyph"
                   data-tip="Edit this spline's control points in 3D"
                   onpointerdown={(ev) => { ev.stopPropagation(); onOpenSplineEditor(ev as any, n.id); }}>✎</text>
-                <path class="ge-spline-preview" fill="none"
-                  d={`M 30 ${sh * 0.64} Q ${sw * 0.44} ${sh * 0.26} ${sw * 0.58} ${sh * 0.5} T ${sw - 34} ${sh * 0.5}`}/>
+                <!-- 📈 plot-in-main-3D-bake toggle (TODO #24) — VIEW-ONLY overlay, now on
+                     the SAME row as ✎ (compact spline card). -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={sw - 24} y={sh / 2 + 5} class="ge-node-x ge-sp-glyph"
-                  data-tip="Delete this spline node"
-                  onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeNode(graph, n.id)); }}>×</text>
-                <!-- 📈 plot-in-main-3D-bake toggle (TODO #24) — VIEW-ONLY overlay.
-                     Bottom-left corner so it doesn't fight ✎/× on the compact card. -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x="12" y={sh - 6} class="ge-sp-plot" class:on={plotted}
+                <text role="button" tabindex="-1" x="27" y={sh / 2 + 5} class="ge-sp-plot" class:on={plotted}
                   data-tip="Plot this spline in the main 3D bake (overlay curve + points, so several splines read relative to each other + the swept mesh). View-only."
                   onpointerdown={(ev) => { ev.stopPropagation(); setGraph(setSplinePlot(graph, n.id, !plotted)); }}>📈</text>
+                <path class="ge-spline-preview" fill="none"
+                  d={`M 46 ${sh * 0.62} Q ${sw * 0.6} ${sh * 0.28} ${sw - 26} ${sh * 0.5}`}/>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={sw - 19} y={sh / 2 + 5} class="ge-node-x ge-sp-glyph"
+                  data-tip="Delete this spline node"
+                  onpointerdown={(ev) => { ev.stopPropagation(); setGraph(removeNode(graph, n.id)); }}>×</text>
                 <!-- OUTPUT socket (right edge, centered) — list<point3> → r_sweep.path.
                      `'path'` matches emitSplineBlocks' exprBlockMember(id,'path'). -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->

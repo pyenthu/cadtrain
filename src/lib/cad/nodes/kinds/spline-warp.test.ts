@@ -20,7 +20,7 @@ describe('SplineKind', () => {
   it('emit null, validate [], size {w,40}', () => {
     expect(SplineKind.emitExpr({} as any, ctx())).toBeNull();
     expect(SplineKind.validate({} as any, graph({}))).toEqual([]);
-    expect(SplineKind.size({} as any, { width: 200, root: 'r' })).toEqual({ w: 200, h: 40 });
+    expect(SplineKind.size({} as any, { width: 200, root: 'r' })).toEqual({ w: 200, h: 34 });
   });
 });
 

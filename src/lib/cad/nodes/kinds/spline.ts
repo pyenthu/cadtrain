@@ -12,6 +12,6 @@ export const SplineKind: NodeKind<SplineNode> = {
   emitExpr: () => null,
   validate: () => [],
   inputRefs: () => [],
-  size: (_n, ctx) => ({ w: ctx.width, h: 40 }),
+  size: (_n, ctx) => ({ w: ctx.width, h: 34 }),
   sockets: () => ({ inputs: [], output: true }),
 };

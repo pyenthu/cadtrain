@@ -239,7 +239,7 @@ export function cardMinWidth(node: any): number {
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') return 110;
   if (node.type === 'polygon') return 180; // input + chrome fits at 180
   if (node.type === 'expr') return 200;    // input-col + output-row (name=formula)
-  if (node.type === 'spline') return 92;   // min width — inline row (+20%, bigger click targets)
+  if (node.type === 'spline') return 76;   // min width — inline row (✎ 📈 curve × on ONE row)
   if (node.type === 'warp') return 150;    // title + solid/path sockets + opts
   if (node.type === 'cutaway') return 150;  // title + solid socket + az/offset
   return 130;
@@ -296,7 +296,7 @@ export function cardAutoWidth(graph: Graph, node: any): number {
   if (node.type === 'repeat') return 230;
   if (node.type === 'polygon') return 200; // narrowed for the vertical-stack layout
   if (node.type === 'expr') return 260;    // input gutter + name=formula row
-  if (node.type === 'spline') return 110;  // inline row: edit | curve | x | socket (+20%)
+  if (node.type === 'spline') return 92;   // inline row: ✎ 📈 | small curve | × | socket
   if (node.type === 'warp') return 148;    // title (path on title row) + solid rows; opts in ⚙ popover
   if (node.type === 'cutaway') return 178;  // solid label + az/offset opts row
   if (node.type === 'list' || node.type === 'stack' || node.type === 'group') {
