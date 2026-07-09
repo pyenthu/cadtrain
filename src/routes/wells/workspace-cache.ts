@@ -253,3 +253,63 @@ export function clearTabs(): void {
     /* ignore */
   }
 }
+
+// ── Open-tab list mutations (pure) ───────────────────────────────────────────
+// The tab strip's mutating operations live here as pure functions so they can be
+// unit-tested away from the churned `+page.svelte` (Svelte HMR silently skips
+// edits to large components, so inline reactive logic is easy to break unseen).
+// Each returns the NEXT `{ tabs, activeKey }` without touching reactive state —
+// the component just assigns the result.
+
+/** A single open tab: an id (sample slug or `ws:<relpath>`) + a unique key. */
+export interface OpenTab {
+  id: string;
+  key: number;
+}
+
+/** The tab strip's state after a mutation. */
+export interface TabState<T extends OpenTab = OpenTab> {
+  tabs: T[];
+  activeKey: number | null;
+}
+
+/**
+ * Close EXACTLY the tab with `key`. Because tabs are matched by their unique
+ * `key` (never by `id`), unhydrated `ws:` placeholder tabs — which share the
+ * shape of every other tab and only differ by id — are never over-matched: a
+ * sibling's close removes one tab and leaves the rest, placeholders included.
+ *
+ * The active key only moves when the CLOSED tab was the active one, in which
+ * case it steps to the LEFT neighbour (or the new first tab when the closed tab
+ * was leftmost, or null when the list empties). An unknown key is a no-op and
+ * returns the SAME array reference (so the caller can skip a reassignment).
+ */
+export function closeTab<T extends OpenTab>(
+  tabs: T[],
+  activeKey: number | null,
+  key: number,
+): TabState<T> {
+  const idx = tabs.findIndex((t) => t.key === key);
+  if (idx < 0) return { tabs, activeKey };
+  const next = tabs.filter((t) => t.key !== key);
+  const nextActive =
+    activeKey === key ? (next[Math.max(0, idx - 1)]?.key ?? null) : activeKey;
+  return { tabs: next, activeKey: nextActive };
+}
+
+/**
+ * Drop EVERY workspace (`ws:`-prefixed) tab in one pass — the workspace was
+ * genuinely closed. Sample tabs are kept untouched. If the active tab was one
+ * of the dropped `ws:` tabs, the active key falls back to the first surviving
+ * tab (or null when none remain). No `ws:` tabs → same array reference (no-op).
+ */
+export function dropWorkspaceTabs<T extends OpenTab>(
+  tabs: T[],
+  activeKey: number | null,
+): TabState<T> {
+  const kept = tabs.filter((t) => !t.id.startsWith('ws:'));
+  if (kept.length === tabs.length) return { tabs, activeKey };
+  const activeSurvives = kept.some((t) => t.key === activeKey);
+  const nextActive = activeSurvives ? activeKey : (kept[0]?.key ?? null);
+  return { tabs: kept, activeKey: nextActive };
+}
