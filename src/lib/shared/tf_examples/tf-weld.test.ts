@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildWeldGrid, extrudeProfileGrid, type V3, type WeldGrid } from './tf-weld';
-import { roundedRect } from './weld_extrude_demo';
+import { roundedRect } from './test-profiles';
 
 /**
  * Guards the PURE welded-grid builder `buildWeldGrid` (behind `weldGridToTf`): an

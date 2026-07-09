@@ -15,6 +15,12 @@ function nVerts(g: any): number {
   return a ? a.count : 0;
 }
 
+// The two big cases build 150k–160k tris and cut them. Alone that fits vitest's
+// 5s default, but under the full suite the parallel workers contend for CPU and
+// it runs ~9s → timeout. The tri counts ARE the assertions here, so raise the
+// budget rather than shrink the meshes.
+const HEAVY_CSG_TIMEOUT_MS = 60_000;
+
 describe('finalizeManifold cutaway skip — per-body, not monolith total', () => {
   let seg0 = 0;
   beforeAll(async () => { await helpers.initManifold(); seg0 = getCircularSegmentCount(); });
@@ -45,7 +51,7 @@ describe('finalizeManifold cutaway skip — per-body, not monolith total', () =>
     const res = finalizeManifold(m, 1.5, undefined, undefined, {}) as any;
     expect(res.cutawaySkipped).toBe(false);           // OLD code skipped here; NEW code cuts per-body
     expect(nVerts(res.cutVC)).toBeGreaterThan(0);
-  });
+  }, HEAVY_CSG_TIMEOUT_MS);
 
   it('single HUGE connected body > 120k tris → still skips (per-body win cannot apply)', () => {
     // One cylinder at very high segments → a single connected body > 120k tris.
@@ -56,5 +62,5 @@ describe('finalizeManifold cutaway skip — per-body, not monolith total', () =>
     const res = finalizeManifold(m, 1.5, undefined, undefined, {}) as any;
     expect(res.cutawaySkipped).toBe(true);
     expect(nVerts(res.cutVC)).toBe(0);
-  });
+  }, HEAVY_CSG_TIMEOUT_MS);
 });
