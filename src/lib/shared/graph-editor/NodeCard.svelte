@@ -1672,52 +1672,54 @@
                 {@const warpKids = (Array.isArray(w.children) && w.children.length) ? w.children : (w.child ? [w.child] : [])}
                 {@const pathWired = (w.path?.kind === 'expr' && String(w.path.expr) !== '[]' && String(w.path.expr).trim() !== '')
                   || w.path?.kind === 'param'}
-                <!-- Warp / bend MODIFIER (#36 / #36b multi-input) — bends EACH wired
-                     `solid` along the wired spline `path`. 1 solid → warpSpline(child,
-                     path); ≥2 → each warped SEPARATELY (a part inside a transparent
-                     open-hole stays independent). Solids stack on the LEFT (+ a ＋ append
-                     slot), path below them, bent result out the RIGHT. -->
+                {@const nSolids = warpKids.length}
+                {@const wcy = size.h / 2}
+                <!-- Warp / bend MODIFIER (#36 / #36b) — SINGLE compact CHIP ROW (like
+                     the mv/rot icon chips): the ≈ icon centred, every wired `solid`
+                     fans into the ONE ×N socket on the LEFT edge, the SPLINE `path`
+                     drops onto the TOP-MIDDLE socket, the bent result exits the RIGHT
+                     edge. ⚙ = refine/stretch/validate popover; × = delete. 1 solid →
+                     warpSpline(child,path); ≥2 → each warped SEPARATELY (a part inside
+                     a transparent open-hole stays independent). -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg warp"
-                  width={size.w} height={size.h} rx="6"
-                  data-tip="Warp: bend built solids along a spline. Wire one or MORE solids into the left sockets (＋ adds another) + a SPLINE'S path into the lower-left socket. Each solid is warped separately (no fusion). refine = smoother bend; stretch = span the whole spline; validate = warn on an inverted bend."
+                  width={size.w} height={size.h} rx="8"
+                  data-tip="Warp: bend built solids along a spline. Wire one or MORE solids into the LEFT ×N socket (drop adds another) + a SPLINE'S path into the TOP-MIDDLE socket. Each solid is warped separately (no fusion). ⚙ opts: refine = smoother bend; stretch = span the whole spline; validate = warn on an inverted bend."
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
-                <text x="18" y="20" class="ge-node-title">≈ warp</text>
-                <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
-                <!-- PATH input — wires into the TITLE ROW itself (#36b redesign): a
-                     spline's `path` output drops onto this left-edge socket. -->
+                <!-- ≈ warp icon — centred (decorative; drag falls through to the chip). -->
+                <text x={size.w / 2} y={wcy + 6} class="ge-warp-icon" text-anchor="middle" pointer-events="none">≈</text>
+                <!-- PATH input — TOP-MIDDLE socket (#compact): a spline's `path` output
+                     drops here (X = card middle, cy = top edge). -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock in expr-in list" class:wired={pathWired}
-                  cx="0" cy={WARP_PATH_CY} r="6"
+                  cx={size.w / 2} cy={WARP_PATH_CY} r="6"
                   data-tip={pathWired ? 'path: wired to a spline — drop another to repoint' : 'path: wire a spline’s output (list of points) here'}
                   onpointerup={(ev) => wire.endWireOnWarpPath(ev, n.id)}/>
-                <!-- ⚙ options (refine / stretch / validate) → popover -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 38} y="21" class="ge-container-cog ge-warp-cog"
-                  data-tip="Warp options — refine · stretch · validate"
-                  onpointerdown={(ev) => { ev.stopPropagation(); popovers?.openWarpPop(ev, n.id); }}>⚙</text>
-                <!-- delete × (top-right) -->
-                <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 18} y="20" class="ge-node-x"
-                  class:armed={del.isArmed(n.id)}
-                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
-                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
-                <!-- SOLIDS input — ONE compact multi-input socket (#31): every wired
-                     solid fans into this single socket (drop = APPEND another; remove
-                     a solid by clicking its wire → delete). A count badge shows how
-                     many are wired, so the card stays small no matter how many. -->
-                {@const nSolids = warpKids.length}
-                <text x="16" y={WARP_CHILD_CY + 4} class="ge-warp-lbl" class:wired={nSolids > 0}>{nSolids > 0 ? `×${nSolids}` : ''}</text>
+                <!-- SOLIDS input — ONE compact ×N socket on the LEFT edge (#31): every
+                     wired solid fans into it (drop = APPEND another; remove a solid by
+                     clicking its wire → delete). The ×N badge shows how many are wired. -->
+                <text x="13" y={WARP_CHILD_CY + 4} class="ge-warp-lbl" class:wired={nSolids > 0}>{nSolids > 0 ? `×${nSolids}` : ''}</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <ellipse role="button" tabindex="-1" class="ge-sock in child multi" class:wired={nSolids > 0}
                   cx="0" cy={WARP_CHILD_CY} rx="8" ry="6"
                   data-tip="solids: wire one or MORE built parts to bend along the SAME spline (drop APPENDS another; each warped separately). Remove a solid by clicking its wire → Delete."
                   onpointerup={(ev) => wire.endWireOnWarpSolid(ev, n.id, warpKids.length)}/>
+                <!-- ⚙ options (refine / stretch / validate) → popover — top-right, compact -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 38} y="15" class="ge-container-cog ge-warp-cog"
+                  data-tip="Warp options — refine · stretch · validate"
+                  onpointerdown={(ev) => { ev.stopPropagation(); popovers?.openWarpPop(ev, n.id); }}>⚙</text>
+                <!-- delete × — top-right corner, compact -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 20} y="15" class="ge-node-x ge-warp-x"
+                  class:armed={del.isArmed(n.id)}
+                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
                 <!-- OUTPUT — RIGHT edge, vertically centred -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={wcy} r="6"
                   data-tip="the bent solid — wire into Output, a CSG op, or another modifier"
                   onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
 
@@ -1888,6 +1890,8 @@
   .ge-xform-glyph:hover { fill: #4c1d95; }
   /* Warp / bend modifier card (#36) — teal, distinct from transform-purple. */
   .ge-node-bg.warp { fill: #ecfeff; stroke: #0e7490; stroke-width: 2; }
+  /* Compact ≈ icon centred in the chip (mirrors ge-xform-glyph, in warp-teal). */
+  .ge-warp-icon { fill: #0e7490; font: 700 20px Arial; user-select: none; }
   .ge-warp-lbl { fill: #0e7490; font: 600 11px Arial; pointer-events: none; user-select: none; }
   .ge-warp-lbl.wired { fill: #0369a1; font-weight: 700; }
   /* #31 compact multi-input socket — an elongated (barred) shape marks a socket
@@ -1896,8 +1900,9 @@
   .ge-sock.multi.wired { fill: #0369a1; }
   /* #31 collapsed Output count badge (×N) next to the single arrow socket. */
   .ge-output-count { fill: #047857; font: 600 10px Arial; pointer-events: none; user-select: none; }
-  /* Enlarged warp ⚙ options button (user request) — bigger tap target. */
-  .ge-warp-cog { font-size: 17px; }
+  /* Compact chip ⚙ options + × delete — top-right, sized to fit the 40 px row. */
+  .ge-warp-cog { font-size: 15px; }
+  .ge-warp-x { font-size: 13px; }
   .ge-warp-opts { display: flex; align-items: center; gap: 4px; font: 10px Arial; }
   .ge-warp-refine { display: flex; align-items: center; gap: 2px; color: #0e7490; font-weight: 600; }
   .ge-warp-refine .ge-arg-input { width: 34px; }

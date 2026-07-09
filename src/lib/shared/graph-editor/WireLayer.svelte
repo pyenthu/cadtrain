@@ -10,7 +10,7 @@
   import {
     bezier, paramSocketPos, nodeSize, exprOutputSockY, exprInputSockY,
     polySockR, polySockZ, polySockRef, sketchSockR, sketchSockZ, sketchSockVal,
-    rootOutputSockY, extractParamRefs, WARP_PATH_CY, warpPathCY,
+    rootOutputSockY, extractParamRefs, warpPathCY, warpPathCX,
   } from './geom';
   import { exprBlockMember } from '$lib/cad/graph-exprs';
   import type { WireRef } from './wire-delete';
@@ -473,10 +473,10 @@
                 {/each}
               {/if}
             {:else if n.type === 'warp'}
-              <!-- Warp modifier (#36): the `solid` child wire (child output →
-                   left child socket, same as mv/rot) + the `path` wire (a wired
-                   spline / expr output → the lower-left path socket at
-                   WARP_PATH_CY). -->
+              <!-- Warp modifier (#36): the `solid` child wire (child output → the
+                   ×N left-edge socket, same as mv/rot) + the `path` wire (a wired
+                   spline / expr output → the TOP-MIDDLE path socket at
+                   warpPathCX/warpPathCY). -->
               {@const warpKids = (Array.isArray((n as any).children) && (n as any).children.length) ? (n as any).children : ((n as any).child ? [(n as any).child] : [])}
               {#each warpKids as kid, ki (ki)}
                 {#if kid && graph.nodes[kid]}
@@ -489,17 +489,18 @@
               {@const wpath = (n as any).path}
               {#if wpath?.kind === 'expr'}
                 {@const wpos = nodePos(n.id)}
+                {@const ptgtX = wpos.x + warpPathCX(nodeSize(graph, n).w)}
                 {@const ptgtY = wpos.y + warpPathCY(n)}
-                <!-- SPLINE path source → warp path socket. -->
+                <!-- SPLINE path source → warp path socket (top-middle). -->
                 {#each allNodes as sn (sn.id)}
                   {#if sn.type === 'spline' && String(wpath.expr ?? '').includes(exprBlockMember(sn.id, 'path'))}
                     {@const srcSize = nodeSize(graph, sn)}
                     {@const srcPos = nodePos(sn.id)}
-                    <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + srcSize.h / 2, wpos.x, ptgtY)}/>
-                    <path class="ge-wire-hit" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + srcSize.h / 2, wpos.x, ptgtY)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'warp-path', nodeId: n.id })}/>
+                    <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + srcSize.h / 2, ptgtX, ptgtY)}/>
+                    <path class="ge-wire-hit" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + srcSize.h / 2, ptgtX, ptgtY)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'warp-path', nodeId: n.id })}/>
                   {/if}
                 {/each}
-                <!-- EXPR-OUTPUT path source → warp path socket. -->
+                <!-- EXPR-OUTPUT path source → warp path socket (top-middle). -->
                 {#each allNodes as exn (exn.id)}
                   {#if exn.type === 'expr'}
                     {@const exDef = (graph.exprDefs ?? []).find((d) => d.id === (exn as any).defId)}
@@ -507,8 +508,8 @@
                       {#if String(wpath.expr ?? '').includes(exprBlockMember(exn.id, eo.name))}
                         {@const srcSize = nodeSize(graph, exn)}
                         {@const srcPos = nodePos(exn.id)}
-                        <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), wpos.x, ptgtY)}/>
-                        <path class="ge-wire-hit" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), wpos.x, ptgtY)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'warp-path', nodeId: n.id })}/>
+                        <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), ptgtX, ptgtY)}/>
+                        <path class="ge-wire-hit" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), ptgtX, ptgtY)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'warp-path', nodeId: n.id })}/>
                       {/if}
                     {/each}
                   {/if}

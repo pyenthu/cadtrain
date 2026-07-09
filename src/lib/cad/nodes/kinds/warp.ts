@@ -61,11 +61,12 @@ export const WarpKind: NodeKind<WarpNode> = {
   },
   inputRefs: (n) => warpChildren(n),
   size: (_n, ctx) => {
-    // #31 compact multi-input: ONE `solids` socket regardless of child count —
-    // all solids fan into it (drop appends; remove by clicking a wire → delete),
-    // so the card no longer grows a row per solid. Fixed small card: title row
-    // (path socket + ⚙) + one solids socket at cy=40 + the count badge + pad.
-    return { w: ctx.width, h: 74 };
+    // SINGLE compact CHIP ROW (like the mv/rot icon chips) — one ~40 px row:
+    // the ≈ icon centred, the `path` socket on the TOP-MIDDLE, the ONE ×N
+    // `solids` socket on the LEFT edge (all solids fan in — drop appends, remove
+    // by clicking a wire → delete), the bent result out the RIGHT edge, and a
+    // compact ⚙ (options) + × (delete) top-right. Fixed small height.
+    return { w: ctx.width, h: 40 };
   },
   sockets: (n) => {
     const kids = warpChildren(n);

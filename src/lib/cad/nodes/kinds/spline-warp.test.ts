@@ -52,13 +52,14 @@ describe('WarpKind', () => {
     expect(errs).toContainEqual({ nodeId: 'w1', slot: 'path', badRef: 'gone', kind: 'missing-param' });
     expect(errs).toContainEqual({ nodeId: 'w1', slot: 'refine', badRef: 'r', kind: 'missing-param' });
   });
-  it('#31 compact multi-input: FIXED height regardless of solid count; inputRefs list all solids', () => {
-    // ONE `solids` socket now — the card no longer grows a row per solid, so the
-    // height is fixed whether 1 or N solids are wired (remove via wire-delete).
-    expect(WarpKind.size(warp(), { width: 150, root: 'r' })).toEqual({ w: 150, h: 74 });
+  it('compact chip row: FIXED height regardless of solid count; inputRefs list all solids', () => {
+    // SINGLE chip row now (≈ icon · ×N solids left · path top-middle · out right)
+    // — ONE `solids` socket, so the height is fixed whether 1 or N solids are
+    // wired (remove via wire-delete).
+    expect(WarpKind.size(warp(), { width: 150, root: 'r' })).toEqual({ w: 150, h: 40 });
     expect(WarpKind.inputRefs(warp())).toEqual(['c']);
     const multi = { ...warp(), child: undefined, children: ['c', 'd'] } as any;
-    expect(WarpKind.size(multi, { width: 150, root: 'r' })).toEqual({ w: 150, h: 74 }); // same — fixed
+    expect(WarpKind.size(multi, { width: 150, root: 'r' })).toEqual({ w: 150, h: 40 }); // same — fixed
     expect(WarpKind.inputRefs(multi)).toEqual(['c', 'd']);
   });
 });
