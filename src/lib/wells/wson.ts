@@ -54,6 +54,20 @@ export interface Completion {
   tool_comp: ToolComp;
   od?: number;
   top?: number; bot?: number; length?: number;
+  /** AUTO-TOP anchoring (SVTC parity, TODO #25). Default (absent / not `false`) =
+   *  AUTO: this item's `top` follows the PREVIOUS item's `bot`, so a string is
+   *  authored top-to-bottom and stays contiguous when an upstream length changes.
+   *  `false` = MANUAL: the item holds its own absolute MD (an SSSV / profile
+   *  nipple / ESP piece pinned at a fixed depth) and the chain resumes after it.
+   *  Resolved by `recomputeAutoTops`. */
+  autoTop?: boolean;
+  /** RENDER-only multiplier on the drawn OD (SVTC parity) — visual emphasis, does
+   *  NOT change the modelled OD. Absent ⇒ 1. */
+  od_multiplier?: number;
+  /** Joint count + average joint length (m) — carried by real completion reports
+   *  (the Desktop `xlsxtowson` cases) for tallies; not load-bearing for geometry. */
+  noJoints?: number;
+  avgJointLength?: number;
   /** Optional per-instance params forwarded to the cadtrain part bake (W1). */
   params?: Record<string, number | string>;
 }
@@ -94,6 +108,46 @@ export function completionExtents(comps: Completion[]): { top: number; bot: numb
     const top = cursor; const bot = cursor + len; cursor = bot;
     return { top, bot };
   });
+}
+
+/** Re-pin completion tops through the AUTO-TOP chain (SVTC's `recomputeAutoTops`,
+ *  TODO #25 — ground truth `~/code/SVTC/src/lib/apps/wson/WsonApp.svelte`). Walk
+ *  the list top-to-bottom:
+ *    - an AUTO item (`autoTop !== false`, the DEFAULT) starts at the PREVIOUS
+ *      item's `bot`, PRESERVING its own length, so the string stays contiguous
+ *      when an upstream length is edited;
+ *    - a MANUAL item (`autoTop === false`) HOLDS its own absolute MD (a fixed-
+ *      depth SSSV / profile nipple / ESP piece) and the chain resumes after it;
+ *    - the first item always holds its own top (no predecessor).
+ *  An item's length is `bot - top` (a length-only row falls back to its `length`
+ *  field), so "editing a length drives `bot = top + len`". PURE — returns new
+ *  rows, never mutates its input. This is the anchor model both a completions
+ *  worksheet and the WSON→graph translator resolve depths through. */
+export function recomputeAutoTops(comps: Completion[]): Completion[] {
+  const lengthOf = (c: Completion): number => {
+    const span = (c.bot as number) - (c.top as number);
+    if (Number.isFinite(span)) return span;
+    return Number.isFinite(c.length as number) ? (c.length as number) : 0;
+  };
+  const out: Completion[] = [];
+  let prevBot = 0;
+  comps.forEach((c, i) => {
+    const isAuto = c.autoTop !== false;
+    if (isAuto && i > 0) {
+      const top = prevBot;
+      const bot = top + lengthOf(c);
+      out.push({ ...c, top, bot });
+      prevBot = bot;
+    } else {
+      // Manual, or the first row: hold this item's MD. A row lacking an absolute
+      // top is anchored at the running cursor (0 for the first row).
+      const top = Number.isFinite(c.top as number) ? (c.top as number) : prevBot;
+      const bot = Number.isFinite(c.bot as number) ? (c.bot as number) : top + lengthOf(c);
+      out.push({ ...c, top, bot });
+      prevBot = bot;
+    }
+  });
+  return out;
 }
 
 export interface WsonIssue { level: 'error' | 'warn'; path: string; message: string; }
