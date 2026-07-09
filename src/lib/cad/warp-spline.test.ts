@@ -4,6 +4,7 @@ import {
   spline3DFrames,
   warpValidity,
   warpManifoldAlongSpline,
+  warpMeshJS,
   type Pt3,
 } from './warp-spline';
 
@@ -206,6 +207,103 @@ describe('warpManifoldAlongSpline', () => {
     // z0 = 30 for this part ⇒ originZ:30 must be byte-identical to the default.
     for (let k = 0; k < verts.length; k++) {
       for (let d = 0; d < 3; d++) expect(legacy.verts[k][d]).toBe(explicit.verts[k][d]);
+    }
+  });
+});
+
+// ── N3: build-time xDiaScale (radial) + yScale (arc-length depth) ─────────────
+// The subtlety is the whole task: under a warp, yScale scales the ARC-LENGTH
+// coordinate `s` (so a vertical AND a horizontal section stretch by the SAME
+// factor along the path); xDiaScale multiplies the in-frame radial offset.
+describe('warp-spline build-time scale (N3)', () => {
+  // A thin rod along local z 0..L, unit-ish cross-section, as flat positions.
+  function rod(L = 10, nz = 6, hw = 0.5): Float32Array {
+    const v: number[] = [];
+    for (let k = 0; k < nz; k++) {
+      const z = (L * k) / (nz - 1);
+      for (const x of [-hw, hw]) for (const y of [-hw, hw]) v.push(x, y, z);
+    }
+    return new Float32Array(v);
+  }
+  const extent = (a: Float32Array, axis: 0 | 1 | 2): number => {
+    let lo = Infinity, hi = -Infinity;
+    for (let i = axis; i < a.length; i += 3) { if (a[i] < lo) lo = a[i]; if (a[i] > hi) hi = a[i]; }
+    return hi - lo;
+  };
+  // planar [x,z] control lines: one straight DOWN z, one straight ALONG x.
+  const vertCP: [number, number][] = [[0, 0], [0, 30]];     // path direction = world z
+  const horizCP: [number, number][] = [[0, 5], [30, 5]];    // path direction = world x
+
+  it('default scale (absent / 1,1) is byte-identical', () => {
+    const p = rod();
+    const base = warpMeshJS(p, null, vertCP).positions;
+    const ones = warpMeshJS(p, null, vertCP, { xDiaScale: 1, yScale: 1 }).positions;
+    expect(ones.length).toBe(base.length);
+    for (let i = 0; i < base.length; i++) expect(ones[i]).toBe(base[i]);
+    // scale=1 is the identity: a vertical spline maps local z → world z 1:1.
+    expect(extent(base, 2)).toBeCloseTo(10, 5);
+  });
+
+  it('a vertical section and a horizontal section stretch by the SAME factor along the path', () => {
+    const p = rod();
+    // path-direction extent = world-z for the vertical spline, world-x for the horizontal.
+    const vRatio = extent(warpMeshJS(p, null, vertCP, { yScale: 2 }).positions, 2)
+                 / extent(warpMeshJS(p, null, vertCP, { yScale: 1 }).positions, 2);
+    const hRatio = extent(warpMeshJS(p, null, horizCP, { yScale: 2 }).positions, 0)
+                 / extent(warpMeshJS(p, null, horizCP, { yScale: 1 }).positions, 0);
+    expect(vRatio).toBeCloseTo(2, 5);
+    expect(hRatio).toBeCloseTo(2, 5);
+    // The load-bearing assertion — scaling WORLD Z instead would leave hRatio ≈ 1
+    // (a horizontal lateral stretches by zero), so the two factors would differ.
+    expect(vRatio).toBeCloseTo(hRatio, 5);
+  });
+
+  it('xDiaScale fattens the cross-section but not the path extent', () => {
+    const p = rod();
+    const w1 = warpMeshJS(p, null, vertCP, { xDiaScale: 1 }).positions;
+    const w3 = warpMeshJS(p, null, vertCP, { xDiaScale: 3 }).positions;
+    // cross-section (world x, ⟂ the vertical path) triples; path extent (z) is unchanged.
+    expect(extent(w3, 0) / extent(w1, 0)).toBeCloseTo(3, 5);
+    expect(extent(w3, 2)).toBeCloseTo(extent(w1, 2), 5);
+  });
+
+  it('the bbox grows with both scales; arc-length position stays monotonic in local z', () => {
+    const p = rod();
+    const s1 = warpMeshJS(p, null, vertCP, { xDiaScale: 1, yScale: 1 }).positions;
+    const s2 = warpMeshJS(p, null, vertCP, { xDiaScale: 2, yScale: 2 }).positions;
+    expect(extent(s2, 0)).toBeGreaterThan(extent(s1, 0)); // wider
+    expect(extent(s2, 2)).toBeGreaterThan(extent(s1, 2)); // longer along path
+    // world-z (path position for the vertical spline) is monotonic non-decreasing
+    // in local-z order (rings emitted bottom→top): the ring centres climb.
+    let prev = -Infinity;
+    for (let k = 0; k < 6; k++) {
+      const zc = s2[(k * 4) * 3 + 2]; // first vert of ring k
+      expect(zc).toBeGreaterThanOrEqual(prev - 1e-6);
+      prev = zc;
+    }
+  });
+
+  it('the Manifold warp and the JS warp AGREE under the same scale', () => {
+    // Same verts through both engines; the fake Manifold applies the same
+    // callback warpManifoldAlongSpline builds. Displacements must match.
+    const verts: V3[] = [];
+    for (const z of [0, 2, 4, 6, 8, 10]) for (const x of [-0.5, 0.5]) for (const y of [-0.5, 0.5]) verts.push([x, y, z]);
+    const flat = new Float32Array(verts.flat());
+    const opts = { xDiaScale: 2.5, yScale: 1.7 };
+    const mf: any = warpManifoldAlongSpline(fakeManifold(verts), vertCP, opts);
+    const js = warpMeshJS(flat, null, vertCP, opts).positions;
+    expect(mf.verts.length * 3).toBe(js.length);
+    for (let k = 0; k < verts.length; k++) {
+      for (let d = 0; d < 3; d++) expect(mf.verts[k][d]).toBeCloseTo(js[3 * k + d], 4);
+    }
+  });
+
+  it('a non-positive / malformed scale falls back to 1 (byte-identical)', () => {
+    const p = rod();
+    const base = warpMeshJS(p, null, vertCP).positions;
+    for (const bad of [0, -2, NaN, Infinity] as number[]) {
+      const out = warpMeshJS(p, null, vertCP, { xDiaScale: bad, yScale: bad }).positions;
+      for (let i = 0; i < base.length; i++) expect(out[i]).toBe(base[i]);
     }
   });
 });

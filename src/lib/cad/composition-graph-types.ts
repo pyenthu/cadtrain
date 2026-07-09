@@ -427,7 +427,18 @@ export type ExprNode = {
 export type SplineNode = {
   id: NodeId;
   type: 'spline';
-  /** Control points `[x,y,z]` — dragged in the popover. ≥ 2 for a curve. */
+  /** INPUT MODE — EXPLICIT, never auto-detected from the point shape (N3b,
+   *  user request 2026-07-10). `'xyz'` (default, absent ⇒ 'xyz' ⇒ byte-identical
+   *  emit): `points` are literal `[x,y,z]` control points. `'survey'`: `points`
+   *  are `[md, dev, az]` survey stations (measured depth · inclination · azimuth,
+   *  degrees) converted to `[x,y,z]` by MINIMUM CURVATURE (`surveyToXYZ`, injected
+   *  into the bake sandbox) before the arc-length resample. This is how a real
+   *  deviated well is specified. Explicit because auto-detecting planar-vs-3D from
+   *  the data is exactly the `is3DPath()` guessing that `docs/plans/warp-2d-3d-solids.md`
+   *  exists to remove — the author chooses. SPARSE/optional → absent ⇒ 'xyz'. */
+  mode?: 'xyz' | 'survey';
+  /** Control points `[x,y,z]` (mode 'xyz') OR survey stations `[md,dev,az]`
+   *  (mode 'survey') — dragged in the popover. ≥ 2 for a curve. */
   points: [number, number, number][];
   /** WIRED control-points source (TODO #26). When present it OVERRIDES the
    *  manual `points` array: the spline resamples the wired producer's
@@ -501,6 +512,17 @@ export type WarpNode = {
   refine?: ArgValue;
   stretch?: boolean;
   validate?: boolean;
+  /** BUILD-TIME exaggeration baked into the warp (N3, TODO #65) — NOT a scene
+   *  dial, so it survives bake/export (the slider IS the product). `yScale` scales
+   *  the ARC-LENGTH depth coordinate (a vertical AND a horizontal section stretch
+   *  by the SAME factor along the path — scaling world z would shear the
+   *  trajectory); `xDiaScale` multiplies the in-frame radial (diameter) offset.
+   *  Names mirror SVTC's persisted `displayOpts`. ArgValues so they can be
+   *  param/expr-driven. SPARSE — absent ⇒ 1 ⇒ `warpSpline(child, path)` byte-
+   *  identical emit. Composes with N3b: the scale applies along the arc length of
+   *  whichever path (xyz OR survey-derived) the wired spline produced. */
+  xDiaScale?: ArgValue;
+  yScale?: ArgValue;
   /** Absolute depth-origin for the z→arc-length map (#36c b): the child's local z is
    *  measured from `z − originZ` so a part placed down-hole at depth `originZ` (via
    *  mv) bends at its TRUE arc-length station on the spline. This lets several parts

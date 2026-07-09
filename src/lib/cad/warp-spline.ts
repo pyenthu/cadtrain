@@ -204,7 +204,7 @@ export function warpValidity(m: any, genusBefore?: number): { volume: number; ge
 export function warpManifoldAlongSpline(
   m: any,
   cp: Pt2[] | Pt3[],
-  opts: { refine?: number; stretch?: boolean; validate?: boolean; originZ?: number } = {},
+  opts: { refine?: number; stretch?: boolean; validate?: boolean; originZ?: number; xDiaScale?: number; yScale?: number } = {},
 ): any {
   if (!m || !Array.isArray(cp) || cp.length < 2) return m;
   let bb: any;
@@ -214,6 +214,14 @@ export function warpManifoldAlongSpline(
   // given, else the legacy part-relative map (`s = z − z0`). A part offset
   // down-hole by mv(z) then sits at arc-length z along the spline.
   const zBase = opts.originZ !== undefined ? opts.originZ : z0;
+  // BUILD-TIME exaggeration (N3, TODO #65) — part of the GEOMETRY, not a scene
+  // dial, so it survives bake/export. `yScale` scales the ARC-LENGTH coordinate
+  // `s` (NOT world z), so a vertical AND a horizontal section stretch by the same
+  // factor ALONG the path; scaling world z would stretch a lateral by zero + shear
+  // the trajectory. `xDiaScale` (radial/diameter) multiplies the in-frame offsets.
+  // Naming mirrors SVTC's persisted displayOpts. Default 1 ⇒ byte-identical bake.
+  const yScale = (Number.isFinite(opts.yScale) && (opts.yScale as number) > 0) ? (opts.yScale as number) : 1;
+  const xDia = (Number.isFinite(opts.xDiaScale) && (opts.xDiaScale as number) > 0) ? (opts.xDiaScale as number) : 1;
 
   let mm = m;
   let refN = Math.max(0, Math.floor(opts.refine ?? 0));
@@ -238,8 +246,8 @@ export function warpManifoldAlongSpline(
   if (is3DPath(cp as number[][])) {
     const { at, total } = spline3DFrames(cp as Pt3[]);
     out = mm.warp((p: number[]) => {
-      const x = p[0], y = p[1], z = p[2];
-      const s = opts.stretch ? ((z - z0) / zLen) * total : (z - zBase);
+      const x = p[0] * xDia, y = p[1] * xDia, z = p[2];
+      const s = (opts.stretch ? ((z - z0) / zLen) * total : (z - zBase)) * yScale;
       const { pos, N, B } = at(s);
       p[0] = pos[0] + x * N[0] + y * B[0];
       p[1] = pos[1] + x * N[1] + y * B[1];
@@ -251,8 +259,8 @@ export function warpManifoldAlongSpline(
     const flat: Pt2[] = (cp as number[][]).map((p) => (p.length >= 3 ? [p[0], p[2]] : (p as Pt2)));
     const { sampleAt, total } = splineSampler(flat);
     out = mm.warp((p: number[]) => {
-      const x = p[0], y = p[1], z = p[2];
-      const s = opts.stretch ? ((z - z0) / zLen) * total : (z - zBase);
+      const x = p[0] * xDia, y = p[1] * xDia, z = p[2];
+      const s = (opts.stretch ? ((z - z0) / zLen) * total : (z - zBase)) * yScale;
       const { pos, tan } = sampleAt(s);
       const N = frameN(tan);
       p[0] = pos[0] + x * N[0];
@@ -286,7 +294,7 @@ export function warpMeshJS(
   positions: Float32Array,
   normals: Float32Array | null,
   cp: Pt2[] | Pt3[],
-  opts: { stretch?: boolean; originZ?: number } = {},
+  opts: { stretch?: boolean; originZ?: number; xDiaScale?: number; yScale?: number } = {},
 ): { positions: Float32Array; normals: Float32Array | null } {
   if (!positions || positions.length < 3 || !Array.isArray(cp) || cp.length < 2) {
     return { positions, normals };
@@ -300,6 +308,11 @@ export function warpMeshJS(
   // Absolute placement `s = z − originZ` when given (a part offset by mv(z) sits
   // at arc-length z), else the legacy part-relative `s = z − z0`.
   const zBase = opts.originZ !== undefined ? opts.originZ : z0;
+  // Build-time exaggeration — MUST agree with warpManifoldAlongSpline (N3): yScale
+  // stretches the ARC-LENGTH coordinate (same factor for vertical + horizontal),
+  // xDiaScale multiplies the in-frame radial offsets. Default 1 ⇒ byte-identical.
+  const yScale = (Number.isFinite(opts.yScale) && (opts.yScale as number) > 0) ? (opts.yScale as number) : 1;
+  const xDia = (Number.isFinite(opts.xDiaScale) && (opts.xDiaScale as number) > 0) ? (opts.xDiaScale as number) : 1;
 
   const use3D = is3DPath(cp as number[][]);
   const s3 = use3D ? spline3DFrames(cp as Pt3[]) : null;
@@ -311,8 +324,8 @@ export function warpMeshJS(
   const outN = normals ? new Float32Array(normals.length) : null;
 
   for (let i = 0; i < positions.length; i += 3) {
-    const x = positions[i], y = positions[i + 1], z = positions[i + 2];
-    const s = opts.stretch ? ((z - z0) / zLen) * total : (z - zBase);
+    const x = positions[i] * xDia, y = positions[i + 1] * xDia, z = positions[i + 2];
+    const s = (opts.stretch ? ((z - z0) / zLen) * total : (z - zBase)) * yScale;
 
     let N: V3, B: V3, T: V3, pos: V3;
     if (use3D) {
