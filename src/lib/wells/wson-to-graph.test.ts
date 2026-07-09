@@ -191,3 +191,75 @@ describe('wsonToGraph — the graph is real: it compiles through emitGraph', () 
     expect(r.body).toContain('bw_casing(');
   });
 });
+
+describe('wsonToGraph — RUNG 3: a deviated well warps along its survey', () => {
+  const sample04 = () => parseWson(
+    readFileSync('src/routes/wells/samples/04-horizontal-shale-pnp.wson', 'utf8'),
+  ).wson;
+
+  it('emits exactly one spline + one warp, and the root is that warp alone', () => {
+    const g = wsonToGraph(sample04());
+    expect(nodesOfType(g, 'spline')).toHaveLength(1);
+    expect(nodesOfType(g, 'warp')).toHaveLength(1);
+    const root: any = g.nodes[g.root];
+    const warp = nodesOfType(g, 'warp')[0];
+    expect(root.children).toEqual([warp.id]);
+  });
+
+  it('warps EVERY element — children length equals the element (Mv) count', () => {
+    const g = wsonToGraph(sample04());
+    const warp = nodesOfType(g, 'warp')[0];
+    const elementCount = nodesOfType(g, 'mv').length; // one Mv per oh/cement/casing
+    expect(elementCount).toBe(9); // 3 open holes + 3 cement + 3 casing
+    expect(warp.children).toHaveLength(elementCount);
+    // Each wired child is an Mv node (the placed element), and the warp bends
+    // every one separately along the SAME spline path.
+    for (const cid of warp.children) expect(g.nodes[cid]?.type).toBe('mv');
+  });
+
+  it('wires the warp path to the spline and pins originZ = 0 (true-station bend)', () => {
+    const g = wsonToGraph(sample04());
+    const spline = nodesOfType(g, 'spline')[0];
+    const warp = nodesOfType(g, 'warp')[0];
+    expect(spline.points.length).toBeGreaterThanOrEqual(2);
+    expect(warp.path).toEqual({ kind: 'expr', expr: `_x_${spline.id}_path` });
+    expect(warp.originZ).toEqual({ kind: 'literal', value: 0 });
+    // The spline's control points must actually deviate laterally.
+    const maxLateral = Math.max(...spline.points.map((p: number[]) => Math.hypot(p[0], p[1])));
+    expect(maxLateral).toBeGreaterThan(1);
+  });
+
+  it('compiles through emitGraph — resampleSpline + warpSpline + originZ: 0, no errors', () => {
+    const r = emitGraph(hydrateGraph(wsonToGraph(sample04())), { id: 'w_s04' });
+    expect(r.errors ?? []).toHaveLength(0);
+    expect(r.body).toContain('resampleSpline(');
+    expect(r.body).toContain('warpSpline(');
+    expect(r.body).toContain('originZ: 0');
+    expect(r.body).toContain('bw_casing(');
+  });
+
+  it('is deterministic — re-translating the deviated well yields an identical graph', () => {
+    expect(wsonToGraph(sample04())).toEqual(wsonToGraph(sample04()));
+  });
+
+  it('does NOT warp a vertical well — sample 01 emits no spline/warp', () => {
+    const raw = readFileSync('src/routes/wells/samples/01-vertical-land-producer.wson', 'utf8');
+    const g = wsonToGraph(parseWson(raw).wson);
+    expect(nodesOfType(g, 'spline')).toHaveLength(0);
+    expect(nodesOfType(g, 'warp')).toHaveLength(0);
+    const root: any = g.nodes[g.root];
+    // Root children stay the element Mvs, byte-identical to RUNG 2.
+    expect(root.children).toEqual(nodesOfType(g, 'mv').map((m: any) => m.id));
+  });
+
+  it('NO FALLBACK: a deviated-flagged survey with < 2 finite stations throws', () => {
+    // isDeviated trips (2 stations, dev 5° > 0.5°), but only ONE has a finite MD,
+    // so the trajectory cannot be built — surfaced, never emitted straight.
+    const flagged: Wson = {
+      meta: { wellName: 'fake-dev' },
+      ch: [{ od: 7, id: 6.2, top: 0, bot: 1000 }],
+      profile: [{ md: 0, dev: 5, az: 0 }, { md: Number.NaN, dev: 5, az: 0 }],
+    };
+    expect(() => wsonToGraph(flagged)).toThrow(WsonTranslateError);
+  });
+});

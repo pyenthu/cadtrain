@@ -43,8 +43,13 @@ export interface AssembledWell {
 const DEG = Math.PI / 180;
 
 /** Build an MD→(east,north,tvd) function via the average-angle method. Vertical
- *  (no/flat profile) → straight down. */
-function buildTrajectory(profile?: SurveyStation[]): (md: number) => Vec3 {
+ *  (no/flat profile) → straight down. EXPORTED so the WSON→graph translator
+ *  (`wson-to-graph.ts`) samples ONE trajectory for the survey warp spline, rather
+ *  than walking the survey a second time — 2D/3D/graph then all agree on depth.
+ *  Property the warp relies on: because dTVD = ΔMD·cos(I) and dH = ΔMD·sin(I), a
+ *  segment's 3D length is ΔMD·√(sin²+cos²) = ΔMD, so the trajectory's ARC-LENGTH
+ *  equals MD — which is exactly the `s = z` axis `warpSpline(originZ:0)` maps. */
+export function buildTrajectory(profile?: SurveyStation[]): (md: number) => Vec3 {
   const prof = (profile ?? []).filter((s) => Number.isFinite(s.md)).sort((a, b) => a.md - b.md);
   if (prof.length < 2 || prof.every((s) => (s.dev ?? 0) < 0.5)) {
     return (md) => [0, 0, md];

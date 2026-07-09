@@ -13,8 +13,11 @@
  * `.asm.ts` (carrying `meta.graph`) and mounted with `<GraphEditorPane {id} />`.
  *
  * RUNG 2: every structural section becomes a Call — open holes, cement intervals
- * and casing strings — each placed down-hole by an `Mv` node. Completions and the
- * deviated-survey warp are later rungs.
+ * and casing strings — each placed down-hole by an `Mv` node.
+ *
+ * RUNG 3: a DEVIATED well is bent along its survey — ONE spline + ONE warp for
+ * the WHOLE well, placed just before the output (`buildSurveyWarp` below).
+ * Completions are a later rung.
  *
  * WHY Mv AND NOT A `top` PARAM: only `bw_casing` even declares `top`, and its
  * body ignores it (`mv(solid, [0,0,0])` is hardcoded), so passing `top` silently
@@ -24,9 +27,12 @@
  * NO FALLBACK: an untranslatable well throws `WsonTranslateError`. We never
  * emit a stand-in shape — a wrong well is worse than a visible error.
  */
-import type { ArgValue, CallNode, ContainerNode, Graph, GraphNode, MvNode, NodeId, ParamSchema } from '$lib/cad/composition-graph-types';
-import { asLiteral, asParam } from '$lib/cad/composition-graph-types';
+import type { ArgValue, CallNode, ContainerNode, Graph, GraphNode, MvNode, NodeId, ParamSchema, SplineNode, WarpNode } from '$lib/cad/composition-graph-types';
+import { asExpr, asLiteral, asParam } from '$lib/cad/composition-graph-types';
+import { exprBlockMember } from '$lib/cad/graph-exprs';
 import { resolveStructural } from './registry';
+import { buildTrajectory } from './assemble';
+import { isDeviated } from './wson';
 import type { CasingString, CementInterval, OpenHoleSection, Wson } from './wson';
 
 /** The assembly-level param every generated well exposes, so segment count stays
@@ -139,6 +145,156 @@ function requirePositiveLength(what: string, i: number, top: number, bot: number
   }
 }
 
+// ─── RUNG 3: deviated-survey warp ───────────────────────────────────────────
+
+/** Target spacing (m) of interpolated control points inside a BUILDING survey
+ *  segment. Inter-station segments that change inclination/azimuth are
+ *  subdivided at ~this spacing so `resampleSpline`'s Catmull-Rom rounds each
+ *  corner LOCALLY rather than bulging across the whole segment; straight runs
+ *  keep only their endpoints (a Catmull-Rom through collinear points stays
+ *  straight — `buildTrajectory` interpolates LINEARLY within a station span, so
+ *  intra-segment samples are collinear and add nothing there). */
+const SURVEY_CTRL_STEP_M = 150;
+/** Cap on interpolated control points inserted into ONE building segment —
+ *  bounds the emitted `points` literal on a long, gentle build. */
+const SURVEY_MAX_SUBDIV = 8;
+/** `resampleSpline` output resolution ≈ one sample per this many metres of
+ *  trajectory (clamped 24…128) — the equally-arc-length-spaced path the warp
+ *  bends along. Generous is cheap: only the control `points` are literal in the
+ *  source; the resample itself runs at bake. */
+const SURVEY_SAMPLE_STEP_M = 40;
+/** Build-time subdivision handed to `warpSpline` so flat-walled parts bend as
+ *  arcs not chords. Mirrors the canonical `w1_oh_warp`; `warp-spline` self-limits
+ *  it on already-dense meshes (the tube elements), so it mostly no-ops here. */
+const SURVEY_WARP_REFINE = 4;
+/** FIXED, deterministic node ids for the single survey spline + warp — never
+ *  `newNodeId()` (random), so re-translating an unchanged well is byte-identical.
+ *  Distinct from every element id (`n_oh_*` / `n_cem_* / n_csg_*` + `_mv`). */
+const SURVEY_SPLINE_ID: NodeId = 'n_survey_spline';
+const SURVEY_WARP_ID: NodeId = 'n_survey_warp';
+
+/**
+ * Bend a deviated well along its survey: ONE control-point spline sampled from
+ * the trajectory + ONE multi-input warp that bends EVERY element's placing Mv
+ * along it. Reuses assemble.ts's average-angle `buildTrajectory` (no second
+ * survey walk) so the 3D scene, the 2D schematic and this graph share one
+ * trajectory.
+ *
+ * WHY `originZ = 0` IS LOAD-BEARING: each element is placed down-hole by
+ * `mv([0,0,top])`, so its local z runs `top … bot` = its true MD interval.
+ * `warpSpline` maps a vertex's z to arc-length `s = z − originZ`; with
+ * `originZ = 0` that is `s = z = MD`, and because the average-angle walk makes
+ * the trajectory's arc-length equal MD (see `buildTrajectory`), every element
+ * bends at its TRUE station. WITHOUT it each part would re-zero to its own
+ * bounding-box min and all elements would restart at the spline origin — the
+ * whole well would collapse back to surface.
+ *
+ * @throws WsonTranslateError — NO FALLBACK: a survey flagged deviated but
+ *   unusable (fewer than 2 finite stations, zero MD span, or no lateral
+ *   displacement) is surfaced, never emitted as a straight well dressed up as
+ *   deviated.
+ */
+function buildSurveyWarp(wson: Wson, elements: Element[]): { spline: SplineNode; warp: WarpNode } {
+  const prof = (wson.profile ?? [])
+    .filter((s) => Number.isFinite(s.md))
+    .sort((a, b) => a.md - b.md);
+  if (prof.length < 2) {
+    throw new WsonTranslateError(
+      'deviated survey has fewer than 2 finite-MD stations — cannot build a trajectory',
+    );
+  }
+  const firstMD = prof[0].md;
+  const lastMD = prof[prof.length - 1].md;
+  if (!(lastMD > firstMD)) {
+    throw new WsonTranslateError(
+      `deviated survey has a non-positive MD span (first=${firstMD}, last=${lastMD})`,
+    );
+  }
+
+  // Depth range the geometry occupies (Z-down MD), read from the raw sections.
+  const spans = [...(wson.oh ?? []), ...(wson.cementing ?? []), ...(wson.ch ?? [])];
+  const minTop = Math.min(...spans.map((s) => s.top));
+  const maxBot = Math.max(...spans.map((s) => s.bot));
+  const mdStart = Math.min(firstMD, minTop);
+  // Cover the deepest geometry AND the last station, so the final build is
+  // shaped even when no element reaches all the way down to it.
+  const mdEnd = Math.max(maxBot, lastMD);
+
+  const at = buildTrajectory(wson.profile);
+
+  // Control points: every station (the EXACT trajectory corners) + interpolated
+  // points through BUILD segments; straight runs contribute only their endpoints.
+  const mds: number[] = [];
+  const pushMD = (md: number) => {
+    if (!mds.length || Math.abs(md - mds[mds.length - 1]) > 1e-6) mds.push(md);
+  };
+  if (mdStart < firstMD - 1e-6) pushMD(mdStart); // geometry above the survey top
+  for (let i = 0; i < prof.length; i++) {
+    pushMD(prof[i].md);
+    if (i === prof.length - 1) break;
+    const a = prof[i], b = prof[i + 1];
+    const dDev = Math.abs(b.dev - a.dev);
+    const dAz = Math.abs(((b.az - a.az + 540) % 360) - 180); // wrap-safe |Δaz| in [0,180]
+    const avgDev = (a.dev + b.dev) / 2;
+    // A segment "builds" when inclination changes, or azimuth turns while
+    // already inclined (an azimuth change at dev≈0 does not move the well).
+    const builds = dDev > 0.5 || (avgDev > 0.5 && dAz > 0.5);
+    if (!builds) continue;
+    const dMD = b.md - a.md;
+    const nSub = Math.max(2, Math.min(SURVEY_MAX_SUBDIV, Math.round(dMD / SURVEY_CTRL_STEP_M)));
+    for (let k = 1; k < nSub; k++) pushMD(a.md + (dMD * k) / nSub);
+  }
+  if (mdEnd > lastMD + 1e-6) pushMD(mdEnd); // geometry below the survey bottom
+
+  const points: [number, number, number][] = mds.map((md) => {
+    const p = at(md);
+    return [clean(p[0]), clean(p[1]), clean(p[2])];
+  });
+  if (points.length < 2) {
+    throw new WsonTranslateError('deviated survey yielded fewer than 2 trajectory points');
+  }
+  // NO FALLBACK: a "deviated" survey that walks perfectly vertical (every finite
+  // station at dev≈0) produces no lateral displacement — bending along it is a
+  // no-op, so surface it rather than emit a straight well as if it were bent.
+  const maxLateral = points.reduce((m, p) => Math.max(m, Math.hypot(p[0], p[1])), 0);
+  if (!(maxLateral > 1e-6)) {
+    throw new WsonTranslateError(
+      'deviated survey produces no lateral displacement — trajectory is vertical (unusable)',
+    );
+  }
+
+  const samples = Math.max(24, Math.min(128, Math.round((mdEnd - mdStart) / SURVEY_SAMPLE_STEP_M)));
+  const spline: SplineNode = {
+    id: SURVEY_SPLINE_ID,
+    type: 'spline',
+    points,
+    samples: asLiteral(samples),
+    closed: false,
+  };
+
+  const mvIds = elements.map((e) => e.mv.id);
+  const warp: WarpNode = {
+    id: SURVEY_WARP_ID,
+    type: 'warp',
+    // `child` is the legacy single-slot (first solid); `children[]` carries ALL
+    // solids, so the warp emits a bare `[warpSpline(a,…), warpSpline(b,…)]` LIST
+    // producer — each element bent SEPARATELY (never composed, so a string inside
+    // a transparent open hole stays an independent body). Mirrors w1_oh_warp.
+    child: mvIds[0] ?? null,
+    children: mvIds,
+    // exprBlockMember(SURVEY_SPLINE_ID,'path') === '_x_n_survey_spline_path' — the
+    // SAME const the spline node lowers to (composition-emit.emitSplineBlocks).
+    path: asExpr(exprBlockMember(SURVEY_SPLINE_ID, 'path')),
+    refine: asLiteral(SURVEY_WARP_REFINE),
+    // originZ = 0 → s = z = MD → every element bends at its TRUE station (see the
+    // doc-comment). Set EXPLICITLY, not left to the multi-warp auto-default, so a
+    // single-element deviated well still places absolutely.
+    originZ: asLiteral(0),
+  };
+
+  return { spline, warp };
+}
+
 /**
  * Translate a WSON well into a composition graph of `bw_*` Calls.
  *
@@ -191,9 +347,21 @@ export function wsonToGraph(wson: Wson): Graph {
     nodes[call.id] = call;
     nodes[mv.id] = mv;
   }
-  // The root's children are the assembly's output parts — each element's Mv, not
-  // its raw Call (the Call is consumed by the Mv).
-  const root: ContainerNode = { id: ROOT_ID, type: 'list', children: elements.map((e) => e.mv.id) };
+
+  // A straight/vertical well outputs each element's Mv directly (the Call is
+  // consumed by the Mv). A DEVIATED well (RUNG 3) bends ALL of them along ONE
+  // survey spline: the root's SOLE output becomes that warp, so the whole well
+  // follows a single trajectory. Non-deviated wells are untouched here (the same
+  // Mv-id children as before) → byte-identical to RUNG 2.
+  let rootChildren: NodeId[] = elements.map((e) => e.mv.id);
+  if (isDeviated(wson) && (wson.profile?.length ?? 0) >= 2) {
+    const { spline, warp } = buildSurveyWarp(wson, elements);
+    nodes[spline.id] = spline;
+    nodes[warp.id] = warp;
+    rootChildren = [warp.id];
+  }
+
+  const root: ContainerNode = { id: ROOT_ID, type: 'list', children: rootChildren };
   nodes[ROOT_ID] = root;
 
   return {
