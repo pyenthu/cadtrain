@@ -628,6 +628,21 @@ export function sectionCut(solid: any, opts?: { az?: number; offset?: number }):
     const a = ((offset + (az * i) / seg) * Math.PI) / 180;
     pts.push([R * Math.cos(a), R * Math.sin(a)]);
   }
-  const wedge = new CS([pts]).extrude(zlen).translate([0, 0, z0]);
+  // Build-time Z densification (Rule 25): the revolve this wedge cuts from is
+  // itself densified along Z under an active warp (subdivideProfileAxial via the
+  // getAxialMaxZSpan dial). A bare 2-level extrude gives the NEW cut faces only
+  // two z-rings, so warpManifoldAlongSpline bends them as straight chords and
+  // the sectioned part deforms. Refine the wedge's long vertical edges to
+  // ≤ maxZSpan so the cut faces inherit z-rings that bend smoothly. We use
+  // refineToLength (edge subdivision) NOT extrude(zlen, nDiv, 0): the latter
+  // trips manifold-3d's degenerate-slice bug (nDivisions>0 && twist===0 →
+  // "Not manifold" — see src/lib/cad/CLAUDE.md). The wedge is small + this is
+  // pre-subtract, so the refine is cheap. maxZSpan <= 0 (no warp) → bare
+  // extrude → byte-identical to the golden non-warp bake.
+  const maxZSpan = getAxialMaxZSpan() ?? 0;
+  const flat = new CS([pts]).extrude(zlen);
+  const wedge = (maxZSpan > 0 && zlen > maxZSpan)
+    ? flat.refineToLength(maxZSpan).translate([0, 0, z0])
+    : flat.translate([0, 0, z0]);
   return solid.subtract(wedge);
 }
