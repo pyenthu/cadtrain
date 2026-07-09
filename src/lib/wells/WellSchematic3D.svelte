@@ -27,7 +27,7 @@
    * of the well-schematic core).
    */
   import { T, useThrelte } from '@threlte/core';
-  import { OrbitControls, Edges } from '@threlte/extras';
+  import { OrbitControls, Edges, HTML } from '@threlte/extras';
   import { onDestroy, onMount } from 'svelte';
   import * as THREE from 'three';
   import type { Wson } from './wson';
@@ -38,6 +38,7 @@
   } from './threeD/manifoldCut';
   import { getBuilder, buildCached } from './threeD/parametric';
   import { autoNodes, lerpDTX, type DtxNode } from './dtx';
+  import { iconFor } from './element-icons';
 
   let {
     wson,
@@ -50,6 +51,7 @@
     directional = true,
     layers = { showOpenHole: true, showCasing: true, showCement: true, showTubing: true, showCompletions: true, showPerforations: true },
     whiteBg = false,
+    labelAnchor = 'right',
     onCameraMove,
     onDepthMap,
     onBuildTiming,
@@ -74,6 +76,10 @@
      *  false the scene background stays transparent so the CSS stage gradient
      *  shows through — the dark aesthetic. */
     whiteBg?: boolean;
+    /** In-diagram label bank side. `'right'`/`'left'` hangs a labella-style,
+     *  de-overlapped bank of element chips (icon + text, leader-lined back to
+     *  each element) on that side of the wellbore; `'off'` hides it. VIEW-ONLY. */
+    labelAnchor?: 'left' | 'right' | 'off';
     onCameraMove?: (pos: { x: number; y: number; z: number }) => void;
     /** Share the SINGLE depth-scale (raw MD → display depth) so an overlay
      *  ruler stays in lockstep with the shells — never re-derive it. */
@@ -155,17 +161,52 @@
 
   const centre = $derived(sampleCentreline(wellDir, 0, td, 20));
 
-  // Camera framing ≈ midpoint of the wellbore.
-  const cameraTarget = $derived(() => {
-    if (centre.length === 0) return new THREE.Vector3(0, 0, td / 2);
-    return centre[Math.floor(centre.length / 2)].clone();
+  // ── Camera fit (center + fill) ──────────────────────────────────────────────
+  // Largest shell radius in SCENE units (od·diaScale/2). Bounds the wellbore's
+  // radial girth so the fit box wraps the actual solids, not just the centreline
+  // — and doubles as the label-bank lateral offset. Independent of the cutaway
+  // so toggling the section never re-frames.
+  const radialExtent = $derived.by(() => {
+    let maxOd = 0;
+    for (const o of wson?.oh ?? []) maxOd = Math.max(maxOd, o.bitSize ?? 0);
+    for (const c of wson?.ch ?? []) maxOd = Math.max(maxOd, c.od ?? 0);
+    for (const cm of wson?.cementing ?? []) maxOd = Math.max(maxOd, (cm.od ?? 0) * 1.15);
+    for (const c of wson?.completions ?? []) maxOd = Math.max(maxOd, c.od ?? 0);
+    return Math.max(2, (maxOd * diaScale) / 2);
   });
-  const cameraDistance = $derived(() => {
-    if (centre.length === 0) return td * 1.5;
-    const b = new THREE.Box3().setFromPoints(centre);
-    const size = new THREE.Vector3(); b.getSize(size);
-    return Math.max(size.x, size.y, size.z, td * 0.5) * 1.6;
+
+  const FOV = 40;
+  // View direction OFFSET (camera ← target). +X toward the viewer so a +X-normal
+  // cutaway faces us; -Y and a slight -Z (shallower) give the 3/4 schematic look.
+  const VIEW_DIR = new THREE.Vector3(0.8, -1, -0.3).normalize();
+
+  // Fit the DEVIATED bounding box (centreline expanded by the radial girth) to a
+  // sphere, then place the camera so that sphere fills the frame. Works for both
+  // vertical (thin deep column) and deviated (real X/Y extent) wells — the box
+  // captures whichever dominates, so a horizontal lateral isn't clipped.
+  const fit = $derived.by(() => {
+    const pts = centre.length >= 2
+      ? centre
+      : [new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, Math.max(1, td))];
+    const box = new THREE.Box3().setFromPoints(pts);
+    box.expandByScalar(radialExtent);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const radius = Math.max(1, 0.5 * Math.hypot(size.x, size.y, size.z));
+    return { center, radius };
   });
+
+  const cameraPos = $derived.by(() => {
+    const { center, radius } = fit;
+    // Distance so the bounding sphere subtends the FOV, plus a small margin.
+    const dist = (radius / Math.sin((FOV / 2) * (Math.PI / 180))) * 1.12;
+    return center.clone().add(VIEW_DIR.clone().multiplyScalar(dist));
+  });
+
+  // Re-fit (remount camera + controls) only when the FRAMING changes — the well
+  // itself, the trajectory, or the Dia×/Depth× exaggeration (spec A3). Cutaway /
+  // axis / azimuth changes and user orbiting keep the current view.
+  const fitKey = $derived(`${directional}|${diaScale}|${profileFingerprint}`);
 
   // ── Colors (0..1 rgb for the vertex-color cut pipeline) ────────────────────
   function rgb(hex: string): number[] {
@@ -414,6 +455,92 @@
       return { ...m, parametricGeom: null, geom };
     }));
 
+  // ── In-diagram label bank (C2) ──────────────────────────────────────────────
+  // A readable BANK of element chips hung to one side of the wellbore, each
+  // leader-lined back to its element on the 3D diagram (the "anchored to the
+  // diagram" annotation mode). Order-preserving 1-D de-overlap in DISPLAY-DEPTH
+  // units (labella "simple" parity) separates clustered labels so their chips
+  // don't pile up; the anchors stay put, only the chip's banked depth shifts.
+  function spreadDepths(ideal: number[], gap: number, lo: number, hi: number): number[] {
+    const n = ideal.length;
+    if (n === 0) return [];
+    if (n === 1) return [Math.min(hi, Math.max(lo, ideal[0]))];
+    const order = ideal.map((v, i) => ({ v, i })).sort((a, b) => a.v - b.v);
+    type C = { start: number; count: number; sum: number };
+    const first = (c: C) => c.sum / c.count - ((c.count - 1) * gap) / 2;
+    const last = (c: C) => first(c) + (c.count - 1) * gap;
+    const cl: C[] = [];
+    for (let k = 0; k < n; k++) {
+      cl.push({ start: k, count: 1, sum: order[k].v });
+      while (cl.length >= 2) {
+        const b = cl[cl.length - 1], a = cl[cl.length - 2];
+        if (first(b) < last(a) + gap - 1e-9) { a.count += b.count; a.sum += b.sum; cl.pop(); }
+        else break;
+      }
+    }
+    const out = new Array<number>(n);
+    for (const c of cl) { let p = first(c); for (let m = 0; m < c.count; m++) { out[order[c.start + m].i] = p; p += gap; } }
+    const loPos = out[order[0].i], hiPos = out[order[n - 1].i], span = hiPos - loPos, avail = hi - lo;
+    if (span > avail) { for (let k = 0; k < n; k++) out[order[k].i] = lo + (avail * k) / (n - 1); return out; }
+    let shift = 0;
+    if (loPos < lo) shift = lo - loPos; else if (hiPos > hi) shift = hi - hiPos;
+    if (shift) for (let i = 0; i < n; i++) out[i] += shift;
+    return out;
+  }
+
+  function nodeAt(displayDepth: number): THREE.Vector3 {
+    const node = wellDir.getInterNode(displayDepth);
+    return node ? new THREE.Vector3(node.pt[0], node.pt[1], node.pt[2]) : new THREE.Vector3(0, 0, displayDepth);
+  }
+
+  const labelBank = $derived.by(() => {
+    if (labelAnchor === 'off') return [];
+    type Src = { md: number; text: string; iconKey: string; color: string };
+    const src: Src[] = [];
+    // Casing shoes (string bottoms).
+    for (const c of wson?.ch ?? []) {
+      if (typeof c.bot !== 'number') continue;
+      const od = c.od != null ? `${c.od}" ` : '';
+      src.push({ md: c.bot, text: `${od}${c.type ?? 'csg'} shoe`, iconKey: 'shoe', color: '#94a3b8' });
+    }
+    // Perforations (interval midpoints).
+    for (const p of wson?.perforations ?? []) {
+      if (typeof p.top !== 'number' || typeof p.bot !== 'number') continue;
+      src.push({ md: (p.top + p.bot) / 2, text: p.label ?? 'Perf', iconKey: 'perforation', color: '#ef4444' });
+    }
+    // Completions (skip the long tubing string — not a point feature).
+    for (const c of wson?.completions ?? []) {
+      const desc = c.description ?? c.tool_comp ?? '';
+      if (!desc || /tubing joints/i.test(desc)) continue;
+      const top = c.top ?? 0, bot = c.bot ?? top;
+      src.push({ md: (top + bot) / 2, text: desc, iconKey: desc, color: compColor(desc) });
+    }
+    if (!src.length) return [];
+    src.sort((a, b) => a.md - b.md);
+
+    // De-overlapped bank depths → trajectory points, offset laterally to the side.
+    const gap = Math.max(radialExtent * 1.4, td * 0.045);
+    const banked = spreadDepths(src.map((s) => remap(s.md)), gap, 0, Math.max(1, td));
+    const sign = labelAnchor === 'left' ? -1 : 1;
+    const offX = sign * (radialExtent * 2 + Math.max(6, td * 0.02));
+    const lift = Math.max(4, radialExtent * 0.5);
+
+    return src.map((s, i) => {
+      const anchor = nodeAt(remap(s.md));
+      const chip = nodeAt(banked[i]);
+      chip.x += offX;
+      chip.y -= lift;
+      return {
+        key: `${s.iconKey}-${i}-${Math.round(s.md)}`,
+        text: s.text,
+        color: s.color,
+        iconPath: iconFor(s.iconKey).path,
+        anchor,
+        chip,
+      };
+    });
+  });
+
   // Dispose base geoms on unmount.
   onDestroy(() => {
     [...ohGeoms, ...chGeoms, ...cementGeoms].forEach((g) => g.geom?.dispose?.());
@@ -421,29 +548,32 @@
   });
 </script>
 
-<!-- Lights -->
-<T.AmbientLight intensity={0.5} />
+<!-- Lights — ambient is lifted on the white/paper background so the standard
+     materials don't read dark against the bright backdrop. -->
+<T.AmbientLight intensity={whiteBg ? 0.85 : 0.5} />
 <T.DirectionalLight position={[50, -100, 80]} intensity={0.7} />
 <T.DirectionalLight position={[-80, 100, -50]} intensity={0.35} />
 <T.DirectionalLight position={[50, 100, 80]} intensity={0.5} />
-<T.HemisphereLight args={['#87ceeb', '#3d2817', 0.3]} />
+<T.HemisphereLight args={[whiteBg ? '#ffffff' : '#87ceeb', whiteBg ? '#c9cfda' : '#3d2817', 0.3]} />
 
 <!-- Camera — industry convention: X/Y surface, Z depth (positive down),
-     up = [0,0,-1] so screen-up = surface. Offset in +X / -Y so a +X-normal
-     cutaway faces the viewer. -->
-<T.PerspectiveCamera
-  makeDefault
-  position={[cameraDistance() * 0.8, -cameraDistance(), cameraTarget().z - cameraDistance() * 0.3]}
-  fov={40}
-  near={1}
-  far={Math.max(10000, cameraDistance() * 20)}
-  up={[0, 0, -1]}
-  oncreate={(cam) => onCameraMove?.({ x: cam.position.x, y: cam.position.y, z: cam.position.z })}
->
-  <OrbitControls target={[cameraTarget().x, cameraTarget().y, cameraTarget().z]} enableDamping />
-</T.PerspectiveCamera>
-
-<T.AxesHelper args={[100]} />
+     up = [0,0,-1] so screen-up = surface. Fit the DEVIATED bounding box so the
+     well is CENTERED + FILLS the frame (spec C1/A3). Wrapped in {#key fitKey} so
+     the camera re-fits on well / Dia× / Depth× change but a cutaway or orbit
+     leaves the current view alone. -->
+{#key fitKey}
+  <T.PerspectiveCamera
+    makeDefault
+    position={[cameraPos.x, cameraPos.y, cameraPos.z]}
+    fov={FOV}
+    near={Math.max(1, fit.radius * 0.02)}
+    far={Math.max(10000, fit.radius * 40)}
+    up={[0, 0, -1]}
+    oncreate={(cam) => onCameraMove?.({ x: cam.position.x, y: cam.position.y, z: cam.position.z })}
+  >
+    <OrbitControls target={[fit.center.x, fit.center.y, fit.center.z]} enableDamping />
+  </T.PerspectiveCamera>
+{/key}
 
 {#key geomKey}
   <!-- {#key} forces remount on cutaway/axis/scale change so <Edges> rebuilds
@@ -546,3 +676,69 @@
     <T.LineBasicMaterial color="#dc2626" transparent opacity={0.7} />
   </T.Line>
 {/if}
+
+<!-- In-diagram label bank (C2) — de-overlapped element chips hung to one side,
+     each leader-lined + dotted back to its element. `<HTML>` billboards keep the
+     text screen-aligned + crisp; pointerEvents:none so they never steal orbit.
+     A low zIndexRange keeps them UNDER the route's element rail + depth ruler. -->
+{#if labelAnchor !== 'off'}
+  {#each labelBank as l (l.key)}
+    {@const leader = new THREE.BufferGeometry().setFromPoints([l.anchor, l.chip])}
+    <T.Line geometry={leader}>
+      <T.LineBasicMaterial color={whiteBg ? '#556' : '#9fb0d0'} transparent opacity={0.5} />
+    </T.Line>
+    <T.Mesh position={[l.anchor.x, l.anchor.y, l.anchor.z]}>
+      <T.SphereGeometry args={[Math.max(1.5, radialExtent * 0.14), 10, 8]} />
+      <T.MeshBasicMaterial color={l.color} />
+    </T.Mesh>
+    <T.Group position={[l.chip.x, l.chip.y, l.chip.z]}>
+      <HTML center pointerEvents="none" zIndexRange={[10, 0]}>
+        <div class="wl-chip" class:white={whiteBg} style="--wl-accent:{l.color}">
+          <svg class="wl-chip-ic" width="13" height="13" viewBox="0 0 16 16" fill="none"
+            stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d={l.iconPath} />
+          </svg>
+          <span class="wl-chip-txt">{l.text}</span>
+        </div>
+      </HTML>
+    </T.Group>
+  {/each}
+{/if}
+
+<style>
+  /* In-diagram label chip (portaled by <HTML>; Svelte still scopes these because
+     the markup is compiled by THIS component). Dark by default, dark-on-white
+     when the schematic-on-paper background is active. */
+  .wl-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px 3px 6px;
+    background: rgba(16, 16, 26, 0.86);
+    border: 1px solid var(--wl-accent, #4a4a6a);
+    border-left-width: 3px;
+    border-radius: 6px;
+    color: #e8e8ef;
+    font: 600 11px/1 Arial, sans-serif;
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+    backdrop-filter: blur(2px);
+  }
+  .wl-chip.white {
+    background: rgba(255, 255, 255, 0.92);
+    color: #22283a;
+    box-shadow: 0 1px 5px rgba(0, 0, 0, 0.18);
+  }
+  .wl-chip-ic {
+    color: var(--wl-accent, #99a);
+    flex: none;
+  }
+  .wl-chip-txt {
+    display: inline-block;
+    max-width: 190px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+</style>
