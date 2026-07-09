@@ -31,8 +31,20 @@ import { serializeComponentResult, type SerializedComponentResult, type Serializ
 
 /** Pinned kernel identity — folded into the IndexedDB cache key so a client on
  *  an upgraded WASM build never serves a mesh baked by the old kernel (plan §8
- *  "bust the IndexedDB cache on kernel-version change"). */
-export const KERNEL_VERSION = 'manifold-3d@3.4.1+bore1'; // +cap1: ear-clip r_sweep end caps (fanCap3D, manifold-mesh) — a transitive engine import NOT in scriptHash, so its fix needs a manual kernel bump to bust the stale-cap IndexedDB cache. +nrm4: crease-aware render normals under vert ceiling. +cut2: sectionCut refines the CUT RESULT, not just the wedge (#64 bridging triangle) — same transitive-import problem, same manual bump. +bore1: boredSweep + extendPathEnds in manifold-mesh (N6 — bore-extend prevents defect-2 coincident tilted caps on a hollow 3D-subtract sweep); another transitive import, so a manual bump busts both bake caches
+ *  "bust the IndexedDB cache on kernel-version change").
+ *
+ *  N4 (2026-07-10): ENGINE-MODULE edits no longer need a manual bump here. A fix
+ *  inside manifold-helpers / manifold-mesh / warp-spline / render-helpers / stdlib
+ *  now moves `ENGINE_HASH` (src/lib/cad/engine-hash.ts), which is folded into the
+ *  server-computed `scriptHash` (compilePrimitiveScript). This IndexedDB key is
+ *  `KERNEL_VERSION + scriptHash + …`, so a moved scriptHash busts the client cache
+ *  AUTOMATICALLY — the historical `+cap1`/`+cut2` hand-bumps below would be
+ *  unnecessary today. Keep bumping KERNEL_VERSION only for a real WASM-core swap
+ *  (a change import.meta.glob over the *.ts sources can't see).
+ *
+ *  N6's `+bore1` bump was dropped at integration: boredSweep/extendPathEnds live
+ *  in manifold-mesh, which IS inside ENGINE_HASH's glob, so they are auto-covered. */
+export const KERNEL_VERSION = 'manifold-3d@3.4.1+cut2'; // +cap1: ear-clip r_sweep end caps (fanCap3D, manifold-mesh) — WAS a transitive engine import NOT in scriptHash, needing a manual kernel bump (now auto via ENGINE_HASH, N4). +nrm4: crease-aware render normals under vert ceiling. +cut2: sectionCut refines the CUT RESULT, not just the wedge (#64 bridging triangle) — same transitive-import problem, now auto-covered
 
 /** Max profile Z-span (world units) a WARP-NODE bake allows before re-lathing an
  *  extra axial ring — the density source for a lean revolve under `warpSpline`.
@@ -280,8 +292,11 @@ export function packTransferable(
 
 /** IndexedDB / in-flight cache key — the same key discipline as the server
  *  script cache: scriptHash already folds in every resolved dep, so a dep edit
- *  changes the hash → no stale-dep recurrence. KERNEL_VERSION busts the cache
- *  across a WASM upgrade (plan §8). Params + options are JSON-stable. */
+ *  changes the hash → no stale-dep recurrence. As of N4 scriptHash ALSO folds in
+ *  ENGINE_HASH (the geometry-engine source digest), so an engine-module fix moves
+ *  this key automatically — no manual KERNEL_VERSION bump. KERNEL_VERSION still
+ *  busts the cache across a raw WASM-core upgrade (plan §8). Params + options are
+ *  JSON-stable. */
 export function bakeCacheKey(
   scriptHash: string,
   params: Array<number | string> | Record<string, unknown>,

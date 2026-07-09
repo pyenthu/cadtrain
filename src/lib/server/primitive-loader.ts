@@ -25,6 +25,7 @@
  */
 import { createHash } from 'node:crypto';
 import { transformSync } from 'esbuild';
+import { ENGINE_HASH } from '$lib/cad/engine-hash';
 import * as helpers from '$lib/cad/manifold-helpers';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
 import { compileProfileBuild } from './profile-fn';
@@ -824,10 +825,21 @@ export async function compilePrimitiveScript(
   source: string,
   name: string,
   fetchFn: typeof fetch,
+  engineHash: string = ENGINE_HASH,
 ): Promise<CompiledScript> {
   const rootExpr = await emitInlinedPart(source, name, fetchFn, new Set());
   const script = `${SCRIPT_PRELUDE}\nreturn ${rootExpr};\n`;
-  const scriptHash = createHash('sha256').update(script).digest('hex');
+  // Fold the geometry-engine content hash into scriptHash (N4). The compiled
+  // SCRIPT text does not include the injected engine helpers (manifold-mesh,
+  // render-helpers, warp-spline, …) — they're sandbox args resolved at run
+  // time — so a fix to one of them leaves `script` byte-identical. Because the
+  // CLIENT IndexedDB bake key is `KERNEL_VERSION + scriptHash + …`, moving the
+  // hash here busts the client cache automatically after an engine deploy, with
+  // no manual KERNEL_VERSION bump and nothing to compute in the worker. The
+  // script TEXT is unchanged (deps still fold in exactly as before), only its
+  // hash advances. `engineHash` is a defaulted arg only so tests can drive two
+  // engine states without editing real files. See src/lib/cad/engine-hash.ts.
+  const scriptHash = createHash('sha256').update(`engine:${engineHash}\0`).update(script).digest('hex');
   const depMap = await collectDepSources(source, fetchFn);
   return { script, scriptHash, depNames: [...depMap.keys()].sort() };
 }
