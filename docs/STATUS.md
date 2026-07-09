@@ -18,9 +18,12 @@ roadmap → `/plan` (Rule 19). Read this at the start of a working session.
 - **⚠ Route C lean revolve**: `g_shaft` `zSegments 10→0` edited on the VOLUME (backup
   `.route-c-backup/`); warp re-densifies at build time via `_axialMaxZSpan` dial (span
   1.5) in `bake-worker-core.ts` + `preview/+server.ts`. Straight 528→96, warped 8448→2640
-  smooth. Rule-25 clean. NEXT: curvature-adaptive span. `docs/plans/manifold-revolve-lean.md`.
+  smooth. Rule-25 clean. NEXT: curvature-adaptive span —
+  `docs/plans/curvature-adaptive-warp-subdivision.md`. (The old
+  `manifold-revolve-lean.md` was deleted as shipped in `77eb278`; the Route-C
+  outcome is summarised right here.)
 - Open follow-ups: `docs/plans/{tf-compile-perf (BFS-parallelize + save-invalidation),
-  tf-wasm-tab, manifold-revolve-lean}.md`; per-SUBPART material needs color-by-source.
+  tf-wasm-tab, curvature-adaptive-warp-subdivision}.md`; per-SUBPART material needs color-by-source.
 - **GraphEditorPane modularization** (#940) still open; **typed expression outputs** (#926);
   **/wells** re-plan (`session_handoff_2026-07-04-wells`). Plans in `docs/plans/`.
 

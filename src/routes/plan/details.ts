@@ -264,7 +264,6 @@ export const details: Record<number, PlanDetail> = {
       'Build-time only — no post-bake MeshGL subdivide (Rule 25)',
     ],
     refs: [
-      'docs/plans/manifold-revolve-lean.md',
       'docs/plans/curvature-adaptive-warp-subdivision.md',
       'src/lib/cad/bake-worker-core.ts (_axialMaxZSpan dial)',
     ],
