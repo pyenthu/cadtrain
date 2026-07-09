@@ -706,38 +706,39 @@
                        boxW = size.w − OUTPUT_ARROW_W, a fixed MINIMUM so the
                        arrow stays legible. The input sockets + drop-to-wire +
                        ⚙ reorder all behave exactly as the old card. -->
-                  {@const boxW = size.w - OUTPUT_ARROW_W}
                   {@const acy = size.h / 2}
+                  {@const ax = size.w - 30}
                   {@const visibleChildren = (container.children as string[])
                     .map((cid: string, origIdx: number) => ({ cid, origIdx }))
                     .filter(({ cid }) => !consumedSet.has(cid))}
-                  <!-- Big arrow body — doubles as a drag handle. -->
-                  <!-- svelte-ignore a11y_no_static_element_interactions -->
-                  <path role="button" tabindex="-1" class="ge-output-arrow"
-                    d={`M ${boxW - 4} ${acy - 8} L ${boxW + 9} ${acy - 8} L ${boxW + 9} ${acy - 15} L ${size.w} ${acy} L ${boxW + 9} ${acy + 15} L ${boxW + 9} ${acy + 8} L ${boxW - 4} ${acy + 8} Z`}
-                    onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
-                    onpointermove={onNodePointerMove}
-                    onpointerup={onNodePointerUp}/>
-                  <!-- Input box (drag handle too). -->
+                  {@const nOut = visibleChildren.length}
+                  <!-- #31 collapsed Output — a SINGLE rounded box (full width) with the
+                       green arrow drawn INSIDE it (right portion, no protruding tip) +
+                       ONE socket on the LEFT edge accepting ALL output wires (drop
+                       APPENDS; remove an output by clicking its wire → Delete). A count
+                       badge shows how many parts are output when >1. -->
+                  <!-- Box body (drag handle). -->
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <rect role="button" tabindex="-1" class="ge-output-box"
-                    x="0" y="4" width={boxW} height={size.h - 8} rx="5"
-                    style="width: {boxW}px; height: {size.h - 8}px"
+                    x="0" y="4" width={size.w} height={size.h - 8} rx="5"
+                    style="width: {size.w}px; height: {size.h - 8}px"
                     onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                     onpointermove={onNodePointerMove}
                     onpointerup={onNodePointerUp}/>
-                  <!-- #31 collapsed Output — ONE socket on the arrow accepts ALL
-                       output wires (drop APPENDS; remove an output by clicking its
-                       wire → Delete). Fixed height, no per-output row. A count badge
-                       shows how many parts are output when >1. -->
-                  {@const nOut = visibleChildren.length}
+                  <!-- green arrow INSIDE the box (right portion) — doubles as drag handle. -->
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <path role="button" tabindex="-1" class="ge-output-arrow"
+                    d={`M ${ax} ${acy - 5} L ${ax + 13} ${acy - 5} L ${ax + 13} ${acy - 11} L ${size.w - 6} ${acy} L ${ax + 13} ${acy + 11} L ${ax + 13} ${acy + 5} L ${ax} ${acy + 5} Z`}
+                    onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                    onpointermove={onNodePointerMove}
+                    onpointerup={onNodePointerUp}/>
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <ellipse role="button" tabindex="-1" class="ge-sock in child multi" class:wired={nOut > 0}
                     cx="0" cy={acy} rx="7" ry="6"
                     data-tip="output: wire one or MORE parts here (drop APPENDS another; remove by clicking a wire → Delete)."
                     onpointerup={(ev) => wire.endWireOnContainerSlot(ev, n.id)}/>
                   {#if nOut > 1}
-                    <text x="12" y={acy + 4} class="ge-output-count">×{nOut}</text>
+                    <text x="10" y={acy + 4} class="ge-output-count">×{nOut}</text>
                   {/if}
                 {:else}
                 {@const title = n.type === 'stack' ? '↕ Stack' : n.type === 'group' ? '{} Group' : '[ ] List'}
