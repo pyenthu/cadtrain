@@ -5,7 +5,7 @@ import {
   circleSection,
   type Pt2,
 } from './sweep-section';
-import { roundedRect } from './weld_extrude_demo';
+import { roundedRect } from './test-profiles';
 import type { V3 } from './tf-weld';
 
 /**

@@ -93,7 +93,15 @@ export async function initManifold(): Promise<any> {
   // the /wells 3D never gets manifoldReady → blank cutaway. Point Emscripten at
   // the Vite-served asset URL (same proven locateFile the client-bake worker uses,
   // bake-worker.ts) so the wasm loads same-origin under COEP.
-  await cadInitManifold({ locateFile: (p: string) => (p.endsWith('.wasm') ? manifoldWasmUrl : p) });
+  //
+  // Under Node (vitest) that URL is a root-absolute `/node_modules/...` path with
+  // no server to serve it, so Emscripten aborts on ENOENT. Node has no COEP and
+  // resolves the wasm from disk by default — omit locateFile there. Gate on Node
+  // rather than on `window`, which is absent in the wells bake Worker too.
+  const onNode = typeof process !== 'undefined' && !!process.versions?.node;
+  await cadInitManifold(
+    onNode ? undefined : { locateFile: (p: string) => (p.endsWith('.wasm') ? manifoldWasmUrl : p) },
+  );
   const G = globalThis as any;
   _wasm = G.__cadtrain_manifold__?.wasm ?? null;
   if (!_wasm) throw new Error('[wells/manifoldCut] cadtrain Manifold singleton unavailable after initManifold()');

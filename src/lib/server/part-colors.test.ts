@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { beforeEach, describe, it, expect } from 'vitest';
 import { analyzeParts, resolveDepColors } from './part-colors';
+import { _resetDepSourceCacheForTest } from './primitive-loader';
 import { partHashId } from '$lib/cad/part-id';
 
 // A minimal recognizable composed part: two named instances whose calls are
@@ -57,6 +58,11 @@ describe('#86 analyzeParts — subpart-own colours via depColors', () => {
 });
 
 describe('#86 resolveDepColors — harvest each dep meta colour', () => {
+  // resolveDepColors reads through the loader's 30s TTL dep-source cache, which
+  // is module state shared across tests: without this, a dep fetched by an
+  // earlier test is still cached and the fakeFetch below never gets consulted.
+  beforeEach(() => _resetDepSourceCacheForTest());
+
   const fakeFetch = (byId: Record<string, string>): typeof globalThis.fetch =>
     (async (url: any) => {
       const name = new URL(String(url), 'http://x').searchParams.get('name') ?? '';
