@@ -12,7 +12,11 @@ surface. Inverts SVTC/Visio-WBD's 2D-first stance.
 ## Files
 - `wson.ts` — WSON model (`meta/oh/ch/perforations/completions/cementing/profile`;
   **metres + inches**) + `lintWson`/`parseWson`/`isDeviated`/`completionExtents`.
-- `samples/*.wson` + `samples.ts` — 4 real SVTC sample wells (`?raw` glob).
+- `samples/*.wson` + `samples.ts` — 5 real SVTC sample wells (`?raw` glob):
+  `00-one-casing`, `01-vertical-land-producer`, `04-horizontal-shale-pnp`,
+  `05-esp-producer`, `09-hpht-completion`. (Count is in flux — the N2 sample-ladder
+  task, TODO #42e, is adding vertical/deviated/completion rungs; describe the set,
+  don't rely on the number.)
 - `registry.ts` — TWO registries, all ids are REAL volume parts:
   (1) completions — `tool_comp` (CATEGORY.NAME) → cadtrain `g_*` part + bake
   params (`resolveComponent`; ~45 catalogue keys across packers/nipples/valves/

@@ -16,8 +16,14 @@
  *     via `resolveStructural`. These are the parts the assembler places for the
  *     wellbore itself, where od/id/wall/length are REAL parametric inputs.
  *
- * Every partId below is a real volume part (verified via /api/primitives/source)
- * and every param key maps to that part's actual `meta.params`.
+ * Every partId below is a real volume part and every param key maps to that part's
+ * actual `meta.params`. VERIFIED 2026-07-10 via READ-ONLY GET
+ * `/api/primitives/source?name=<id>` against the running dev server (which proxies
+ * `source` to prod): all 44 `g_*` completion ids + all 4 `bw_*` structural ids
+ * (48 total from `listRegisteredPartIds()`) resolved 200; 0 unresolved.
+ * NB: the local `.dev-volume/cache` is NOT the source of truth — it only holds
+ * parts that have been baked LOCALLY (~26 `g_*`), so a missing cache entry does
+ * NOT mean the part is absent; check `/api/primitives/source` (prod).
  */
 import type { Completion } from './wson';
 
