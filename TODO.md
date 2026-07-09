@@ -54,6 +54,18 @@
 Tabs: Tree · C4 · GEP module · Folder tree (6 layouts) · Class model · Code graph · Design philosophy — plus a dev toolbar (↻ Rebuild diagrams · Run graphify · Build tree).
 - [ ] **API docs from graphify** — `scripts/gen-api-docs.mjs` consuming `graphify-out/graph.json` (2,132 nodes) → repo API/reference docs (public exports · endpoint catalog · module responsibilities) in a buried /design "Docs" tab. Regenerate alongside `gen-design-diagrams.mjs`.
 
+### Platform — the graph editor as an embeddable surface
+- [ ] **#65 API + SDK: third parties build apps on our graph editor.** The long-term
+  bet. `/wells` is the first proof: a domain app is *just* a translator (domain doc →
+  composition graph) + the embedded `GraphEditorPane` + a domain canvas + toolbars
+  around it. Generalize that into a public seam so someone outside this repo can do the
+  same — **connect the engines (Manifold · TrueForm · BREP/OCCT) into something bigger
+  than any one of them**. Needs: a stable graph schema + a documented `/api/primitives/*`
+  contract (compile · bake · save · list · types) + an SDK wrapping them + `GraphEditorPane`
+  mountable against a caller-supplied part id or in-memory graph (today `{id, embed}`
+  only, loads from the volume). Precondition for the wells Graph tab (#42e) being a
+  *pattern* rather than a one-off.
+
 ### AI (umbrella #0 — local-first; `docs/plans/ai-master-plan.md`)
 - **#0** registry → cloud schema/prompt + local CFG → multishot loop → feedback corpus → WebLLM (#1/#2/#27/#28/#29 are its phases).
 - **#29** AI fn library (one registry, CI sync test) · **#1** RAG/assist (LEFT `route`/`selectedId` in ctx) · **#27** feedback/RL DB (👍/👎 → `turns.jsonl`) · **#2** web-llm (Qwen2.5 + XGrammar, default-off) · **#28** synthetic fn-call data → few-shot/LoRA.
