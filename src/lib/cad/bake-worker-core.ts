@@ -42,8 +42,10 @@ import { serializeComponentResult, type SerializedComponentResult, type Serializ
  *  unnecessary today. Keep bumping KERNEL_VERSION only for a real WASM-core swap
  *  (a change import.meta.glob over the *.ts sources can't see).
  *
- *  N6's `+bore1` bump was dropped at integration: boredSweep/extendPathEnds live
- *  in manifold-mesh, which IS inside ENGINE_HASH's glob, so they are auto-covered. */
+ *  N6's `+bore1` and N3's `+n3scale` bumps were dropped at integration:
+ *  boredSweep/extendPathEnds live in manifold-mesh and the warp scales in
+ *  warp-spline — both already inside ENGINE_HASH's glob. N3's NEW survey-to-xyz.ts
+ *  was not, so it was ADDED to that glob rather than papered over with a bump. */
 export const KERNEL_VERSION = 'manifold-3d@3.4.1+cut2'; // +cap1: ear-clip r_sweep end caps (fanCap3D, manifold-mesh) — WAS a transitive engine import NOT in scriptHash, needing a manual kernel bump (now auto via ENGINE_HASH, N4). +nrm4: crease-aware render normals under vert ceiling. +cut2: sectionCut refines the CUT RESULT, not just the wedge (#64 bridging triangle) — same transitive-import problem, now auto-covered
 
 /** Max profile Z-span (world units) a WARP-NODE bake allows before re-lathing an

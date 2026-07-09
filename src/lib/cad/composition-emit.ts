@@ -570,7 +570,12 @@ export function emitSplineBlocks(graph: Graph): string[] {
     // (no reflected endpoints). Consumers wired to this path auto-follow the flag
     // (see the `call` arg emit → closedPath / caps). Absent ⇒ false ⇒ open.
     const closed = (node as any).closed === true;
-    lines.push(`const ${exprBlockMember(node.id, 'path')} = resampleSpline(${ptsLit}, ${samples}, ${closed});`);
+    // SURVEY MODE (N3b): `points` are `[md,dev,az]` stations → convert to xyz by
+    // minimum curvature FIRST (`surveyToXYZ`, sandbox-injected), then resample.
+    // EXPLICIT mode, never sniffed from the data. Absent / 'xyz' ⇒ the literal
+    // control points, byte-identical to before.
+    const ptsSrc = (node as any).mode === 'survey' ? `surveyToXYZ(${ptsLit})` : ptsLit;
+    lines.push(`const ${exprBlockMember(node.id, 'path')} = resampleSpline(${ptsSrc}, ${samples}, ${closed});`);
   }
   return lines;
 }

@@ -250,6 +250,10 @@ export function hydrateGraph(serialised: any): Graph {
     // well-formed `#rrggbb` plotColor is kept; anything else is dropped.
     if (n.plot === true) n.plot = true; else delete n.plot;
     if (!(typeof n.plotColor === 'string' && /^#[0-9a-fA-F]{6}$/.test(n.plotColor))) delete n.plotColor;
+    // `mode` (N3b) — EXPLICIT input method. Keep only 'survey' (points are
+    // [md,dev,az] stations); anything else (incl. absent / 'xyz') drops the field
+    // so the emit treats points as literal xyz — byte-identical to before.
+    if (n.mode === 'survey') n.mode = 'survey'; else delete n.mode;
     migratedNodes[id] = n;
   }
 
@@ -272,6 +276,11 @@ export function hydrateGraph(serialised: any): Graph {
     // `stretch` / `validate` normalise to strict booleans; false ⇒ drop (sparse).
     if (n.stretch === true) n.stretch = true; else delete n.stretch;
     if (n.validate === true) n.validate = true; else delete n.validate;
+    // `xDiaScale` / `yScale` (N3) — sparse build-time scale ArgValues; drop
+    // anything malformed so an absent scale emits `warpSpline(child, path)`.
+    for (const k of ['xDiaScale', 'yScale'] as const) {
+      if (n[k] != null && !(n[k].kind === 'expr' || n[k].kind === 'param' || n[k].kind === 'literal')) delete n[k];
+    }
     migratedNodes[id] = n;
   }
 

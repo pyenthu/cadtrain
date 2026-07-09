@@ -41,6 +41,9 @@ const ENGINE_GLOBS = [
   '/src/lib/cad/manifold-mesh.ts',
   '/src/lib/cad/warp-spline.ts',
   '/src/lib/cad/render-helpers.ts',
+  // Injected into the bake sandbox by name, so a change to its minimum-curvature
+  // math moves baked geometry without moving any part's source or scriptHash.
+  '/src/lib/cad/survey-to-xyz.ts',
   '/src/lib/cad/stdlib/**/*.ts',
   '!/src/lib/cad/stdlib/**/*.test.ts', // co-located engine tests don't affect baked geometry
 ];
@@ -56,6 +59,7 @@ export const ENGINE_SOURCES = import.meta.glob(
     '/src/lib/cad/manifold-mesh.ts',
     '/src/lib/cad/warp-spline.ts',
     '/src/lib/cad/render-helpers.ts',
+    '/src/lib/cad/survey-to-xyz.ts',
     '/src/lib/cad/stdlib/**/*.ts',
     '!/src/lib/cad/stdlib/**/*.test.ts',
   ],

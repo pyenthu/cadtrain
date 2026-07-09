@@ -66,9 +66,23 @@ describe('hashEngineSources — pure content hash', () => {
 describe('ENGINE_SOURCES — glob scope (what an edit CAN and CANNOT touch)', () => {
   const keys = Object.keys(ENGINE_SOURCES);
 
-  it('captures the four named engine modules', () => {
-    for (const f of ['manifold-helpers.ts', 'manifold-mesh.ts', 'warp-spline.ts', 'render-helpers.ts']) {
-      expect(keys.some((k) => k.endsWith('/' + f))).toBe(true);
+  it('captures the named engine modules', () => {
+    for (const f of [
+      'manifold-helpers.ts', 'manifold-mesh.ts', 'warp-spline.ts', 'render-helpers.ts',
+      // survey-to-xyz is injected into the bake sandbox by name (N3b), so its
+      // minimum-curvature math changes baked geometry without moving scriptHash.
+      'survey-to-xyz.ts',
+    ]) {
+      expect(keys.some((k) => k.endsWith('/' + f)), `${f} is not covered by ENGINE_HASH`).toBe(true);
+    }
+  });
+
+  it('every sandbox-injected engine helper module is covered', () => {
+    // Guard the class of bug, not the instance: anything primitive-sandbox.ts
+    // imports from ./ and injects by name must be in the hash, or an edit to it
+    // serves stale geometry from both bake caches (the #64 hazard).
+    for (const f of ['manifold-mesh.ts', 'warp-spline.ts', 'survey-to-xyz.ts', 'manifold-helpers.ts']) {
+      expect(keys.some((k) => k.endsWith('/' + f)), `sandbox helper ${f} missing from ENGINE_HASH`).toBe(true);
     }
   });
 
