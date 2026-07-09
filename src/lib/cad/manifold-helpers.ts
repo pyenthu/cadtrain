@@ -589,18 +589,19 @@ export function getCutBox(bbox?: { min: number[]; max: number[] }): any {
 /**
  * sectionCut — subtract an AUTHORED angular WEDGE from a solid (the `cutaway`
  * MODIFIER node's emitted body). Removes a pie-slice of `az` DEGREES of the
- * revolution around the part's Z axis (Z-down convention), positioned at
- * `offset` along Z. `az` = HOW MUCH to cut: `<= 0` → the solid unchanged (no
+ * revolution around the part's Z axis (Z-down convention). `offset` is a
+ * ROTATIONAL bearing: it rotates the wedge about Z so the author chooses WHICH
+ * bearing the cutaway faces — the arc sweeps from `offset`° to `(offset + az)`°
+ * instead of `0`→`az`. `az` = HOW MUCH to cut: `<= 0` → the solid unchanged (no
  * cut); `>= 360` → fully removed (an empty-ish guard). The wedge covers the
  * part's FULL Z height (+ margin) so a partial `az` reveals the interior across
  * the whole part — exactly like the view-only quarter cutaway (`getCutBox`) but
- * with an authored sweep. `offset` translates the wedge along Z (+ moves
- * down-hole) so the author can nudge where the section lands.
+ * with an authored sweep at an authored bearing.
  *
- * Built via a CrossSection pie-slice (centre + CCW arc 0..az°) extruded over the
- * Z span, then subtracted — one clean CSG op, no post-hoc mesh surgery. Reuses
- * the `getCutBox` bbox+margin discipline so warp displacement / z-scale can't
- * leave an uncut sliver.
+ * Built via a CrossSection pie-slice (centre + CCW arc offset..offset+az°)
+ * extruded over the Z span, then subtracted — one clean CSG op, no post-hoc mesh
+ * surgery. Reuses the `getCutBox` bbox+margin discipline so warp displacement /
+ * z-scale can't leave an uncut sliver.
  */
 export function sectionCut(solid: any, opts?: { az?: number; offset?: number }): any {
   if (!solid) return solid;
@@ -616,13 +617,15 @@ export function sectionCut(solid: any, opts?: { az?: number; offset?: number }):
     Math.abs(bb.min[1]), Math.abs(bb.max[1]),
   ) + MARGIN;
   const zlen = (bb.max[2] - bb.min[2]) + 2 * MARGIN;
-  const z0 = bb.min[2] - MARGIN + offset;
-  // Pie-slice cross-section: centre + a CCW arc from 0..az° (CCW winding →
-  // positive fill). One point every ~5° for a smooth wedge edge.
+  const z0 = bb.min[2] - MARGIN;
+  // Pie-slice cross-section: centre + a CCW arc from offset..offset+az° (CCW
+  // winding → positive fill). `offset` is a ROTATIONAL bearing about Z — it
+  // spins the wedge so the cutaway faces a chosen bearing, NOT an axial shift.
+  // One point every ~5° for a smooth wedge edge.
   const seg = Math.max(2, Math.ceil(az / 5));
   const pts: [number, number][] = [[0, 0]];
   for (let i = 0; i <= seg; i++) {
-    const a = ((az * i) / seg) * Math.PI / 180;
+    const a = ((offset + (az * i) / seg) * Math.PI) / 180;
     pts.push([R * Math.cos(a), R * Math.sin(a)]);
   }
   const wedge = new CS([pts]).extrude(zlen).translate([0, 0, z0]);
