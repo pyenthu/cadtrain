@@ -1033,14 +1033,26 @@ function buildSourceParts(
   };
   for (let i = 0; i < nt; i++) {
     const id = triIds[i];
+    // A triangle whose id is NEITHER a known part NOR SECTION_ID is an
+    // AUTHORED-cutaway (`sectionCut`) cross-section face: the wedge subtracted to
+    // make it is untagged, so the NEW cut faces carry the wedge's auto Manifold
+    // originalID, which isn't in the LUT. Bucket it into the BODY (matching the
+    // merged `colorBySourceGeo` path + the TF tab) instead of DROPPING it — the
+    // drop is what made the authored cutaway read as a hollow "open clip" with no
+    // cap (bug 2026-07-09). SECTION_ID = the VIEW-only getCutBox reveal, handled
+    // per-mode below (hidden in full, body-grey in cut).
     if (mode === 'full') {
-      if (id === SECTION_ID || lut.outer[id] == null) continue;
-      assignTri(id, i);
+      if (id === SECTION_ID) continue;                         // view-cut reveal — hidden in the full view
+      const bucket = lut.outer[id] != null ? id : lut.bodyId;  // unknown (authored cut face) → body
+      if (bucket == null) continue;
+      assignTri(bucket, i);
     } else {
       if (id === SECTION_ID) {
         if (lut.bodyId != null) assignTri(lut.bodyId, i);
       } else if (lut.outer[id] != null) {
         assignTri(id, i);
+      } else if (lut.bodyId != null) {
+        assignTri(lut.bodyId, i);                              // unknown (authored cut face) → body
       }
     }
   }
