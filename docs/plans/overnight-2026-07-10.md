@@ -220,6 +220,39 @@ shears the trajectory.
   is the one that catches the world-Z mistake.
 - Serves `/wells` #42g (autoscale becomes a param, not a scene hack).
 
+## N3b — Spline node: TWO input methods (survey table **and** xyz)
+**Headless. No volume write.** User request, 2026-07-10.
+
+The spline that drives a warp must accept **either**:
+1. **A survey table** — `(md, dev, az)` stations, converted to xyz by **minimum
+   curvature**. This is how a real well is specified.
+2. **xyz control points** — what we have today.
+
+An implementation already exists but is **stranded in the wells 3D path**:
+`src/lib/wells/threeD/profile.ts` (`WellProfile`, `RawSurveyStation`, `Segment`).
+`wson-to-graph.ts`'s `buildSurveyWarp` also walks `(md, dev, az)` itself. The CAD
+spline node knows nothing about either.
+
+- **Extract ONE pure `surveyToXYZ(stations) → [x,y,z][]`** (minimum curvature,
+  dogleg-severity aware) into a shared module. Both `/wells` and the graph spline
+  node must call the same function — do not leave two implementations to drift.
+  (That drift is exactly what `docs/findings/manifold-vs-tf-audit.md` documents
+  elsewhere.)
+- Give the spline node an explicit `mode: 'xyz' | 'survey'` — **do not auto-detect
+  from the input shape.** Auto-detection is what `is3DPath()` does today
+  (`warp-spline.ts:123`, planar-vs-3D chosen by y-variation `> 1e-6`), and
+  `docs/plans/warp-2d-3d-solids.md` exists precisely because the author never gets
+  to choose. Make the choice explicit (`feedback_expose_dont_hide`).
+- Reference for quality: SVTC's `WellDirection.dirWarp3D` — quaternion-slerp
+  minimum-curvature, twist-minimized (memory `svtc_warp_3d_function`). It is better
+  than cadtrain's warp-spline/axisPath for real MD/inc/az wells.
+- Verify headless: a vertical survey (`dev=0`) → a straight z-axis path; a known
+  build-up section reproduces its textbook TVD/northing/easting; monotonic MD →
+  monotonic arc length; and `surveyToXYZ` of `01-vertical-land-producer-J-medium`'s
+  11 stations round-trips to the same trajectory the wells 3D path draws today.
+- Composes with **N3**: the Z scale applies along **arc length** of whichever path
+  the mode produced.
+
 ## N4 — Kill the engine-fix cache hazard
 **Headless. No volume write.** Highest structural value.
 
