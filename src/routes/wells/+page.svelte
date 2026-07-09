@@ -142,10 +142,11 @@
   }
 
   function clearWorkspace() {
-    // Close any open workspace tabs, then drop the workspace section + cache.
-    for (const t of [...tabs]) {
-      if (t.id.startsWith('ws:')) closeTabByKey(t.key);
-    }
+    // Drop every workspace tab in one pass (pure helper — tested), then clear
+    // the workspace section + cache.
+    const next = wsCache.dropWorkspaceTabs(tabs, activeKey);
+    tabs = next.tabs;
+    activeKey = next.activeKey;
     workspaceFiles = [];
     workspaceLabel = null;
     dirHandle = null;
@@ -271,10 +272,13 @@
     activeKey = key;
   }
   function closeTabByKey(key: number) {
-    const idx = tabs.findIndex((t) => t.key === key);
-    if (idx < 0) return;
-    tabs = tabs.filter((t) => t.key !== key);
-    if (activeKey === key) activeKey = tabs[Math.max(0, idx - 1)]?.key ?? null;
+    // Pure helper (tested): removes EXACTLY the keyed tab — never over-matches
+    // unhydrated `ws:` placeholder siblings — and steps activeKey left only if
+    // the closed tab was active. Same-ref result ⇒ unknown key ⇒ no-op.
+    const next = wsCache.closeTab(tabs, activeKey, key);
+    if (next.tabs === tabs) return;
+    tabs = next.tabs;
+    activeKey = next.activeKey;
   }
   function closeTab(key: number, ev: Event) {
     ev.stopPropagation();
