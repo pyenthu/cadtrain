@@ -14,7 +14,7 @@
  */
 import type { Wson, SurveyStation } from './wson';
 import { completionExtents } from './wson';
-import { resolveComponent, CATEGORY_COLOR, type WellCompCategory } from './registry';
+import { resolveComponent, resolveStructural, CATEGORY_COLOR, type WellCompCategory } from './registry';
 
 export type Vec3 = [number, number, number];
 
@@ -95,15 +95,19 @@ export function assembleWell(wson: Wson): AssembledWell {
   };
 
   for (const o of wson.oh ?? []) {
-    parts.push({ kind: 'openhole', label: `OH ${o.bitSize}"`, color: '#6b4f3a', odIn: o.bitSize, top: o.top, bot: o.bot, pTop: at(o.top), pBot: at(o.bot) });
+    const s = resolveStructural('openhole', { od: o.bitSize }, o.bot - o.top);
+    parts.push({ kind: 'openhole', label: `OH ${o.bitSize}"`, color: '#6b4f3a', odIn: o.bitSize, top: o.top, bot: o.bot, pTop: at(o.top), pBot: at(o.bot), partId: s.partId });
     note(o.top, o.bot, o.bitSize);
   }
   for (const c of wson.cementing ?? []) {
-    parts.push({ kind: 'cement', label: `cement ${c.od}"`, color: '#a8a29e', odIn: c.od, top: c.top, bot: c.bot, pTop: at(c.top), pBot: at(c.bot) });
+    const s = resolveStructural('cement', { od: c.od }, c.bot - c.top);
+    parts.push({ kind: 'cement', label: `cement ${c.od}"`, color: '#a8a29e', odIn: c.od, top: c.top, bot: c.bot, pTop: at(c.top), pBot: at(c.bot), partId: s.partId });
     note(c.top, c.bot, c.od);
   }
   for (const c of wson.ch ?? []) {
-    parts.push({ kind: 'casing', label: `${c.type ?? 'casing'} ${c.od}"`, color: CASING_COLOR[c.type ?? 'casing'] ?? '#475569', odIn: c.od, idIn: c.id, top: c.top, bot: c.bot, pTop: at(c.top), pBot: at(c.bot) });
+    const isTubing = c.type === 'tubing';
+    const s = resolveStructural(isTubing ? 'tubing' : 'casing', { od: c.od, id: c.id }, c.bot - c.top);
+    parts.push({ kind: 'casing', label: `${c.type ?? 'casing'} ${c.od}"`, color: CASING_COLOR[c.type ?? 'casing'] ?? '#475569', odIn: c.od, idIn: c.id, top: c.top, bot: c.bot, pTop: at(c.top), pBot: at(c.bot), partId: s.partId });
     note(c.top, c.bot, c.od);
   }
   const comps = wson.completions ?? [];

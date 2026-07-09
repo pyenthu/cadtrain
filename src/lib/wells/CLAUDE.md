@@ -13,8 +13,16 @@ surface. Inverts SVTC/Visio-WBD's 2D-first stance.
 - `wson.ts` — WSON model (`meta/oh/ch/perforations/completions/cementing/profile`;
   **metres + inches**) + `lintWson`/`parseWson`/`isDeviated`/`completionExtents`.
 - `samples/*.wson` + `samples.ts` — 4 real SVTC sample wells (`?raw` glob).
-- `registry.ts` — `tool_comp` (CATEGORY.NAME) → cadtrain `g_*` part + bake params.
-  Fills the slot SVTC's 3D scene left empty.
+- `registry.ts` — TWO registries, all ids are REAL volume parts:
+  (1) completions — `tool_comp` (CATEGORY.NAME) → cadtrain `g_*` part + bake
+  params (`resolveComponent`; ~45 catalogue keys across packers/nipples/valves/
+  shoes/mandrels/drill-pipe). Fills the slot SVTC's 3D scene left empty.
+  (2) structural — wellbore section-kind (casing/openhole/cement/tubing) → the
+  parametric `bw_*` element library + od/wall/length params (`resolveStructural`;
+  `bw_casing`/`bw_open_hole`/`bw_cement`/`bw_prod_tubing`). Unlike the mostly-
+  fixed `g_*` catalogue, `bw_*` parts take real od/id/wall/length inputs, so the
+  well BODY bakes through the same graph pipeline. `assemble.ts` wires the `bw_*`
+  partId onto each wellbore section. `listRegisteredPartIds()` enumerates both.
 - `assemble.ts` — `assembleWell(wson)` → parts placed along the trajectory by
   depth (z-DOWN). Vertical = straight; deviated = average-angle survey walk.
 - `WellScene.svelte` — Threlte scene (primitive cylinders; the SIMPLE assembler
