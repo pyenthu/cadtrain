@@ -10,6 +10,10 @@ Manifold engine and should be merged one at a time.
 
 ---
 
+**Scope note (user, 2026-07-10): skip all BREP work tonight.** No `#19`
+`casing_schematic` "BREP is deleted", no BREP cutaway, no client-side BREP. None
+of N1–N7 touches BREP; keep it that way.
+
 ## Guardrails — apply to EVERY task
 
 These are not suggestions. An unattended agent that breaks one of these costs real
@@ -60,6 +64,16 @@ explicitly deferred at `:20`.
   local bake cache, so they have baked at least once — but **verify each id
   resolves via `/api/primitives/source` (a READ) before emitting a Call to it.**
   If an id does not resolve, do not invent it: report it.
+- The `tool_comp` codes you must actually resolve, ranked by real-world frequency
+  across the sample corpus: `MISC.TUBING` (41), `MISC.TUBING_PUP` (17),
+  `tbgHanger` (11), `FLOW_CONTROL.NIPPLE_R_LANDING` (10), `MISC.MULE_SHOE` (10),
+  `PACKERS.PACKER_BAKER_PERMANENT` (6), `MISC.SIDE_POCKET_MANDREL` (6).
+  Note `tool_comp` is a **free string**, not an enum (SVTC infers render style by
+  substring). Build an explicit `tool_comp → bw_*` map; an unmapped code must
+  **throw**, not fall back.
+- A completion's depth must be resolved through the `autoTop` chain (N2b) **before**
+  it becomes an `Mv`. Do N2b first, or assume `top`/`bot` are already absolute and
+  say so.
 - Perforations too, if a `bw_*` element exists for them; otherwise report and skip.
 - Keep the emit order **outer → inner** (oh, cement, casing, tubing, completions)
   so transparency reads correctly.
@@ -81,6 +95,60 @@ real fixtures beats inventing plausible ones. Source repo: `~/code/SVTC/.dev-vol
 | S2 | `11-vertical-land-producer.wson` | **copy** `01-vertical-land-producer.wson` | Exactly 3 OH + 3 casing + 3 cement, vertical, no `profile[]`. The reference vertical well. |
 | S3 | — | (S2 already carries cement) | Add a **negative** test instead: a hole narrower than its casing must make `cementDims` **throw** `WsonTranslateError`. That guard is the point. |
 | S4 | `13-vertical-land-producer-deviated.wson` | **copy** `deviated/01-vertical-land-producer-J-medium.wson` | The **identical** well plus an 11-station `profile[]` (J-shape, 38°). Isolates vertical-vs-deviated to the presence of one key — nothing else differs. |
+| S5 | `14-vertical-producer-completions.wson` | S2 + its `completions[]` | **The completion string** — tubing/nipple/packer jewelry. See below. |
+
+**S5 — the completion string.** `01-vertical-land-producer.wson` already carries a
+real 7-item string whose depths are contiguous (`0→0.5→1025→1025.3→1028→1028.5→1030`)
+— i.e. the `autoTop` chain of N2b, in the wild:
+
+| # | `tool_comp` | od | maps to |
+|---|---|---|---|
+| 1 | `tbgHanger` | 8.681 | `bw_hanger` |
+| 2 | `MISC.TUBING` | 2.875 | `bw_prod_tubing` / `bw_tubing` |
+| 3 | `FLOW_CONTROL.NIPPLE_R_LANDING` | 2.875 | `bw_nipple` |
+| 4 | `MISC.TUBING_PUP` | 2.875 | short-body tubing (`pipe_assembly_convention`) |
+| 5 | `PACKERS.PACKER_BAKER_PERMANENT` | 8.681 | `bw_packer` |
+| 6 | `MISC.TUBING_PUP` | 2.875 | short-body tubing |
+| 7 | `MISC.MULE_SHOE` | 2.875 | `bw_mule_shoe` |
+
+Start with **tubing + nipple + pup + mule shoe** (the simple concentric ones);
+`tbgHanger` and the packer set the OD to the casing bore (8.681) and are the ones
+most likely to reveal a clearance bug — do them second.
+
+**Sample corpus** (read-only; copy files OUT, never run git there —
+`~/Desktop` is iCloud-synced and corrupts `.git`, memory `icloud_desktop_unsafe`):
+- `~/code/SVTC/.dev-volume/samples/schematics/` — the numbered 01–10 set plus 70
+  deviated variants.
+- `~/Desktop/SAMPLE/` — 23 `.wson` files, incl. `schematics/xlsxtowson/` = **7
+  paired PNG + WSON** real-report cases (memory `wells_eval_dataset`).
+
+**⚠ The two `01-vertical-land-producer.wson` files are DIFFERENT.** SVTC's has no
+`profile` (truly vertical). The Desktop copy has an **11-station `profile[]`** —
+it is deviated. **S2 must use the SVTC file**; using the Desktop one silently makes
+the "vertical" rung deviated and destroys the S2↔S4 isolation.
+
+**The real-report cases are the interesting ones**, because they violate the shape
+the synthetic samples assume:
+
+| case | oh | ch | cem | comp | perf | prof |
+|---|---|---|---|---|---|---|
+| `Ananas-13-Rig109-Workover…` | **0** | 1 | 0 | 11 | 6 | 11 |
+| `Ananas-13_Completion_Report` | **0** | 2 | 0 | 1 | 6 | 4 |
+| `Hammal-19_New_well_ESP…` | **0** | 2 | 0 | 1 | 9 | 4 |
+| `Hammal-5_Workover_Report` | **0** | 2 | 0 | 11 | 2 | 4 |
+| `Hammal_-20…gravel_packer_ESP` | 2 | 2 | 1 | 1 | 9 | 11 |
+| `Ananas_W-6…Convert_to_Disposal` | 2 | 2 | 5 | 3 | 6 | 4 |
+| `Mooz_S-3_PCM_PCP…` | 2 | 2 | 2 | 7 | 1 | 6 |
+
+Four of the seven have **zero open holes** — casing-only wells. That is not an
+error; it exercises `cementDims`' no-hole path (`CEMENT_NO_HOLE_RATIO = 1.15`) and
+proves the translator does not assume every casing sits inside a logged hole. Use
+these as translator fixtures; do NOT "fix" them.
+
+**Data hazard:** across the corpus, **7 completions have a missing/empty
+`tool_comp`**. Per the wells skill's NO-FALLBACK rule the translator must
+`throw WsonTranslateError` naming the offending index — never silently skip or
+substitute a default part. Add a test for exactly that.
 
 S4 is unblocked by #64: half-sectioned `bw_*` elements now warp without the
 bridging triangle. Assert it: after warp, **zero triangle edges with Δz > 5** on a
