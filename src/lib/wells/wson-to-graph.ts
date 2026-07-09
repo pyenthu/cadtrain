@@ -17,7 +17,13 @@
  *
  * RUNG 3: a DEVIATED well is bent along its survey — ONE spline + ONE warp for
  * the WHOLE well, placed just before the output (`buildSurveyWarp` below).
- * Completions are a later rung.
+ *
+ * RUNG 5: the in-string COMPLETION jewelry (tubing / nipple / pup / packer /
+ * hanger / mule shoe) — each `tool_comp` code resolves to a `bw_*` part through
+ * an EXPLICIT map (`COMPLETION_PART_MAP`), placed by an `Mv` at a depth resolved
+ * through the AUTO-TOP chain (`recomputeAutoTops`). Emitted AFTER the structural
+ * sections so the order stays OUTER → INNER. Perforations have no `bw_*` element
+ * yet, so they are reported + skipped (never invented).
  *
  * WHY Mv AND NOT A `top` PARAM: only `bw_casing` even declares `top`, and its
  * body ignores it (`mv(solid, [0,0,0])` is hardcoded), so passing `top` silently
@@ -30,10 +36,10 @@
 import type { ArgValue, CallNode, ContainerNode, Graph, GraphNode, MvNode, NodeId, ParamSchema, SplineNode, WarpNode } from '$lib/cad/composition-graph-types';
 import { asExpr, asLiteral, asParam } from '$lib/cad/composition-graph-types';
 import { exprBlockMember } from '$lib/cad/graph-exprs';
-import { resolveStructural } from './registry';
+import { normaliseKey, resolveStructural } from './registry';
 import { buildTrajectory } from './assemble';
-import { isDeviated } from './wson';
-import type { CasingString, CementInterval, OpenHoleSection, Wson } from './wson';
+import { isDeviated, recomputeAutoTops } from './wson';
+import type { CasingString, CementInterval, Completion, OpenHoleSection, Wson } from './wson';
 
 /** The assembly-level param every generated well exposes, so segment count stays
  *  a single dial on the well rather than a literal baked into each element —
@@ -143,6 +149,66 @@ function requirePositiveLength(what: string, i: number, top: number, bot: number
   if (!(bot > top)) {
     throw new WsonTranslateError(`${what} ${i} has non-positive length (top=${top}, bot=${bot})`);
   }
+}
+
+// ─── RUNG 5: completion string (in-string bw_* jewelry) ─────────────────────
+
+/**
+ * EXPLICIT `tool_comp` → `bw_*` part map. `tool_comp` is a FREE STRING (SVTC
+ * infers a render style by substring), so we NORMALISE it (registry `normaliseKey`:
+ * UPPER, non-alnum → `_`) and match it EXACTLY — no substring fallback, no default
+ * part. The mapped ids are the canonical wells element parts (wells skill:
+ * casing→bw_casing … packer→bw_packer …). An UNMAPPED code THROWS — NO FALLBACK,
+ * because a wrong completion is worse than a visible error. Extend as new `bw_*`
+ * parts land.
+ *
+ * Frequencies across the sample corpus (why these six): MISC.TUBING (41),
+ * MISC.TUBING_PUP (17), tbgHanger (11), FLOW_CONTROL.NIPPLE_R_LANDING (10),
+ * MISC.MULE_SHOE (10), PACKERS.PACKER_BAKER_PERMANENT (6). A pup is a short
+ * tubing joint, so both TUBING codes resolve to the plain concentric
+ * `bw_prod_tubing` (the collared `bw_tubing` is NOT the skill's canonical tubing
+ * element). Deliberately NOT mapped (→ throw): MISC.SIDE_POCKET_MANDREL (6),
+ * MISC.PUP_PERF, … — no `bw_*` part exists for them yet.
+ */
+const COMPLETION_PART_MAP: Record<string, string> = {
+  TBGHANGER: 'bw_hanger',
+  MISC_TUBING: 'bw_prod_tubing',
+  MISC_TUBING_PUP: 'bw_prod_tubing',
+  FLOW_CONTROL_NIPPLE_R_LANDING: 'bw_nipple',
+  MISC_MULE_SHOE: 'bw_mule_shoe',
+  PACKERS_PACKER_BAKER_PERMANENT: 'bw_packer',
+};
+
+/** Resolve a completion's `tool_comp` to a `bw_*` part id. Throws (naming the
+ *  index) when the code is missing/empty — the corpus has real rows with no
+ *  `tool_comp` — and (naming the code + index) when it is present but unmapped.
+ *  NO FALLBACK on either path. */
+function resolveCompletionPart(toolComp: string | undefined, i: number): string {
+  const raw = String(toolComp ?? '').trim();
+  if (!raw) {
+    throw new WsonTranslateError(
+      `completion ${i} has a missing/empty tool_comp — cannot resolve a bw_* part`,
+    );
+  }
+  const partId = COMPLETION_PART_MAP[normaliseKey(raw)];
+  if (!partId) {
+    throw new WsonTranslateError(
+      `completion ${i} has an unmapped tool_comp "${raw}" — no bw_* part is registered for it`,
+    );
+  }
+  return partId;
+}
+
+/** Args for a completion Call: OD (inches, from the WSON row) + the section's
+ *  down-hole length (metres) — the SAME mixed-unit convention as `structuralArgs`
+ *  (od inches / length metres; the scene exaggerates radially). Every other param
+ *  (id / wall / seat / seal / bevel…) falls through to the `bw_*` part's own
+ *  defaults, which emit does not need to see. */
+function completionArgs(c: Completion, lengthM: number): Record<string, ArgValue> {
+  const args: Record<string, ArgValue> = {};
+  if (c.od != null) args.od = asLiteral(clean(c.od));
+  if (lengthM > 0) args.length = asLiteral(clean(lengthM));
+  return args;
 }
 
 // ─── RUNG 3: deviated-survey warp ───────────────────────────────────────────
@@ -341,6 +407,30 @@ export function wsonToGraph(wson: Wson): Graph {
       'well has no structural sections (oh / cementing / ch are all empty) — nothing to translate',
     );
   }
+
+  // RUNG 5: the in-string completion jewelry, INSIDE the casing. Depth is resolved
+  // through the AUTO-TOP chain (recomputeAutoTops) BEFORE it becomes an Mv — an
+  // auto item follows its predecessor's bot, a manual item holds its MD — so a
+  // freshly-parsed contiguous string reproduces its own depths and an edited one
+  // stays contiguous. Emitted AFTER oh/cement/casing so the order is OUTER → INNER
+  // (transparency reads correctly). NO FALLBACK: resolveCompletionPart throws on a
+  // missing/empty or unmapped tool_comp.
+  recomputeAutoTops(wson.completions ?? []).forEach((c: Completion, i) => {
+    const top = c.top as number;
+    const bot = c.bot as number;
+    requirePositiveLength('completion', i, top, bot);
+    const src = resolveCompletionPart(c.tool_comp, i);
+    elements.push(element(
+      `comp_${i}`, `COMP_${i + 1}`, src,
+      completionArgs(c, bot - top),
+      top,
+    ));
+  });
+
+  // Perforations: SKIPPED, not emitted. There is no `bw_perforation` element part
+  // on the volume (verified 404 via /api/primitives/source), so per NO-FALLBACK
+  // we do NOT invent a stand-in — perfs stay a reported gap until a `bw_*` perf
+  // element exists. (The 2D schematic still draws them from `wson.perforations`.)
 
   const nodes: Record<NodeId, GraphNode> = {};
   for (const { call, mv } of elements) {
