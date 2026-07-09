@@ -47,9 +47,8 @@ Phase 1 of `docs/plans/svg-projection-perf.md` — silhouette/crease-outline ext
 - **`compose` opt-in toggle** (L23) — separate vs fused overlapping parts (author picks list vs weld). Mirror in TF.
 ▶ **Run Batch 9: pick which — "merge #18", "apply #21", "the #19 BREP-deleted bug", or "the compose toggle".** *(These are unrelated; issue individually.)*
 
-## Batch 10 — Manifold cut+warp densify (#64)  ·  Effort S–M · Risk med · Verify H+B
-- **#64** — `bw_casing` fine alone; `w1_oh_warp` bridging tri on 3D Bake (TF clean). Teach `r_revolve` to honor `getAxialMaxZSpan()` when dial on + `zSegments:0`; tighten `sectionCut` post-subtract refine. Plan: `docs/plans/manifold-cut-warp-densify.md`.
-▶ **Run Batch 10: implement #64 Manifold cut+warp densify (mirror TF) — headless tests then browser-check w1_oh_warp.**
+## Batch 10 — Manifold cut+warp densify (#64)  ·  ✅ DONE (e6eeee7)
+Diagnosis in the plan was wrong: `r_revolve` already honors the dial via `revolveProfile`. The `subtract` retriangulates the cut faces (maxEdgeΔz 1.48 → 40.0). Fix = `sectionCut` refines the CUT RESULT + `KERNEL_VERSION` → `+cut2` to bust the two caches that were serving the pre-fix mesh. Also unbroke `bake-worker-core.ts`, which had raw NUL bytes making it invisible to grep.
 
 ---
 
