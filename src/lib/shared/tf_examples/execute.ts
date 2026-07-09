@@ -228,7 +228,10 @@ function meshBbox(mesh: any): {
 
 /**
  * TF mirror of Manifold's `sectionCut` — subtract an authored angular wedge
- * (pie slice of `az` degrees CCW from +X, full Z height + margin) from `solid`.
+ * (pie slice of `az` degrees, full Z height + margin) from `solid`. `offset` is
+ * a ROTATIONAL bearing about Z: the arc sweeps from `offset`° to `(offset+az)`°
+ * (CCW), so the cutaway faces a chosen bearing — NOT an axial Z shift. Matches
+ * `manifold-helpers.sectionCut`.
  */
 function buildSectionCut(t: any, solid: any, az: number, offset: number): any {
   if (!(az > 0) || az >= 360) return solid;
@@ -239,11 +242,11 @@ function buildSectionCut(t: any, solid: any, az: number, offset: number): any {
     Math.abs(bb.minY), Math.abs(bb.maxY),
   ) + MARGIN;
   const zlen = (bb.maxZ - bb.minZ) + 2 * MARGIN;
-  const z0 = bb.minZ - MARGIN + offset;
+  const z0 = bb.minZ - MARGIN;
   const seg = Math.max(2, Math.ceil(az / 5));
   const section: [number, number][] = [[0, 0]];
   for (let i = 0; i <= seg; i++) {
-    const a = ((az * i) / seg) * Math.PI / 180;
+    const a = ((offset + (az * i) / seg) * Math.PI) / 180;
     section.push([R * Math.cos(a), R * Math.sin(a)]);
   }
   const wedge = tfExtrudeProfile(t, section, { length: zlen });
