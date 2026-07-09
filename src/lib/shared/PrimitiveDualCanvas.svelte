@@ -377,11 +377,20 @@
     }
     meshStatus = 'building';
     meshAc?.abort(); const ac = new AbortController(); meshAc = ac;
-    // CLIENT-SIDE BAKE (PR3) — behind `localStorage.cad-client-bake === '1'`
-    // (default OFF; server path below is the untouched fallback). Compile the
-    // LIVE source → run the Manifold worker. The `{full,cutVC,instanced}` shape
-    // matches the server exactly, so the scene needs no changes. zScale/xScale
-    // stay render-time (not sent), keeping byte-parity with the server bake.
+    // CLIENT-SIDE BAKE — client-first by DEFAULT (`localStorage.cad-client-bake`,
+    // opt out with '0'). Compile the LIVE source → run the Manifold worker. The
+    // `{full,cutVC,instanced}` shape matches the server exactly, so the scene needs
+    // no changes. zScale/xScale stay render-time (not sent), keeping byte-parity.
+    //
+    // NO SILENT FALLBACK. A client-bake FAILURE is surfaced as an error, never
+    // retried on the server. The old `catch → fetch('/preview')` cost hours: a WASM
+    // trap in the browser worker reappeared as a mystery *server* 400
+    // (`emval_methodCallers[caller] is not a function`), poisoned the dev server's
+    // Manifold singleton through the fallback request, and made the ⚡/☁ badge look
+    // stuck on "server" (it reports the backend that actually produced the mesh, so
+    // a client bake that always fell back always read as server). Below, `supported`
+    // is a different thing: a capability gap, not a failure — those parts route to
+    // the server deliberately.
     const clientBake = scene.clientBake;
     if (clientBake && name) {
       try {
@@ -405,11 +414,20 @@
           if (bakeTimingsOn()) { try { console.log(`[bake-client] compile=${_tCompile.toFixed(1)}ms · worker(bake+transfer)=${_tBake.toFixed(1)}ms · cutaway=${scene.showCutaway ? 'on' : 'off'} · seg=${segUsed ?? 'full(256)'}${segArg ? ' (draft)' : ''}`); } catch {} }
           return;
         }
-        // unsupported by the client kernel → fall through to the server path.
+        // Unsupported by the client kernel (e.g. a BREP source) → route to the
+        // server deliberately. This is a capability gap, not a masked failure.
+        console.info('[client-bake] client kernel does not support this part — using the server');
       } catch (e: any) {
         if (e?.name === 'AbortError' || ac.signal.aborted) return;
-        // any client-bake failure → fall through to the server path (fallback intact).
-        console.warn('[client-bake] failed, falling back to server:', e?.message ?? e);
+        // A client-bake failure is a REAL failure. Show it. Do not re-run it on the
+        // server: that hides the bug, and re-running a kernel trap server-side
+        // corrupts the server's Manifold singleton for every later bake too.
+        const msg = String(e?.message ?? e);
+        console.error('[client-bake] FAILED (no fallback):', msg);
+        err = `client bake failed: ${msg}`;
+        meshStatus = 'error';
+        meshBackend = 'client';
+        return;
       }
     }
     try {
