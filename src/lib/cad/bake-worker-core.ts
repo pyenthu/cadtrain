@@ -32,7 +32,7 @@ import { serializeComponentResult, type SerializedComponentResult, type Serializ
 /** Pinned kernel identity — folded into the IndexedDB cache key so a client on
  *  an upgraded WASM build never serves a mesh baked by the old kernel (plan §8
  *  "bust the IndexedDB cache on kernel-version change"). */
-export const KERNEL_VERSION = 'manifold-3d@3.4.1+cut2'; // +cap1: ear-clip r_sweep end caps (fanCap3D, manifold-mesh) — a transitive engine import NOT in scriptHash, so its fix needs a manual kernel bump to bust the stale-cap IndexedDB cache. +nrm4: crease-aware render normals under vert ceiling. +cut2: sectionCut refines the CUT RESULT, not just the wedge (#64 bridging triangle) — same transitive-import problem, same manual bump
+export const KERNEL_VERSION = 'manifold-3d@3.4.1+bore1'; // +cap1: ear-clip r_sweep end caps (fanCap3D, manifold-mesh) — a transitive engine import NOT in scriptHash, so its fix needs a manual kernel bump to bust the stale-cap IndexedDB cache. +nrm4: crease-aware render normals under vert ceiling. +cut2: sectionCut refines the CUT RESULT, not just the wedge (#64 bridging triangle) — same transitive-import problem, same manual bump. +bore1: boredSweep + extendPathEnds in manifold-mesh (N6 — bore-extend prevents defect-2 coincident tilted caps on a hollow 3D-subtract sweep); another transitive import, so a manual bump busts both bake caches
 
 /** Max profile Z-span (world units) a WARP-NODE bake allows before re-lathing an
  *  extra axial ring — the density source for a lean revolve under `warpSpline`.
