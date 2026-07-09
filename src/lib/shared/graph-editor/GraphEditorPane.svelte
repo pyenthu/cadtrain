@@ -151,6 +151,7 @@
   import { dragNumber } from '$lib/shared/dragNumber';
   import RightPane from './RightPane.svelte';
   import WireLayer from './WireLayer.svelte';
+  import { unwireGraph, describeWireRef, type WireRef } from './wire-delete';
   // The 4 self-contained popovers (container reorder · arg ƒ-expr · profile-kind
   // · profile-node-ref) live in Popovers.svelte (modularize K.65 Phase A). GEP
   // drives them via `bind:this={popovers}` from its node-render arms. The
@@ -317,6 +318,16 @@
   /** Patch a material node's appearance (sparse; null/'none' clears). */
   function patchMaterial(patch: any) {
     if (matPop) graph = updateMaterialNode(graph, matPop.id, patch);
+  }
+  // Wire-delete popover — click a connection in WireLayer → open a small "delete
+  // connection" menu at the click; confirming unwires exactly that target slot.
+  let wireDelPop = $state<{ ref: WireRef; x: number; y: number; label: string } | null>(null);
+  function onWireClick(ref: WireRef, ev: MouseEvent) {
+    wireDelPop = { ref, x: ev.clientX, y: ev.clientY, label: describeWireRef(graph, ref) };
+  }
+  function confirmWireDelete() {
+    if (wireDelPop) graph = unwireGraph(graph, wireDelPop.ref);
+    wireDelPop = null;
   }
   // The Expressions MENU (B.7 v3 PR-3) — lists graph.exprDefs and is the home
   // of the define → instance → wire flow (the expr-def MANAGER: add/edit/drop/
@@ -2699,6 +2710,16 @@
       onClose={() => (matPop = null)} />
   {/if}
 
+  {#if wireDelPop}
+    <!-- click-a-connection → delete popover (fixed at the click point). A full-
+         viewport backdrop closes it on any outside click / on scroll. -->
+    <div class="ge-wiredel-backdrop" role="presentation" onpointerdown={() => (wireDelPop = null)}></div>
+    <div class="ge-wiredel-pop" style="left:{wireDelPop.x}px; top:{wireDelPop.y}px;">
+      <div class="ge-wiredel-label">{wireDelPop.label}</div>
+      <button type="button" class="ge-wiredel-del" onclick={confirmWireDelete}>✕ Delete connection</button>
+    </div>
+  {/if}
+
   {#if typesPop}
     <TypeDefinerPopover onClose={() => (typesPop = false)} />
   {/if}
@@ -2803,7 +2824,7 @@
             <text x="120" y="35" class="ge-canvas-hint">← drop an outer dial here; drag its socket onto an arg.</text>
           {/if}
 
-          <WireLayer {allNodes} {paramEntries} {leftTab} {graph} {nodePos} {outSock} {inSock} {slotIn} {cardObstacles} pan={ci.pan} zoom={ci.zoom} {PARAM_W} {CARD_Y0} {consumedSet} />
+          <WireLayer {allNodes} {paramEntries} {leftTab} {graph} {nodePos} {outSock} {inSock} {slotIn} {cardObstacles} pan={ci.pan} zoom={ci.zoom} {PARAM_W} {CARD_Y0} {consumedSet} {onWireClick} />
 
           <!-- In-flight wire being dragged -->
           {#if wire.from && wire.mouse}
@@ -3385,6 +3406,22 @@
 </div>
 
 <style>
+  /* Wire-delete popover (click a connection → delete). Fixed at the click point,
+     above the canvas; the backdrop catches the outside-click to dismiss. */
+  .ge-wiredel-backdrop { position: fixed; inset: 0; z-index: 1200; background: transparent; }
+  .ge-wiredel-pop {
+    position: fixed; z-index: 1201; transform: translate(-50%, 8px);
+    background: #fff; border: 1px solid #d1d5db; border-radius: 8px;
+    box-shadow: 0 6px 20px rgba(0,0,0,0.18); padding: 6px; min-width: 150px;
+    font-size: 12px; display: flex; flex-direction: column; gap: 4px;
+  }
+  .ge-wiredel-label { color: #6b7280; padding: 2px 6px; font-size: 11px; white-space: nowrap; }
+  .ge-wiredel-del {
+    appearance: none; border: 1px solid #fecaca; background: #fef2f2; color: #b91c1c;
+    border-radius: 6px; padding: 5px 8px; cursor: pointer; font-size: 12px; text-align: left;
+  }
+  .ge-wiredel-del:hover { background: #fee2e2; border-color: #f87171; }
+
   /* 48 px left rail + 1fr body. Rows: slim header + canvas grid. */
   .ge-root {
     display: grid;

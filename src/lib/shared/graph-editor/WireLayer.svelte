@@ -13,11 +13,13 @@
     rootOutputSockY, extractParamRefs, WARP_PATH_CY, warpPathCY,
   } from './geom';
   import { exprBlockMember } from '$lib/cad/graph-exprs';
+  import type { WireRef } from './wire-delete';
 
   let {
     allNodes, paramEntries, leftTab, graph,
     nodePos, outSock, inSock, slotIn,
     cardObstacles, pan, zoom, PARAM_W, CARD_Y0, consumedSet,
+    onWireClick,
   }: {
     allNodes: any[];
     paramEntries: [string, any][];
@@ -33,7 +35,13 @@
     PARAM_W: number;
     CARD_Y0: number;
     consumedSet: Set<string>;
+    /** Click a wire → open the delete popover for that target slot (set by the
+     *  GEP shell). When omitted, wires are non-interactive (view-only). */
+    onWireClick?: (ref: WireRef, ev: MouseEvent) => void;
   } = $props();
+
+  /** Fire the wire-delete callback for a given target slot. */
+  const hit = (ref: WireRef) => (ev: MouseEvent) => { ev.stopPropagation(); onWireClick?.(ref, ev); };
 </script>
 
           <!-- PARAM WIRES — for every {Call.args[k] OR mv.offset[i] OR rot.rot[i]}
@@ -395,6 +403,7 @@
               {@const src = outSock(matId as string)}
               {@const tp = nodePos(partId)}
               <path class="ge-wire material" d={bezier(cardObstacles, src.x, src.y, tp.x, tp.y + 16)} fill="none"/>
+              <path class="ge-wire-hit" d={bezier(cardObstacles, src.x, src.y, tp.x, tp.y + 16)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'material', partId })}/>
             {/if}
           {/each}
 
@@ -405,17 +414,20 @@
                 {@const src = outSock((n as any).obj)}
                 {@const tgt = inSock(n.id, 'obj')}
                 <path class="ge-wire obj" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                <path class="ge-wire-hit" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'method', nodeId: n.id, slot: 'obj' })}/>
               {/if}
               {#if (n as any).arg && graph.nodes[(n as any).arg]}
                 {@const src = outSock((n as any).arg)}
                 {@const tgt = inSock(n.id, 'arg')}
                 <path class="ge-wire arg" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                <path class="ge-wire-hit" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'method', nodeId: n.id, slot: 'arg' })}/>
               {/if}
             {:else if n.type === 'mv' || n.type === 'rot'}
               {#if (n as any).child && graph.nodes[(n as any).child]}
                 {@const src = outSock((n as any).child)}
                 {@const tgt = inSock(n.id, 'child')}
                 <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                <path class="ge-wire-hit" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'child', nodeId: n.id })}/>
               {/if}
             {:else if n.type === 'txfmn'}
               <!-- txfmn child wire — same left-edge child socket as mv/rot. -->
@@ -423,6 +435,7 @@
                 {@const src = outSock((n as any).child)}
                 {@const tgt = inSock(n.id, 'child')}
                 <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                <path class="ge-wire-hit" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'child', nodeId: n.id })}/>
               {/if}
             {:else if n.type === 'repeat'}
               <!-- Repeat node's PART wires — one per child, into its row socket
@@ -432,6 +445,7 @@
                 {#if graph.nodes[cid]}
                   {@const src = outSock(cid)}
                   <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, pos.x, pos.y + 68 + ci * 24)} fill="none"/>
+                  <path class="ge-wire-hit" d={bezier(cardObstacles,src.x, src.y, pos.x, pos.y + 68 + ci * 24)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'repeat-child', nodeId: n.id, index: ci })}/>
                 {/if}
               {/each}
             {:else if n.type === 'spline'}
@@ -469,6 +483,7 @@
                   {@const src = outSock(kid)}
                   {@const tgt = inSock(n.id, warpKids.length > 1 ? `children[${ki}]` : 'child')}
                   <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                  <path class="ge-wire-hit" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'warp-child', nodeId: n.id, index: ki })}/>
                 {/if}
               {/each}
               {@const wpath = (n as any).path}
@@ -481,6 +496,7 @@
                     {@const srcSize = nodeSize(graph, sn)}
                     {@const srcPos = nodePos(sn.id)}
                     <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + srcSize.h / 2, wpos.x, ptgtY)}/>
+                    <path class="ge-wire-hit" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + srcSize.h / 2, wpos.x, ptgtY)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'warp-path', nodeId: n.id })}/>
                   {/if}
                 {/each}
                 <!-- EXPR-OUTPUT path source → warp path socket. -->
@@ -492,6 +508,7 @@
                         {@const srcSize = nodeSize(graph, exn)}
                         {@const srcPos = nodePos(exn.id)}
                         <path class="ge-wire noderef" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), wpos.x, ptgtY)}/>
+                        <path class="ge-wire-hit" d={bezier(cardObstacles, srcPos.x + srcSize.w, srcPos.y + exprOutputSockY(eoIdx), wpos.x, ptgtY)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'warp-path', nodeId: n.id })}/>
                       {/if}
                     {/each}
                   {/if}
@@ -505,6 +522,7 @@
                 {@const src = outSock((n as any).child)}
                 {@const tgt = inSock(n.id, 'child')}
                 <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                <path class="ge-wire-hit" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'child', nodeId: n.id })}/>
               {/if}
             {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
               <!-- Container wires: each visible child of a container shows as
@@ -527,6 +545,7 @@
                     : slotIn(n.id, i)}
                   <path class="ge-wire output" class:root={n.id === graph.root}
                     d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                  <path class="ge-wire-hit" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'container-child', nodeId: n.id, index: i })}/>
                 {/if}
               {/each}
             {/if}
@@ -535,7 +554,12 @@
 <style>
   /* Wire beziers (moved from GraphEditorPane with the markup above). The
      base .ge-wire + .in-flight stay in GEP for the in-flight drag path. */
-  .ge-wire { stroke-width: 2; stroke-linecap: round; fill: none; }
+  .ge-wire { stroke-width: 2; stroke-linecap: round; fill: none; pointer-events: none; }
+  /* Fat invisible hit-target behind each connection wire — click opens the
+     delete popover (onWireClick → GEP shell). pointer-events:stroke so only the
+     wide stroke band is clickable, not the path's bounding box. */
+  .ge-wire-hit { stroke: transparent; stroke-width: 12; fill: none; pointer-events: stroke; cursor: pointer; }
+  .ge-wire-hit:hover { stroke: rgba(220, 38, 38, 0.18); }
   .ge-wire.obj { stroke: #b91c1c; }
   .ge-wire.arg { stroke: #d97706; }
   .ge-wire.child { stroke: #6d28d9; }
