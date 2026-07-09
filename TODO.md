@@ -31,7 +31,6 @@
 
 ### Open — editor
 - **Section card — "show cutter" option** — a view-only toggle on the ✂ section card to render the CUTTING wedge/cube semi-transparent (overlay, not baked) so the author sees what `az`/`offset` removes.
-- **Click a connection → delete popover** — clicking a wire (bezier in `WireLayer.svelte`) opens a popover at the click with "delete" that unwires THAT target input slot. Needs: hit-testable wire paths (fat invisible hit-path) + unwire mutate per slot type.
 - **BUG — 3D-bake ✂ section clips instead of CSG-cutting (part looks HOLLOW)** — `sectionCut` in `manifold-helpers.ts` appears to clip (no cap) instead of a real `solid.subtract(wedge)`; want a capped, solid-looking cut like the view-only `cutVC`. Check the wedge is closed/manifold + how the section feeds the render (`geo.parts` vs a clip plane).
 - **In-canvas controls must be SCREEN-FIXED** — the spline-editor's in-canvas control chips (＋pt/−pt/⌗xyz/view selector, via Threlte `<HTML>`) should stay pinned to the viewport as you orbit, not move with the scene. Use a screen-space overlay (`<HTML fullscreen>` / DOM overlay), not an in-scene world-anchored `<HTML>`. Applies to any in-canvas control overlay.
 - **BUG — TF section shows no INNER colours** — the TF `{op:'cutaway'}` builder (`graph-to-tf.ts` + `tf_examples/execute.ts`) must colour the wedge-subtract's exposed faces with SECTION_INNER (grey) / body-inner, matching the Manifold `cutVC` / per-part cut arm.
@@ -54,7 +53,6 @@ Tabs: Tree · C4 · GEP module · Folder tree (6 layouts) · Class model · Code
 - **#0** registry → cloud schema/prompt + local CFG → multishot loop → feedback corpus → WebLLM (#1/#2/#27/#28/#29 are its phases).
 - **#29** AI fn library (one registry, CI sync test) · **#1** RAG/assist (LEFT `route`/`selectedId` in ctx) · **#27** feedback/RL DB (👍/👎 → `turns.jsonl`) · **#2** web-llm (Qwen2.5 + XGrammar, default-off) · **#28** synthetic fn-call data → few-shot/LoRA.
 
-### Parked / tooling
-- **#DX page-agent** — in-browser agent for live Three/Svelte-`$state`/console inspection; back-pocket (current console+Playwright coverage suffices).
-- **#PMP pmp-library** — C++ mesh-processing; reference only for subdivision, DON'T adopt as a 3rd WASM kernel.
-- #4 CAD-gen research (arxiv 2606.05515) · #4b Blender fields · #5 units repo · #7b r_weld_extrude phase angle · #8b expression library · #16 `src/lib` reorg · #17b first-bake-slow profiling · #19 BUG `casing_schematic` "BREP is deleted".
+### Parked / reference
+- #19 BUG `casing_schematic` "BREP is deleted" — investigate. · #16 `src/lib` reorg.
+- Back-pocket / reference-only (not actionable): #DX in-browser page-agent · #PMP pmp-library (C++ subdivision reference, NOT a 3rd WASM kernel) · #4 CAD-gen research (arxiv) · #4b Blender fields · #5 units repo · #7b r_weld_extrude phase angle · #8b expression library · #17b first-bake-slow profiling.

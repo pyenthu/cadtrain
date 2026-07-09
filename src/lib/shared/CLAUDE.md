@@ -17,7 +17,9 @@ src/lib/shared/
 │   ├── SketchNodeCard.svelte   #   the n.type==='sketch' node-card render arm (Phase E Step 2)
 │   ├── SketchEditorPane.svelte #   the full-tab sketch editor overlay (Phase E Step 2); coord ƒ-popover stays in the GEP shell
 │   ├── NodeCard.svelte         #   per-node SVG cards — call/method/mv/rot/txfmn/repeat/container/polygon/poly_repeat + resize grip (Phase F)
+│   ├── WireLayer.svelte        #   renders wire beziers + a fat invisible hit-path per CONNECTION wire → onWireClick (click-to-delete)
 │   ├── wire-state.svelte.ts     #   per-instance WireState class — drag-to-wire (from/mouse + start/endWireOn*) (Phase C)
+│   ├── wire-delete.ts (+ .test) #   WireRef + unwireGraph + describeWireRef — click a connection → delete-popover unwires that slot
 │   ├── pointer-capture.ts       #   releaseImplicitCapture (shared: wire-drag + sketch-card drags)
 │   ├── popover-clamp.ts        #   shared viewport-clamp action for the popovers
 │   ├── graph-editor-bake.ts (+ .test.ts) #   pure source/meta parsers + callDrift (Phase B)
