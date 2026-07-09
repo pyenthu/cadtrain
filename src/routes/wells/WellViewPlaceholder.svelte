@@ -30,6 +30,9 @@
   import { buildRemap, type Wson2DInput } from '$lib/wells/wson-2d';
   import { summarise, type WsonDoc } from './wson-summary';
   import { defaultViewSettings, type WellViewSettings } from './view-settings';
+  import GraphEditorPane from '$lib/shared/graph-editor/GraphEditorPane.svelte';
+  import { wsonToGraph } from '$lib/wells/wson-to-graph';
+  import type { Wson } from '$lib/wells/wson';
 
   import type { CompletionPatch } from '$lib/wells/wson-mutate';
 
@@ -40,6 +43,7 @@
     // The shell passes a shared settings object; fall back to a per-view
     // default so the component still works standalone.
     view = defaultViewSettings(),
+    paneActive = true,
     onUpdateCompletion,
     onDeleteCompletion,
   }: {
@@ -47,6 +51,12 @@
     error?: string | null;
     fileName?: string;
     view?: WellViewSettings;
+    /** Is THIS well's pane the visible one? Every open `.wson` tab stays mounted
+     *  and they all share one `view`, so without this each pane would mount its
+     *  own graph editor and bake — and the panes share one TF worker, whose
+     *  latest-wins supersede blanks all but the last (the /primitives lesson,
+     *  2026-07-06). Mirrors `<GraphEditorPane active={activeKey === t.key}>`. */
+    paneActive?: boolean;
     /** Edit-the-diagram hooks — forwarded to the 2D view's double-click editor.
      *  Pure prop forwarding: does NOT touch the 3D scene / its reactivity. */
     onUpdateCompletion?: (srcIndex: number, patch: CompletionPatch) => void;
@@ -61,6 +71,33 @@
   let mounted3D = $state(false);
   $effect(() => {
     if (view.viewMode === '3d') mounted3D = true;
+  });
+
+  // Same sticky latch for the graph editor: it's a heavy pane (own 3D canvas),
+  // so a well that never opens GRAPH never pays for it.
+  let mountedGraph = $state(false);
+  $effect(() => {
+    if (view.viewMode === 'graph' && paneActive) mountedGraph = true;
+  });
+
+  /** The generated assembly's id — deterministic from the well name, so re-opening
+   *  the same well targets the same part and GraphEditorPane's first Save lands on
+   *  a stable name under `wells/` (Rule 16: location IS category). */
+  const wellPartId = $derived.by(() => {
+    const raw = (wson?.meta?.wellName ?? fileName ?? 'well').toLowerCase();
+    const slug = raw.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '') || 'well';
+    return `w_${slug}`.slice(0, 48);
+  });
+
+  /** WSON → composition graph. NO FALLBACK (wells skill): a well we cannot express
+   *  as a graph surfaces its error here rather than rendering a stand-in. */
+  const wellGraph = $derived.by((): { graph: unknown | null; error: string | null } => {
+    if (!mountedGraph || !wson) return { graph: null, error: null };
+    try {
+      return { graph: wsonToGraph(wson as unknown as Wson), error: null };
+    } catch (e) {
+      return { graph: null, error: e instanceof Error ? e.message : String(e) };
+    }
   });
 
   // Shared depth remap for the 2D view (raw MD → display depth) — IDENTICAL to
@@ -102,7 +139,7 @@
     </div>
   {:else if summary}
     <!-- Stage: 2D SVG surface (default) + lazy 3D scene + shared overlays. -->
-    <section class="wv-stage" class:white={view.viewMode === '2d' || view.whiteBg}>
+    <section class="wv-stage" class:white={view.viewMode !== 'graph' && (view.viewMode === '2d' || view.whiteBg)}>
       <!-- 2D track schematic — always mounted (cheap). Hidden when in 3D. -->
       <div class="wv-surface" class:hidden={view.viewMode !== '2d'}>
         <WellSchematic2D {wson} {view} remap={remap2d} {onUpdateCompletion} {onDeleteCompletion} />
@@ -135,9 +172,41 @@
         </div>
       {/if}
 
-      <!-- Top view/scale bar + left element rail (both mutate `view`). -->
+      <!-- CAD graph editor on the well's generated graph — mounted only after the
+           first GRAPH selection. `seedGraph` hydrates the in-memory graph, so
+           opening this tab writes NOTHING to the volume; the pane's own Save is
+           what creates `wellPartId` under wells/. Remounts when the well changes
+           (GEP reads seedGraph once, at load). -->
+      {#if mountedGraph}
+        <div class="wv-surface graph" class:hidden={view.viewMode !== 'graph'}>
+          {#if wellGraph.error}
+            <div class="wv-error">
+              <div class="wv-error-ic">⚠</div>
+              <div>
+                <div class="wv-error-title">Cannot express this well as a graph</div>
+                <code class="wv-error-msg">{wellGraph.error}</code>
+              </div>
+            </div>
+          {:else if wellGraph.graph}
+            {#key wellPartId}
+              <GraphEditorPane
+                id={wellPartId}
+                embed={true}
+                active={view.viewMode === 'graph' && paneActive}
+                seedGraph={wellGraph.graph}
+                createDir="wells"
+              />
+            {/key}
+          {/if}
+        </div>
+      {/if}
+
+      <!-- Top view/scale bar + left element rail (both mutate `view`). The rail is
+           a schematic-layer switch; it has no meaning over the graph canvas. -->
       <WellViewControls settings={view} />
-      <WellElementRail settings={view} {wson} />
+      {#if view.viewMode !== 'graph'}
+        <WellElementRail settings={view} {wson} />
+      {/if}
     </section>
   {:else}
     <div class="wv-empty">No WSON loaded.</div>
@@ -174,6 +243,12 @@
   .wv-surface.hidden {
     visibility: hidden;
     pointer-events: none;
+  }
+  /* The floating view/scale bar overlays the stage's top-left, which is exactly
+     where the graph editor puts its own PARAMS/PROPERTIES tabs. Drop the graph
+     surface below the bar instead of letting the two stack. */
+  .wv-surface.graph {
+    top: 46px;
   }
   /* W-G c — schematics read best on white. Flag today tints the 3D backdrop;
      W-D's 2D/SVG track view will render on this same white surface. */

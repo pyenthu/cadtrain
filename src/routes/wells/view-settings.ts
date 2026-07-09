@@ -24,7 +24,10 @@ export interface WellViewSettings {
   /** Which surface renders. `'2d'` = fast pure-SVG track schematic (DEFAULT —
    *  the #1 perf lever: opening a tab does NO Manifold CSG); `'3d'` = the
    *  Manifold half-section cutaway (lazy-mounted only when first selected). */
-  viewMode: '2d' | '3d';
+  /** `graph` mounts the CAD graph editor on the well's generated composition
+   *  graph — the well IS an assembly, so its authoring surface is the same pane
+   *  /primitives uses (`docs/plans/well-schematic.md`; TODO #65). */
+  viewMode: '2d' | '3d' | 'graph';
   /** Per-layer show/hide. */
   layers: WellLayerFlags;
   /** Half-section CSG cutaway. */

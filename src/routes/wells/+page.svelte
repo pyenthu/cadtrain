@@ -484,6 +484,7 @@
               error={file?.error ?? null}
               fileName={file?.name ?? tabLabel(t.id)}
               {view}
+              paneActive={activeKey === t.key}
               onUpdateCompletion={updateComponent}
               onDeleteCompletion={deleteComponent}
             />
