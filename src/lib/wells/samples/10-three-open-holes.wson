@@ -1,0 +1,24 @@
+{
+  "meta": {
+    "wellName": "SAMPLE-10 Three Telescoping Open Holes",
+    "td": 1200,
+    "_wellType": "test-fixture"
+  },
+  "oh": [
+    {
+      "bitSize": 17.5,
+      "top": 0,
+      "bot": 300
+    },
+    {
+      "bitSize": 12.25,
+      "top": 300,
+      "bot": 800
+    },
+    {
+      "bitSize": 8.5,
+      "top": 800,
+      "bot": 1200
+    }
+  ]
+}
