@@ -167,8 +167,28 @@ function requirePositiveLength(what: string, i: number, top: number, bot: number
  * MISC.MULE_SHOE (10), PACKERS.PACKER_BAKER_PERMANENT (6). A pup is a short
  * tubing joint, so both TUBING codes resolve to the plain concentric
  * `bw_prod_tubing` (the collared `bw_tubing` is NOT the skill's canonical tubing
- * element). Deliberately NOT mapped (→ throw): MISC.SIDE_POCKET_MANDREL (6),
- * MISC.PUP_PERF, … — no `bw_*` part exists for them yet.
+ * element).
+ *
+ * ── IMPORTED PLACEHOLDERS (2026-07-10) ──────────────────────────────────────
+ * The four codes below blanked wells 05 + 09 entirely (`wsonToGraph` threw, so
+ * the GRAPH tab rendered "Cannot express this well as a graph"). They now map to
+ * real, named volume parts under `well_parts/imported/` whose geometry is a plain
+ * bored tube. This is NOT a silent fallback: each is its own NAMED part, visible
+ * in the sidebar, editable in the graph editor, and its `drawingMd` says in the
+ * first line that the shape is a placeholder and names the part to port from.
+ *
+ * They are NOT aliased to the look-alike `g_*` parts in `completions/svtc`
+ * (`g_trsssv_sp`, `g_gauge_mandrel`, `g_packer_ahr_ahc`) even though the names
+ * match exactly — those are compjson-inferred revolves with an EMPTY `params`
+ * schema, i.e. FIXED geometry. `g_trsssv_sp` bakes od 3.56in × 11.1in no matter
+ * what, and its own meta warns the inferred length diverges 85% from catalogue.
+ * Every completion here is fed `od` + `length` from its WSON row, so aliasing a
+ * fixed part would bake the wrong size at the wrong depth span — silently. A
+ * parametric stub is the honest placeholder. Porting the real profiles into
+ * parametric `bw_*` parts is TODO (#42f).
+ *
+ * Still deliberately NOT mapped (→ throw): MISC.SIDE_POCKET_MANDREL (6) — the
+ * `g_side_pocket_mandrel` part exists but is likewise fixed-geometry.
  */
 const COMPLETION_PART_MAP: Record<string, string> = {
   TBGHANGER: 'bw_hanger',
@@ -177,7 +197,19 @@ const COMPLETION_PART_MAP: Record<string, string> = {
   FLOW_CONTROL_NIPPLE_R_LANDING: 'bw_nipple',
   MISC_MULE_SHOE: 'bw_mule_shoe',
   PACKERS_PACKER_BAKER_PERMANENT: 'bw_packer',
+  // Imported placeholders — plain tubes, geometry pending (see block comment).
+  MISC_PUP_PERF: 'bw_pup_perf',                 // 05 · Perforated Pup (tail pipe)
+  FLOW_CONTROL_TRSSSV_SP: 'bw_trsssv_sp',       // 09 · TRSSSV-SP surface-controlled SSSV
+  MISC_GAUGE_MANDREL: 'bw_gauge_mandrel',       // 09 · Gauge Mandrel (P/T monitoring)
+  PACKERS_PACKER_AHR_AHC: 'bw_packer_ahr_ahc',  // 09 · Packer AHR-AHC (HPHT permanent)
 };
+
+/** The imported placeholder parts, by id. Their geometry is a plain bored tube,
+ *  not the real component — see COMPLETION_PART_MAP's block comment. Exported so
+ *  a test can pin the set and the UI can badge them. */
+export const PLACEHOLDER_PART_IDS: ReadonlySet<string> = new Set([
+  'bw_pup_perf', 'bw_trsssv_sp', 'bw_gauge_mandrel', 'bw_packer_ahr_ahc',
+]);
 
 /** Resolve a completion's `tool_comp` to a `bw_*` part id. Throws (naming the
  *  index) when the code is missing/empty — the corpus has real rows with no
