@@ -65,13 +65,29 @@ type DepEntry = { graph: any; params: Record<string, number> } | null;
 const SRC_CACHE = new Map<string, { entry: DepEntry; at: number }>();
 const SRC_TTL_MS = 60_000; // 60s — dep edits show within a minute (or instantly via 🔄 bust)
 
-/** Fetch + parse ONE composite dep's source, honouring the module cache. */
+/** A dep fetch failed for a reason that says nothing about the dep itself: the
+ *  upstream volume was down (5xx), rate-limited (429), or the socket died. In dev
+ *  `/api/primitives/source` proxies to the Railway origin, which returns 502 for
+ *  the ~30s of every redeploy — so this is routine, not exceptional. */
+function isTransientStatus(status: number): boolean {
+  return status >= 500 || status === 429 || status === 408;
+}
+
+/** Fetch + parse ONE composite dep's source, honouring the module cache.
+ *
+ *  NEVER negative-cache a TRANSIENT failure. A cached `null` means "this Call has
+ *  no composite to inline", so a single 502 during a Railway redeploy used to
+ *  pin `bw_casing` as UNSUPPORTED for the full 60s TTL — the TF tab then reported
+ *  "TrueForm has no native builder for: call:bw_casing" long after prod was
+ *  healthy again, and a 🔄 was the only way out. A definitive 404 or unparseable
+ *  meta IS cached (that answer is stable and worth not re-asking). */
 async function fetchDep(id: string, fetch: typeof globalThis.fetch, bust: boolean): Promise<DepEntry> {
   if (!bust) {
     const hit = SRC_CACHE.get(id);
     if (hit && Date.now() - hit.at < SRC_TTL_MS) return hit.entry; // fresh (incl. cached null)
   }
   let entry: DepEntry = null;
+  let transient = false;
   try {
     const r = await fetch(`/api/primitives/source?name=${encodeURIComponent(id)}`, { cache: 'no-store' });
     if (r.ok) {
@@ -79,11 +95,15 @@ async function fetchDep(id: string, fetch: typeof globalThis.fetch, bust: boolea
       const src = typeof data?.source === 'string' ? data.source : '';
       const meta = src ? extractMetaFromSource(src) : null;
       if (meta?.graph) entry = { graph: meta.graph, params: numericDefaults(meta.params) };
+    } else {
+      transient = isTransientStatus(r.status);
     }
   } catch {
-    /* leave entry null — the Call stays UNSUPPORTED */
+    transient = true; // network / socket error — the dep is not at fault
   }
-  SRC_CACHE.set(id, { entry, at: Date.now() });
+  // Skip the cache write entirely on a transient failure so the NEXT compile
+  // re-asks. Returning null still leaves this one Call unsupported for this run.
+  if (!transient) SRC_CACHE.set(id, { entry, at: Date.now() });
   return entry;
 }
 

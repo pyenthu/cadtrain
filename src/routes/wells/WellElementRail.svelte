@@ -91,8 +91,8 @@
     align-items: center;
     gap: 4px;
     padding: 6px 2px;
-    background: rgba(16, 16, 26, 0.86);
-    border: 1px solid #2a2a3e;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid var(--w-border);
     border-radius: 8px;
     backdrop-filter: blur(3px);
     overflow: visible;
@@ -103,18 +103,18 @@
     position: relative;
     width: 36px;
     height: 34px;
-    background: #1a1a2a;
-    border: 1px solid #2f2f46;
+    background: var(--w-surface-2);
+    border: 1px solid var(--w-border);
     border-radius: 7px;
-    color: #6a6a86;
+    color: var(--w-text-dim);
     cursor: pointer;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   }
-  .wer-btn:hover { color: #d8d8ef; border-color: #44446a; }
-  .wer-btn.on { background: #232340; border-color: #cc3333; color: #fff; }
+  .wer-btn:hover { color: var(--w-text); border-color: var(--w-border-2); }
+  .wer-btn.on { background: var(--w-surface-2); border-color: var(--w-accent); color: var(--w-text); }
   .wer-dot {
     position: absolute;
     top: 3px;
@@ -130,7 +130,7 @@
     bottom: 1px;
     right: 3px;
     font: 700 8px ui-monospace, monospace;
-    color: #99a;
+    color: var(--w-text-dim);
   }
   .wer-btn.on .wer-count { color: #ffd; }
 
@@ -141,9 +141,9 @@
     top: 50%;
     transform: translate(-4px, -50%);
     padding: 5px 9px;
-    background: rgba(10, 10, 18, 0.96);
-    border: 1px solid #2a2a3e;
-    color: #e8e8ef;
+    background: rgba(27, 30, 38, 0.94);
+    border: 1px solid var(--w-border);
+    color: var(--w-text);
     border-radius: 5px;
     white-space: nowrap;
     font: 11px Arial, sans-serif;

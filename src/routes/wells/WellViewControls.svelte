@@ -160,8 +160,8 @@
     align-items: center;
     gap: 8px;
     padding: 6px 8px;
-    background: rgba(16, 16, 26, 0.86);
-    border: 1px solid #2a2a3e;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid var(--w-border);
     border-radius: 8px;
     backdrop-filter: blur(3px);
     font: 11px Arial, sans-serif;
@@ -172,22 +172,22 @@
   /* 2D | 3D segmented control. */
   .wvc-seg {
     display: inline-flex;
-    border: 1px solid #34345a;
+    border: 1px solid var(--w-border-2);
     border-radius: 9999px;
     overflow: hidden;
   }
   .wvc-seg-btn {
-    background: #1a1a2a;
+    background: var(--w-surface-2);
     border: none;
-    color: #889;
+    color: var(--w-text-dim);
     cursor: pointer;
     padding: 3px 12px;
     font: 700 11px Arial;
   }
-  .wvc-seg-btn:hover { color: #fff; }
+  .wvc-seg-btn:hover { color: var(--w-text); }
   .wvc-seg-btn.on {
     background: #cc3333;
-    color: #fff;
+    color: var(--w-text);
   }
 
   /* Adjustments gear — opens the display-menu popover. */
@@ -197,19 +197,19 @@
     justify-content: center;
     width: 28px;
     height: 24px;
-    background: #1a1a2a;
-    border: 1px solid #2f2f46;
+    background: var(--w-surface-2);
+    border: 1px solid var(--w-border);
     border-radius: 7px;
-    color: #aab;
+    color: var(--w-text-dim);
     cursor: pointer;
     transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   }
-  .wvc-gear:hover { color: #fff; border-color: #44446a; }
-  .wvc-gear.on { background: #232340; border-color: #cc3333; color: #fff; }
+  .wvc-gear:hover { color: var(--w-text); border-color: #44446a; }
+  .wvc-gear.on { background: var(--w-surface-2); border-color: #cc3333; color: var(--w-text); }
 
   /* ── Display-menu popover contents (SVTC WsonDisplayMenu pill styling) ─────── */
   .dm-group { display: flex; flex-direction: column; gap: 8px; }
-  .dm-divider { height: 1px; background: #2a2a3e; margin: 1px 0; }
+  .dm-divider { height: 1px; background: var(--w-border); margin: 1px 0; }
 
   .dm-dial {
     display: grid;
@@ -218,40 +218,40 @@
     gap: 8px;
     cursor: pointer;
   }
-  .dm-lbl { color: #99a; font: 11px Arial; white-space: nowrap; }
+  .dm-lbl { color: var(--w-text-dim); font: 11px Arial; white-space: nowrap; }
   .dm-dial input[type='range'] { width: 100%; accent-color: #cc3333; cursor: pointer; }
   .dm-num {
     width: 52px;
-    background: #12121e;
-    border: 1px solid #34345a;
+    background: var(--w-surface);
+    border: 1px solid var(--w-border-2);
     border-radius: 5px;
-    color: #fff;
+    color: var(--w-text);
     font: 11px ui-monospace, monospace;
     padding: 3px 5px;
     text-align: right;
     font-variant-numeric: tabular-nums;
   }
-  .dm-unit { color: #778; font: 10px ui-monospace, monospace; }
+  .dm-unit { color: var(--w-text-faint); font: 10px ui-monospace, monospace; }
 
   .dm-toggles { display: flex; flex-wrap: wrap; gap: 4px; }
   .dm-pill {
     display: inline-flex;
     align-items: center;
     gap: 5px;
-    background: #1a1a2a;
-    border: 1px solid #2f2f46;
+    background: var(--w-surface-2);
+    border: 1px solid var(--w-border);
     border-radius: 9999px;
-    color: #889;
+    color: var(--w-text-dim);
     cursor: pointer;
     padding: 3px 9px;
     font: 600 10px Arial;
     white-space: nowrap;
     transition: background 0.08s, color 0.08s, border-color 0.08s;
   }
-  .dm-pill:hover { color: #fff; border-color: #44446a; }
+  .dm-pill:hover { color: var(--w-text); border-color: #44446a; }
   .dm-pill.on {
-    background: #232340;
+    background: var(--w-surface-2);
     border-color: #cc3333;
-    color: #fff;
+    color: var(--w-text);
   }
 </style>

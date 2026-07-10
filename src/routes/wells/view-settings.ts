@@ -67,7 +67,10 @@ export function defaultViewSettings(): WellViewSettings {
     dtx: true,
     diaScale: 6,
     zScale: 1,
-    whiteBg: false,
+    // Schematics read best on white — and the 2D view already forced white
+    // regardless of this flag, so a dark 3D stage was the odd one out. The ◻ White
+    // pill still toggles it back.
+    whiteBg: true,
     showRuler: true,
   };
 }

@@ -82,8 +82,8 @@
   .well-toolbar {
     width: 38px;
     flex: none;
-    background: #16161f;
-    border-right: 1px solid #2a2a3e;
+    background: var(--w-surface);
+    border-right: 1px solid var(--w-border);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -95,7 +95,7 @@
   .tb-btn {
     background: none;
     border: 1px solid transparent;
-    color: #8a8aa0;
+    color: var(--w-text-dim);
     width: 30px;
     height: 30px;
     border-radius: 6px;
@@ -105,13 +105,13 @@
     cursor: pointer;
     transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
   }
-  .tb-btn:hover { background: #24243a; color: #d8d8ef; }
+  .tb-btn:hover { background: var(--w-surface-2); color: var(--w-text); }
   .tb-btn.tb-active {
-    background: #2a2a48;
-    border-color: #cc2222;
-    color: #ff6a6a;
+    background: var(--w-border);
+    border-color: var(--w-accent);
+    color: var(--w-accent);
   }
-  .tb-sep { width: 22px; height: 1px; background: #2a2a3e; margin: 3px 0; }
+  .tb-sep { width: 22px; height: 1px; background: var(--w-border); margin: 3px 0; }
 
   /* Tooltip — appears to the right on hover (SVTC-style). */
   .tb-tip {
@@ -120,9 +120,9 @@
     top: 50%;
     transform: translate(-4px, -50%);
     padding: 5px 9px;
-    background: rgba(10, 10, 18, 0.95);
-    border: 1px solid #2a2a3e;
-    color: #e8e8ef;
+    background: rgba(27, 30, 38, 0.94);
+    border: 1px solid var(--w-border);
+    color: var(--w-text);
     border-radius: 5px;
     white-space: nowrap;
     font: 11px ui-monospace, monospace;

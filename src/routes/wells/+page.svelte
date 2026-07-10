@@ -500,11 +500,32 @@
 </div>
 
 <style>
+  /* ── /wells LIGHT theme tokens ─────────────────────────────────────────────
+     Scoped to .wells-app, not :root, so the rest of the app is untouched. The
+     chrome (sidebar, header, toolbar, rail, popovers) reads from these; the 2D
+     schematic's element colours (casing blue, cement, perf red) are DATA, not
+     theme, and are deliberately left alone.
+     `:global` so the child components' own <style> blocks — which Svelte scopes
+     per-component — still resolve these vars through the cascade. */
+  :global(.wells-app) {
+    --w-bg: #ffffff;        /* the stage / app canvas            */
+    --w-surface: #f6f7f9;   /* header, sidebar, footer bars      */
+    --w-surface-2: #eceef2; /* chips, inputs, hovered rows       */
+    --w-border: #d7dbe2;    /* hairlines                          */
+    --w-border-2: #c2c8d2;  /* stronger dividers, chip outlines   */
+    --w-text: #1b1e26;      /* primary                            */
+    --w-text-dim: #565d6d;  /* labels, secondary                  */
+    --w-text-faint: #878e9d;/* captions, disabled                 */
+    --w-accent: #cc3333;    /* the wells red — unchanged          */
+    --w-accent-strong: #a52121;
+    --w-warn: #8a6d00;
+  }
+
   .wells-app {
     height: 100%;
     display: flex;
-    background: #14141f;
-    color: #e8e8ef;
+    background: var(--w-bg);
+    color: var(--w-text);
     overflow: hidden;
     font-family: Arial, sans-serif;
   }
@@ -520,7 +541,7 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    border-right: 1px solid #2a2a3e;
+    border-right: 1px solid var(--w-border);
   }
 
   /* ── Resize splitter ─────────────────────────────────────────────────────── */
@@ -548,14 +569,14 @@
     flex: none;
     display: block;
     padding: 8px 12px;
-    background: #16161f;
-    border-top: 1px solid #2a2a3e;
-    color: #cc4444;
+    background: var(--w-surface);
+    border-top: 1px solid var(--w-border);
+    color: var(--w-accent);
     text-decoration: none;
     font: 700 11px Arial;
   }
   .wells-home:hover {
-    color: #ff6666;
+    color: var(--w-accent);
   }
 
   .wells-main {
@@ -573,8 +594,8 @@
     flex-direction: column;
     gap: 8px;
     padding: 8px 16px;
-    background: #16161f;
-    border-bottom: 1px solid #2a2a3e;
+    background: var(--w-surface);
+    border-bottom: 1px solid var(--w-border);
   }
   .wells-header.collapsed {
     padding-bottom: 8px;
@@ -589,13 +610,13 @@
     flex: none;
     background: none;
     border: none;
-    color: #889;
+    color: var(--w-text-dim);
     cursor: pointer;
     padding: 2px;
     display: flex;
     align-items: center;
   }
-  .wells-header-toggle:hover { color: #fff; }
+  .wells-header-toggle:hover { color: var(--w-text); }
   .wells-chev {
     display: inline-block;
     font-size: 11px;
@@ -611,7 +632,7 @@
   .wells-desc {
     margin: 0;
     font: 12px Arial;
-    color: #99a;
+    color: var(--w-text-dim);
     line-height: 1.45;
     max-width: 900px;
   }
@@ -622,11 +643,11 @@
   }
   .wells-fact {
     font: 12px ui-monospace, monospace;
-    color: #cdd;
+    color: var(--w-text);
     white-space: nowrap;
   }
   .wells-fact-k {
-    color: #667;
+    color: var(--w-text-faint);
     margin-right: 5px;
     text-transform: uppercase;
     font-size: 10px;
@@ -647,23 +668,23 @@
   .wells-title h1 {
     margin: 0;
     font: 700 15px Arial;
-    color: #fff;
+    color: var(--w-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
   .wells-chip {
     font: 600 11px ui-monospace, monospace;
-    background: #232340;
-    border: 1px solid #34345a;
+    background: var(--w-surface-2);
+    border: 1px solid var(--w-border-2);
     border-radius: 9999px;
     padding: 2px 10px;
-    color: #aab;
+    color: var(--w-text-dim);
     white-space: nowrap;
   }
   .wells-chip-kind {
-    color: #ffb;
-    border-color: #4a4a2a;
+    color: var(--w-warn);
+    border-color: var(--w-border-2);
   }
   .wells-metrics {
     display: flex;
@@ -673,11 +694,11 @@
   }
   .wells-metric {
     font: 11px ui-monospace, monospace;
-    color: #778;
+    color: var(--w-text-faint);
     white-space: nowrap;
   }
   .wells-metric b {
-    color: #fff;
+    color: var(--w-text);
     font-size: 13px;
   }
 
@@ -688,14 +709,14 @@
     align-items: stretch;
     gap: 2px;
     height: 36px;
-    background: #10101a;
-    border-bottom: 1px solid #2a2a3e;
+    background: var(--w-surface);
+    border-bottom: 1px solid var(--w-border);
     padding: 0 6px;
     overflow-x: auto;
   }
   .wells-tabs-hint {
     align-self: center;
-    color: #55556a;
+    color: var(--w-text-faint);
     font: 11px ui-monospace, monospace;
     padding: 0 8px;
   }
@@ -703,15 +724,15 @@
     display: flex;
     align-items: center;
     align-self: flex-end;
-    background: #1a1a2a;
-    border: 1px solid #2a2a3e;
+    background: var(--w-surface-2);
+    border: 1px solid var(--w-border);
     border-bottom: none;
     border-radius: 6px 6px 0 0;
     margin-top: 4px;
     max-width: 200px;
   }
   .wells-tab-wrap.active {
-    background: #232340;
+    background: var(--w-surface-2);
     border-color: #cc3333;
   }
   .wells-tab {
@@ -720,14 +741,14 @@
     gap: 6px;
     background: none;
     border: none;
-    color: #aab;
+    color: var(--w-text-dim);
     cursor: pointer;
     padding: 6px 4px 6px 10px;
     font: 12px ui-monospace, monospace;
     overflow: hidden;
   }
   .wells-tab-wrap.active .wells-tab {
-    color: #fff;
+    color: var(--w-text);
   }
   .wells-tab-ic {
     color: #cc3333;
@@ -741,14 +762,14 @@
   .wells-tab-close {
     background: none;
     border: none;
-    color: #6a6a80;
+    color: var(--w-text-faint);
     cursor: pointer;
     font-size: 15px;
     line-height: 1;
     padding: 0 8px 0 2px;
   }
   .wells-tab-close:hover {
-    color: #ff6666;
+    color: var(--w-accent);
   }
 
   /* ── Stage ─────────────────────────────────────────────────────────────── */
@@ -777,7 +798,7 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    color: #55556a;
+    color: var(--w-text-faint);
     text-align: center;
     padding: 0 24px;
   }
@@ -791,17 +812,17 @@
   .wells-empty-title {
     margin: 0;
     font: 600 14px Arial;
-    color: #aab;
+    color: var(--w-text-dim);
   }
   .wells-empty-sub {
     margin: 0;
     max-width: 340px;
     font: 12px ui-monospace, monospace;
-    color: #667;
+    color: var(--w-text-faint);
     line-height: 1.5;
   }
   .wells-empty-sub strong {
-    color: #aab;
+    color: var(--w-text-dim);
     font-weight: 700;
   }
   .wells-empty code {

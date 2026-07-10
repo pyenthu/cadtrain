@@ -79,7 +79,7 @@
     position: fixed;
     z-index: 1000;
     background: rgba(20, 20, 32, 0.98);
-    border: 1px solid #34345a;
+    border: 1px solid var(--w-border-2);
     border-radius: 9px;
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
     color: #ccd;
@@ -92,12 +92,12 @@
     gap: 8px;
     padding: 7px 10px;
     background: #1c1c30;
-    border-bottom: 1px solid #2a2a3e;
+    border-bottom: 1px solid var(--w-border);
   }
   .wpop-title {
     font-weight: 700;
     font-size: 12px;
-    color: #fff;
+    color: var(--w-text);
     flex: 1 1 auto;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -107,13 +107,13 @@
     flex: none;
     background: none;
     border: none;
-    color: #889;
+    color: var(--w-text-dim);
     cursor: pointer;
     font-size: 13px;
     line-height: 1;
     padding: 2px;
   }
-  .wpop-close:hover { color: #ff6666; }
+  .wpop-close:hover { color: var(--w-accent); }
   .wpop-body {
     padding: 10px;
     display: flex;

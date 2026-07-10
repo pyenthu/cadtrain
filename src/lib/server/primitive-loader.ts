@@ -613,6 +613,13 @@ export async function buildPrimitiveGeom(
 // change; the TTL bounds staleness (edit a dep → refreshes within the TTL).
 const DEP_TTL_MS = 30_000;
 const depSourceCache = new Map<string, { p: Promise<string>; ts: number }>();
+
+/** A failure that says nothing about the dep itself — upstream down (5xx),
+ *  rate-limited, or timed out. Worth ONE retry, and worth a message that doesn't
+ *  accuse the part of not existing. Mirrors the same helper in /api/tf/compile. */
+export function isTransientStatus(status: number): boolean {
+  return status >= 500 || status === 429 || status === 408;
+}
 export function fetchDepSource(id: string, fetchFn: typeof fetch): Promise<string> {
   const hit = depSourceCache.get(id);
   if (hit && Date.now() - hit.ts < DEP_TTL_MS) return hit.p;
@@ -621,11 +628,21 @@ export function fetchDepSource(id: string, fetchFn: typeof fetch): Promise<strin
     // primitives/{basic,archive}/<id>/ and completions/<family>/
     // <id>/). Reading the flat primitives/<id>/source.ts directly broke
     // after the 2026-05-23 restructure moved parts into sub-folders.
-    const r = await fetchFn(
-      `/api/primitives/source?name=${encodeURIComponent(id)}`,
-      { cache: 'no-store' },
-    );
-    if (!r.ok) throw new Error(`dependency primitive "${id}" not found on the volume (HTTP ${r.status})`);
+    // ONE retry on a transient upstream failure. In dev `/api/primitives/source`
+    // proxies to the Railway origin, which serves 502 for the ~30s of every
+    // redeploy — so a bake that happens to land mid-deploy died with a message
+    // claiming the dep did "not found on the volume", which is simply false: the
+    // dep exists, the upstream was down. Say which it is, and retry once.
+    let r = await fetchFn(`/api/primitives/source?name=${encodeURIComponent(id)}`, { cache: 'no-store' });
+    if (!r.ok && isTransientStatus(r.status)) {
+      await new Promise((res) => setTimeout(res, 250));
+      r = await fetchFn(`/api/primitives/source?name=${encodeURIComponent(id)}`, { cache: 'no-store' });
+    }
+    if (!r.ok) {
+      throw new Error(isTransientStatus(r.status)
+        ? `dependency primitive "${id}" could not be loaded — the volume is temporarily unavailable (HTTP ${r.status}, retried once). The part is probably fine; try again.`
+        : `dependency primitive "${id}" not found on the volume (HTTP ${r.status})`);
+    }
     const data = await r.json();
     const src = typeof data?.source === 'string' ? data.source : '';
     if (!src) throw new Error(`dependency primitive "${id}" returned empty source`);

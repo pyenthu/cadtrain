@@ -207,14 +207,14 @@
     height: 100%;
     min-height: 0;
     min-width: 0;
-    background: #16161f;
-    color: #d8d8ef;
-    border-right: 1px solid #2a2a3e;
+    background: var(--w-surface, #f6f7f9);
+    color: var(--w-text, #1b1e26);
+    border-right: 1px solid var(--w-border, #d7dbe2);
     font-family: Arial, sans-serif;
   }
   .ft-head {
     padding: 12px 12px 8px;
-    border-bottom: 1px solid #2a2a3e;
+    border-bottom: 1px solid var(--w-border, #d7dbe2);
   }
   .ft-title {
     font: 700 12px Arial;
@@ -224,21 +224,21 @@
   }
   .ft-sub {
     font-size: 10px;
-    color: #6a6a80;
+    color: var(--w-text-faint, #878e9d);
     margin-top: 2px;
   }
   .ft-filter {
     position: relative;
     padding: 8px;
-    border-bottom: 1px solid #2a2a3e;
+    border-bottom: 1px solid var(--w-border, #d7dbe2);
   }
   .ft-filter-input {
     width: 100%;
     box-sizing: border-box;
-    background: #1e1e2e;
-    border: 1px solid #2a2a3e;
+    background: var(--w-surface, #f6f7f9);
+    border: 1px solid var(--w-border, #d7dbe2);
     border-radius: 5px;
-    color: #e8e8ef;
+    color: var(--w-text, #1b1e26);
     font: 12px ui-monospace, monospace;
     padding: 5px 24px 5px 8px;
     outline: none;
@@ -253,13 +253,13 @@
     transform: translateY(-50%);
     background: none;
     border: none;
-    color: #8a8aa0;
+    color: var(--w-text-faint, #878e9d);
     cursor: pointer;
     font-size: 15px;
     line-height: 1;
   }
   .ft-filter-clear:hover {
-    color: #ff6666;
+    color: var(--w-accent, #cc3333);
   }
   .ft-scroll {
     flex: 1;
@@ -290,17 +290,17 @@
   }
   .ft-folder:hover,
   .ft-file:hover {
-    background: #22223a;
+    background: var(--w-surface-2, #eceef2);
   }
   /* Top-level folders read as SVTC-style explorer SECTION headers. */
   .ft-section {
     font: 700 10px Arial;
     letter-spacing: 0.6px;
     text-transform: uppercase;
-    color: #8a8ab0;
+    color: var(--w-text-faint, #878e9d);
     padding-top: 7px;
     padding-bottom: 7px;
-    border-top: 1px solid #22223a;
+    border-top: 1px solid var(--w-surface-2, #eceef2);
   }
   .ft-node:first-child > .ft-section {
     border-top: none;
@@ -309,19 +309,19 @@
     margin-left: auto;
   }
   .ft-file.active {
-    background: #2a2a48;
+    background: var(--w-border, #d7dbe2);
     border-left-color: #cc3333;
-    color: #fff;
+    color: var(--w-text, #1b1e26);
   }
   .ft-file.open {
-    color: #fff;
+    color: var(--w-text, #1b1e26);
   }
   .ft-file.open .ft-file-ic {
     opacity: 1;
   }
   .ft-chev {
     width: 10px;
-    color: #6a6a80;
+    color: var(--w-text-faint, #878e9d);
     font-size: 9px;
     flex: none;
   }
@@ -340,7 +340,7 @@
     font: 12px ui-monospace, monospace;
   }
   .ft-count {
-    color: #55556a;
+    color: var(--w-text-faint, #878e9d);
     font: 10px ui-monospace, monospace;
     flex: none;
   }
@@ -348,8 +348,8 @@
     font-size: 9px;
     text-transform: uppercase;
     letter-spacing: 0.4px;
-    background: #2a2a48;
-    color: #8a8ab0;
+    background: var(--w-border, #d7dbe2);
+    color: var(--w-text-faint, #878e9d);
     border-radius: 3px;
     padding: 1px 5px;
     flex: none;
@@ -357,7 +357,7 @@
   }
   .ft-empty {
     font: 11px ui-monospace, monospace;
-    color: #55556a;
+    color: var(--w-text-faint, #878e9d);
     font-style: italic;
     padding: 6px 12px;
   }

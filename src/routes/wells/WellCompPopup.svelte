@@ -137,17 +137,17 @@
   }
   .wcp-k {
     font: 600 10px ui-monospace, monospace;
-    color: #889;
+    color: var(--w-text-dim);
     text-transform: uppercase;
     letter-spacing: 0.4px;
   }
   .wcp input {
     width: 100%;
     box-sizing: border-box;
-    background: #10101a;
-    border: 1px solid #34345a;
+    background: var(--w-surface);
+    border: 1px solid var(--w-border-2);
     border-radius: 5px;
-    color: #e8e8ef;
+    color: var(--w-text);
     font: 12px ui-monospace, monospace;
     padding: 4px 6px;
   }
@@ -165,7 +165,7 @@
     background: #cc3333;
     border: none;
     border-radius: 5px;
-    color: #fff;
+    color: var(--w-text);
     cursor: pointer;
     font: 700 12px Arial;
     padding: 6px 8px;
@@ -183,6 +183,6 @@
   }
   .wcp-del:hover {
     background: #2a1620;
-    color: #ff6666;
+    color: var(--w-accent);
   }
 </style>

@@ -220,8 +220,8 @@
     display: flex;
     flex-direction: column;
     min-height: 0;
-    background: #14141f;
-    color: #e8e8ef;
+    background: var(--w-bg);
+    color: var(--w-text);
     overflow: hidden;
   }
 
@@ -232,7 +232,7 @@
     min-height: 0;
     position: relative;
     overflow: hidden;
-    background: radial-gradient(circle at 50% 35%, #20203a 0%, #10101a 80%);
+    background: radial-gradient(circle at 50% 35%, var(--w-surface-2) 0%, var(--w-surface) 80%);
   }
   /* Each render surface (2D SVG / 3D Canvas) fills the stage; the inactive one
      is hidden but kept mounted so switching modes is instant + preserves state
@@ -254,7 +254,7 @@
   /* W-G c — schematics read best on white. Flag today tints the 3D backdrop;
      W-D's 2D/SVG track view will render on this same white surface. */
   .wv-stage.white {
-    background: #ffffff;
+    background: var(--w-text);
   }
   .wv-error {
     margin: 24px;
@@ -268,7 +268,7 @@
   }
   .wv-error-ic {
     font-size: 20px;
-    color: #ff6666;
+    color: var(--w-accent);
   }
   .wv-error-title {
     font: 600 13px Arial;
@@ -282,7 +282,7 @@
   }
   .wv-empty {
     margin: auto;
-    color: #55556a;
+    color: var(--w-text-faint);
     font: 12px ui-monospace, monospace;
   }
 </style>

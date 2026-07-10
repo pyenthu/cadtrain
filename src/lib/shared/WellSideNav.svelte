@@ -310,14 +310,14 @@
     flex-direction: column;
     height: 100%;
     min-height: 0;
-    background: #16161f;
+    background: var(--w-surface, #f6f7f9);
   }
 
   /* ── Workspace controls ─────────────────────────────────────────────── */
   .wsn-ws {
     flex: none;
     padding: 8px;
-    border-bottom: 1px solid #2a2a3e;
+    border-bottom: 1px solid var(--w-border, #d7dbe2);
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -331,10 +331,10 @@
     align-items: center;
     justify-content: center;
     gap: 6px;
-    background: #1e1e2e;
-    border: 1px solid #2a2a3e;
+    background: var(--w-surface, #f6f7f9);
+    border: 1px solid var(--w-border, #d7dbe2);
     border-radius: 5px;
-    color: #d8d8ef;
+    color: var(--w-text, #1b1e26);
     cursor: pointer;
     font: 700 11px Arial;
     padding: 6px 8px;
@@ -344,9 +344,9 @@
       color 0.12s;
   }
   .wsn-btn:hover:not(:disabled) {
-    background: #24243a;
+    background: var(--w-surface-2, #eceef2);
     border-color: #cc3333;
-    color: #fff;
+    color: var(--w-text, #1b1e26);
   }
   .wsn-btn:disabled {
     opacity: 0.5;
@@ -365,15 +365,15 @@
     display: flex;
     align-items: center;
     gap: 6px;
-    background: #1b1b2c;
-    border: 1px solid #2a2a3e;
+    background: var(--w-surface, #f6f7f9);
+    border: 1px solid var(--w-border, #d7dbe2);
     border-radius: 5px;
     padding: 4px 8px;
     font: 11px ui-monospace, monospace;
-    color: #cdd;
+    color: var(--w-text, #1b1e26);
   }
   .wsn-ws-ic {
-    color: #cc9944;
+    color: var(--w-warn, #8a6d00);
     flex: none;
   }
   .wsn-ws-name {
@@ -384,24 +384,24 @@
   }
   .wsn-ws-count {
     flex: none;
-    color: #55556a;
+    color: var(--w-text-faint, #878e9d);
   }
   .wsn-ws-clear {
     flex: none;
     background: none;
     border: none;
-    color: #6a6a80;
+    color: var(--w-text-faint, #878e9d);
     cursor: pointer;
     font-size: 14px;
     line-height: 1;
     padding: 0 0 0 2px;
   }
   .wsn-ws-clear:hover {
-    color: #ff6666;
+    color: var(--w-accent, #cc3333);
   }
   .wsn-ws-last {
     font: 10px ui-monospace, monospace;
-    color: #55556a;
+    color: var(--w-text-faint, #878e9d);
     padding: 0 2px;
   }
   /* Reopen affordance — a cached folder from a previous visit awaiting a click
@@ -411,11 +411,11 @@
     align-items: center;
     gap: 6px;
     width: 100%;
-    background: #1b1b2c;
-    border: 1px dashed #4a4a2a;
+    background: var(--w-surface, #f6f7f9);
+    border: 1px dashed var(--w-border-2, #c2c8d2);
     border-radius: 5px;
     padding: 5px 8px;
-    color: #ffb;
+    color: var(--w-warn, #8a6d00);
     cursor: pointer;
     font: 700 11px Arial;
     text-align: left;
@@ -424,8 +424,8 @@
       border-color 0.12s;
   }
   .wsn-reopen:hover:not(:disabled) {
-    background: #24243a;
-    border-color: #cc9944;
+    background: var(--w-surface-2, #eceef2);
+    border-color: var(--w-warn, #8a6d00);
   }
   .wsn-reopen:disabled {
     opacity: 0.5;
@@ -436,7 +436,7 @@
   }
   .wsn-note {
     font: 10px ui-monospace, monospace;
-    color: #667;
+    color: var(--w-text-faint, #878e9d);
     line-height: 1.3;
   }
   .wsn-err {
@@ -446,7 +446,7 @@
     background: #2a1620;
     border: 1px solid #cc3333;
     border-radius: 5px;
-    color: #ff9a9a;
+    color: var(--w-accent, #cc3333);
     font: 10px ui-monospace, monospace;
     padding: 5px 8px;
     line-height: 1.35;
@@ -457,7 +457,7 @@
   .wsn-err button {
     background: none;
     border: none;
-    color: #ff9a9a;
+    color: var(--w-accent, #cc3333);
     cursor: pointer;
     font-size: 13px;
     line-height: 1;
