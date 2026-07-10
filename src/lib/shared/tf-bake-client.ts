@@ -7,18 +7,23 @@
  * blocking the caller). The worker returns RAW mesh data — the main thread runs
  * `tfMeshToGeo` (THREE) on it, so no THREE ever enters the worker.
  *
- * WORKER-TRANSPORT FALLBACK: the TF WASM worker is NEW (it was historically run on
- * the main thread — see trueform-client.ts). If the worker fails at the TRANSPORT
- * level (fails to spawn, a script load/parse error, an uncloneable reply — i.e. an
- * `onerror`/`onmessageerror`, NOT a build error the worker deliberately posted
- * back), we mark the worker broken and TRANSPARENTLY re-run the SAME build on the
- * MAIN THREAD via the shared `tf-worker-core`. This preserves today's working TF
- * behaviour as a safety net (the worker is a perf optimisation, not a correctness
- * dependency) while delivering the off-thread build whenever the worker works.
+ * WORKER DEATH vs TRANSPORT FAILURE — two different recoveries:
+ *   • A worker DEATH (`onerror`/`onmessageerror` — a WASM trap during a bake, or an
+ *     unclassifiable crash) drops the dead worker and RESPAWNS a fresh one (a clean
+ *     module realm) for the next DIFFERENT request; the trapped job REJECTS (blank
+ *     canvas + reason). We NEVER re-run a trap on the MAIN THREAD: its only post-trap
+ *     self-heal is `resetTf()`'s `?tfgen=N` cache-bust re-import, which is
+ *     unresolvable under Vite dev, so ONE main-thread trap poisons every later bake
+ *     until a page reload — and a WASM module can't get a fresh realm on the main
+ *     thread anyway. A fresh WORKER is a new realm → a clean gen-0 TF kernel.
+ *   • A genuine TRANSPORT failure where NO WASM has run — `new Worker()` throws, or
+ *     `postMessage` throws (uncloneable request) — marks the worker broken and
+ *     TRANSPARENTLY re-runs on the MAIN THREAD via the shared `tf-worker-core` (the
+ *     gen-0 import resolves fine; nothing has trapped, so nothing to poison).
  *
  * A genuine BUILD failure (the worker posted `{ ok:false, error }`, or the
- * main-thread fallback threw) is NOT a transport failure — it REJECTS so the
- * canvas blanks with the reason (native-only contract: no Manifold stand-in).
+ * main-thread fallback threw) REJECTS so the canvas blanks with the reason
+ * (native-only contract: no Manifold stand-in).
  *
  * Client-only: references `Worker`. Import it from browser code (lazy-import in a
  * Svelte component). The pure core (`tf-worker-core.ts`) is what the tests drive.
@@ -58,6 +63,9 @@ interface Job {
   resolve: (r: TfBakeResult) => void;
   reject: (e: unknown) => void;
   settled: boolean;
+  /** Recipe signature — a worker death re-dispatches the waiting job only if it is a
+   *  DIFFERENT recipe than the one that just trapped (else it would just re-trap). */
+  sig: string;
   /** Last-seen timings (attached to the resolved payload for the badge). */
   timings?: TfBakeTimings;
 }
@@ -66,9 +74,10 @@ let nextId = 0;
 const pending = new Map<number, Job>(); // dispatched to the worker, awaiting reply
 let waiting: Job | null = null;          // newest job not yet dispatched
 let dispatching = false;
-let workerBroken = false;                // gave up on the worker → main-thread fallback
-let workerDeaths = 0;                     // consecutive worker deaths w/o a healthy reply
-const MAX_WORKER_RESPAWNS = 3;            // after this many, stop respawning → main thread
+let workerBroken = false;                // worker literally unusable (new Worker()/postMessage threw) → main-thread fallback
+let consecutiveDeaths = 0;               // worker crashes since the last healthy reply (respawn-thrash backstop)
+let lastSentSig: string | null = null;   // recipe signature last dispatched to the worker
+const MAX_RESPAWN = 3;                    // cap auto-respawns across consecutive crashes
 
 function timingsOn(): boolean {
   try { return typeof localStorage !== 'undefined' && localStorage.getItem('cad-bake-timings') === '1'; } catch { return false; }
@@ -76,6 +85,13 @@ function timingsOn(): boolean {
 
 function settle(job: Job, r: TfBakeResult): void {
   if (!job.settled) { job.settled = true; job.resolve(r); }
+}
+
+/** Stable-ish signature of a bake request — same recipe ⇒ same string. Used to
+ *  tell a re-trap of the SAME geometry from a genuinely new request. */
+function recipeSig(args: TfBakeArgs): string {
+  try { return JSON.stringify({ m: args.mode, c: args.cutaway, r: args.recipe }); }
+  catch { return `sig-${++nextId}`; } // circular/proxy → unique, treated as "different"
 }
 
 let worker: Worker | null = null;
@@ -88,7 +104,7 @@ function getWorker(): Worker {
       if (!job) return;
       pending.delete(data.id);
       if (data.ok) {
-        workerDeaths = 0;   // a healthy reply — restore the respawn budget
+        consecutiveDeaths = 0;   // a healthy reply — clear the respawn backstop
         const t = (data as WorkerOk).timings;
         if (t && timingsOn()) { try { console.log(`[tf-worker] warm=${(t.warm ?? 0).toFixed(1)} · build=${(t.build ?? 0).toFixed(1)} ms`); } catch { /* noop */ } }
         const payload: TfTransferable = { data: data.data, stats: data.stats, cutPlanes: data.cutPlanes, fullData: data.fullData, parts: data.parts, cutParts: data.cutParts };
@@ -100,51 +116,38 @@ function getWorker(): Worker {
         job.reject(new Error(data.error));
       }
     };
-    // A worker DEATH — either a WASM trap that escaped runTfGuarded (memory OOB /
-    // unreachable during a bake) OR a genuine transport failure (script won't
-    // load). We can't reliably tell them apart from the ErrorEvent, and it matters
-    // because the MAIN-THREAD fallback's TF self-heal (`?tfgen=N` cache-bust
-    // re-import) is BROKEN under Vite dev — a bare specifier + query with
-    // @vite-ignore doesn't resolve, so ONE trap on the main thread poisons EVERY
-    // later bake ("Failed to resolve module specifier '@polydera/trueform?tfgen=1'")
-    // until a page reload. A fresh WORKER, by contrast, is a NEW module realm → a
-    // clean TF kernel via the plain gen-0 import (resolves in dev + prod). So on a
-    // worker death we RESPAWN a fresh worker (up to a cap) instead of latching onto
-    // the broken main thread:
-    //   • reject the IN-FLIGHT job(s) (the one that trapped) with the reason —
-    //     re-running the same bad geometry would just re-trap the fresh worker;
-    //   • re-dispatch the newest WAITING job (the user's current request) onto it;
-    //   • only after MAX_WORKER_RESPAWNS consecutive deaths (a worker that
-    //     genuinely won't stay up) give up and latch to the main-thread fallback.
-    // A healthy reply resets workerDeaths (see onmessage).
-    const onWorkerDeath = (detail: string, isTrap: boolean) => {
+    // A worker DEATH — a WASM trap that escaped runTfGuarded (memory OOB /
+    // unreachable during a bake) or an unclassifiable crash. We NEVER fall back to
+    // the main thread here: its only post-trap self-heal is `resetTf()`'s `?tfgen=N`
+    // re-import, unresolvable under Vite dev, so one main-thread trap poisons EVERY
+    // later bake until a page reload — and a WASM module can't get a fresh realm on
+    // the main thread anyway. A fresh WORKER IS a fresh realm (clean gen-0 kernel),
+    // so on a death we:
+    //   • drop the dead worker (next getWorker() spawns a clean one);
+    //   • reject the IN-FLIGHT job(s) that crashed it with the reason (native-only:
+    //     the canvas blanks + shows it — no Manifold stand-in);
+    //   • re-dispatch the newest WAITING job ONLY if it is a DIFFERENT recipe than
+    //     the one that just died (re-running the same bad geometry just re-traps);
+    //   • a soft cap (MAX_RESPAWN) stops auto-respawn thrash; a healthy reply and any
+    //     new user request (see run()) reset the counter.
+    // `looksLikeTrap` is diagnostic only — the recovery is identical either way.
+    const onWorkerDeath = (detail: string, looksLikeTrap: boolean) => {
       try { worker?.terminate(); } catch { /* noop */ }
       worker = null;
-      // The in-flight job(s) crashed the worker → reject with the reason (matches
-      // the worker's deliberate {ok:false} blank+reason for a bad bake).
       const inflight = [...pending.values()];
       pending.clear();
       for (const job of inflight) if (!job.settled) { job.settled = true; job.reject(new Error(detail)); }
-      if (isTrap) {
-        // A WASM TRAP (bad geometry). NEVER main-thread — its `?tfgen` self-heal is
-        // broken under Vite dev and a single main-thread trap poisons EVERY later
-        // bake. A fresh worker is a clean realm (gen-0 import resolves), so respawn
-        // for the NEWEST request. A soft cap stops re-dispatch thrash if a part traps
-        // every bake (still no main-thread); a healthy reply resets the counter.
-        workerDeaths++;
-        try { console.warn(`[tf-worker] WASM trap (#${workerDeaths}) → fresh worker: ${detail}`); } catch { /* noop */ }
-        if (waiting) {
-          if (workerDeaths <= MAX_WORKER_RESPAWNS) { void dispatch(); }        // fresh getWorker() for the newest request
-          else { const w = waiting; waiting = null; if (!w.settled) { w.settled = true; w.reject(new Error(detail)); } } // thrash guard: reject, still no main-thread
-        }
+      consecutiveDeaths++;
+      try { console.warn(`[tf-worker] worker died (#${consecutiveDeaths}${looksLikeTrap ? ', WASM trap' : ''}) → ${waiting ? 'fresh worker for newest request' : 'idle'}: ${detail}`); } catch { /* noop */ }
+      if (!waiting) return;                          // nothing queued — the reject already blanked the canvas
+      const w = waiting;
+      const sameRecipe = w.sig === lastSentSig;      // exactly the geometry that just died — don't re-trap
+      if (sameRecipe || consecutiveDeaths > MAX_RESPAWN) {
+        waiting = null;
+        if (!w.settled) { w.settled = true; w.reject(new Error(detail)); }
         return;
       }
-      // A genuine TRANSPORT failure (worker script won't load / uncloneable clone)
-      // — the main thread's gen-0 TF import resolves fine (only traps poison it, and
-      // this isn't one), so fall back there.
-      try { console.warn(`[tf-worker] transport failure → main-thread fallback: ${detail}`); } catch { /* noop */ }
-      workerBroken = true;
-      if (waiting) { const w = waiting; waiting = null; void runOnMainThread(w); }
+      void dispatch();                               // fresh getWorker() for the newest, DIFFERENT request
     };
     worker.onerror = (ev) => {
       const e = ev as ErrorEvent;
@@ -188,7 +191,8 @@ async function runOnMainThread(job: Job): Promise<void> {
  */
 function run(args: TfBakeArgs): Promise<TfBakeResult> {
   return new Promise<TfBakeResult>((resolve, reject) => {
-    const job: Job = { id: ++nextId, args, resolve, reject, settled: false };
+    const job: Job = { id: ++nextId, args, sig: recipeSig(args), resolve, reject, settled: false };
+    consecutiveDeaths = 0; // a NEW user request is intent, not respawn thrash — clear the backstop
     // Supersede the previously-waiting + all in-flight jobs (latest-wins).
     if (waiting) settle(waiting, TF_CANCELLED);
     for (const p of pending.values()) settle(p, TF_CANCELLED);
@@ -210,6 +214,7 @@ async function dispatch(): Promise<void> {
     // proxies with DataCloneError, same trap bake-client guards).
     const recipe = job.args.recipe ? JSON.parse(JSON.stringify(job.args.recipe)) : undefined;
     const msg: TfWorkerRequest = { id: job.id, mode: job.args.mode, recipe, cutaway: job.args.cutaway, timings: timingsOn() };
+    lastSentSig = job.sig; // remember what we handed the worker — a death checks this to avoid re-trapping
     try {
       getWorker().postMessage(msg);
     } catch (e) {

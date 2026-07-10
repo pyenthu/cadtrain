@@ -6,6 +6,10 @@ describe('isManifoldFatalTrap', () => {
   it('recognises an ALREADY-poisoned singleton', () => {
     // The exact string a poisoned dev server returned on 2026-07-10.
     expect(isManifoldFatalTrap('bake failed: emval_methodCallers[caller] is not a function [in g_shaft → r_revolve({...})]')).toBe(true);
+    // 2026-07-11: a corrupted embind type registry reads a GARBAGE type name for a
+    // valid arg — this must respawn the worker, not reject-and-keep the bad heap.
+    expect(isManifoldFatalTrap('primitive call failed: parameter 0 has unknown type À®')).toBe(true);
+    expect(isManifoldFatalTrap('parameter 2 has unbound type N8manifold3vec3E')).toBe(true);
   });
 
   it('recognises the traps that do the poisoning', () => {

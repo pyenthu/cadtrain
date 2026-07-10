@@ -19,16 +19,20 @@
  * True when `e` is a WASM-level trap that has corrupted the Manifold module —
  * recovery needs a FRESH module, not a retry on the old one.
  *
- * `emval_methodCallers` is the tell of an ALREADY-poisoned module (Embind's
- * method table is gone). The rest mirror `isTfFatalTrap` and catch the original
- * trap that poisoned it. Accepts a raw string, an Error, or an Emscripten abort
- * code (a bare number).
+ * `emval_methodCallers` AND `parameter N has unknown type …` / `… has unbound
+ * type …` are tells of an ALREADY-poisoned module — Embind's type registry is
+ * gone, so the next call reads a GARBAGE type name (`parameter 0 has unknown
+ * type À®`) even for a perfectly valid argument. Without these, that error is
+ * rejected as a plain build failure and the worker is NOT respawned, so the
+ * corrupted heap survives and every later bake repeats it (then hangs). The rest
+ * mirror `isTfFatalTrap` and catch the original trap that poisoned the module.
+ * Accepts a raw string, an Error, or an Emscripten abort code (a bare number).
  */
 export function isManifoldFatalTrap(e: unknown): boolean {
   if (typeof e === 'number' || typeof e === 'bigint') return true;
   if (typeof WebAssembly !== 'undefined' && e instanceof WebAssembly.RuntimeError) return true;
   const s = String((e as any)?.message ?? e);
-  return /emval_methodCallers|unreachable|out of bounds|null function|signature mismatch|RuntimeError|\bAborted?\b|table index|memory access/i.test(s);
+  return /emval_methodCallers|has unknown type|has unbound type|unreachable|out of bounds|null function|signature mismatch|RuntimeError|\bAborted?\b|table index|memory access/i.test(s);
 }
 
 /**
@@ -37,7 +41,7 @@ export function isManifoldFatalTrap(e: unknown): boolean {
  */
 export function describeManifoldError(e: unknown): string {
   const raw = String((e as any)?.message ?? e);
-  if (/emval_methodCallers/i.test(raw))
+  if (/emval_methodCallers|has unknown type|has unbound type/i.test(raw))
     return 'Manifold kernel was in a corrupted state from an earlier trap (the part named in the raw error is NOT the culprit). Kernel reset; re-run the bake.';
   if (/out of bounds|memory access/i.test(raw))
     return 'Manifold kernel trap (memory out-of-bounds) — malformed mesh input, usually non-manifold geometry. Kernel reset; re-run the bake.';
