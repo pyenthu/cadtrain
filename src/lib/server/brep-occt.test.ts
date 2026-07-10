@@ -100,6 +100,22 @@ export function t_half(p) {
     expect(brepVol).toBeGreaterThan(33);
   });
 
+  it('coincident-vertex profile — degenerate zero-length edge (chamfer === length)', async () => {
+    // Mirrors bw_hanger at chamfer === length: [od/2, length−chamfer] collapses
+    // onto [od/2, 0], a zero-length edge. Manifold tolerates it; OCCT's exact
+    // kernel threw a Standard_Failure (a bare numeric pointer) that poisoned the
+    // whole assembly — misread as a heap OOM. The sketchPoly dedupe drops the
+    // duplicate vertex so BREP now bakes this at parity with the oracle. This is
+    // the actual fix that unblocked w_sample_1 (a full 16-part vertical well).
+    const src = `export const meta = { id: 't_degen', name: 't_degen', kind: 'asm', uses: ['r_revolve'], params: { od: { default: 8 }, id: { default: 3 }, length: { default: 2 }, chamfer: { default: 2 } } };
+export function t_degen(p) {
+  const prof = [[p.id/2, 0], [p.od/2, 0], [p.od/2, p.length - p.chamfer], [p.od/2 - p.chamfer, p.length], [p.id/2, p.length]];
+  return r_revolve({ profile: prof, segments: 32 });
+}`;
+    const { brepVol } = await assertParity('t_degen', src);
+    expect(brepVol, 't_degen: coincident-vertex revolve must bake a positive solid').toBeGreaterThan(0);
+  });
+
   it('place + fold — A.add(place([…])) unions a repeated part (combineBool)', async () => {
     const src = `export const meta = { id: 't_place', name: 't_place', kind: 'asm', uses: ['r_cuboid'], params: { n: { default: 3 } } };
 export function t_place(p) {

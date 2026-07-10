@@ -255,6 +255,42 @@ export async function brepFromSource(
   if (!m) return null;
   const fnBody = m[1];
 
+  // ── OCCT WASM heap hygiene ────────────────────────────────────────────────
+  // replicad's booleans (fuse/cut/intersect) and the sketchPoly/extrude helpers
+  // allocate a NEW OCCT shape but DO NOT free their operands (unlike translate/
+  // rotate, which delete their receiver, or makeCompound, which deletes its
+  // operands). In a 16+ part / 1000-unit well (w_sample_1/4) every per-part
+  // intermediate — two g_shaft revolves, the bore-subtract result, the mv copy,
+  // and a bbox-spanning sectionCut WEDGE — therefore piles up on the WASM heap for
+  // the whole compose (each per-part solid bakes fine ALONE; it is the
+  // accumulation). The heap grows to 2 GB, so this alone did not sink w_sample_1
+  // (that was a degenerate profile — see dedupePoly), but leaving ~100 dead
+  // B-rep solids resident is a latent OOM on ever-larger wells. Fix: track every
+  // wrapped shape, and at each dependency-part boundary (+ the top-level build)
+  // DELETE every shape created during that sub-build that is NOT the returned
+  // solid. Those non-escaping intermediates are provably dead once the
+  // `new Function` body returns (only the return value stays reachable), so this
+  // is pure memory hygiene — no geometry change, and no risk to reused handles
+  // (reuse only happens WITHIN a body, before its boundary sweep runs).
+  const tracked: any[] = [];            // underlying OCCT shapes, in creation order
+  const disposed = new WeakSet<object>();
+  const safeDelete = (s: any): void => {
+    if (!s || typeof s !== 'object' || disposed.has(s)) return;
+    disposed.add(s);
+    // Skip if replicad already freed it (makeCompound/translate null the wrapped
+    // handle) — calling delete() again throws inside its FinalizationRegistry.
+    if ((s as any)._wrapped == null) return;
+    try { if (typeof s.delete === 'function') s.delete(); } catch { /* already gone */ }
+  };
+  // Free every shape created since `mark` except those that escape (kept), then
+  // re-parent the survivors to the enclosing scope so ITS sweep can reclaim them.
+  const sweepSince = (mark: number, keptArr: any[]): void => {
+    const keep = new Set(keptArr);
+    for (let i = mark; i < tracked.length; i++) { const sh = tracked[i]; if (!keep.has(sh)) safeDelete(sh); }
+    tracked.length = mark;
+    for (const k of keptArr) tracked.push(k);
+  };
+
   // ── wrapped OCCT solid: Manifold-method names → replicad methods ──────────
   const WRAP = Symbol('occt');
   const unwrap = (v: any) => (v && v[WRAP]) ? v[WRAP] : v;
@@ -264,16 +300,28 @@ export async function brepFromSource(
   // `t.fuse(array)` threw deep in replicad ("Cannot read '$$' of undefined",
   // bw_tubing) because a raw JS array has no OCCT handle. collectShapes flattens
   // the operand to individual solids; we clone each (replicad booleans consume
-  // their operands) and apply the op one at a time.
+  // their operands) and apply the op one at a time — freeing each throwaway clone
+  // and each superseded intermediate immediately (neither escapes combineBool, so
+  // this never touches a handle the body still holds).
   const combineBool = (base: any, o: any, op: 'fuse' | 'cut' | 'intersect'): any => {
     const arr: any[] = []; collectShapes(o, arr);
     if (arr.length === 0) return base;
     let acc = base;
-    for (const s of arr) { let piece: any; try { piece = s.clone(); } catch { piece = s; } acc = acc[op](piece); }
+    for (const s of arr) {
+      let piece: any; try { piece = s.clone(); } catch { piece = s; }
+      const next = acc[op](piece);
+      if (piece !== s) safeDelete(piece);   // our private clone — consumed by the boolean
+      if (acc !== base) safeDelete(acc);     // prior intermediate — superseded
+      acc = next;
+    }
     return acc;
   };
   function wrap(shape: any): any {
     if (!shape || typeof shape !== 'object') return shape;
+    // Track every OCCT solid that flows through the executor so the boundary
+    // sweeps can reclaim the non-escaping ones (dedup + re-tracking is harmless —
+    // safeDelete guards double-free and sweepSince dedups via a Set).
+    if (typeof (shape as any).mesh === 'function' && !disposed.has(shape)) tracked.push(shape);
     const proxy: any = new Proxy(shape, {
       get(t, prop) {
         if (prop === WRAP) return t;
@@ -291,10 +339,32 @@ export async function brepFromSource(
     return proxy;
   }
 
+  // Drop consecutive coincident points (and a trailing point equal to the first)
+  // from a 2D polygon. Manifold silently tolerates a zero-length edge — an
+  // authored profile hits one whenever two vertices collapse at a param extreme
+  // (e.g. bw_hanger's chamfer === length → [od/2, length-chamfer] == [od/2, 0]).
+  // OCCT's EXACT kernel instead throws a Standard_Failure building the degenerate
+  // edge, which poisoned the whole assembly bake (misread as a heap OOM). Removing
+  // a duplicate vertex is a geometric no-op, so this is pure robustness — it makes
+  // the BREP wire builder as forgiving as the Manifold oracle.
+  const POLY_EPS = 1e-6;
+  const dedupePoly = (pts: [number, number][]): [number, number][] => {
+    const out: [number, number][] = [];
+    for (const pt of pts) {
+      const prev = out[out.length - 1];
+      if (!prev || Math.abs(pt[0] - prev[0]) > POLY_EPS || Math.abs(pt[1] - prev[1]) > POLY_EPS) out.push([pt[0], pt[1]]);
+    }
+    // .close() re-adds the closing edge, so a trailing vertex ≈ the first would
+    // itself be a zero-length edge — trim any such.
+    while (out.length > 1 && Math.abs(out[0][0] - out[out.length - 1][0]) <= POLY_EPS && Math.abs(out[0][1] - out[out.length - 1][1]) <= POLY_EPS) out.pop();
+    return out;
+  };
   // Build a closed replicad drawing from a 2D point list, sketch on a plane
   // (optionally offset along the plane normal — `z` for a stack of XY sections).
-  const sketchPoly = (pts: [number, number][], plane: 'XZ' | 'XY', z?: number) => {
-    if (!Array.isArray(pts) || pts.length < 3) throw new Error('profile < 3 pts');
+  const sketchPoly = (rawPts: [number, number][], plane: 'XZ' | 'XY', z?: number) => {
+    if (!Array.isArray(rawPts) || rawPts.length < 3) throw new Error('profile < 3 pts');
+    const pts = dedupePoly(rawPts);
+    if (pts.length < 3) throw new Error('profile < 3 pts (after coincident-vertex dedupe)');
     let d = draw([pts[0][0], pts[0][1]]);
     for (let i = 1; i < pts.length; i++) d = d.lineTo([pts[i][0], pts[i][1]]);
     return z === undefined ? d.close().sketchOnPlane(plane) : d.close().sketchOnPlane(plane, z);
@@ -469,6 +539,17 @@ export async function brepFromSource(
     return sweepOcct(a, section, closedPath === true);
   };
 
+  // warpSpline — bend a straight part onto a survey trajectory (deviated wells).
+  // The exact-kernel warp (deform a B-rep solid along an arbitrary 3D spline) is a
+  // genuine native-OCCT capability we do NOT implement here — it stays the curved/
+  // warp BREP hard-limit (#3). So warp is a NO-OP passthrough: a deviated assembly
+  // (w_sample_4, w_deviated_*) builds in its STRAIGHT form instead of throwing
+  // "warpSpline is not defined" and poisoning the whole bake. BREP geometry then
+  // DIVERGES from the Manifold oracle's warped shape for deviated wells (correctly
+  // flagged as a parity divergence — warp remains classified, not silently faked),
+  // but the straight solid bakes and meshes cleanly.
+  const warpSpline = (s: any) => s;
+
   // transforms — replicad/OCCT transforms DELETE their input shape's handle
   // after producing the moved copy (replicad Shape.translate/rotate call
   // this.delete()). A `repeat` that reuses ONE shape across N transforms
@@ -523,7 +604,9 @@ export async function brepFromSource(
       pts.push([R * Math.cos(a), R * Math.sin(a)]);
     }
     const wedge = sketchPoly(pts, 'XY').extrude(Math.max(0.01, zlen)).translate([0, 0, z0]);
-    return wrap(s.cut(wedge));
+    const cutRes = s.cut(wedge);
+    safeDelete(wedge);   // private throwaway — free the bbox-spanning wedge now (16 of these in a well)
+    return wrap(cutRes);
   };
   // Stack-ref offset (graded-delta z mate): stash the delta on the underlying
   // OCCT shape so stack() can read it (mirrors Manifold's `_stackRef`).
@@ -597,13 +680,13 @@ export async function brepFromSource(
   const depFns: Record<string, (args?: any) => any> = {};
   const NAMES = [
     'p', 'sketch', 'r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid', 'r_sweep',
-    'resampleSpline', 'resolveProfile', 'sectionCut',
+    'resampleSpline', 'resolveProfile', 'sectionCut', 'warpSpline',
     'mv', 'rot', 'place', 'withStackRef', 'stack', 'list', 'group',
     ...MATH_NAMES,
   ];
   const baseVals = (p: any) => [
     p, sketch, r_revolve, r_weld_extrude, r_loft, r_extrude, r_cuboid, r_sweep,
-    resampleSpline, resolveProfile, sectionCut,
+    resampleSpline, resolveProfile, sectionCut, warpSpline,
     mv, rot, place, withStackRef, stackOcct, compoundOf, compoundOf,
     ...MATH_VALUES,
   ];
@@ -635,15 +718,29 @@ export async function brepFromSource(
     const dd = defaultsOf(depSrc[nm]);
     depFns[nm] = (args?: any) => {
       const merged = (args && typeof args === 'object' && !Array.isArray(args)) ? { ...dd, ...args } : args;
+      const mark = tracked.length;
       const s = runBody(depSrc[nm], merged ?? {});
-      return s ? wrap(s) : s;
+      const result = s ? wrap(s) : s;
+      // Reclaim every intermediate this sub-part built (revolves, bores, cut
+      // wedges, mv copies) — only `result` escapes, so the rest are provably
+      // dead. Bounds the live-shape set to O(finished parts) so a large well's
+      // working set stays flat instead of growing with every component.
+      const kept: any[] = []; collectShapes(result, kept);
+      sweepSince(mark, kept);
+      return result;
     };
   }
 
   const t0 = Date.now();
   try {
+    const mark = tracked.length;
     const solid = runBody(source, paramValues);
     if (!solid) return null;
+    // Free the top-level build's dead intermediates (the pre-mv per-part solids)
+    // before the final tessellation, so meshing the composed compound has the
+    // whole heap to itself. `solid` is the only survivor kept.
+    const kept: any[] = []; collectShapes(solid, kept);
+    sweepSince(mark, kept);
     return meshBrepSolid(solid, opts, t0);
   } catch (e: any) {
     const raw = e?.message ?? e;
