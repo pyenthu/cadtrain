@@ -67,6 +67,27 @@ describe('warp node — model + emit', () => {
     expect(withOpts).toContain('validate: true');
   });
 
+  it('emits xDiaScale / yScale build-time exaggeration when set — absent ⇒ byte-identical (N3)', () => {
+    const base = buildWarpGraph();
+    // Absent → NO scale opts in the emit (the golden gate).
+    const noScale = emitGraph(base.graph, { id: 'w' }).body;
+    expect(noScale).not.toContain('xDiaScale');
+    expect(noScale).not.toContain('yScale');
+
+    // Set both (SVTC display vocabulary: xDiaScale radial, yScale depth) → opts.
+    const warp = base.graph.nodes[base.warpId] as any;
+    const g2 = { ...base.graph, nodes: { ...base.graph.nodes, [base.warpId]: { ...warp, xDiaScale: asLiteral(6), yScale: asLiteral(0.17) } } };
+    const emitted = emitGraph(g2, { id: 'w' });
+    expect(emitted.body).toContain('xDiaScale: 6');
+    expect(emitted.body).toContain('yScale: 0.17');
+
+    // Round-trips through serialise → hydrate.
+    const hydrated = hydrateGraph((emitted.meta as any).graph);
+    const w = hydrated.nodes[base.warpId] as any;
+    expect(w.xDiaScale).toEqual(asLiteral(6));
+    expect(w.yScale).toEqual(asLiteral(0.17));
+  });
+
   it('flags a missing bent-solid child as a validation error', () => {
     const { graph, id } = addWarpPlaceholder(newGraph());
     const errs = validateGraph(graph);

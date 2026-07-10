@@ -16,8 +16,14 @@
  *     via `resolveStructural`. These are the parts the assembler places for the
  *     wellbore itself, where od/id/wall/length are REAL parametric inputs.
  *
- * Every partId below is a real volume part (verified via /api/primitives/source)
- * and every param key maps to that part's actual `meta.params`.
+ * Every partId below is a real volume part and every param key maps to that part's
+ * actual `meta.params`. VERIFIED 2026-07-10 via READ-ONLY GET
+ * `/api/primitives/source?name=<id>` against the running dev server (which proxies
+ * `source` to prod): all 44 `g_*` completion ids + all 4 `bw_*` structural ids
+ * (48 total from `listRegisteredPartIds()`) resolved 200; 0 unresolved.
+ * NB: the local `.dev-volume/cache` is NOT the source of truth — it only holds
+ * parts that have been baked LOCALLY (~26 `g_*`), so a missing cache entry does
+ * NOT mean the part is absent; check `/api/primitives/source` (prod).
  */
 import type { Completion } from './wson';
 
@@ -88,6 +94,11 @@ const EXACT: Record<string, { partId: string; category: WellCompCategory }> = {
   // ── Artificial lift ──────────────────────────────────────────────────────
   ARTIFICIAL_LIFT_GAS_LIFT_MANDREL: { partId: 'g_gas_lift_mandrel', category: 'mandrel' },
   ARTIFICIAL_LIFT_SIDE_POCKET_MANDREL: { partId: 'g_side_pocket_mandrel', category: 'mandrel' },
+  // The real corpus files the side-pocket mandrel under MISC., not
+  // ARTIFICIAL_LIFT. Without this alias the CATEGORY fallback cannot rescue it
+  // (it keys on the 'MISC' prefix, which has no entry) and 6 real instances
+  // across wells 03/06 silently degraded to a plain g_tube. Same part.
+  MISC_SIDE_POCKET_MANDREL: { partId: 'g_side_pocket_mandrel', category: 'mandrel' },
   // ── Drill pipe ─────────────────────────────────────────────────────────────
   DRILL_PIPE_JOINT: { partId: 'g_dp_joint', category: 'drillpipe' },
   DRILL_PIPE_BOX: { partId: 'g_dp_box', category: 'drillpipe' },

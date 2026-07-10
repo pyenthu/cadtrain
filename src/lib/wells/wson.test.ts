@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { lintWson, parseWson, isDeviated, completionExtents, type Wson } from './wson';
+import { lintWson, parseWson, isDeviated, completionExtents, recomputeAutoTops, type Wson, type Completion } from './wson';
 
 const vertical: Wson = {
   meta: { wellName: 'T-1', td: 1070, pbtd: 1062 },
@@ -42,6 +42,68 @@ describe('WSON model (W0)', () => {
       { tool_comp: 'C', length: 20 },  // 115 → 135
     ]);
     expect(ext).toEqual([{ top: 100, bot: 110 }, { top: 110, bot: 115 }, { top: 115, bot: 135 }]);
+  });
+
+  it('recomputeAutoTops: an auto item follows its predecessor bot, preserving length', () => {
+    // Two default (auto) items; item 1 is stale (top 999) and must be re-pinned to
+    // item 0's bot (10), keeping its OWN length (5) → 10..15.
+    const out = recomputeAutoTops([
+      { tool_comp: 'A', top: 0, bot: 10 },
+      { tool_comp: 'B', top: 999, bot: 1004 }, // len 5, stale top
+    ]);
+    expect(out.map((c) => [c.top, c.bot])).toEqual([[0, 10], [10, 15]]);
+  });
+
+  it('recomputeAutoTops: a manual item (autoTop=false) holds its MD and the chain resumes after it', () => {
+    // Item 1 is a fixed-depth nipple at MD 500..503 (manual); item 0 (auto, first,
+    // held) ends at 10, but the manual item does NOT snap to it. Item 2 (auto)
+    // resumes from the manual item's bot (503), not from 10.
+    const out = recomputeAutoTops([
+      { tool_comp: 'TUBING', top: 0, bot: 10 },
+      { tool_comp: 'SSSV', top: 500, bot: 503, autoTop: false },
+      { tool_comp: 'TUBING', top: 0, bot: 2 }, // len 2, auto → 503..505
+    ]);
+    expect(out.map((c) => [c.top, c.bot])).toEqual([[0, 10], [500, 503], [503, 505]]);
+  });
+
+  it('recomputeAutoTops: editing a length drives bot = top + len down the whole chain', () => {
+    // Grow item 0 from length 10 to length 40; every downstream auto item shifts
+    // by the same 30, staying contiguous.
+    const before: Completion[] = [
+      { tool_comp: 'A', top: 0, bot: 10 },
+      { tool_comp: 'B', top: 10, bot: 13 },  // len 3
+      { tool_comp: 'C', top: 13, bot: 18 },  // len 5
+    ];
+    const grown = before.map((c, i) => (i === 0 ? { ...c, bot: 40 } : c));
+    const out = recomputeAutoTops(grown);
+    expect(out.map((c) => [c.top, c.bot])).toEqual([[0, 40], [40, 43], [43, 48]]);
+  });
+
+  it('recomputeAutoTops: is pure — it never mutates its input rows', () => {
+    const input: Completion[] = [
+      { tool_comp: 'A', top: 0, bot: 10 },
+      { tool_comp: 'B', top: 999, bot: 1004 },
+    ];
+    const snapshot = JSON.parse(JSON.stringify(input));
+    recomputeAutoTops(input);
+    expect(input).toEqual(snapshot);
+  });
+
+  it('recomputeAutoTops: resolves the real 7-item sample-01 string to its contiguous depths', () => {
+    // The SVTC vertical-land-producer completion string — already contiguous, so
+    // re-pinning is a no-op and reproduces 0→0.5→1025→1025.3→1028→1028.5→1029.8→1030.
+    const comps: Completion[] = [
+      { tool_comp: 'tbgHanger', top: 0, bot: 0.5 },
+      { tool_comp: 'MISC.TUBING', top: 0.5, bot: 1025 },
+      { tool_comp: 'FLOW_CONTROL.NIPPLE_R_LANDING', top: 1025, bot: 1025.3 },
+      { tool_comp: 'MISC.TUBING_PUP', top: 1025.3, bot: 1028 },
+      { tool_comp: 'PACKERS.PACKER_BAKER_PERMANENT', top: 1028, bot: 1028.5 },
+      { tool_comp: 'MISC.TUBING_PUP', top: 1028.5, bot: 1029.8 },
+      { tool_comp: 'MISC.MULE_SHOE', top: 1029.8, bot: 1030 },
+    ];
+    const out = recomputeAutoTops(comps);
+    expect(out.map((c) => c.top)).toEqual([0, 0.5, 1025, 1025.3, 1028, 1028.5, 1029.8]);
+    expect(out.map((c) => c.bot)).toEqual([0.5, 1025, 1025.3, 1028, 1028.5, 1029.8, 1030]);
   });
 
   it('parseWson throws on invalid JSON + on fatal lint, returns warnings', () => {

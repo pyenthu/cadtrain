@@ -871,6 +871,116 @@ export function sweepAnnular(
   return weldAndBuild(patches);
 }
 
+// ── BORE-EXTEND — defect-2 prevention for a hollow 3D-SUBTRACT sweep ───────────
+// A hollow swept tube can be authored as `sweep(outer).subtract(sweep(inner))`
+// (two SOLID sweeps, a 3D mesh boolean). When BOTH sweeps ride the SAME path
+// their end caps are COINCIDENT and — on a curved path — TILTED, so the mesh
+// boolean stitches the two independently-triangulated cap disks into PHANTOM
+// HANDLES → wrong genus / negative Euler characteristic + a degenerate sliver
+// fan, even though the result is still a closed 2-manifold. (PROVEN not
+// repairable post-hoc: dropping degenerate/sliver tris can't lower the genus;
+// simplify/setTolerance preserve topology by design — see src/lib/cad/CLAUDE.md
+// "r_sweep DEGENERATE / SLIVER caps".)
+//
+// PREVENTION (never create a coincident cap), NOT removal: extend the SUBTRAHEND
+// (bore) sweep's path PAST BOTH ends along its end tangents, so the bore's caps
+// punch clean THROUGH the outer caps — leaving no two caps sharing a plane. This
+// is exactly what the TF backend does (`tf_examples/execute.ts` extendPathEnds +
+// BORE_EXT, commit 01b75d7). PROVEN there: same-path χ<0 → extended χ=0.
+//
+// NOTE the DURABLE, engine-agnostic Manifold fix for the SAME defect is
+// `sweepAnnular` (2D CSG on the section, swept ONCE, no 3D boolean → no
+// coincident caps at all), already clean (genus 1, 0 strays — annular-sweep.test).
+// Prefer it when the hollow section is available as an annular region.
+// `boredSweep` exists for parity with the TF path and for the case a part
+// genuinely composes two solid sweeps as a boolean.
+//
+// DIAL ("expose dials, don't hide constants"): the extension margin is DERIVED
+// from the section size (`_boreExtFactor` × the outer section's max in-frame
+// radius) so it scales with the part instead of a magic 1.0; `boredSweep`'s
+// `boreExt` option overrides it outright, and `setBoreExtFactor` tunes the
+// derivation globally.
+let _boreExtFactor = 2;
+/** Read the bore-extend factor (× the outer section's max in-frame radius). */
+export function getBoreExtFactor(): number { return _boreExtFactor; }
+/** Set the bore-extend factor (≥0; the subtrahend path is punched this many
+ *  section-radii past each end). Larger = more clearance, never less clean. */
+export function setBoreExtFactor(f: number): void { _boreExtFactor = (Number.isFinite(f) && f >= 0) ? f : 0; }
+
+/** Max distance any section vertex reaches from the in-frame origin — the
+ *  section's enclosing radius, which bounds how far a tilted end cap can offset
+ *  along the tangent. Used to DERIVE the default bore-extend margin. */
+function sectionMaxExtent(loop: [number, number][]): number {
+  let m = 0;
+  for (const p of loop) { const r = Math.hypot(p[0], p[1]); if (r > m) m = r; }
+  return m || 1;
+}
+
+/**
+ * Extend an ordered 3D path past BOTH ends along its END TANGENTS by `ext`
+ * (one extra point before the first, one after the last). The mirror of the TF
+ * backend's `extendPathEnds` (`tf_examples/execute.ts`): used to punch a
+ * SUBTRACTED bore sweep clean through the outer solid's end caps so the two
+ * sweeps never share a coincident (tilted) cap plane → defect-2 prevention.
+ * `ext ≤ 0` or a <2-point path → returned unchanged.
+ */
+export function extendPathEnds(path: V3[], ext: number): V3[] {
+  const n = path.length;
+  if (n < 2 || !(ext > 0)) return path;
+  const nrm = (v: V3): number => Math.hypot(v[0], v[1], v[2]) || 1;
+  const s0: V3 = [path[0][0] - path[1][0], path[0][1] - path[1][1], path[0][2] - path[1][2]];
+  const ls = nrm(s0);
+  const e0: V3 = [path[0][0] + (s0[0] / ls) * ext, path[0][1] + (s0[1] / ls) * ext, path[0][2] + (s0[2] / ls) * ext];
+  const d1: V3 = [path[n - 1][0] - path[n - 2][0], path[n - 1][1] - path[n - 2][1], path[n - 1][2] - path[n - 2][2]];
+  const le = nrm(d1);
+  const e1: V3 = [path[n - 1][0] + (d1[0] / le) * ext, path[n - 1][1] + (d1[1] / le) * ext, path[n - 1][2] + (d1[2] / le) * ext];
+  return [e0, ...path, e1];
+}
+
+/**
+ * Build a HOLLOW swept tube as `sweep(outer).subtract(sweep(hole))` WITHOUT the
+ * defect-2 coincident-cap corruption: the outer sweep rides `path`; the bore
+ * (subtrahend) sweep rides `path` EXTENDED past both ends (see {@link
+ * extendPathEnds}) so its caps punch through the outer caps → no coincident
+ * caps → clean genus-1 (χ=0) through-pipe, no degenerate/sliver fan.
+ *
+ * The engine-agnostic alternative (no 3D boolean at all) is {@link sweepAnnular};
+ * prefer it when the section is an annular region. `boredSweep` is the ported TF
+ * bore-extend for the two-solid-sweeps boolean case.
+ *
+ *   • path         ordered 3D spine (≥ 2 points).
+ *   • outerSection closed 2D outer loop `[a,b]` in each station's frame.
+ *   • holeSection  closed 2D bore loop (the material removed). Concentric with
+ *                  outerSection in-frame is the usual case.
+ *   • up           SEED reference for the RMF (see sweepFrames); default world-Z.
+ *   • boreExt      explicit extension margin (world units). Absent → derived as
+ *                  `getBoreExtFactor()` × the outer section's max in-frame radius.
+ *   • caps         cap the outer tube's ends (default true — required for a valid
+ *                  boolean). The bore is ALWAYS capped (a valid CSG subtrahend).
+ */
+export function boredSweep(
+  path: V3[],
+  outerSection: [number, number][],
+  holeSection: [number, number][],
+  opts: { up?: V3; boreExt?: number; caps?: boolean } = {},
+): any {
+  if (!Array.isArray(path) || path.length < 2) throw new Error('boredSweep needs ≥ 2 path points');
+  if (!Array.isArray(outerSection) || outerSection.length < 3) throw new Error('boredSweep: outer section needs ≥ 3 points');
+  if (!Array.isArray(holeSection) || holeSection.length < 3) throw new Error('boredSweep: hole section needs ≥ 3 points');
+
+  const ext = (opts.boreExt != null && opts.boreExt > 0)
+    ? opts.boreExt
+    : _boreExtFactor * sectionMaxExtent(outerSection);
+  const borePath = extendPathEnds(path, ext);
+
+  const outer = sweepAlongPath(path, outerSection, { up: opts.up, caps: opts.caps !== false, closedSection: true });
+  // The bore MUST be a closed manifold to be a valid CSG subtrahend → always
+  // capped. Its caps land OUTSIDE the outer solid (past the extended ends), so
+  // they carve nothing there and leave a clean through-bore.
+  const bore = sweepAlongPath(borePath, holeSection, { up: opts.up, caps: true, closedSection: true });
+  return outer.subtract(bore);
+}
+
 /**
  * Concatenate patches, position-weld coincident verts (the wasm Mesh
  * constructor does NOT auto-weld), and wrap the result in a Manifold.

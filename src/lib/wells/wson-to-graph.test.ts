@@ -209,8 +209,8 @@ describe('wsonToGraph — RUNG 3: a deviated well warps along its survey', () =>
   it('warps EVERY element — children length equals the element (Mv) count', () => {
     const g = wsonToGraph(sample04());
     const warp = nodesOfType(g, 'warp')[0];
-    const elementCount = nodesOfType(g, 'mv').length; // one Mv per oh/cement/casing
-    expect(elementCount).toBe(9); // 3 open holes + 3 cement + 3 casing
+    const elementCount = nodesOfType(g, 'mv').length; // one Mv per structural section + completion
+    expect(elementCount).toBe(14); // 3 open holes + 3 cement + 3 casing + 5 completions (RUNG 5)
     expect(warp.children).toHaveLength(elementCount);
     // Each wired child is an Mv node (the placed element), and the warp bends
     // every one separately along the SAME spline path.
@@ -261,5 +261,314 @@ describe('wsonToGraph — RUNG 3: a deviated well warps along its survey', () =>
       profile: [{ md: 0, dev: 5, az: 0 }, { md: Number.NaN, dev: 5, az: 0 }],
     };
     expect(() => wsonToGraph(flagged)).toThrow(WsonTranslateError);
+  });
+});
+
+// ─── N2 — the wells SAMPLE LADDER (TODO #42e) ────────────────────────────────
+//
+// Each rung proves the same seam three ways: (1) `wsonToGraph` translates it,
+// (2) `emitGraph`→`hydrateGraph` compiles the emitted source, (3) the graph
+// shape is what the rung is meant to isolate. Fixtures live in
+// `src/lib/wells/samples/` (bundled by `samples.ts`'s eager glob). S5
+// (completions) is owned by the N1 agent; the structural translator does not
+// emit completions/perforations yet, so these rungs assert on oh/cement/casing.
+
+/** Read a bundled lib sample by slug (the `src/lib/wells/samples/` set). */
+const libSample = (slug: string): Wson =>
+  parseWson(readFileSync(`src/lib/wells/samples/${slug}.wson`, 'utf8')).wson;
+
+/** Emit → hydrate → assert the graph compiles to a complete `.asm.ts`. */
+const emitOK = (g: ReturnType<typeof wsonToGraph>, id: string) => {
+  const r = emitGraph(hydrateGraph(g), { id });
+  expect(r.errors ?? []).toHaveLength(0);
+  return r;
+};
+
+describe('S1 — 10-three-open-holes: hole nesting + Mv depth placement alone', () => {
+  const g = () => wsonToGraph(libSample('10-three-open-holes'));
+
+  it('translates 3 telescoping open holes into 3 bw_open_hole Calls (no casing/cement)', () => {
+    const calls = nodesOfType(g(), 'call');
+    expect(calls.map((c) => c.src)).toEqual(['bw_open_hole', 'bw_open_hole', 'bw_open_hole']);
+    expect(g().imports).toEqual(['bw_open_hole']);
+  });
+
+  it('each hole takes its od from bitSize, telescoping smaller with depth', () => {
+    const ods = nodesOfType(g(), 'call').map((c) => c.args.od.value);
+    expect(ods).toEqual([17.5, 12.25, 8.5]);
+    // Strictly decreasing — a real telescoped hole nests smaller bits deeper.
+    expect(ods[0]).toBeGreaterThan(ods[1]);
+    expect(ods[1]).toBeGreaterThan(ods[2]);
+  });
+
+  it('places each hole down-hole by its top, with length = its own span (Z-down)', () => {
+    const mvs = nodesOfType(g(), 'mv').sort((a, b) => a.offset[2].value - b.offset[2].value);
+    expect(mvs.map((m) => m.offset[2].value)).toEqual([0, 300, 800]);
+    const lens = nodesOfType(g(), 'call').map((c) => c.args.length.value);
+    expect(lens).toEqual([300, 500, 400]); // 0→300, 300→800, 800→1200
+  });
+
+  it('is VERTICAL — no spline / warp is emitted', () => {
+    expect(nodesOfType(g(), 'spline')).toHaveLength(0);
+    expect(nodesOfType(g(), 'warp')).toHaveLength(0);
+  });
+
+  it('emits a complete .asm.ts calling bw_open_hole', () => {
+    const r = emitOK(g(), 'w_s1_three_oh');
+    expect(r.body).toContain('bw_open_hole(');
+    expect(r.body).toContain('mv(');
+  });
+});
+
+describe('S2 — 11-vertical-land-producer: the reference VERTICAL well (SVTC)', () => {
+  const wson = () => libSample('11-vertical-land-producer');
+  const g = () => wsonToGraph(wson());
+
+  it('is the SVTC vertical file — NO profile key (the S2↔S4 isolation)', () => {
+    // The whole point of S2: it must be the truly-vertical SVTC file, not the
+    // Desktop 11-station-profile copy. If a profile ever creeps in, S2 becomes
+    // deviated and the isolation with S4 collapses.
+    expect(wson().profile).toBeUndefined();
+  });
+
+  it('translates exactly 3 open holes + 3 cement + 3 casing, outer→inner per group', () => {
+    const bySrc = nodesOfType(g(), 'call').map((c) => c.src);
+    expect(bySrc.filter((s) => s === 'bw_open_hole')).toHaveLength(3);
+    expect(bySrc.filter((s) => s === 'bw_cement')).toHaveLength(3);
+    expect(bySrc.filter((s) => s === 'bw_casing')).toHaveLength(3);
+    // Emission order: the STRUCTURAL shells first, outer→inner (every open hole,
+    // then every cement, then every casing) so a transparent casing renders over
+    // its jewelry. The completion string (RUNG 5) follows — assert the structural
+    // prefix, not the whole list, so adding jewelry can't break this rung.
+    expect(bySrc.slice(0, 9)).toEqual([
+      'bw_open_hole', 'bw_open_hole', 'bw_open_hole',
+      'bw_cement', 'bw_cement', 'bw_cement',
+      'bw_casing', 'bw_casing', 'bw_casing',
+    ]);
+    // Everything after the structural prefix is the completion string, one Call
+    // per WSON row — derived from the fixture, never a magic number.
+    expect(bySrc.slice(9)).toHaveLength(wson().completions?.length ?? 0);
+    expect(nodesOfType(g(), 'call')).toHaveLength(nodesOfType(g(), 'mv').length);
+  });
+
+  it('builds the production-string cement annulus from the 9⅝" casing OUT to the 12¼" hole', () => {
+    // cementing[2] = { od: 9.625, top: 700, bot: 1070 }; midpoint 885 sits in the
+    // 12.25" hole (300→1070) → od 12.25, wall (12.25-9.625)/2 = 1.3125.
+    const cem = nodesOfType(g(), 'call').filter((c) => c.src === 'bw_cement');
+    const prod = cem.find((c) => c.args.od.value === 12.25);
+    expect(prod).toBeDefined();
+    expect(prod.args.wall.value).toBe(1.3125);
+  });
+
+  it('is VERTICAL — no spline / warp', () => {
+    expect(nodesOfType(g(), 'spline')).toHaveLength(0);
+    expect(nodesOfType(g(), 'warp')).toHaveLength(0);
+  });
+
+  it('emits a complete .asm.ts (oh + cement + casing, all placed by mv)', () => {
+    const r = emitOK(g(), 'w_s2_vertical');
+    for (const src of ['bw_open_hole(', 'bw_cement(', 'bw_casing(']) expect(r.body).toContain(src);
+    expect(r.body).toContain('mv(');
+    expect(r.body).not.toContain('warpSpline(');
+  });
+});
+
+describe('S3 — negative: a hole NARROWER than its casing must throw (cementDims guard)', () => {
+  // The guard is the point. A production casing cemented inside a hole SMALLER
+  // than the casing itself is a degenerate (inside-out) annulus; cementDims must
+  // surface it, never bake it. NO FALLBACK.
+  it('throws WsonTranslateError when the hole od < the cemented casing od', () => {
+    const inverted: Wson = {
+      meta: { wellName: 'S3 inverted annulus' },
+      oh: [{ bitSize: 8.5, top: 0, bot: 900 }],          // 8.5" hole …
+      cementing: [{ od: 9.625, top: 0, bot: 900 }],      // … around a 9.625" casing
+      ch: [{ od: 9.625, id: 8.681, top: 0, bot: 900, type: 'production' }],
+    };
+    expect(() => wsonToGraph(inverted)).toThrow(WsonTranslateError);
+    expect(() => wsonToGraph(inverted)).toThrow(/non-positive annulus/);
+  });
+
+  it('the SAME well with a wider (12¼") hole translates cleanly — proves the guard is the only failure', () => {
+    const ok: Wson = {
+      meta: { wellName: 'S3 valid annulus' },
+      oh: [{ bitSize: 12.25, top: 0, bot: 900 }],
+      cementing: [{ od: 9.625, top: 0, bot: 900 }],
+      ch: [{ od: 9.625, id: 8.681, top: 0, bot: 900, type: 'production' }],
+    };
+    const cem = callBySrc(wsonToGraph(ok), 'bw_cement');
+    expect(cem.args.od.value).toBe(12.25);
+    expect(cem.args.wall.value).toBe(1.3125);
+  });
+});
+
+describe('S4 — 13-vertical-land-producer-deviated: the SAME well + one profile key', () => {
+  const wson = () => libSample('13-vertical-land-producer-deviated');
+  const g = () => wsonToGraph(wson());
+
+  it('carries an 11-station J-profile building to 38° — deviated by the ONE added key', () => {
+    const prof = wson().profile!;
+    expect(prof).toHaveLength(11);
+    expect(Math.max(...prof.map((s) => s.dev))).toBe(38);
+  });
+
+  it('S2↔S4 isolation: identical oh/ch/cementing, differing ONLY in `profile`', () => {
+    // The isolation this rung exists for: vertical-vs-deviated is exactly the
+    // presence of `profile[]`, nothing else. Strip it from S4 → byte-identical S2.
+    const s2 = libSample('11-vertical-land-producer');
+    const s4 = wson();
+    expect(s4.oh).toEqual(s2.oh);
+    expect(s4.ch).toEqual(s2.ch);
+    expect(s4.cementing).toEqual(s2.cementing);
+    expect(s2.profile).toBeUndefined();
+    expect(s4.profile).toBeDefined();
+  });
+
+  it('emits exactly one spline + one warp; the root is that warp alone', () => {
+    const graph = g();
+    expect(nodesOfType(graph, 'spline')).toHaveLength(1);
+    expect(nodesOfType(graph, 'warp')).toHaveLength(1);
+    const warp = nodesOfType(graph, 'warp')[0];
+    expect((graph.nodes[graph.root] as any).children).toEqual([warp.id]);
+  });
+
+  it('warps EVERY element — structural AND completion jewelry — along ONE spline', () => {
+    const graph = g();
+    const warp = nodesOfType(graph, 'warp')[0];
+    // 9 structural (3 oh + 3 cement + 3 casing) + one per completion row. Derived
+    // from the fixture: a deviated well must bend its tubing string with its
+    // casing, so the completion count belongs in this total, not outside it.
+    const structural = 9;
+    const expected = structural + (wson().completions?.length ?? 0);
+    expect(nodesOfType(graph, 'mv')).toHaveLength(expected);
+    expect(warp.children).toHaveLength(expected);
+    for (const cid of warp.children) expect(graph.nodes[cid]?.type).toBe('mv');
+    // The jewelry is genuinely inside the warp, not merely present in the graph.
+    const warpedSrc = warp.children.map((cid: string) => graph.nodes[(graph.nodes[cid] as any).child]?.src);
+    expect(warpedSrc).toContain('bw_prod_tubing');
+    expect(warpedSrc).toContain('bw_packer');
+    // originZ = 0 → each element bends at its TRUE station.
+    expect(warp.originZ).toEqual({ kind: 'literal', value: 0 });
+  });
+
+  it('the spline actually deviates laterally (the survey builds to 38°)', () => {
+    const spline = nodesOfType(g(), 'spline')[0];
+    const maxLateral = Math.max(...spline.points.map((p: number[]) => Math.hypot(p[0], p[1])));
+    expect(maxLateral).toBeGreaterThan(1);
+  });
+
+  it('compiles through emitGraph — resampleSpline + warpSpline + originZ: 0', () => {
+    const r = emitOK(g(), 'w_s4_deviated');
+    expect(r.body).toContain('resampleSpline(');
+    expect(r.body).toContain('warpSpline(');
+    expect(r.body).toContain('originZ: 0');
+    expect(r.body).toContain('bw_casing(');
+  });
+
+  it('is deterministic — re-translating the deviated well is byte-identical', () => {
+    expect(g()).toEqual(g());
+  });
+});
+
+describe('wsonToGraph — RUNG 5: completions become bw_* Calls placed by depth', () => {
+  const sample01 = () => parseWson(
+    readFileSync('src/routes/wells/samples/01-vertical-land-producer.wson', 'utf8'),
+  ).wson;
+
+  /** One casing + one completion — the minimal well for a mapping assertion. */
+  const withComp = (c: Wson['completions']): Wson => ({
+    meta: { wellName: 'c' },
+    ch: [{ od: 9.625, id: 8.681, top: 0, bot: 1000, type: 'production' }],
+    completions: c,
+  });
+
+  it('emits one bw_* Call+Mv per completion, INSIDE the casing (outer→inner order)', () => {
+    const g = wsonToGraph(sample01());
+    const outputs = (g.nodes[g.root] as any).children.map((id: string) => g.nodes[(g.nodes[id] as any).child]);
+    // 3 oh + 3 cement + 3 casing, THEN the 7-item completion string — the
+    // structural shells first so a transparent casing renders over its jewelry.
+    expect(outputs.map((n: any) => n.src)).toEqual([
+      'bw_open_hole', 'bw_open_hole', 'bw_open_hole',
+      'bw_cement', 'bw_cement', 'bw_cement',
+      'bw_casing', 'bw_casing', 'bw_casing',
+      'bw_hanger', 'bw_prod_tubing', 'bw_nipple', 'bw_prod_tubing',
+      'bw_packer', 'bw_prod_tubing', 'bw_mule_shoe',
+    ]);
+  });
+
+  it('maps each tool_comp code to its bw_* part via the explicit map — od + length off the row', () => {
+    const cases: Array<[string, string]> = [
+      ['tbgHanger', 'bw_hanger'],
+      ['MISC.TUBING', 'bw_prod_tubing'],
+      ['MISC.TUBING_PUP', 'bw_prod_tubing'],
+      ['FLOW_CONTROL.NIPPLE_R_LANDING', 'bw_nipple'],
+      ['MISC.MULE_SHOE', 'bw_mule_shoe'],
+      ['PACKERS.PACKER_BAKER_PERMANENT', 'bw_packer'],
+    ];
+    for (const [code, part] of cases) {
+      const g = wsonToGraph(withComp([{ tool_comp: code, od: 2.875, top: 0, bot: 30 }]));
+      const comp = callBySrc(g, part);
+      expect(comp, `${code} → ${part}`).toBeTruthy();
+      expect(comp.args.od).toEqual({ kind: 'literal', value: 2.875 });
+      expect(comp.args.length).toEqual({ kind: 'literal', value: 30 });
+    }
+  });
+
+  it('resolves completion depth through the autoTop chain BEFORE the Mv (manual holds, auto resumes)', () => {
+    const g = wsonToGraph(withComp([
+      { tool_comp: 'MISC.TUBING', od: 2.875, top: 0, bot: 10 },                              // auto (first) → 0..10
+      { tool_comp: 'FLOW_CONTROL.NIPPLE_R_LANDING', od: 2.875, top: 500, bot: 503, autoTop: false }, // manual → holds 500
+      { tool_comp: 'MISC.MULE_SHOE', od: 2.875, top: 0, bot: 2 },                             // auto → resumes 503..505
+    ]));
+    const mvZ = (alias: string) => {
+      const call = nodesOfType(g, 'call').find((n) => n.alias === alias);
+      return nodesOfType(g, 'mv').find((m) => m.child === call.id).offset[2].value;
+    };
+    expect(mvZ('COMP_1')).toBe(0);
+    expect(mvZ('COMP_2')).toBe(500);   // manual anchor held, NOT snapped to the tubing bot (10)
+    expect(mvZ('COMP_3')).toBe(503);   // auto resumed from the manual item's bot
+    // COMP_3's length is its own span (505 - 503), not its absolute depth.
+    expect(nodesOfType(g, 'call').find((n) => n.alias === 'COMP_3').args.length.value).toBe(2);
+  });
+
+  it('NO FALLBACK: an unmapped tool_comp throws naming the code + index', () => {
+    const w = withComp([
+      { tool_comp: 'MISC.TUBING', od: 2.875, top: 0, bot: 10 },
+      { tool_comp: 'MISC.SIDE_POCKET_MANDREL', od: 4, top: 10, bot: 20 }, // no bw_* part exists
+    ]);
+    expect(() => wsonToGraph(w)).toThrow(WsonTranslateError);
+    expect(() => wsonToGraph(w)).toThrow(/completion 1 has an unmapped tool_comp "MISC.SIDE_POCKET_MANDREL"/);
+  });
+
+  it('NO FALLBACK: a missing/empty tool_comp throws naming the index (real reports carry these)', () => {
+    // The xlsxtowson completion reports have rows with NO tool_comp at all.
+    const w = withComp([
+      { tool_comp: 'MISC.TUBING', od: 2.875, top: 0, bot: 10 },
+      { tool_comp: '', od: 3.5, top: 10, bot: 20 },                 // empty → index 1
+      { tool_comp: 'MISC.MULE_SHOE', od: 2.875, top: 20, bot: 22 },
+    ]);
+    expect(() => wsonToGraph(w)).toThrow(/completion 1 has a missing\/empty tool_comp/);
+  });
+
+  it('SKIPS perforations — no bw_* perf part, so none are emitted (reported gap, not invented)', () => {
+    const g = wsonToGraph({
+      meta: { wellName: 'perf' },
+      ch: [{ od: 9.625, id: 8.681, top: 0, bot: 1000, type: 'production' }],
+      perforations: [{ top: 900, bot: 950, label: 'zone' }],
+    });
+    // Only the casing Call — the perforation adds no Call (no stand-in part).
+    expect(nodesOfType(g, 'call').map((n) => n.src)).toEqual(['bw_casing']);
+  });
+
+  it('the completion string compiles through emitGraph — bw_* completion Calls, no errors', () => {
+    const r = emitGraph(hydrateGraph(wsonToGraph(sample01())), { id: 'w_s01c' });
+    expect(r.errors ?? []).toHaveLength(0);
+    for (const src of ['bw_hanger(', 'bw_prod_tubing(', 'bw_nipple(', 'bw_packer(', 'bw_mule_shoe(']) {
+      expect(r.body).toContain(src);
+    }
+    expect((r.meta as any).uses).toContain('bw_nipple');
+  });
+
+  it('is deterministic — re-translating the completion string yields an identical graph', () => {
+    expect(wsonToGraph(sample01())).toEqual(wsonToGraph(sample01()));
   });
 });

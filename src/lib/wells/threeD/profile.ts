@@ -16,7 +16,8 @@
  * pt[] is [x, y, z] with z = depth positive-down.
  */
 
-import { dot, cross, acos, tan, add, multiply, sqrt, subtract } from 'mathjs';
+import { dot, cross, multiply, sqrt, subtract } from 'mathjs';
+import { sphPoint, minCurvatureStep, type XYZ } from '$lib/cad/survey-to-xyz';
 
 function normalize(v: number[]): number[] {
   const n = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
@@ -77,16 +78,16 @@ export class WellProfile {
     const clSurv: CleanedStation[] = [];
     let prevDev = survey[0].dev;
     let prevAz  = survey[0].az;
-    let prevDir = this.sphPoint(prevDev, prevAz);
+    let prevDir = sphPoint(prevDev, prevAz);
     clSurv.push({ md: survey[0].md, dir: prevDir });
     for (let i = 1; i < survey.length; i++) {
       let dev = survey[i].dev;
       let az  = survey[i].az;
-      let dir = this.sphPoint(dev, az);
+      let dir: number[] = sphPoint(dev, az);
       let guard = 0;
       while (dirsEqual(dir, prevDir) && guard++ < 100) {
         dev += 0.02;
-        dir = this.sphPoint(dev, az);
+        dir = sphPoint(dev, az);
       }
       clSurv.push({ md: survey[i].md, dir });
       prevDev = dev;
@@ -94,30 +95,18 @@ export class WellProfile {
       prevDir = dir;
     }
     const last = survey.at(-1)!;
-    clSurv.push({ md: last.md + 2000, dir: this.sphPoint(prevDev + 0.5, prevAz) });
+    clSurv.push({ md: last.md + 2000, dir: sphPoint(prevDev + 0.5, prevAz) });
     return clSurv;
   }
 
-  private sphPoint(dev: number, az: number): number[] {
-    const d2r = Math.PI / 180;
-    const phi = d2r * dev;
-    const theta = d2r * az;
-    return normalize([
-      Math.sin(phi) * Math.cos(theta),
-      Math.sin(phi) * Math.sin(theta),
-      Math.cos(phi),
-    ]);
-  }
-
   private controlSegment(spt1: CleanedStation, spt2: CleanedStation, p1: number[]): Segment {
-    const angPsi = (acos as any)((dot as any)(spt1.dir, spt2.dir));
-    const rotAxis = (cross as any)(spt1.dir, spt2.dir) as number[];
-    const radCurvature = 0 === angPsi ? 999999 : (spt2.md - spt1.md) / angPsi;
-    const delTang = 0 === angPsi ? (spt2.md - spt1.md) / 2 : radCurvature * (tan as any)(angPsi / 2);
-    const relP1Mid = (multiply as any)(delTang, spt1.dir) as number[];
-    const relMidP2 = (multiply as any)(delTang, spt2.dir) as number[];
-    const relP12 = (add as any)(relP1Mid, relMidP2) as number[];
-    const p2 = (add as any)(p1, relP12) as number[];
+    // Position + dogleg via the SHARED minimum-curvature step (survey-to-xyz.ts),
+    // so the wells 3D path and the graph spline node's `mode:'survey'` never
+    // drift. The quaternion fields (q1/pivot/q2) are derived here from the same
+    // step's rotAxis + radCurvature; the position math itself lives in one place.
+    const step = minCurvatureStep(spt1.md, spt1.dir as XYZ, spt2.md, spt2.dir as XYZ);
+    const { rotAxis, radCurvature, relP1Mid } = step;
+    const p2 = [p1[0] + step.delta[0], p1[1] + step.delta[1], p1[2] + step.delta[2]];
     const q1 = (multiply as any)(normalize((cross as any)(relP1Mid, rotAxis) as number[]), radCurvature) as number[];
     const ptPivot = (subtract as any)(p1, q1) as number[];
     const q2 = (subtract as any)(p2, ptPivot) as number[];

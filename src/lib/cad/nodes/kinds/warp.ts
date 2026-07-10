@@ -31,6 +31,11 @@ export const WarpKind: NodeKind<WarpNode> = {
     if (n.refine != null) optParts.push(`refine: ${c.emitValue(n.refine)}`);
     if (n.stretch) optParts.push('stretch: true');
     if (n.validate) optParts.push('validate: true');
+    // BUILD-TIME exaggeration (N3) — emitted ONLY when set, so a warp without a
+    // scale emits byte-identically (the golden gate). `yScale` is arc-length
+    // depth, `xDiaScale` is radial/diameter (see WarpNode + warpManifoldAlongSpline).
+    if (n.xDiaScale != null) optParts.push(`xDiaScale: ${c.emitValue(n.xDiaScale)}`);
+    if (n.yScale != null) optParts.push(`yScale: ${c.emitValue(n.yScale)}`);
     // Absolute depth placement (#36c b): emitted ONLY when set, so existing single
     // warp parts (no originZ) emit byte-identically (the golden gate). MULTI-input
     // warps default to ABSOLUTE (originZ 0) so each child's own z — including its
@@ -57,6 +62,8 @@ export const WarpKind: NodeKind<WarpNode> = {
       ...checkArg(n.id, 'path', n.path, g),
       ...(n.refine != null ? checkArg(n.id, 'refine', n.refine, g) : []),
       ...(n.originZ != null ? checkArg(n.id, 'originZ', n.originZ, g) : []),
+      ...(n.xDiaScale != null ? checkArg(n.id, 'xDiaScale', n.xDiaScale, g) : []),
+      ...(n.yScale != null ? checkArg(n.id, 'yScale', n.yScale, g) : []),
     ];
   },
   inputRefs: (n) => warpChildren(n),
