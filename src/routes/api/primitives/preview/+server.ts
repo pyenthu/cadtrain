@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import * as helpers from '$lib/cad/manifold-helpers';
+import { withManifoldTrapGuard } from '$lib/server/manifold-guard';
 import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from '$lib/cad/manifold-mesh';
 import { buildPrimitiveGeom, hashDepSources } from '$lib/server/primitive-loader';
 import { finalizeManifold } from '$lib/cad/render-helpers';
@@ -23,7 +24,7 @@ import { hashBakeKey, readBakeCache, writeBakeCache, type BakeCacheOptions } fro
 //
 // Stage G v4 — see ~/.claude/plans/components-primitives-split.md.
 
-export const POST = async ({ request, fetch }) => {
+const handlePost = async ({ request, fetch }: { request: Request; fetch: typeof globalThis.fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
@@ -380,3 +381,8 @@ export const POST = async ({ request, fetch }) => {
     _t: T,
   });
 };
+
+// A fatal WASM trap poisons the shared Manifold singleton for EVERY later request
+// (/plan #981). Reset it before responding, so one bad part costs one bake rather
+// than the whole process. Non-trap errors pass through untouched.
+export const POST = (event: any) => withManifoldTrapGuard(() => handlePost(event));

@@ -16,6 +16,9 @@ import Module from 'manifold-3d';
 // revolve path (revolveProfile). manifold-mesh imports nothing from here (it
 // reads the wasm singleton off globalThis), so this import is acyclic.
 import { subdivideProfileAxial, getAxialMaxZSpan, getAxialMaxSegPerEdge } from './manifold-mesh';
+// Trap detection lives in `manifold-trap.ts` — no `manifold-3d` import there, so
+// the MAIN-THREAD bake-client can use it without pulling the WASM module in.
+export { isManifoldFatalTrap, describeManifoldError } from './manifold-trap';
 
 // CIRCULAR_SEGMENTS_DEFAULT — used when nothing overrides.
 // CIRCULAR_SEGMENTS_COMPOSE — temporarily set by compose.ts via
@@ -187,6 +190,31 @@ export function getCircularSegmentFloor(): number | null {
  *  `finally` — see /api/primitives/preview. */
 export function setCircularSegmentFloor(n: number | null): void {
   currentSegmentFloor = n;
+}
+
+// ── Fatal-trap guard (/plan #981) ────────────────────────────────────────────
+//
+// A single WASM trap POISONS the Manifold singleton: every later call in that
+// process throws, usually with a message naming whatever part happened to be on
+// the stack — so `bw_casing` fails "in g_shaft", and the error misdirects you at
+// innocent data. Observed 2026-07-10 on a long-running dev server: every part
+// 400ed with `emval_methodCallers[caller] is not a function` until restart.
+//
+// Non-manifold geometry is the usual trigger (a degenerate weld, a boolean on
+// coincident faces). The trap itself is unavoidable; leaving the singleton
+// corrupted afterwards is not. TrueForm already resets + respawns on a trap
+// (`isTfFatalTrap`, tf-bake-client); Manifold had nothing.
+
+/**
+ * Drop the poisoned module and build a fresh one. Safe to call concurrently-ish:
+ * clearing the singleton first means a racing `initManifold` rebuilds rather than
+ * handing back the corpse. Existing Manifold objects from the old module are
+ * dead — callers must rebuild, which is why this is only ever called on a trap.
+ */
+export async function resetManifold(opts?: { locateFile?: (path: string, dir: string) => string }) {
+  G.__cadtrain_manifold__.wasm = null;
+  G.__cadtrain_manifold__.M = null;
+  await initManifold(opts);
 }
 
 export async function initManifold(opts?: { locateFile?: (path: string, dir: string) => string }) {

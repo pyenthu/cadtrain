@@ -1,5 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import * as helpers from '$lib/cad/manifold-helpers';
+import { withManifoldTrapGuard } from '$lib/server/manifold-guard';
 import { buildPrimitiveGeom } from '$lib/server/primitive-loader';
 import { buildGlbBytes, DEFAULT_OUTER_HEX, DEFAULT_INNER_HEX, type ColorOverride } from '$lib/server/manifold-bake';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
@@ -14,7 +15,7 @@ import { analyzeParts, resolveDepColors } from '$lib/server/part-colors';
 // record-shaped geom buildGlbBytes expects, using the param order from
 // the source's `export const meta`.
 
-export const POST = async ({ request, fetch }) => {
+const handlePost = async ({ request, fetch }: { request: Request; fetch: typeof globalThis.fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
@@ -113,3 +114,8 @@ export const POST = async ({ request, fetch }) => {
     _t: T,
   });
 };
+
+// A fatal WASM trap poisons the shared Manifold singleton for EVERY later request
+// (/plan #981). Reset it before responding, so one bad part costs one bake rather
+// than the whole process. Non-trap errors pass through untouched.
+export const POST = (event: any) => withManifoldTrapGuard(() => handlePost(event));

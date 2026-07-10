@@ -18,6 +18,7 @@
  * exercise the pure core (`bake-worker-core.ts`) directly, not this file.
  */
 import { deserializeComponentResult } from './mesh-serial';
+import { isManifoldFatalTrap, describeManifoldError } from './manifold-trap';
 import { bakeCacheKey, type BakeOptions, type TransferableComponentResult } from './bake-worker-core';
 import type * as THREE from 'three';
 
@@ -68,12 +69,52 @@ interface Job {
   resolve: (r: BakeResult) => void;
   reject: (e: unknown) => void;
   settled: boolean;
+  /** Fatal-trap retries already spent on this job (see `MAX_TRAP_RETRIES`). */
+  trapRetries: number;
 }
 
 let nextId = 0;
 const pending = new Map<number, Job>();   // dispatched to the worker, awaiting reply
 let waiting: Job | null = null;           // newest job not yet dispatched
 let dispatching = false;
+
+// ── Fatal-trap guard (/plan #981) ────────────────────────────────────────────
+//
+// A WASM trap inside the worker POISONS its Manifold module: the worker catches
+// the throw and replies `{ok:false}`, so the worker SURVIVES — and every later
+// bake on it fails, typically with `emval_methodCallers[caller] is not a
+// function` naming whatever part was on the stack. Before this guard, the only
+// cure was reloading the page. TF has had this for a while (`isTfFatalTrap` +
+// respawn, tf-bake-client); Manifold had nothing.
+//
+// A trapped worker is unrecoverable, so we terminate it. A FRESH worker is a
+// clean Manifold module, so the job is worth exactly one retry: if the geometry
+// itself is what traps, the retry traps too and we surface the error instead of
+// looping. Budget is per-job, not global — a genuinely bad part must not consume
+// the retries of the good bake that follows it.
+export const MAX_TRAP_RETRIES = 1;
+
+/**
+ * What to do with a job whose worker just trapped. Pure, so the subtle case is
+ * testable: if a NEWER request is already waiting, re-queueing this job would
+ * overwrite `waiting`, and that newer job would never dispatch — its caller would
+ * hang forever. A superseded job's result is wanted by nobody, so cancel it and
+ * let the newer one run on the fresh worker.
+ */
+export function planTrapRecovery(
+  trapRetries: number,
+  hasNewerWaiting: boolean,
+  maxRetries: number = MAX_TRAP_RETRIES,
+): 'retry' | 'cancel' | 'reject' {
+  if (hasNewerWaiting) return 'cancel';
+  return trapRetries < maxRetries ? 'retry' : 'reject';
+}
+
+/** Kill the worker so the next `getWorker()` builds a clean one. */
+function killWorker(): void {
+  try { worker?.terminate(); } catch { /* already dead */ }
+  worker = null;
+}
 
 /** Resolve/reject a job at most once (cancelled jobs may still get a late
  *  worker reply — settling is idempotent so that reply is harmlessly dropped). */
@@ -116,6 +157,38 @@ function getWorker(): Worker {
         if (timingsOn()) { try { console.log(`[bake-deserialize] main-thread BufferGeometry build=${((typeof performance !== 'undefined' ? performance.now() : 0) - _td0).toFixed(1)} ms`); } catch {} }
         settle(job, geo);
       } else if (!job.settled) {
+        // A FATAL WASM trap leaves this worker's Manifold module corrupted, but
+        // the worker itself alive — so every later bake on it would fail too.
+        // Kill it, and give the job one shot on a clean module.
+        if (isManifoldFatalTrap(data.error)) {
+          try { console.error(`[bake-worker] fatal Manifold trap; terminating worker. raw: ${String(data.error).slice(0, 200)}`); } catch {}
+          killWorker();
+          // Every other in-flight job ran on that same poisoned module. They are
+          // already superseded by construction (run() cancels them), but settle
+          // defensively so nothing awaits a worker that no longer exists.
+          for (const p of pending.values()) { if (p !== job) settle(p, BAKE_CANCELLED); }
+          pending.clear();
+
+          switch (planTrapRecovery(job.trapRetries, waiting !== null)) {
+            case 'retry':
+              job.trapRetries++;
+              // Re-queue on a fresh worker. NOT via `run()` — that supersedes all
+              // jobs, including the one we are trying to retry.
+              waiting = job;
+              void dispatch();
+              return;
+            case 'cancel':
+              // A newer request already supersedes this one; it must not overwrite
+              // `waiting`. Let the newer job bake on the clean worker.
+              settle(job, BAKE_CANCELLED);
+              void dispatch();
+              return;
+            case 'reject':
+              job.settled = true;
+              job.reject(new Error(describeManifoldError(data.error)));
+              return;
+          }
+        }
         job.settled = true;
         job.reject(new Error(data.error));
       }
@@ -162,6 +235,7 @@ function run(args: BakeRunArgs): Promise<BakeResult> {
       resolve,
       reject,
       settled: false,
+      trapRetries: 0,
     };
     // Supersede the previously-waiting (undispatched) job + any in-flight jobs:
     // their results no longer matter, so resolve them cancelled now rather than
