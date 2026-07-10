@@ -42,6 +42,7 @@
     restartStatus = null,
     mdAiBusy = false,
     splineOverlays = undefined,    // TODO #24 — plotted-spline diagnostic overlays for the 3D bake
+    autoTf = true,                 // false ⇒ never LAND on the TF tab from persisted state (/wells)
     /* ── BINDABLE (shared two-way) ── */
     rightTab = $bindable('bake'),  // pane owns persistence; parent sets 'source' on legacy load
     drawingMd = $bindable(''),     // parent state (feeds emitGraph) — bound by the MD textarea
@@ -59,6 +60,11 @@
     graph: any;
     hasSolidProducer: boolean;
     active?: boolean;
+    /** `false` ⇒ the persisted `ge-right-tab` is never allowed to restore to 'tf'.
+     *  The TF tab button stays — the user can still ASK for TF by clicking it —
+     *  but a stale localStorage from /primitives must not silently make /wells
+     *  open on a kernel that traps on well geometry. */
+    autoTf?: boolean;
     legacyLoad?: { id: string; reason: 'no-graph' | 'fetch-failed'; origin?: string } | null;
     sourceText: string;
     cutawayBusy?: boolean;
@@ -122,6 +128,7 @@
   onMount(() => {
     try {
       const t = localStorage.getItem('ge-right-tab');
+      if (t === 'tf' && !autoTf) return; // /wells: keep the default 'bake'; TF only on an explicit click
       if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg' || t === 'glb' || t === 'brep' || t === 'tf') rightTab = t;
     } catch { /* localStorage blocked — fine */ }
   });
@@ -214,6 +221,14 @@
     const local = tfRecipeLocal;
     const g = graph, p = brepParamValues;
     const bustNow = tfRecipeBust; // dep: a 🔄 bust forces a fresh /api/tf/compile round-trip
+    // ACTIVE-TAB-ONLY, same discipline as the SVG fetch below. /api/tf/compile
+    // resolves composite deps SERIALLY against the prod-proxied /source, so a
+    // multi-dep part (a well: 8 bw_* deps) costs ~5s per call. Compiling that
+    // for a tab nobody is looking at is pure latency — and when the TF canvas
+    // then traps, each respawn re-runs it. Measured on /wells GRAPH: 3 calls,
+    // 5.1s + 5.1s + 1.9s, all invisible. Gate BEFORE the reset below so a hidden
+    // tab simply leaves the last recipe alone rather than churning it.
+    if (rightTab !== 'tf' || !(active ?? true)) return;
     if (!tfActualOn || !local || !recipeHasUnsupportedLocal(local)) { tfRecipeServer = undefined; tfCompileMs = 0; tfServerResolvedKey = ''; return; }
     const forceFresh = bustNow !== lastBustCompiled; // true only when this run is a 🔄 rebake
     lastBustCompiled = bustNow;

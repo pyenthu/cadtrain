@@ -193,6 +193,7 @@
                 id={wellPartId}
                 embed={true}
                 active={view.viewMode === 'graph' && paneActive}
+                autoTf={false}
                 seedGraph={wellGraph.graph}
                 createDir="wells"
               />

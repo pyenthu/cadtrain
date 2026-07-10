@@ -259,6 +259,11 @@
      *  Ignored for parts that already exist on disk (save writes back in
      *  place server-side). Defaults to 'basic'. */
     createDir?: string;
+    /** `false` ⇒ this pane never OPENS on the TF tab from persisted state.
+     *  Forwarded to RightPane. /wells sets it: TF traps on well geometry, and
+     *  a leftover `ge-right-tab='tf'` from /primitives would otherwise make the
+     *  well graph auto-run a kernel the user never asked for. */
+    autoTf?: boolean;
     /** Fired after a successful Save — lets /primitives refresh the sidebar
      *  list (+ optimistically surface a brand-new part immediately, since the
      *  proxied /list lags writes by seconds). (id, dir). */
@@ -3055,6 +3060,7 @@
     <RightPane
       {bake} {exemplarId} {paramDefaults} {graph} {hasSolidProducer}
       active={props.active}
+      autoTf={props.autoTf ?? true}
       splineOverlays={spline.splineOverlays}
       {legacyLoad} {sourceText}
       {cutawayBusy} {cutawayStatus} {rebuildStatus} {restartBusy} {restartStatus} {mdAiBusy}
