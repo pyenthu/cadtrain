@@ -4,7 +4,7 @@ import { withManifoldTrapGuard } from '$lib/server/manifold-guard';
 import { isManifoldFatalTrap } from '$lib/cad/manifold-trap';
 import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from '$lib/cad/manifold-mesh';
 import { buildPrimitiveGeom, hashDepSources } from '$lib/server/primitive-loader';
-import { finalizeManifold } from '$lib/cad/render-helpers';
+import { finalizeManifold, lazyPartsOf } from '$lib/cad/render-helpers';
 import { serializeComponentResult } from '$lib/cad/mesh-serial';
 import { coerceSmooth } from '$lib/cad/bake-worker-core';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
@@ -29,7 +29,7 @@ const handlePost = async ({ request, fetch }: { request: Request; fetch: typeof 
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
-  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner, segments, segmentsFloor, instanced, warp, creaseAngle, smooth } = body ?? {};
+  const { source, name, params, zScale, mode, cutaway, colorOuter, colorInner, segments, segmentsFloor, instanced, warp, creaseAngle, smooth, axialMaxZSpan } = body ?? {};
   // OPT-IN GPU instancing (LIVE-mesh path only). When true, finalize tries to
   // detect a Stack/Repeat of N identical bodies and returns the canonical child
   // mesh ONCE + N transforms (response carries `instanced`). When the body
@@ -134,6 +134,9 @@ const handlePost = async ({ request, fetch }: { request: Request; fetch: typeof 
     // bake stores separately; undefined (default OFF) → dropped → default key
     // unchanged (existing default-bake entries still hit).
     smooth: smoothArg,
+    // The axial dial changes vertex counts → must key the cache. undefined is
+    // dropped by hashBakeKey, so existing default-bake entries still hit.
+    ...(axialMaxZSpan === null ? { axialMaxZSpan: 'null' } : (typeof axialMaxZSpan === 'number' ? { axialMaxZSpan } : {})),
   };
   // Numeric params only — string params (e.g. JSON polygons) don't round
   // trip identically across calls.
@@ -260,10 +263,24 @@ const handlePost = async ({ request, fetch }: { request: Request; fetch: typeof 
   // → the straight wall re-laths into enough rings to bend smoothly (Rule-25 clean:
   // build-time on the 2D profile, not a post-bake subdivide). Non-warp bakes never
   // touch the dial → byte-identical + lean. Same race-safe set/restore window.
+  // `axialMaxZSpan` (mirrors bake-worker-core's option of the same name):
+  //   undefined ⇒ the constant below, byte-identical to before
+  //   a number   ⇒ that spacing (a well passes the survey-derived span, #944)
+  //   null       ⇒ NO axial densification (a straight hole needs none)
+  // Without this the constant 1.5 was applied to a 1,800 m deviated well, which
+  // re-lathed every part into ~1,200 rings. Composing used to hide that (the
+  // union ate the geometry); once the parts survive, the honest mesh is enormous
+  // and the response JSON overflows V8's max string length (RangeError).
   const WARP_AXIAL_MAX_ZSPAN = 1.5;
-  const useAxialDial = (warpArg && warpArg.freq > 0) || warpedSrc;
+  const axialOverride: number | null | undefined =
+    axialMaxZSpan === null ? null
+    : (typeof axialMaxZSpan === 'number' && Number.isFinite(axialMaxZSpan) && axialMaxZSpan > 0) ? axialMaxZSpan
+    : undefined;
+  const hasAxialOverride = axialOverride !== undefined;
+  const useAxialDial = (warpArg && warpArg.freq > 0) || warpedSrc || hasAxialOverride;
   const axialPrev = useAxialDial ? getAxialMaxZSpan() : undefined;
   if (warpArg && warpArg.freq > 0) setAxialMaxZSpan((2 * Math.PI / warpArg.freq) / 16);
+  else if (hasAxialOverride) setAxialMaxZSpan(axialOverride as any);
   else if (warpedSrc) setAxialMaxZSpan(WARP_AXIAL_MAX_ZSPAN);
   try { manifold = primFn(...args); }
   catch (e: any) {
@@ -306,7 +323,12 @@ const handlePost = async ({ request, fetch }: { request: Request; fetch: typeof 
   if (axialPrev !== undefined) setAxialMaxZSpan(axialPrev);
   mark('geom', t); t = performance.now();
 
-  if (!manifold || typeof manifold.getMesh !== 'function') {
+  // NOTE `lazyPartsOf` FIRST. `typeof manifold.getMesh` is a property GET, and on
+  // the lazy `place()` proxy every get except `_parts` FORCES the compose — so
+  // this type guard used to union the whole assembly before anything asked for a
+  // mesh. On a well that meant 16–26 overlapping bodies fused into one degenerate
+  // solid (498 tris, genus 0; well 09 hit genus −188 and pegged a core).
+  if (!manifold || (lazyPartsOf(manifold).length === 0 && typeof manifold.getMesh !== 'function')) {
     throw error(400, 'primitive did not return a Manifold');
   }
   // Per-part color table (color-by-source). Matches the hashId stamping

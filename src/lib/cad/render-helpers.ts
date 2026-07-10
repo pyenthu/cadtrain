@@ -150,7 +150,42 @@ function clampCrease(a?: number): number {
  *  normals is a genuinely huge mesh (perf) — logged when it happens. */
 const CREASE_AWARE_MAX_VERTS = 60_000;
 
+/**
+ * The pre-compose outputs `autoPlace` stashed on the lazy `place()` proxy.
+ *
+ * Reading `_parts` is the ONE property access that does NOT force the compose —
+ * the proxy special-cases it (alongside `__isLazyPlace`, `then`, and symbols).
+ * EVERYTHING else does, including `typeof m.numTri` and `typeof m.getMesh`: a
+ * `typeof` is a property GET, so a bare type-guard silently unions the assembly.
+ *
+ * That mattered: `M.compose` on OVERLAPPING bodies is a union, and every well
+ * element sits inside the open hole, so composing well 11's 16 parts produced
+ * 498 tris at genus 0 (each part alone is 1,536+) — the well eaten by its own
+ * borehole. Well 09's 26-part union came out at genus −188, and finalizing THAT
+ * pegged a core at 100% CPU / 2.37 GB. Never compose a multi-part assembly.
+ */
+export function lazyPartsOf(m: any): any[] {
+  return Array.isArray(m?._parts)
+    ? m._parts.filter((p: any) => p && typeof p.getMesh === 'function')
+    : [];
+}
+
+/** `mergeBufferGeometries` concatenates raw attribute arrays, so an INDEXED geo
+ *  would lose its index and renumber wrong. `manifoldToGeo` returns indexed on
+ *  the non-color-by-source path. Flatten first — exact, just larger. */
+function asNonIndexed(g: THREE.BufferGeometry): THREE.BufferGeometry {
+  return g.index ? g.toNonIndexed() : g;
+}
+
 export function finalizeManifold(manifold: any, maxOD: number, material?: RenderMaterial, parts?: PartColorLUT, opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string; instanced?: boolean; warp?: WarpSpec; creaseAngle?: number; smoothWarp?: boolean; smooth?: { minSharpAngle?: number; tolerance?: number } }): ComponentResult {
+  // SEPARATE-PARTS FAST PATH — a list-returning geom fn (an assembly, a well).
+  // Handled BEFORE the empty-solid guard below, because that guard's
+  // `manifold?.numTri` would itself force the union we are avoiding.
+  const preParts = lazyPartsOf(manifold);
+  if (preParts.length > 1) {
+    return finalizeSeparateParts(preParts, maxOD, material, parts, opts);
+  }
+
   // Reject an EMPTY result — a CSG op (subtract/intersect) that removed all
   // geometry, e.g. subtracting two identically-dimensioned solids. Left
   // unguarded it serialises as a successful 0-triangle mesh; the client then
@@ -357,6 +392,120 @@ export function finalizeManifold(manifold: any, maxOD: number, material?: Render
     full,
     cutVC,
     manifold: warped,
+    cutawaySkipped: skipCutaway,
+    timings,
+    ...(sourceParts && sourceParts.length ? { parts: sourceParts } : {}),
+    ...(sourceCutParts && sourceCutParts.length ? { cutParts: sourceCutParts } : {}),
+  } as ComponentResult & { cutawaySkipped: boolean; timings: { full: number; cut: number } };
+}
+
+/**
+ * Finalize a MULTI-PART assembly WITHOUT ever composing it.
+ *
+ * Each pre-compose output is transformed and meshed on its own Manifold, then
+ * the render geometries are CONCATENATED (a flat attribute append — no boolean,
+ * no `M.compose`). Overlapping bodies therefore survive: a tubing string inside
+ * an open hole stays a tubing string instead of being eaten by the union.
+ *
+ * `full` and `cutVC` are render meshes, so concatenation is exactly right — they
+ * were never required to be a single watertight solid. `parts[]`/`cutParts[]`
+ * still carry the per-part split when a colour LUT is active.
+ *
+ * Cost is LINEAR in the parts. The old path composed first (super-linear, and on
+ * well 09 it pegged a core at 100% CPU / 2.37 GB before trapping).
+ */
+function finalizeSeparateParts(
+  preParts: any[],
+  maxOD: number,
+  material?: RenderMaterial,
+  parts?: PartColorLUT,
+  opts?: { skipCutaway?: boolean | 'auto'; zScale?: number; colorOuter?: string; colorInner?: string; instanced?: boolean; warp?: WarpSpec; creaseAngle?: number; smoothWarp?: boolean; smooth?: { minSharpAngle?: number; tolerance?: number } },
+): ComponentResult {
+  // Empty-solid guard, summed across parts — never touches the composed body.
+  const totalTris = preParts.reduce(
+    (s, p) => s + (typeof p.numTri === 'function' ? p.numTri() : 0), 0,
+  );
+  if (totalTris === 0) {
+    throw new Error('Bake produced an EMPTY solid — a CSG op (subtract/intersect) removed all geometry. Check the dimensions (e.g. the same OD on both sides of a subtract).');
+  }
+
+  const z = opts?.zScale ?? _renderZScale;
+  const warpedForShading = !!opts?.warp || opts?.smoothWarp === true;
+  const crease = warpedForShading ? 180 : clampCrease(opts?.creaseAngle);
+
+  // Per-part transform pipeline — IDENTICAL to the composed path's
+  // (z-scale → smooth → warp), so a part lands in the same place either way.
+  const bodies: any[] = preParts.map((rp) => {
+    let sp = z === 1.0 ? rp : rp.scale([1, 1, z]);
+    if (opts?.smooth) {
+      try { sp = sp.smoothOut(opts.smooth.minSharpAngle ?? 60, 0).refineToTolerance(opts.smooth.tolerance ?? maxOD * 0.004); }
+      catch { /* keep unsmoothed */ }
+    }
+    return applyWarp(sp, opts?.warp);
+  });
+
+  // One cut box for the whole assembly: the UNION of the part bounding boxes.
+  // (A bbox union is arithmetic, not CSG — no Manifold op involved.)
+  const bb = bodies.reduce((acc: any, b: any) => {
+    const t = b.boundingBox();
+    return acc === null ? { min: [...t.min], max: [...t.max] } : {
+      min: [0, 1, 2].map((i) => Math.min(acc.min[i], t.min[i])),
+      max: [0, 1, 2].map((i) => Math.max(acc.max[i], t.max[i])),
+    };
+  }, null);
+
+  let lut = parts?.active ? parts : undefined;
+  if (lut && (opts?.colorOuter || opts?.colorInner)) {
+    lut = {
+      ...lut,
+      ...(opts.colorOuter ? { bodyColor: opts.colorOuter } : {}),
+      ...(opts.colorInner ? { bodyInner: opts.colorInner } : {}),
+    };
+  }
+  const rawCutBox = getCutBox(bb);
+  const cutBox = lut ? tagManifold(rawCutBox, SECTION_ID) : rawCutBox;
+  const override: ColorOverride | undefined = (!lut && (opts?.colorOuter || opts?.colorInner))
+    ? { outer: opts?.colorOuter ?? DEFAULT_OUTER_HEX, inner: opts?.colorInner ?? DEFAULT_INNER_HEX }
+    : undefined;
+
+  // The cutaway skip is judged on the LARGEST part (the per-body cost governs),
+  // matching the composed path's decompose-based rule without decomposing.
+  const largest = bodies.reduce((m, b) => Math.max(m, typeof b.numTri === 'function' ? b.numTri() : 0), 0);
+  const skipCutaway = opts?.skipCutaway === true ? true
+    : opts?.skipCutaway === false ? false
+    : largest > 120_000;
+
+  const _t0 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+  const full = mergeBufferGeometries(
+    bodies.map((b) => asNonIndexed(manifoldToGeo(b, material, lut, override, crease))),
+  );
+  const _t1 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+  let sourceParts: PartMesh[] | undefined;
+  let sourceCutParts: PartMesh[] | undefined;
+  const cutGeos: THREE.BufferGeometry[] = [];
+  for (const b of bodies) {
+    if (lut) (sourceParts ??= []).push(...buildSourceParts(b, lut, crease, maxOD, 'full'));
+    if (skipCutaway) continue;
+    // A part fully removed by the cut contributes nothing — not an error.
+    let cw: any; try { cw = b.subtract(cutBox); } catch { cw = null; }
+    if (!cw) continue;
+    cutGeos.push(asNonIndexed(cutawayVC(b, cutBox, maxOD, material, lut, override, crease)));
+    if (lut) (sourceCutParts ??= []).push(...buildSourceParts(cw, lut, crease, maxOD, 'cut'));
+  }
+  const cutVC = skipCutaway ? new THREE.BufferGeometry() : mergeBufferGeometries(cutGeos);
+  const _t2 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+
+  const timings = { full: _t1 - _t0, cut: skipCutaway ? 0 : _t2 - _t1 };
+  if ((globalThis as any).__bakeTimings) {
+    try { console.log(`[bake-finalize:parts] n=${bodies.length} mesh=${timings.full.toFixed(1)}ms · cutaway=${timings.cut.toFixed(1)}ms${skipCutaway ? ' (skipped)' : ''}`); } catch {}
+  }
+
+  return {
+    full,
+    cutVC,
+    // No composed body exists, by design. Nothing downstream reads this.
+    manifold: null,
     cutawaySkipped: skipCutaway,
     timings,
     ...(sourceParts && sourceParts.length ? { parts: sourceParts } : {}),
