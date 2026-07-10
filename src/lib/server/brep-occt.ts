@@ -19,6 +19,14 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import * as mathLib from '$lib/cad/math-lib';
+
+// The bare-name math surface a part/assembly body may reference (cos/sin/tau/…
+// PLUS ceil/hypot/sign/clamp/frac/lerp/deg/rad/pi/atan2/…). Mirror the primitive
+// sandbox's spread so the OCCT executor injects the SAME set — a body using an
+// un-injected math fn otherwise threw "<fn> is not defined" under BREP only.
+const MATH_NAMES = Object.keys(mathLib);
+const MATH_VALUES = MATH_NAMES.map((n) => (mathLib as any)[n]);
 
 let _ocReady: Promise<void> | null = null;
 
@@ -237,6 +245,7 @@ export async function brepFromSource(
   const replicad: any = await import('replicad');
   const { compileSketch } = await import('$lib/cad/sketch');
   const { resampleSpline } = await import('$lib/cad/spline-resample');
+  const { resolveProfile } = await import('$lib/shared/profile-presets');
   const {
     draw, makeBaseBox, makeCompound, drawPolysides,
     assembleWire, makeLine, genericSweep,
@@ -249,14 +258,28 @@ export async function brepFromSource(
   // ── wrapped OCCT solid: Manifold-method names → replicad methods ──────────
   const WRAP = Symbol('occt');
   const unwrap = (v: any) => (v && v[WRAP]) ? v[WRAP] : v;
+  // Fold a boolean op over an operand that may be a single solid, a wrapped
+  // solid, an ARRAY of solids, or a `place(list)` group — mirroring Manifold,
+  // where `A.add(place([b,c,d]))` unions A with every element. Without this,
+  // `t.fuse(array)` threw deep in replicad ("Cannot read '$$' of undefined",
+  // bw_tubing) because a raw JS array has no OCCT handle. collectShapes flattens
+  // the operand to individual solids; we clone each (replicad booleans consume
+  // their operands) and apply the op one at a time.
+  const combineBool = (base: any, o: any, op: 'fuse' | 'cut' | 'intersect'): any => {
+    const arr: any[] = []; collectShapes(o, arr);
+    if (arr.length === 0) return base;
+    let acc = base;
+    for (const s of arr) { let piece: any; try { piece = s.clone(); } catch { piece = s; } acc = acc[op](piece); }
+    return acc;
+  };
   function wrap(shape: any): any {
     if (!shape || typeof shape !== 'object') return shape;
     const proxy: any = new Proxy(shape, {
       get(t, prop) {
         if (prop === WRAP) return t;
-        if (prop === 'add' || prop === 'union') return (o: any) => wrap(t.fuse(unwrap(o)));
-        if (prop === 'subtract') return (o: any) => wrap(t.cut(unwrap(o)));
-        if (prop === 'intersect') return (o: any) => wrap(t.intersect(unwrap(o)));
+        if (prop === 'add' || prop === 'union') return (o: any) => wrap(combineBool(t, o, 'fuse'));
+        if (prop === 'subtract') return (o: any) => wrap(combineBool(t, o, 'cut'));
+        if (prop === 'intersect') return (o: any) => wrap(combineBool(t, o, 'intersect'));
         const val = (t as any)[prop];
         if (typeof val === 'function') return (...a: any[]) => {
           const r = val.apply(t, a.map(unwrap));
@@ -268,12 +291,13 @@ export async function brepFromSource(
     return proxy;
   }
 
-  // Build a closed replicad drawing from a 2D point list, sketch on a plane.
-  const sketchPoly = (pts: [number, number][], plane: 'XZ' | 'XY') => {
+  // Build a closed replicad drawing from a 2D point list, sketch on a plane
+  // (optionally offset along the plane normal — `z` for a stack of XY sections).
+  const sketchPoly = (pts: [number, number][], plane: 'XZ' | 'XY', z?: number) => {
     if (!Array.isArray(pts) || pts.length < 3) throw new Error('profile < 3 pts');
     let d = draw([pts[0][0], pts[0][1]]);
     for (let i = 1; i < pts.length; i++) d = d.lineTo([pts[i][0], pts[i][1]]);
-    return d.close().sketchOnPlane(plane);
+    return z === undefined ? d.close().sketchOnPlane(plane) : d.close().sketchOnPlane(plane, z);
   };
   const asPts = (p: any): [number, number][] =>
     (typeof p === 'string' ? JSON.parse(p) : p) as [number, number][];
@@ -311,29 +335,70 @@ export async function brepFromSource(
     }
     return wrap(sketchPoly(prof, 'XZ').revolve());
   };
-  const extrudeXY = (profile: any, length: number, twist = 0) => {
+  // taper: MF's r_weld_extrude scales the top face by `1 - taper` (Z-down
+  // convention — taper > 0 narrows the far/bottom end). replicad's
+  // `extrusionProfile: { profile:'linear', endFactor }` scales the section
+  // linearly from 1 at the base to `endFactor` at the top, so endFactor = 1 −
+  // taper is the exact-kernel equivalent (a straight-ruled tapered prism, not a
+  // welded morph). Without this BREP extruded straight → g_star/new_assy came
+  // out ~22% over-volume vs the Manifold oracle.
+  const extrudeXY = (profile: any, length: number, twist = 0, taper = 0) => {
     const prof = asPts(profile);
     const sk = sketchPoly(prof, 'XY');
     const h = Math.max(0.01, length);
-    return wrap(twist ? sk.extrude(h, { twistAngle: twist }) : sk.extrude(h));
+    const opts: any = {};
+    if (twist) opts.twistAngle = twist;
+    if (taper) opts.extrusionProfile = { profile: 'linear', endFactor: Math.max(0.001, 1 - taper) };
+    return wrap(Object.keys(opts).length ? sk.extrude(h, opts) : sk.extrude(h));
   };
-  const r_weld_extrude = (a: any, length?: number, _divs?: number, twist?: number) => {
-    if (a && a.profile !== undefined) return extrudeXY(a.profile, a.length, a.twist ?? 0);
-    return extrudeXY(a, length ?? 2, twist ?? 0);
+  const r_weld_extrude = (a: any, length?: number, _divs?: number, twist?: number, taper?: number) => {
+    if (a && a.profile !== undefined) return extrudeXY(a.profile, a.length, a.twist ?? 0, a.taper ?? 0);
+    return extrudeXY(a, length ?? 2, twist ?? 0, taper ?? 0);
   };
-  const r_extrude = (a: any, height?: number, twist?: number) => {
-    if (a && a.profile !== undefined) return extrudeXY(a.profile, a.height ?? a.length, a.twist ?? 0);
-    return extrudeXY(a, height ?? 2, twist ?? 0);
+  const r_extrude = (a: any, height?: number, twist?: number, taper?: number) => {
+    if (a && a.profile !== undefined) return extrudeXY(a.profile, a.height ?? a.length, a.twist ?? 0, a.taper ?? 0);
+    return extrudeXY(a, height ?? 2, twist ?? 0, taper ?? 0);
   };
-  const r_loft = (a: any, length?: number, _divs?: number, twist?: number, bulge?: number) => {
-    // Approximate the scale-along-z bulge with replicad's extrusionProfile.
+  // r_loft — sweep a 2D section down z while SCALING it by a smooth
+  // shape-along-length curve (barrel/waist/flare/ogive/scurve) + twist. This is
+  // exactly what replicad's `extrusionProfile` CANNOT do: its 'linear'/'s-curve'
+  // scale monotonically from 1 → endFactor at the END, so a barrel (fat MIDDLE,
+  // equal ends) came out end-swollen (g_barrel diverged ~10% vol/bbox vs MF).
+  // Reproduce the engine's `scaleAt(t)` (r_loft.ts is the source of truth) and
+  // loft a stack of per-t scaled+rotated sections — a true exact-kernel loft
+  // matching the Manifold gridPatch build.
+  const r_loft = (a: any, length?: number, divsArg?: number, twist?: number, bulge?: number, shapeArg?: string) => {
     const prof = asPts(Array.isArray(a) ? a : a.profile);
-    const L = (a && a.length !== undefined) ? a.length : (length ?? 6);
-    const tw = (a && a.twist !== undefined) ? a.twist : (twist ?? 0);
-    const bl = (a && a.bulge !== undefined) ? a.bulge : (bulge ?? 0);
-    const sk = sketchPoly(prof, 'XY');
-    const ep = bl ? { profile: 's-curve' as const, endFactor: 1 + bl } : undefined;
-    return wrap(sk.extrude(Math.max(0.01, L), { twistAngle: tw || 0, ...(ep ? { extrusionProfile: ep } : {}) }));
+    const L = Math.max(0.01, (a && a.length !== undefined) ? a.length : (length ?? 6));
+    const tw = ((a && a.twist !== undefined) ? a.twist : (twist ?? 0)) as number;
+    const amp = Number((a && a.bulge !== undefined) ? a.bulge : (bulge ?? 0)) || 0;
+    const shape = (a && a.shape !== undefined) ? a.shape : (shapeArg ?? 'barrel');
+    const twRad = (Number(tw) || 0) * Math.PI / 180;
+    // No shape scaling AND no twist → a straight prism (fast, exact).
+    if (amp === 0 && !twRad) return extrudeXY(prof, L, 0, 0);
+    const smoothstep = (x: number) => x * x * (3 - 2 * x);
+    const scaleAt = (t: number): number => {
+      let s: number;
+      switch (shape) {
+        case 'waist':  s = 1 - amp * Math.sin(Math.PI * t); break;
+        case 'flare':  s = 1 + amp * t; break;
+        case 'ogive':  s = 1 - amp * t * t; break;
+        case 'scurve': s = 1 + amp * (smoothstep(t) - 0.5); break;
+        case 'barrel':
+        default:       s = 1 + amp * Math.sin(Math.PI * t); break;
+      }
+      return Math.max(0.02, s);
+    };
+    const N = Math.max(4, Math.min(96, Math.round((a && a.divs) || divsArg || 24)));
+    const sections: any[] = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const s = scaleAt(t), th = twRad * t, ct = Math.cos(th), st = Math.sin(th);
+      const scaled = prof.map(([x, y]) => [s * (x * ct - y * st), s * (x * st + y * ct)] as [number, number]);
+      sections.push(sketchPoly(scaled, 'XY', t * L));
+    }
+    // ruled = flat facets between rings (matches the welded gridPatch quads).
+    return wrap(sections[0].loftWith(sections.slice(1), { ruled: true }));
   };
   const r_cuboid = (w: number, h: number, d: number) => wrap(makeBaseBox(Math.max(0.01, w), Math.max(0.01, h), Math.max(0.01, d)));
 
@@ -419,7 +484,47 @@ export async function brepFromSource(
     if (v[2]) sh = sh.rotate(v[2], [0, 0, 0], [0, 0, 1]);
     return wrap(sh);
   };
-  const place = (...args: any[]) => { const last = args[args.length - 1]; return last; };
+  // place(a, b, …) or place([a, b, …]) — topological compose. Manifold's place
+  // UNIONS overlapping bodies + groups disjoint ones; for BREP we keep the parts
+  // separate (flattened) and let any downstream boolean (combineBool) or the
+  // final collectShapes → makeCompound do the grouping — so a reused part isn't
+  // prematurely fused. Returns a wrapped solid (single) or an array of wrapped
+  // solids (multi), both of which collectShapes/combineBool flatten correctly.
+  const place = (...args: any[]) => {
+    const arr: any[] = []; collectShapes(args, arr);
+    if (arr.length === 0) return undefined;
+    if (arr.length === 1) return wrap(arr[0]);
+    return arr.map(wrap);
+  };
+
+  // sectionCut — subtract an AUTHORED angular WEDGE (pie slice spanning `az`
+  // degrees at bearing `offset`) from a solid, the exact-kernel twin of
+  // manifold-helpers.sectionCut. Used INSIDE part bodies (bw_casing/bw_cement/…)
+  // to bake a longitudinal half-section into the geometry (az 180 = half-pipe),
+  // NOT the render-time cutaway. Build the same pie-slice polygon MF builds,
+  // extrude it past both z-ends, and `.cut()` it — so BREP reproduces the same
+  // sectioned solid the Manifold oracle does (previously "sectionCut is not
+  // defined" failed 13 parts + every well assembly depending on bw_casing).
+  const sectionCut = (solid: any, opts?: { az?: number; offset?: number }) => {
+    const s = unwrap(solid);
+    if (!s || typeof s.cut !== 'function' || !s.boundingBox) return solid;
+    const az = Number(opts?.az ?? 180);
+    const offset = Number(opts?.offset ?? 0);
+    if (!(az > 0) || az >= 360) return solid; // az≤0 → no cut; ≥360 → full removal (leave solid; empty is fragile in OCCT)
+    const bb = s.boundingBox.bounds; // [[xmin,ymin,zmin],[xmax,ymax,zmax]]
+    const MARGIN = 20;
+    const R = Math.max(Math.abs(bb[0][0]), Math.abs(bb[1][0]), Math.abs(bb[0][1]), Math.abs(bb[1][1])) + MARGIN;
+    const zlen = (bb[1][2] - bb[0][2]) + 2 * MARGIN;
+    const z0 = bb[0][2] - MARGIN;
+    const seg = Math.max(2, Math.ceil(az / 5));
+    const pts: [number, number][] = [[0, 0]];
+    for (let i = 0; i <= seg; i++) {
+      const a = ((offset + (az * i) / seg) * Math.PI) / 180;
+      pts.push([R * Math.cos(a), R * Math.sin(a)]);
+    }
+    const wedge = sketchPoly(pts, 'XY').extrude(Math.max(0.01, zlen)).translate([0, 0, z0]);
+    return wrap(s.cut(wedge));
+  };
   // Stack-ref offset (graded-delta z mate): stash the delta on the underlying
   // OCCT shape so stack() can read it (mirrors Manifold's `_stackRef`).
   const stackRefMap = new WeakMap<object, number>();
@@ -491,14 +596,16 @@ export async function brepFromSource(
   // all built before any runs).
   const depFns: Record<string, (args?: any) => any> = {};
   const NAMES = [
-    'p', 'sketch', 'r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid', 'r_sweep', 'resampleSpline',
-    'mv', 'rot', 'place', 'withStackRef', 'stack', 'list', 'group', 'cos', 'sin', 'tan', 'tau', 'PI',
-    'sqrt', 'abs', 'min', 'max', 'pow', 'floor', 'round',
+    'p', 'sketch', 'r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid', 'r_sweep',
+    'resampleSpline', 'resolveProfile', 'sectionCut',
+    'mv', 'rot', 'place', 'withStackRef', 'stack', 'list', 'group',
+    ...MATH_NAMES,
   ];
   const baseVals = (p: any) => [
-    p, sketch, r_revolve, r_weld_extrude, r_loft, r_extrude, r_cuboid, r_sweep, resampleSpline,
-    mv, rot, place, withStackRef, stackOcct, compoundOf, compoundOf, Math.cos, Math.sin, Math.tan, 2 * Math.PI, Math.PI,
-    Math.sqrt, Math.abs, Math.min, Math.max, Math.pow, Math.floor, Math.round,
+    p, sketch, r_revolve, r_weld_extrude, r_loft, r_extrude, r_cuboid, r_sweep,
+    resampleSpline, resolveProfile, sectionCut,
+    mv, rot, place, withStackRef, stackOcct, compoundOf, compoundOf,
+    ...MATH_VALUES,
   ];
   function bodyOf(src: string): string | null {
     const mm = src.match(/export\s+function\s+\w+\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
