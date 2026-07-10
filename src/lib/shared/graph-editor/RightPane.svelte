@@ -291,6 +291,28 @@
       .then((d) => { compiledScript = d?.supported ? d.script : `// not supported by the client kernel:\n// ${d?.reason ?? 'unknown'}`; compiledStatus = 'idle'; })
       .catch((e) => { compiledScript = `// compile failed: ${e?.message ?? e}`; compiledStatus = 'error'; });
   });
+  // ─── MF_SERVER arming ───────────────────────────────────────────────────
+  // The server bake runs Manifold synchronously on Node's single thread: while
+  // it works, nothing else on the server answers. So opening the tab must not
+  // start one, and neither must a param edit while the tab happens to be open.
+  //
+  // `mfServerJob` is a FROZEN (source, args) snapshot taken at the instant the
+  // user clicks "Bake on server". The canvas is mounted with those values, so
+  // later edits to the graph do not re-trigger it — a second bake needs a
+  // second click. Leaving the tab disarms, so re-entering asks again.
+  let mfServerJob = $state<{ source: string; args: (number | string)[] } | null>(null);
+  $effect(() => { if (rightTab !== 'mfserver') mfServerJob = null; });
+  /** The armed snapshot no longer matches the live graph — offer a re-bake. */
+  let mfServerStale = $derived.by(() => {
+    if (!mfServerJob || typeof displayBake !== 'object' || !displayBake) return false;
+    return displayBake.source !== mfServerJob.source
+      || JSON.stringify(displayBake.args ?? paramDefaults) !== JSON.stringify(mfServerJob.args);
+  });
+  function armMfServer() {
+    if (typeof displayBake !== 'object' || !displayBake?.source) return;
+    mfServerJob = { source: displayBake.source, args: displayBake.args ?? paramDefaults };
+  }
+
   function setSvgRes(v: 'coarse' | 'high') {
     svgRes = v;
     try { localStorage.setItem('ge-svg-res', v); } catch { /* ignore */ }
@@ -360,6 +382,10 @@
       type="button" role="tab" aria-selected={rightTab === 'bake'}
       data-tip={!hasSolidProducer ? '2D preview — resolved polygon (axis at r=0 for revolve, centered for cartesian)' : 'MF_CLIENT — Manifold, baked in a browser Web Worker. The default, and the only backend on the main canvas.'}
       onclick={() => setRightTab('bake')}>{!hasSolidProducer ? '2D preview' : 'MF_CLIENT'}</button>
+    <button class="ge-pane-tab" class:active={rightTab === 'tf'}
+      type="button" role="tab" aria-selected={rightTab === 'tf'}
+      data-tip="TF — TrueForm (Polydera) client-side exact-mesh kernel. Runs the WASM boolean/generator kernel on the MAIN THREAD (no worker); from-scratch generators + booleans."
+      onclick={() => setRightTab('tf')}>TF</button>
     <button class="ge-pane-tab" class:active={rightTab === 'source'}
       type="button" role="tab" aria-selected={rightTab === 'source'}
       data-tip={`SRC — the emitted ${exemplarId}.asm.ts auto-generated from the graph`}
@@ -380,10 +406,6 @@
       type="button" role="tab" aria-selected={rightTab === 'brep'}
       data-tip="BREP — server-side OpenCascade (OCCT) true-curve render. Adaptive tessellation + exact normals. Revolve · extrude · loft · CSG · composed parts."
       onclick={() => setRightTab('brep')}>BREP</button>
-    <button class="ge-pane-tab" class:active={rightTab === 'tf'}
-      type="button" role="tab" aria-selected={rightTab === 'tf'}
-      data-tip="TF — TrueForm (Polydera) client-side exact-mesh kernel. Runs the WASM boolean/generator kernel on the MAIN THREAD (no worker); from-scratch generators + booleans."
-      onclick={() => setRightTab('tf')}>TF</button>
     <button class="ge-pane-tab mfserver" class:active={rightTab === 'mfserver'}
       type="button" role="tab" aria-selected={rightTab === 'mfserver'}
       data-tip="MF_SERVER — the SAME Manifold kernel, baked on the server via /api/primitives/preview. Rare: parity checks + diagnosing a client-bake failure. Manifold is synchronous and Node is single-threaded, so a heavy part here stalls every route until it finishes. Never opens by itself; never restored on reload."
@@ -576,28 +598,52 @@
       {/if}
     </div>
     <!-- MF_SERVER tab — the SAME Manifold kernel as MF_CLIENT, run on the server.
-         Mounted ONLY while this tab is the active tab of the active pane, so it
-         can never bake in the background. This is the one place in the app that
-         POSTs /api/primitives/preview for a live mesh. -->
+         Mounted ONLY after an explicit click (see `mfServerJob`), and only while
+         this is the active tab of the active pane. This is the one place in the
+         app that POSTs /api/primitives/preview for a live mesh. -->
     <div class="ge-glb-body" class:hidden={rightTab !== 'mfserver'}>
       {#if rightTab === 'mfserver' && (active ?? true)}
-        {#if PrimitiveDualCanvas && displayBake && typeof displayBake === 'object' && displayBake.source}
-          <div class="ge-mfserver-warn">
-            ☁ Server bake — Manifold runs synchronously on Node's single thread. A
-            large part stalls every route until it finishes. Use MF_CLIENT unless
-            you are checking parity or diagnosing a client-bake failure.
+        {#if !(typeof displayBake === 'object' && displayBake && displayBake.source)}
+          <div class="ge-empty">No geometry yet — bake the part first (open the MF_CLIENT tab).</div>
+        {:else if !mfServerJob}
+          <!-- ARMED-OFF: nothing has been sent to the server. -->
+          <div class="ge-mfserver-gate">
+            <div class="ge-mfserver-gate-title">☁ Server bake — click to load</div>
+            <p class="ge-mfserver-gate-body">
+              Nothing is baked here until you ask. Manifold runs <strong>synchronously
+              on Node's single thread</strong>, so while this bake runs the server
+              answers nothing else — a large part stalls every route until it
+              finishes. MF_CLIENT does the same work in a browser worker.
+            </p>
+            <p class="ge-mfserver-gate-body dim">
+              Use this only to check parity against MF_CLIENT, or to diagnose a
+              client-bake failure.
+            </p>
+            <button class="ge-mfserver-gate-btn" type="button" onclick={armMfServer}>
+              Bake <code>{exemplarId}</code> on the server
+            </button>
           </div>
+        {:else if PrimitiveDualCanvas}
+          <!-- ARMED: bake the FROZEN snapshot. Param edits do not re-fire this. -->
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
-            args={displayBake.args ?? paramDefaults}
-            source={displayBake.source}
+            args={mfServerJob.args}
+            source={mfServerJob.source}
             backend="manifold-server"
             colorOuter={graph.colorOuter} colorInner={graph.colorInner} opacity={graph.opacity} texture={graph.texture} material={graph.material}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             bakeGlb={false}
             autoScaleOwner={active && rightTab === 'mfserver'}
             showControls={true} showLabels={false}/>
-        {:else}
-          <div class="ge-empty">No geometry yet — bake the part first (open the MF_CLIENT tab).</div>
+          <div class="ge-mfserver-bar">
+            {#if mfServerStale}
+              <span class="ge-mfserver-stale">● graph changed since this bake</span>
+            {/if}
+            <span class="ge-bake-meta-spacer"></span>
+            <button class="ge-mfserver-rebtn" type="button" onclick={armMfServer}
+              title="Send the CURRENT graph to /api/primitives/preview again">
+              ☁ Bake again
+            </button>
+          </div>
         {/if}
       {/if}
     </div>
@@ -699,13 +745,22 @@
   /* MF_SERVER — visually marked as the exceptional path, so nobody parks on it. */
   .ge-pane-tab.mfserver { color: #d98a2b; }
   .ge-pane-tab.mfserver.active { color: #ffb454; }
-  .ge-mfserver-warn {
-    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
-    z-index: 6; max-width: 78%;
-    background: rgba(60, 40, 0, 0.88); border: 1px solid #8a6d00; border-radius: 4px;
-    padding: 5px 9px; color: #ffd98a; font: 10.5px/1.45 Arial; text-align: center;
-    pointer-events: none;
-  }
+  /* MF_SERVER gate — the tab shows THIS until the user clicks. No bake runs. */
+  .ge-mfserver-gate { margin: auto; max-width: 420px; padding: 20px 22px; text-align: center;
+    background: #fffbf0; border: 1px solid #e6c98a; border-radius: 8px; }
+  .ge-mfserver-gate-title { font: 700 13px Arial; color: #8a6d00; margin-bottom: 10px; }
+  .ge-mfserver-gate-body { font: 11.5px/1.6 Arial; color: #57534e; margin: 0 0 8px; }
+  .ge-mfserver-gate-body.dim { color: #8a8580; }
+  .ge-mfserver-gate-btn { margin-top: 6px; font: 600 11.5px Arial; color: #fff; background: #b45309;
+    border: 1px solid #92400e; border-radius: 5px; padding: 7px 14px; cursor: pointer; }
+  .ge-mfserver-gate-btn:hover { background: #92400e; }
+  .ge-mfserver-gate-btn code { font: 11.5px ui-monospace, monospace; color: #ffe6c2; }
+  .ge-mfserver-bar { display: flex; align-items: center; gap: 8px; padding: 4px 8px;
+    border-top: 1px solid #e7e5e4; background: #fffbf0; }
+  .ge-mfserver-stale { font: 10.5px Arial; color: #b45309; }
+  .ge-mfserver-rebtn { font: 600 10.5px Arial; color: #8a6d00; background: #fff7e6;
+    border: 1px solid #e6c98a; border-radius: 4px; padding: 3px 9px; cursor: pointer; }
+  .ge-mfserver-rebtn:hover { background: #ffedcc; }
 
   /* Right pane: VERTICAL tab rail on the left + content. */
   .ge-right-pane { display: grid; grid-template-columns: auto 1fr; overflow: hidden; border-left: 1px solid #e5e7eb; }

@@ -7,7 +7,8 @@
   // One canvas showing the live mesh (left) + baked GLB (right) side-by-side
   // in a SINGLE WebGL context — replaces the stacked PrimitiveCanvas +
   // PrimitiveGlbCanvas (was 2 contexts per tab → the WebGL-context leak,
-  // todo_webgl_context_leak). Fetches both /preview and /bake-preview.
+  // todo_webgl_context_leak). Geometry + GLB are both produced CLIENT-SIDE
+  // (bake worker + glb-client); only backend='manifold-server' touches /preview.
   import { onMount, onDestroy } from 'svelte';
   import { Canvas } from '@threlte/core';
   import { WebGLRenderer } from 'three';
@@ -272,17 +273,17 @@
     Scene = scn.default; SceneControls = controls.default;
   });
 
-  function setGlbBlob(b64: string | null) {
+  /** GLB bytes → blob URL. Takes an ArrayBuffer now: the GLB is exported in the
+   *  browser (glb-client.ts), not fetched as base64 from /bake-preview. */
+  function setGlbBlob(buf: ArrayBuffer | null) {
     if (glbBlobUrl) URL.revokeObjectURL(glbBlobUrl);
-    if (!b64) { glbBlobUrl = null; return; }
-    const bin = atob(b64); const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    glbBlobUrl = URL.createObjectURL(new Blob([bytes], { type: 'model/gltf-binary' }));
+    if (!buf) { glbBlobUrl = null; return; }
+    glbBlobUrl = URL.createObjectURL(new Blob([buf], { type: 'model/gltf-binary' }));
   }
 
   // Module-scope fetch cache (2026-06-11) — survives unmount/remount.
   // Inactive /primitives tabs now UNMOUNT this component (WebGL-context
-  // cap), so switching back would re-hit /preview + /bake-preview for
+  // cap), so switching back would re-bake unchanged geometry. Cache the results for
   // unchanged geometry. Cache the raw responses keyed by the full request
   // body; a remount with the same id/args/source repaints instantly.
   // Small LRU — GLB payloads can be MBs for tall assemblies.
@@ -459,27 +460,44 @@
       geoVersion++; meshStatus = 'ok'; err = null; meshBackend = 'server';
     } catch (e: any) { if (e?.name !== 'AbortError') { err = String(e?.message ?? e); meshStatus = 'error'; } }
   }
+  // GLB — exported IN THE BROWSER from the client worker's bake (glb-client.ts).
+  // It used to POST /api/primitives/bake-preview, which ran a SECOND synchronous
+  // Manifold bake on Node's only thread; opening the GLB tab on a big part
+  // stalled every route. Same kernel, same mesh, no server.
   async function rebuildGlb(bust = false) {
-    if (!id) return;
-    const body = JSON.stringify({ id, name, source: source ?? '', args, cut: glbCut, colorOuter, colorInner });
-    const cachedB64 = bust ? undefined : cacheGet(`glb:${body}`);
-    if (cachedB64) { setGlbBlob(cachedB64); glbStatus = 'ok'; return; }
+    if (!id || !name) return;
+    const body = JSON.stringify({ id, name, source: source ?? '', args, cut: glbCut, colorOuter, colorInner, segments: effSegments });
+    const cachedBuf = bust ? undefined : cacheGet(`glb:${body}`);
+    if (cachedBuf) { setGlbBlob(cachedBuf); glbStatus = 'ok'; return; }
     glbStatus = 'building';
     glbAc?.abort(); const ac = new AbortController(); glbAc = ac;
     try {
-      const r = await fetch('/api/primitives/bake-preview' + (bust ? '?bust=1' : ''), {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body,
-        signal: ac.signal,
-      });
+      const cd = await getCompiled(name, source ?? '', ac.signal, bust);
       if (ac.signal.aborted) return;
-      if (!r.ok) { err = `Bake ${r.status}`; glbStatus = 'error'; return; }
-      const data = await r.json();
-      const b64 = glbCut && data.cut ? data.cut : data.full;
-      cachePut(`glb:${body}`, b64);
-      setGlbBlob(b64);
+      if (!cd?.supported || !cd.script) {
+        err = `GLB: the client Manifold kernel cannot build this part${cd?.reason ? `: ${cd.reason}` : ''}`;
+        glbStatus = 'error'; return;
+      }
+      // `instanced:false` — the GLB must carry the real merged/exploded meshes,
+      // not a canonical child plus transforms (the SVG pane learned this too).
+      const segUsed = effSegments;
+      const options = { cutaway: glbCut, instanced: false,
+        ...(segUsed ? { segments: segUsed } : {}), colorOuter, colorInner,
+        ...(cd.partColors ? { parts: cd.partColors } : {}) };
+      const result: any = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options, bust });
+      if (ac.signal.aborted || isCancelled(result)) return;
+      const { exportGlbClient } = await import('$lib/cad/glb-client');
+      // A cut GLB exports the half-section (cutVC); otherwise the solid.
+      const parts = glbCut ? result.cutParts : result.parts;
+      const full = glbCut ? result.cutVC : result.full;
+      // Only a part with a REAL colour source keeps COLOR_0 — see glb-client.ts.
+      const coloured = !!(colorOuter || colorInner || cd.partColors?.active);
+      const buf = await exportGlbClient({ full, parts, name, coloured });
+      if (ac.signal.aborted) return;
+      cachePut(`glb:${body}`, buf);
+      setGlbBlob(buf);
       glbStatus = 'ok';
-    } catch (e: any) { if (e?.name !== 'AbortError') { err = String(e?.message ?? e); glbStatus = 'error'; } }
+    } catch (e: any) { if (e?.name !== 'AbortError') { err = `GLB export failed: ${String(e?.message ?? e)}`; glbStatus = 'error'; } }
   }
   // BREP backend: POST /api/brep/preview (server-side OCCT). Builds a
   // THREE.BufferGeometry from the response via the shared adapter and sets
