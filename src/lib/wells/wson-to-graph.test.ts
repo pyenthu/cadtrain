@@ -572,3 +572,50 @@ describe('wsonToGraph — RUNG 5: completions become bw_* Calls placed by depth'
     expect(wsonToGraph(sample01())).toEqual(wsonToGraph(sample01()));
   });
 });
+
+// ─── Mixed-unit guard: AXIAL params must be supplied in metres ────────────────
+//
+// The well is authored radially in INCHES (`od`) and axially in METRES (`length`,
+// `Mv` depth), while every `bw_*` part's defaults are authored in inches. So an
+// axial param the translator forgets to pass keeps an inch number in a metre
+// scene. Measured on `bw_packer`: `{od, length: 0.5}` alone baked a 6.0-long
+// packer with genus -1 (its 6-inch-default seal band overshot the 0.5 body at
+// both ends and split the solid). Radial params may safely default.
+describe('completion args — axial params are passed in the row unit', () => {
+  const packerWell = (lengthM: number): Wson => ({
+    meta: { wellName: 'p' },
+    ch: [{ od: 9.625, id: 8.681, top: 0, bot: 1000, type: 'production' }],
+    completions: [{ tool_comp: 'PACKERS.PACKER_BAKER_PERMANENT', od: 8.681, top: 10, bot: 10 + lengthM }],
+  });
+
+  it('bw_packer receives seal_len in METRES, scaled to the row length', () => {
+    const g = wsonToGraph(packerWell(0.5));
+    const packer = callBySrc(g, 'bw_packer');
+    expect(packer).toBeTruthy();
+    // 6/24 of the body length — the part's own authored proportion.
+    expect(packer!.args.seal_len.value).toBeCloseTo(0.5 * (6 / 24), 6);
+    // The seal must never exceed the body, or the solid splits in two.
+    expect(packer!.args.seal_len.value).toBeLessThan(packer!.args.length.value);
+  });
+
+  it('seal_len tracks length — a 5 m packer gets a 5x bigger seal', () => {
+    const a = callBySrc(wsonToGraph(packerWell(0.5)), 'bw_packer')!.args.seal_len.value;
+    const b = callBySrc(wsonToGraph(packerWell(2.5)), 'bw_packer')!.args.seal_len.value;
+    expect(b / a).toBeCloseTo(5, 6);
+  });
+
+  it('seal_od is RADIAL — stays in inches, proportional to od', () => {
+    const p = callBySrc(wsonToGraph(packerWell(0.5)), 'bw_packer')!;
+    expect(p.args.seal_od.value).toBeCloseTo(8.681 * (9.5 / 8.681), 6);
+    expect(p.args.seal_od.value).toBeGreaterThan(p.args.od.value); // seal protrudes
+  });
+
+  it('parts with no extra axial params are untouched (od + length only)', () => {
+    const g = wsonToGraph({
+      meta: { wellName: 'n' },
+      ch: [{ od: 9.625, id: 8.681, top: 0, bot: 1000, type: 'production' }],
+      completions: [{ tool_comp: 'MISC.MULE_SHOE', od: 2.875, top: 10, bot: 10.2 }],
+    } as Wson);
+    expect(Object.keys(callBySrc(g, 'bw_mule_shoe')!.args).sort()).toEqual(['length', 'od']);
+  });
+});

@@ -199,15 +199,51 @@ function resolveCompletionPart(toolComp: string | undefined, i: number): string 
   return partId;
 }
 
+/** Extra AXIAL params a `bw_*` part needs, derived from the row so they land in
+ *  the same unit as `length`.
+ *
+ *  The well is authored in a MIXED unit space: radial quantities (`od`) are the
+ *  WSON row's INCHES, axial quantities (`length`, and the `Mv` depth) are METRES.
+ *  A `bw_*` part's own defaults are all authored in inches (`unit: 'in'`). So a
+ *  RADIAL param may safely fall through to its default — it is already inches —
+ *  but any AXIAL param we fail to pass keeps an inch number in a metre scene and
+ *  bakes ~39x too long.
+ *
+ *  Measured: `bw_packer`'s `seal_len` defaults to 6 (in). Passing only
+ *  `{od, length: 0.5}` baked a **6.0**-long packer with **genus -1** (the seal
+ *  band overshot the 0.5 body at both ends and split the solid in two). Supplying
+ *  `seal_len` in metres gives z-span == length and genus 1.
+ *
+ *  Ratios are the part's OWN authored proportions, so a resized packer keeps its
+ *  shape: seal_len/length = 6/24, seal_od/od = 9.5/8.681. */
+const PACKER_SEAL_LEN_RATIO = 6 / 24;
+const PACKER_SEAL_OD_RATIO = 9.5 / 8.681;
+
+const EXTRA_AXIAL_DIMS: Record<
+  string,
+  (c: Completion, lengthM: number) => Record<string, number>
+> = {
+  bw_packer: (c, lengthM) => ({
+    seal_len: clean(lengthM * PACKER_SEAL_LEN_RATIO),
+    ...(c.od != null ? { seal_od: clean(c.od * PACKER_SEAL_OD_RATIO) } : {}),
+  }),
+};
+
 /** Args for a completion Call: OD (inches, from the WSON row) + the section's
  *  down-hole length (metres) — the SAME mixed-unit convention as `structuralArgs`
- *  (od inches / length metres; the scene exaggerates radially). Every other param
- *  (id / wall / seat / seal / bevel…) falls through to the `bw_*` part's own
- *  defaults, which emit does not need to see. */
-function completionArgs(c: Completion, lengthM: number): Record<string, ArgValue> {
+ *  (od inches / length metres; the scene exaggerates radially). RADIAL params
+ *  (id / wall / seat / bevel…) fall through to the `bw_*` part's own inch
+ *  defaults, which is correct. AXIAL params must be supplied — see
+ *  `EXTRA_AXIAL_DIMS`. */
+function completionArgs(c: Completion, lengthM: number, partId: string): Record<string, ArgValue> {
   const args: Record<string, ArgValue> = {};
   if (c.od != null) args.od = asLiteral(clean(c.od));
   if (lengthM > 0) args.length = asLiteral(clean(lengthM));
+  if (lengthM > 0) {
+    for (const [k, v] of Object.entries(EXTRA_AXIAL_DIMS[partId]?.(c, lengthM) ?? {})) {
+      args[k] = asLiteral(v);
+    }
+  }
   return args;
 }
 
@@ -422,7 +458,7 @@ export function wsonToGraph(wson: Wson): Graph {
     const src = resolveCompletionPart(c.tool_comp, i);
     elements.push(element(
       `comp_${i}`, `COMP_${i + 1}`, src,
-      completionArgs(c, bot - top),
+      completionArgs(c, bot - top, src),
       top,
     ));
   });
