@@ -433,6 +433,26 @@ describe('graphToTf', () => {
     expect(recipe.partAppearance![1]).toBeUndefined();
   });
 
+  it('a multi-root list is SEPARATE by default (no recipe.compose); a `compose` root flag sets recipe.compose', () => {
+    // Priority-2 seam: the executor keeps the unconsumed roots SEPARATE unless the
+    // recipe carries `compose:true`, which is sourced from a `compose` flag on the
+    // ROOT container/list node. The lowering just threads the flag; the executor
+    // acts on it (proven in execute.test.ts). Default (no flag) ⇒ compose absent.
+    const nodes = {
+      n_root: { id: 'n_root', type: 'list', children: ['n_a', 'n_b'] },
+      n_a: { id: 'n_a', type: 'call', src: 'r_cuboid', alias: 'A', args: { w: { kind: 'literal', value: 4 }, h: { kind: 'literal', value: 4 }, d: { kind: 'literal', value: 4 } } },
+      n_b: { id: 'n_b', type: 'call', src: 'r_cuboid', alias: 'B', args: { w: { kind: 'literal', value: 2 }, h: { kind: 'literal', value: 2 }, d: { kind: 'literal', value: 2 } } },
+    } as const;
+    // Default — separate: no compose on the recipe.
+    const plain = graphToTf(mkGraph({ ...nodes }, 'n_root'));
+    expect(plain.instrs).toHaveLength(2);
+    expect(plain.compose).toBeUndefined();
+    // Opt-in — the root list node carries `compose:true`.
+    const composed = graphToTf(mkGraph({ ...nodes, n_root: { ...nodes.n_root, compose: true } }, 'n_root'));
+    expect(composed.instrs).toHaveLength(2);
+    expect(composed.compose).toBe(true);
+  });
+
   it('a lone steel output part still emits partAppearance[0].material (single-output case)', () => {
     const g = mkGraph(
       {

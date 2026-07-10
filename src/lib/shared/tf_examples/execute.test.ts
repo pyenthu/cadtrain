@@ -100,7 +100,10 @@ describe('executeTfRecipe', () => {
     expect(diff[0].args[1].__tag).toBe('cyl');
   });
 
-  it('folds a union recipe → booleanUnion once per extra child', () => {
+  it('folds an EXPLICIT union recipe → booleanUnion once per extra child', () => {
+    // A single `{op:'union'}` root instr is an explicit grouping/union request →
+    // buildInstr STILL folds it (this is the "explicit union/add still folds" case;
+    // only SEPARATE top-level roots stop folding — see the next test).
     const t = makeMockTf();
     executeTfRecipe(t, t, recipe([
       { op: 'union', children: [
@@ -115,12 +118,39 @@ describe('executeTfRecipe', () => {
     expect(t.calls.filter((c: any) => c.fn === 'boxMesh')).toHaveLength(3);
   });
 
-  it('unions multiple ROOT outputs into one solid', () => {
+  it('emits multiple ROOT outputs as SEPARATE parts (NO booleanUnion fold)', () => {
+    // The behaviour change: the recipe's unconsumed roots are DISTINCT bodies, so
+    // they are concatenated (flat vertex append), never union-folded — mirroring
+    // Manifold's finalizeSeparateParts, and removing the w_multi_string coincident-
+    // face trap (9 concentric tubes whose union aborts TF's mesh boolean).
     const t = makeMockTf();
-    executeTfRecipe(t, t, recipe([
+    const out = executeTfRecipe(t, t, recipe([
       { op: 'box', w: 1, h: 1, d: 1 },
       { op: 'box', w: 2, h: 2, d: 2 },
     ]));
+    // No top-level fold at all.
+    expect(t.calls.filter((c: any) => c.fn === 'booleanUnion')).toHaveLength(0);
+    expect(t.calls.filter((c: any) => c.fn === 'boxMesh')).toHaveLength(2);
+    // Both parts' render meshes are concatenated into `data`: the mock box carries
+    // 3 verts (9 floats) + 3 face indices, so 2 boxes → 18 floats / 6 indices, and
+    // the 2nd box's indices are offset by the 1st box's 3 vertices.
+    expect(out.data.points.length).toBe(18);
+    expect(out.data.faces.length).toBe(6);
+    expect(Array.from(out.data.faces)).toEqual([0, 1, 2, 3, 4, 5]);
+    // A whole-assembly verdict is still reported (aggregated from the parts).
+    expect(out.stats.closed).toBe(true);
+  });
+
+  it('recipe.compose:true RE-ENABLES the fold for multiple root outputs (opt-in)', () => {
+    // The Priority-2 opt-in: a graph whose ROOT container sets `compose` lowers to
+    // `recipe.compose=true`, which restores the historical union-fold.
+    const t = makeMockTf();
+    const r: TfRecipe = { ...recipe([
+      { op: 'box', w: 1, h: 1, d: 1 },
+      { op: 'box', w: 2, h: 2, d: 2 },
+    ]), compose: true };
+    executeTfRecipe(t, t, r);
+    // 2 roots → 1 fold when composed.
     expect(t.calls.filter((c: any) => c.fn === 'booleanUnion')).toHaveLength(1);
   });
 
