@@ -87,6 +87,17 @@ export interface BakeOptions {
    *  server /preview path. Absent / inactive → the single colorOuter/colorInner
    *  override or the legacy red/grey heuristic (byte-identical to before). */
   parts?: PartColorLUT;
+  /** Axial ring spacing (world units) for a `warpSpline` bake, overriding the
+   *  absolute `WARP_AXIAL_MAX_ZSPAN` constant. The rings must exist BEFORE the
+   *  warp bends them (Rule 25), so this is a BAKE option, not a warp-node option.
+   *
+   *  Supply it when you know your curvature: chordal sag ≈ h²/(8R), so for a
+   *  minimum radius of curvature R and a tolerable sag `tol`, h = √(8·R·tol).
+   *  See `axialSpanForSurvey` in `$lib/wells/axial-density`.
+   *
+   *  `undefined` ⇒ the constant (byte-identical to before).
+   *  `null` ⇒ NO axial densification (correct for a straight/vertical path). */
+  axialMaxZSpan?: number | null;
 }
 
 const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
@@ -193,9 +204,20 @@ export async function runCompiledManifold(
   // rings to bend smoothly (spike: span 1.5 → ~20 rings on a 30-long tube, matched
   // the old zSegments-10 reference at 3.2× fewer tris). NON-warp bakes never touch
   // the dial → byte-identical + lean (the 5.5× straight-part win).
-  const useAxialDial = (warpArg && warpArg.freq > 0) || smoothWarp;
+  //
+  // `WARP_AXIAL_MAX_ZSPAN` is an ABSOLUTE world-unit constant, so it is sized for
+  // a ~40-unit CAD part. On a 1070-unit well casing it forces ~713 rings: the
+  // deviated reference well bakes 468k tris in ~8 s, for a chordal sag of 7e-4
+  // units against a 4.8-unit casing radius — four orders of magnitude below
+  // anything visible. A caller that KNOWS its curvature (the wells translator
+  // knows the survey) can therefore supply its own span. Absent ⇒ the constant,
+  // byte-identical to before; `null` ⇒ no axial densification at all.
+  const axialOverride = options.axialMaxZSpan;
+  const hasAxialOverride = axialOverride !== undefined;
+  const useAxialDial = (warpArg && warpArg.freq > 0) || smoothWarp || hasAxialOverride;
   const axialPrev = useAxialDial ? getAxialMaxZSpan() : undefined;
   if (warpArg && warpArg.freq > 0) setAxialMaxZSpan((2 * Math.PI / warpArg.freq) / 16);
+  else if (hasAxialOverride) setAxialMaxZSpan(axialOverride);
   else if (smoothWarp) setAxialMaxZSpan(WARP_AXIAL_MAX_ZSPAN);
 
   const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
