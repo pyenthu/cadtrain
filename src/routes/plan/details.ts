@@ -35,34 +35,6 @@ export interface PlanDetail {
 export const details: Record<number, PlanDetail> = {
   // ───── Remaining build work ─────
 
-  943: {
-    summary:
-      'g_dp_joint composite stack — DONE 2026-07-04.\n\n' +
-      'The mated-stack builder positions composite children END-TO-END down +Z ' +
-      'instead of stacking them at the origin. Each built child\'s local Z-extent is ' +
-      'measured (localZExtent) and the child is shifted onto a running down-Z cursor ' +
-      '(placeEndToEnd, STACK_OVERLAP 0.1 for a clean weld) — so g_dp_joint\'s bottom ' +
-      'collar is restored (box → tube → pin, total Z 37.8; was 25 with the pin ' +
-      'buried at the origin). Stack-mode repeat now stacks its copies end-to-end too, ' +
-      'so g_dp_stand builds all N joints down the hole rather than piling them at 0.\n\n' +
-      'Both helpers live in src/lib/shared/tf_examples/execute.ts (covered by ' +
-      'execute.test.ts). Plain unions are unchanged.',
-    steps: [
-      'df45da1 — mated stack positions children end-to-end by Z-extent (g_dp_joint bottom collar restored)',
-      '1a0b4ef — stack-mode repeat stacks copies end-to-end (g_dp_stand no longer piles at origin)',
-      '978e696 — g_dp_stand builds all N joints stacked',
-    ],
-    acceptance: [
-      'g_dp_joint bakes with its bottom collar present (box→tube→pin, total Z ≈ 37.8), pin no longer buried at the origin',
-      'g_dp_stand builds all N joints stacked end-to-end down +Z instead of overlapping at the origin',
-      'Plain (non-mated) unions unchanged',
-    ],
-    refs: [
-      'src/lib/shared/tf_examples/execute.ts (placeEndToEnd + localZExtent)',
-      'src/lib/shared/tf_examples/execute.test.ts',
-    ],
-    recorded: false,
-  },
 
   512: {
     summary:
@@ -270,24 +242,6 @@ export const details: Record<number, PlanDetail> = {
     recorded: false,
   },
 
-  945: {
-    summary:
-      '/api/tf/compile — parallelize the BFS dep frontier + save-invalidation.\n\n' +
-      'Two follow-ups on the TF compile cache shipped 2026-07-06:\n' +
-      ' (a) The dep-resolution BFS walks the frontier serially; fan each frontier level ' +
-      'out in parallel so a deep dep tree compiles in one round-trip per LEVEL, not per node.\n' +
-      ' (b) On part Save, INVALIDATE the dep-source caches that reference it so a ' +
-      'cross-part edit shows up instantly instead of waiting out the 30-60s TTL.',
-    acceptance: [
-      'A deep dep tree compiles noticeably faster (parallel frontier)',
-      'Editing a dependency part reflects in dependents immediately after Save (no TTL wait)',
-    ],
-    refs: [
-      'docs/plans/tf-compile-perf.md',
-      'src/routes/api/tf/compile/+server.ts',
-    ],
-    recorded: false,
-  },
 
   946: {
     summary:
@@ -350,50 +304,5 @@ export const details: Record<number, PlanDetail> = {
     recorded: false,
   },
 
-  973: {
-    summary:
-      'parts_map GEP node-card + pm_demo live volume part — SHIPPED 2026-07-07 (bdc2595).\n\n' +
-      'The authoring surface for the #38 data-driven-params work: a graph node that maps a ' +
-      'list<record> → N part instances, editable directly in the graph editor.\n\n' +
-      ' • NodeCard.svelte — a VIOLET parts_map branch (src part · rows source · arg→field ' +
-      'binding rows · list/stack/place op toggle · output socket · delete).\n' +
-      ' • composition-graph-mutate.ts — addPartsMap + setPartsMapSrc/List/Arg/Op + ' +
-      'add/removePartsMapArg.\n' +
-      ' • GraphEditorPane.svelte — dropPartsMap + the ✎ → container → parts_map picker item.\n\n' +
-      'Plus pm_demo promoted to a LIVE VOLUME PART (basic/pm_demo.asm.ts, bakes 3 solids) — ' +
-      'not just the golden fixture. Split out of the old #948 tail; what remains there is the ' +
-      'P2 ParamsCard table editor + a TF parts_map builder (#974).',
-    acceptance: [
-      'A parts_map node can be dropped, wired to a list<record>, and bound arg→field in the editor',
-      'pm_demo resolves as a volume part and bakes 3 solids',
-    ],
-    refs: [
-      'src/lib/shared/graph-editor/NodeCard.svelte (parts_map branch)',
-      'src/lib/cad/composition-graph-mutate.ts (addPartsMap + setters)',
-      'src/lib/shared/graph-editor/GraphEditorPane.svelte (dropPartsMap + picker)',
-      'src/lib/cad/nodes/kinds/parts-map.ts',
-    ],
-    recorded: false,
-  },
 
-  974: {
-    summary:
-      'TF parts_map builder.\n\n' +
-      'The TF (native-only) engine cannot build a parts_map node yet: graph-to-tf.ts has NO ' +
-      'parts_map case, so the node falls through to the default branch → ' +
-      'UNSUPPORTED ("node <id>: type \'parts_map\' has no TF mapping") and the tab reports no ' +
-      'builder for it. Add a lowerNode case that expands the list<record> producer into N ' +
-      'transformed part instances (union / stack / place per the node\'s op), mirroring the ' +
-      'Manifold executeTfRecipe path, so a pm_demo-style part builds NATIVELY in TF. Extends ' +
-      'the parts_map node-card (#973) + the r_weld_extrude / composite TF builders (#942).',
-    acceptance: [
-      'A parts_map node lowers to a TF recipe (no UNSUPPORTED note)',
-      'pm_demo builds natively in the TF tab (3 solids, not blank)',
-    ],
-    refs: [
-      'src/lib/cad/graph-to-tf.ts (add the parts_map lowerNode case)',
-      'src/lib/cad/nodes/kinds/parts-map.ts',
-    ],
-    recorded: false,
-  },
 };
