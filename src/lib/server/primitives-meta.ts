@@ -100,8 +100,19 @@ export function metaLiteralRange(src: string): [number, number] | null {
   if (!declMatch) return null;
   const braceStart = declMatch.index + declMatch[0].length - 1;
   let depth = 0;
+  // Track the string-literal we're inside, if any. A `{`/`}` inside a string
+  // (e.g. a `drawingMd` doc line reading `params: {}`) must NOT count toward
+  // brace depth — otherwise meta gets mis-sliced and the part silently bakes
+  // to an empty solid. Handles ' , " and ` quotes plus backslash escapes.
+  let quote: string | null = null;
   for (let i = braceStart; i < src.length; i++) {
     const c = src[i];
+    if (quote) {
+      if (c === '\\') { i++; continue; } // skip the escaped char (\' \" \` \\)
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === "'" || c === '"' || c === '`') { quote = c; continue; }
     if (c === '{') depth++;
     else if (c === '}') { depth--; if (depth === 0) return [braceStart, i]; }
   }
