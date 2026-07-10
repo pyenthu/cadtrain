@@ -614,6 +614,11 @@ export function getCutBox(bbox?: { min: number[]; max: number[] }): any {
   return M.cube([xspan, yspan, zlen], false).translate([0, 0, bbox.min[2] - MARGIN]);
 }
 
+/** Ceiling on axial rings a half-section refine may add to ONE part, regardless
+ *  of its length. Mirrors r_revolve's `zSegments` max (256) and TF's warp
+ *  `maxStations` cap — bounds the km-scale-well blow-up (see sectionCut). */
+const AXIAL_REFINE_CAP = 256;
+
 /**
  * sectionCut — subtract an AUTHORED angular WEDGE from a solid (the `cutaway`
  * MODIFIER node's emitted body). Removes a pie-slice of `az` DEGREES of the
@@ -667,7 +672,16 @@ export function sectionCut(solid: any, opts?: { az?: number; offset?: number }):
   // "Not manifold" — see src/lib/cad/CLAUDE.md). The wedge is small + this is
   // pre-subtract, so the refine is cheap. maxZSpan <= 0 (no warp) → bare
   // extrude → byte-identical to the golden non-warp bake.
-  const maxZSpan = getAxialMaxZSpan() ?? 0;
+  const maxZSpanRaw = getAxialMaxZSpan() ?? 0;
+  // CAP the total axial subdivisions. `refineToLength` splits EVERY edge longer
+  // than the target with NO ceiling on the resulting ring count (unlike
+  // subdivideProfileAxial, which caps splits per edge at _axialMaxSegPerEdge, and
+  // unlike TF's densifiers, which cap total stations at maxStations). On a km-scale
+  // well tubular an absolute span (the warp default 1.5) forces length/1.5 ≈ 2000+
+  // rings → millions of tris/part → the Manifold WASM heap OOB-traps in the bake
+  // worker (deviated wells "fail to bake in MF while TF renders"). Bound it: no part
+  // gets more than AXIAL_REFINE_CAP axial rings regardless of length.
+  const maxZSpan = maxZSpanRaw > 0 ? Math.max(maxZSpanRaw, zlen / AXIAL_REFINE_CAP) : 0;
   const flat = new CS([pts]).extrude(zlen);
   const wedge = (maxZSpan > 0 && zlen > maxZSpan)
     ? flat.refineToLength(maxZSpan).translate([0, 0, z0])
