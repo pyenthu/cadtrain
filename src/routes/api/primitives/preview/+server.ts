@@ -1,6 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import * as helpers from '$lib/cad/manifold-helpers';
 import { withManifoldTrapGuard } from '$lib/server/manifold-guard';
+import { isManifoldFatalTrap } from '$lib/cad/manifold-trap';
 import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from '$lib/cad/manifold-mesh';
 import { buildPrimitiveGeom, hashDepSources } from '$lib/server/primitive-loader';
 import { finalizeManifold } from '$lib/cad/render-helpers';
@@ -344,9 +345,16 @@ const handlePost = async ({ request, fetch }: { request: Request; fetch: typeof 
     cutawaySkipped = (result as any).cutawaySkipped === true;
   } catch (e: any) {
     const msg = String(e?.message ?? e ?? '');
-    const kind = /EMPTY solid/i.test(msg) ? 'empty-solid'
-      : /memory access out of bounds/.test(msg) ? 'wasm-oob'
-      : 'finalize-failed';
+    // A FATAL WASM trap must not be swallowed into a 400. `return json(...)` is a
+    // normal return, so `withManifoldTrapGuard` (which only sees THROWS) never
+    // ran, never re-inited the singleton, and the module stayed CORRUPTED — every
+    // later bake then failed with THIS request's stale message, naming an
+    // innocent part. That is the #981 poisoner: one trap on well 09 made all the
+    // other wells "trap" too, with 09's arguments in the error text.
+    // Rethrow so the guard resets and answers with a readable 500. An EMPTY-solid
+    // rejection is an ordinary geometry error, NOT a trap — it keeps its 400.
+    if (isManifoldFatalTrap(e)) throw e;
+    const kind = /EMPTY solid/i.test(msg) ? 'empty-solid' : 'finalize-failed';
     return json({ message: msg, error: msg, errorKind: kind }, { status: 400 });
   }
 
