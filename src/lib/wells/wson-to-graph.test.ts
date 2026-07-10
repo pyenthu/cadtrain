@@ -180,7 +180,7 @@ describe('wsonToGraph — the graph is real: it compiles through emitGraph', () 
   });
 
   it('translates a REAL sample well (01-vertical-land-producer)', () => {
-    const raw = readFileSync('src/routes/wells/samples/01-vertical-land-producer.wson', 'utf8');
+    const raw = readFileSync('src/lib/wells/samples/01-vertical-land-producer.wson', 'utf8');
     const { wson } = parseWson(raw);
     const g = wsonToGraph(wson);
     // 3 casing strings + its open holes + cement intervals, each with an Mv.
@@ -194,7 +194,7 @@ describe('wsonToGraph — the graph is real: it compiles through emitGraph', () 
 
 describe('wsonToGraph — RUNG 3: a deviated well warps along its survey', () => {
   const sample04 = () => parseWson(
-    readFileSync('src/routes/wells/samples/04-horizontal-shale-pnp.wson', 'utf8'),
+    readFileSync('src/lib/wells/samples/04-horizontal-shale-pnp.wson', 'utf8'),
   ).wson;
 
   it('emits exactly one spline + one warp, and the root is that warp alone', () => {
@@ -243,7 +243,7 @@ describe('wsonToGraph — RUNG 3: a deviated well warps along its survey', () =>
   });
 
   it('does NOT warp a vertical well — sample 01 emits no spline/warp', () => {
-    const raw = readFileSync('src/routes/wells/samples/01-vertical-land-producer.wson', 'utf8');
+    const raw = readFileSync('src/lib/wells/samples/01-vertical-land-producer.wson', 'utf8');
     const g = wsonToGraph(parseWson(raw).wson);
     expect(nodesOfType(g, 'spline')).toHaveLength(0);
     expect(nodesOfType(g, 'warp')).toHaveLength(0);
@@ -471,7 +471,7 @@ describe('S4 — 13-vertical-land-producer-deviated: the SAME well + one profile
 
 describe('wsonToGraph — RUNG 5: completions become bw_* Calls placed by depth', () => {
   const sample01 = () => parseWson(
-    readFileSync('src/routes/wells/samples/01-vertical-land-producer.wson', 'utf8'),
+    readFileSync('src/lib/wells/samples/01-vertical-land-producer.wson', 'utf8'),
   ).wson;
 
   /** One casing + one completion — the minimal well for a mapping assertion. */

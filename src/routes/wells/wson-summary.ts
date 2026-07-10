@@ -71,7 +71,11 @@ export interface WsonSummary {
   };
 }
 
-const rawSamples = import.meta.glob('./samples/*.wson', {
+// ONE sample directory: `src/lib/wells/samples/`. This route used to glob its own
+// `./samples/` copy, so a rung added for the tests (which read the lib set) never
+// appeared in the /wells picker. Root-absolute so both globs name the same dir.
+// NOTE: new `*.wson` files need a dev-server restart — the glob is eager.
+const rawSamples = import.meta.glob('/src/lib/wells/samples/*.wson', {
   query: '?raw',
   import: 'default',
   eager: true,
