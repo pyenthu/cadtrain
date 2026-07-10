@@ -17,7 +17,7 @@
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
-  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, material = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfActual = false, tfRecipe = undefined, tfPending = false }: {
+  let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, material = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, onBakeTimings = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfActual = false, tfRecipe = undefined, tfPending = false }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
     /** Spline DIAGNOSTIC overlays (TODO #24) — plotted splines' resolved curves +
      *  control points, drawn INSIDE the live-mesh group so they align with the
@@ -57,6 +57,11 @@
     tolerance?: number;
     /** BREP mode: surfaced bake meta after each fetch (drives the parent badge). */
     onBakeMeta?: (m: { cached: boolean; ms: number; tris: number; verts: number; supported: boolean; reason?: string; steps?: { imports: number; warm: number; build: number; mesh: number } }) => void;
+    /** MF_CLIENT bake timings for the badge (#987). `compileMs` = the /compile
+     *  round-trip (0 on a cache hit); `bakeMs` = worker bake + transfer + main-
+     *  thread deserialize; `phases` = the worker's per-stage split; `cached` =
+     *  an IndexedDB scriptHash hit (no bake ran). */
+    onBakeTimings?: (m: { cached: boolean; compileMs: number; bakeMs: number; phases?: { build?: number; mesh?: number; cutaway?: number; finalize?: number; serialize?: number } }) => void;
     /** Draft mode: coarse circular-segment count for the live mesh bake (e.g. 64
      *  vs the 256 default). Cuts geom+finalize+serialize roughly linearly so big
      *  stacks iterate fast. undefined → full default. Keyed into the fetch cache.
@@ -431,6 +436,17 @@
         if (ac.signal.aborted || isCancelled(result)) return;
         geo = result; geoVersion++; meshStatus = 'ok'; err = null; meshBackend = 'client';
         if (bakeTimingsOn()) { try { console.log(`[bake-client] compile=${_tCompile.toFixed(1)}ms · worker(bake+transfer)=${_tBake.toFixed(1)}ms · cutaway=${scene.showCutaway ? 'on' : 'off'} · seg=${segUsed ?? 'full(256)'}${segArg ? ' (draft)' : ''}`); } catch {} }
+        // Report the REAL cost to the badge (#987). A cache hit skips the compile
+        // fetch cost too, so compileMs only counts on a genuine bake.
+        {
+          const bm = (result as any)?.__bakeMeta;
+          onBakeTimings?.({
+            cached: !!bm?.cached,
+            compileMs: bm?.cached ? 0 : _tCompile,
+            bakeMs: _tBake,
+            phases: bm?.phases,
+          });
+        }
         return;
       } catch (e: any) {
         if (e?.name === 'AbortError' || ac.signal.aborted) return;

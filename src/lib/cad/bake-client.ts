@@ -155,6 +155,10 @@ function getWorker(): Worker {
         const _td0 = (typeof performance !== 'undefined' ? performance.now() : 0);
         const geo = deserializeComponentResult(payload as any) as BakeGeo;
         if (timingsOn()) { try { console.log(`[bake-deserialize] main-thread BufferGeometry build=${((typeof performance !== 'undefined' ? performance.now() : 0) - _td0).toFixed(1)} ms`); } catch {} }
+        // Surface the worker's per-phase timings on the mesh so the caller's
+        // badge can report the REAL bake cost (this was `fresh · 0 ms` before —
+        // #987). A fresh worker bake, so `cached: false`.
+        (geo as any).__bakeMeta = { cached: false, phases: t };
         settle(job, geo);
       } else if (!job.settled) {
         // A FATAL WASM trap leaves this worker's Manifold module corrupted, but
@@ -259,7 +263,12 @@ async function dispatch(): Promise<void> {
     if (!job.args.bust) { try { cached = await idbGet(job.key); } catch { /* cache miss / unavailable */ } }
     if (job.settled) return;                       // superseded during the await
     if (cached) {
-      settle(job, deserializeComponentResult(cached as any) as BakeGeo);
+      const g = deserializeComponentResult(cached as any) as BakeGeo;
+      // Mark the mesh so the caller's badge can say "cached" honestly — an
+      // IndexedDB scriptHash hit, not a compile-cache hit. No bake ran, so no
+      // phase timings.
+      (g as any).__bakeMeta = { cached: true };
+      settle(job, g);
       return;
     }
     pending.set(job.id, job);

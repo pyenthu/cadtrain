@@ -263,6 +263,13 @@
   let svgMeshJson = $state<import('$lib/cad/mesh-serial').SerializedComponentResult | null>(null);
   let svgMeshKey = $state<string>('');
   let svgMeshBusy = $state(false);
+
+  // MF_CLIENT bake timings, reported by the canvas after each real bake (#987).
+  // The badge USED to read `bake._t`, but `bake` is now the /compile response
+  // (validateGraphBake), whose only timing is `fetch_total` — which the badge
+  // excluded — so it always summed to `fresh · 0 ms`. This carries the actual
+  // compile + worker-bake cost from PrimitiveDualCanvas.
+  let clientBakeMeta = $state<{ cached: boolean; compileMs: number; bakeMs: number; phases?: { build?: number; mesh?: number; cutaway?: number; finalize?: number; serialize?: number } } | null>(null);
   // SVG resolution: 'coarse' (32 segments, DEFAULT — a vector drawing doesn't
   // need 256-facet circles; ~an order of magnitude lighter so it renders fast +
   // stays under the high-poly warning) vs 'high' (full 256). Toggle lives in the
@@ -470,31 +477,31 @@
           bakeGlb={false}
           overlays={splineOverlays}
           onRebuild={onRebuild}
+          onBakeTimings={(m) => (clientBakeMeta = m)}
           autoScaleOwner={rightTab === 'bake'}
           showControls={true} showLabels={false}/>
         {#if bake === 'loading'}<div class="ge-baking-badge">baking…</div>{/if}
-        <!-- Cache status row + Rebuild button (Phase 1.5) -->
+        <!-- Bake-cost row. Reports the CLIENT bake (MF_CLIENT worker), NOT the
+             /compile round-trip — see clientBakeMeta. `bake.cacheHash` (compile
+             identity) is kept only as the title/hash. -->
         {@const bakeMeta = (displayBake as any).bake ?? {}}
         <div class="ge-bake-meta">
-          <!-- Draft toggle + Rebuild moved into the 3D canvas (under the
-               ⚙ scale gear): the canvas owns the adjustable segment count +
-               the 🔄 fresh-bake button now. -->
-          {#if bakeMeta.cached}
-            {@const cacheMs = Number(bakeMeta._t?.fetch_total) || 0}
-            <span class="ge-cache-badge cached"
-              title={`hash: ${bakeMeta.cacheHash ?? '?'} · client round-trip ${cacheMs} ms (mesh decode + paint)`}>
-              ✓ cached{cacheMs > 0 ? ` · ${Math.round(cacheMs)} ms` : ''}
-            </span>
+          {#if clientBakeMeta}
+            {@const cm = clientBakeMeta}
+            {#if cm.cached}
+              <span class="ge-cache-badge cached"
+                title={`IndexedDB bake-cache hit (scriptHash ${bakeMeta.cacheHash ?? '?'}). ${Math.round(cm.bakeMs)} ms = mesh decode + paint.`}>
+                ✓ cached · {Math.round(cm.bakeMs)} ms
+              </span>
+            {:else}
+              {@const ph = cm.phases}
+              <span class="ge-cache-badge fresh"
+                title={`fresh worker bake (scriptHash ${bakeMeta.cacheHash ?? '?'}). compile ${Math.round(cm.compileMs)} ms · bake+transfer ${Math.round(cm.bakeMs)} ms${ph ? ` · [build ${Math.round(ph.build ?? 0)} · mesh ${Math.round(ph.mesh ?? 0)} · cut ${Math.round(ph.cutaway ?? 0)} · serialize ${Math.round(ph.serialize ?? 0)}]` : ''}`}>
+                fresh · ⚙ {Math.round(cm.compileMs)} · 🔨 {Math.round(cm.bakeMs)} ms
+              </span>
+            {/if}
           {:else if bakeMeta.cacheHash}
-            {@const serverMs = Object.entries(bakeMeta._t ?? {}).reduce((a: number, [k, b]: [string, any]) => {
-              // fetch_total is the client-perspective round-trip we
-              // stash in composition-bake; don't double-count it
-              // against the server-side phase sum.
-              if (k === 'fetch_total') return a;
-              const n = Number(b);
-              return a + (Number.isFinite(n) ? n : 0);
-            }, 0)}
-            <span class="ge-cache-badge fresh" title={`hash: ${bakeMeta.cacheHash}`}>fresh · {Math.round(serverMs as number)} ms</span>
+            <span class="ge-cache-badge fresh" title={`hash: ${bakeMeta.cacheHash}`}>baking…</span>
           {/if}
           <span class="ge-bake-meta-spacer"></span>
           {#if rebuildStatus}<span class="ge-rebuild-stat">{rebuildStatus}</span>{/if}
