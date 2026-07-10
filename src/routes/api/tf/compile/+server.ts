@@ -60,10 +60,8 @@ type DepEntry = { graph: any; params: Record<string, number> } | null;
  *  edited+saved; a 🔄 `bust` bypasses the cache read for an immediate fresh resolve.
  *  NEGATIVE entries (null) are cached too so a missing/broken dep isn't re-fetched
  *  every tick. Keyed by id only (source is the same regardless of caller).
- *  TODO #2 — parallelize the BFS frontier with Promise.all (level-parallel:
- *  independent within a level, ordered across depth) so a COLD multi-dep resolve
- *  costs depth×latency not N×latency; add a small concurrency cap for wide fan-out.
- *  #1 (this) kills the hot repeat-resolve cost; #2 is the cold-start win. */
+ *  #1 (this) kills the hot repeat-resolve cost; #2 (the level-parallel BFS in
+ *  buildCompositeMap below) is the cold-start win. Both shipped. */
 const SRC_CACHE = new Map<string, { entry: DepEntry; at: number }>();
 const SRC_TTL_MS = 60_000; // 60s — dep edits show within a minute (or instantly via 🔄 bust)
 
@@ -89,11 +87,27 @@ async function fetchDep(id: string, fetch: typeof globalThis.fetch, bust: boolea
   return entry;
 }
 
+/** Max concurrent dep fetches per BFS level. Each is a prod-proxied round-trip;
+ *  a wide fan-out (a well: 8 `bw_*` at level 0) should overlap, but not open an
+ *  unbounded number of sockets against the Railway origin. */
+const DEP_CONCURRENCY = 8;
+
+/** Total dep fetches per compile — the old `guard` on the serial while-loop,
+ *  kept so a pathological graph can't fan out forever. */
+const MAX_DEPS = 500;
+
 /** Recursively fetch every composite dep reachable from `rootGraph` → a sync map
  *  `id → { graph, params }`. BFS over Call srcs; each fetched part's OWN composite
  *  Calls are queued too. Fully tolerant — a missing / unparseable dep is skipped
  *  (that Call then stays UNSUPPORTED). Reads through SRC_CACHE (#1); `bust` forces
- *  a fresh fetch for every dep. Still SERIAL per dep — see #2. */
+ *  a fresh fetch for every dep.
+ *
+ *  #2 — LEVEL-PARALLEL (was serial, one `await fetchDep` per dep). Deps within a
+ *  level are independent, so they fetch together; only DEPTH is sequential, since
+ *  a part's own composite Calls aren't known until its source lands. A cold well
+ *  (8 `bw_*` deps, each ~0.5s prod-proxied) cost ~5s serially and now costs about
+ *  one round-trip. Order-independent: `map` is keyed by id and `seen` is claimed
+ *  BEFORE the await, so a dep reachable from two parents is still fetched once. */
 async function buildCompositeMap(
   rootGraph: any,
   fetch: typeof globalThis.fetch,
@@ -101,16 +115,32 @@ async function buildCompositeMap(
 ): Promise<Map<string, { graph: any; params: Record<string, number> }>> {
   const map = new Map<string, { graph: any; params: Record<string, number> }>();
   const seen = new Set<string>();
-  const pending = compositeSrcsOf(rootGraph);
-  let guard = 0;
-  while (pending.length && guard++ < 500) {
-    const id = pending.pop()!;
-    if (seen.has(id) || !NAME_RE.test(id)) continue;
-    seen.add(id);
-    const entry = await fetchDep(id, fetch, bust);
-    if (!entry) continue; // missing / unparseable → Call stays UNSUPPORTED
-    map.set(id, entry);
-    for (const s of compositeSrcsOf(entry.graph)) if (!seen.has(s)) pending.push(s);
+  let level = compositeSrcsOf(rootGraph).filter((id) => NAME_RE.test(id));
+  let fetched = 0;
+
+  while (level.length && fetched < MAX_DEPS) {
+    // Claim the whole level up front so a dep shared by two parents in the SAME
+    // level is not fetched twice by the two concurrent branches below.
+    const todo = level.filter((id) => !seen.has(id));
+    todo.forEach((id) => seen.add(id));
+    if (!todo.length) break;
+
+    const next: string[] = [];
+    for (let i = 0; i < todo.length; i += DEP_CONCURRENCY) {
+      const slice = todo.slice(i, i + DEP_CONCURRENCY);
+      fetched += slice.length;
+      const entries = await Promise.all(slice.map((id) => fetchDep(id, fetch, bust)));
+      slice.forEach((id, k) => {
+        const entry = entries[k];
+        if (!entry) return; // missing / unparseable → Call stays UNSUPPORTED
+        map.set(id, entry);
+        for (const s of compositeSrcsOf(entry.graph)) {
+          if (!seen.has(s) && NAME_RE.test(s)) next.push(s);
+        }
+      });
+      if (fetched >= MAX_DEPS) break;
+    }
+    level = next;
   }
   return map;
 }
