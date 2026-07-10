@@ -123,7 +123,7 @@
   import { emitGraph, consumedByCall } from '$lib/cad/composition-emit';
   // (resolveWiredSplinePoints / resampleSpline moved to spline-state.svelte.ts — #940 spline cut)
   // (emitProfileGraph moved to profile-preview-state.svelte.ts with the resolve effect — #940 CUT 2)
-  import { bakeGraphPreview } from '$lib/cad/composition-bake';
+  import { validateGraphBake } from '$lib/cad/composition-bake';
   import { autoLayoutGraph } from '$lib/cad/composition-layout';
   import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/cad/sketch';
   import { sketchColLayout, sketchEntryH } from '$lib/cad/sketch-layout';
@@ -901,17 +901,18 @@
       // a real cache hit). Read+reset is non-reactive → no effect re-fire.
       const forceBust = manualBustPending;
       manualBustPending = false;
-      const r = await bakeGraphPreview(graph, { id: exemplarId, bust: bakeNonce > 1 || forceBust, ghosts: ghostIds });
-      // A manual 🔄 Rebuild is FRESH by definition — the server re-baked
-      // (bust=1). Pin cached:false on the stored result so the badge shows the
+      // COMPILE-ONLY check. This does NOT build geometry — the canvas does, in
+      // the Manifold Web Worker. See composition-bake.ts's header for why this
+      // stopped being a server bake.
+      const r = await validateGraphBake(graph, { id: exemplarId, bust: bakeNonce > 1 || forceBust, ghosts: ghostIds });
+      // A manual 🔄 Rebuild is FRESH by definition — the server re-compiled
+      // (bust). Pin cached:false on the stored result so the badge shows the
       // yellow "fresh · N ms", never green "✓ cached", even if a later
       // server/response nuance reports otherwise. (User-reported: badge stuck
       // on "cached" after rebuild though the bake genuinely re-ran.)
       if (forceBust && r.ok) (r as any).cached = false;
-      // Hand the canvas the EXACT same source the bake just ran on (the
-      // ghost-flag aware emit) so its own /preview re-fetch returns the
-      // same mesh — otherwise the cuboids get baked once + immediately
-      // thrown away by the canvas's no-ghost re-bake. Capture `args` at the
+      // Hand the canvas the EXACT same source the check just ran on (the
+      // ghost-flag aware emit) so its own compile+bake matches. Capture `args` at the
       // SAME instant for the SAME reason: `source` and the positional arg
       // array MUST stay consistent. Reading args live in the template lets a
       // param add/delete change the arg COUNT a frame before the re-emitted
@@ -963,50 +964,14 @@
     autoBakeTimer = setTimeout(() => { bakeNonce++; }, 700);
   });
 
-  // ─── Lazy cutaway load ──────────────────────────────────────────────────
-  // When the bake auto-skips the cutaway (big Repeat × N, > 15k tris), the
-  // bake panel surfaces "cutaway off (perf)" with a "Load" button. Click
-  // re-bakes with cutaway:true (forced) and merges the new cutVC into the
-  // bake state so the scene's cutaway toggle starts showing actual geometry.
-  // This is the "first load, then cut" pattern.
-  let cutawayBusy = $state(false);
-  let cutawayStatus = $state<string | null>(null);
-  async function loadCutaway() {
-    if (cutawayBusy) return;
-    if (typeof bake !== 'object' || !bake || !bake.source) return;
-    cutawayBusy = true;
-    cutawayStatus = '🔄 baking cutaway…';
-    try {
-      const params = Object.values(graph.params).map((p) => p.default);
-      const r = await fetch('/api/primitives/preview?bust=1', {
-        method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({
-          source: bake.source,
-          name: exemplarId,
-          params,
-          cutaway: true,
-        }),
-      });
-      if (!r.ok) {
-        cutawayStatus = `✗ ${r.status}: ${(await r.text()).slice(0, 140)}`;
-        cutawayBusy = false;
-        return;
-      }
-      const data = await r.json();
-      // Merge cutVC + clear the skip flag in-place so the badge disappears.
-      const cur = (bake as any).bake ?? {};
-      cur.cutVC = data.cutVC;
-      cur.cutawaySkipped = false;
-      cur.cached = data.cached;
-      cur.cacheHash = data.cacheHash;
-      bake = { ...(bake as any) };
-      cutawayStatus = `✓ cutaway baked (${Object.keys(data._t ?? {}).length ? Math.round(Object.values(data._t).reduce((a: number, b: any) => a + (Number(b) || 0), 0)) : '?'} ms)`;
-      setTimeout(() => { cutawayStatus = null; cutawayBusy = false; }, 2000);
-    } catch (e: any) {
-      cutawayStatus = `✗ ${e?.message ?? String(e)}`;
-      cutawayBusy = false;
-    }
-  }
+  // ─── Lazy cutaway load — REMOVED 2026-07-10 ─────────────────────────────
+  // The "cutaway off (perf)" badge + its Load button existed because the SERVER
+  // bake auto-skipped the cutaway CSG above ~15k tris (Manifold is synchronous
+  // and Node has one thread, so a big cutaway froze the process). The client
+  // worker always receives an explicit `cutaway: <boolean>` from the scene's own
+  // toggle, so `skipCutaway:'auto'` never fires there and nothing is ever
+  // silently skipped. Both the badge and the /preview?bust=1 re-bake it drove
+  // are gone with the server bake.
 
   // 🔄 Rebuild this part's cache + re-bake (Phase 1.5 of bake-cache.md).
   // Wipes cache/<exemplarId>/ then bumps the bake nonce to force a fresh
@@ -2712,7 +2677,7 @@
       class:on={bakeMenuOpen}
       class:stale={bakeStale}
       onclick={() => bakeMenuOpen ? (bakeMenuOpen = false) : openBakeMenu()}
-      data-tip={`Bake — bake now · auto-bake (${autoBake ? 'on' : 'off'}) · backend (${scene.clientBake ? 'local' : 'server'})${bakeStale ? ' · source changed' : ''}`}>
+      data-tip={`Bake — bake now · auto-bake (${autoBake ? 'on' : 'off'})${bakeStale ? ' · source changed' : ''}`}>
       {(autoBake ? '⚡' : '🔨') + (bakeStale ? '●' : '')}
     </button>
     {#if ghostIds.length > 0}
@@ -2823,10 +2788,8 @@
       pos={bakeMenuPos}
       {bakeStale}
       {autoBake}
-      clientBake={scene.clientBake}
       onBakeNow={runBake}
       onSetAutoBake={(v) => setAutoBake(v)}
-      onToggleClientBake={() => { scene.clientBake = !scene.clientBake; try { localStorage.setItem('cad-client-bake', scene.clientBake ? '1' : '0'); } catch {} bakeNonce++; /* re-bake so the badge + geometry reflect the new backend immediately (else it looks stuck on the last backend) */ }}
       onClose={() => (bakeMenuOpen = false)} />
   {/if}
 
@@ -3063,10 +3026,10 @@
       autoTf={props.autoTf ?? true}
       splineOverlays={spline.splineOverlays}
       {legacyLoad} {sourceText}
-      {cutawayBusy} {cutawayStatus} {rebuildStatus} {restartBusy} {restartStatus} {mdAiBusy}
+      {rebuildStatus} {restartBusy} {restartStatus} {mdAiBusy}
       bind:rightTab bind:drawingMd
       onRebuild={rebuildCache} onRestart={restartDevServer}
-      onLoadCutaway={loadCutaway} onGenerateMd={generateMdWithAi}>
+      onGenerateMd={generateMdWithAi}>
       {#snippet profilePreview()}
             <!-- Profile-mode 2D preview (#940 CUT 2). All resolve state +
                  derived view live on `profilePrev` (ProfilePreviewState);

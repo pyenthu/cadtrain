@@ -1,43 +1,46 @@
 /**
- * composition-bake.ts — graph → baked Manifold geometry.
+ * composition-bake.ts — graph → emitted source + a CHEAP validity check.
  *
- * Per docs/plans/composition-architecture.md. Slice 1 implementation
- * (2026-06-06): a CLIENT-SIDE adapter that emits the graph via
- * composition-emit and routes through the existing
- * `/api/primitives/preview` endpoint. The server bake path stays
- * unchanged for now (uses primitive-loader's sandbox).
+ * HISTORY (2026-07-10). This used to be `bakeGraphPreview`: the editor POSTed
+ * the whole assembly to `/api/primitives/preview`, waited for a full server-side
+ * Manifold bake, and then THREW THE MESH AWAY — it only ever read `ok`,
+ * `message` and `cacheHash`. The canvas re-baked the same geometry client-side a
+ * moment later. So every graph edit paid for two bakes, one of them on Node's
+ * single thread, and one of them for nothing.
  *
- * Later slices migrate this to a server-side direct-graph interpreter
- * that skips JS sandbox eval entirely — at which point the
- * /api/primitives/preview-graph endpoint takes over and this client
- * adapter becomes a thin POST wrapper.
+ * On a 26-element well that server bake is ~300k triangles of JSON the editor
+ * discards. Manifold's API is synchronous, so it starved the event loop and
+ * wedged every other route while it ran (the /wells hang, and the repeated
+ * "primitives or wells not loading").
  *
- * The bake input is the FULL Graph plus paramValues (assembly-level
- * meta.params snapshot). The interpreter walks the graph, resolves
- * ArgValue.kind === 'param' against paramValues, ArgValue.kind ===
- * 'literal' as-is, and ArgValue.kind === 'expr' via JS eval inside the
- * assembly's scope (only for arbitrary expressions; not the common
- * case).
+ * NOW: `validateGraphBake` emits the source and asks `/api/primitives/compile`
+ * — dep resolution + script emit, no WASM, no mesh, server-cached — for
+ * `{supported, reason, scriptHash}`. That is exactly the signal the editor
+ * needed: does this graph resolve, and what is its identity for the badge.
+ *
+ * THE MESH IS THE CANVAS'S JOB. `PrimitiveDualCanvas` bakes it in the Manifold
+ * Web Worker (backend='manifold'). The server bake still exists behind the
+ * explicit MF_SERVER tab (backend='manifold-server') for parity/diagnosis.
  *
  * Public API:
  *
- *   bakeGraphPreview(graph, exemplarId, paramValues?)
- *     → Promise<PreviewResult>
- *
- *     Emits source via composition-emit; POSTs to /api/primitives/preview;
- *     returns { ok, full, cut, message, … } — same shape as the existing
- *     primitive preview. The editor mounts the result on PrimitiveDualCanvas.
+ *   validateGraphBake(graph, opts) → Promise<GraphBakeCheck>
+ *   emitSource(graph, id)          → string
  */
 import { emitGraph } from './composition-emit';
 import type { Graph } from './composition-graph';
 
-export interface PreviewBake {
+/** Result of the graph validity check. `ok:false` means the graph does not
+ *  resolve (missing dep, cycle, unparseable source) — a real, reportable error;
+ *  it does NOT mean the geometry is bad. Geometry errors surface from the
+ *  canvas's own bake, which is the only thing that builds geometry. */
+export interface GraphBakeCheck {
   ok: boolean;
   message?: string;
-  full?: { positions: number[]; indices?: number[] };
-  cut?: { positions: number[]; indices?: number[] };
-  // pass-through for color-by-source + GLB fields the existing endpoint emits
-  [k: string]: unknown;
+  /** Compile-script hash — the graph's identity, shown in the editor badge. */
+  cacheHash?: string;
+  /** The server already had this compile cached. */
+  cached?: boolean;
 }
 
 export interface BakeOptions {
@@ -45,52 +48,39 @@ export interface BakeOptions {
   id: string;
   /** Assembly-level meta.params values (drives `kind: 'param'` resolution). */
   paramValues?: Record<string, number | string | boolean>;
-  /** When true, the server is asked for full + cut meshes (cutaway preview). */
-  cutaway?: boolean;
-  /** When true, bypass the bake cache for this call (forces a fresh
-   *  /api/primitives/preview?bust=1). Used by the 🔄 Rebuild button. */
+  /** When true, bypass the compile cache for this call. Used by 🔄 Rebuild. */
   bust?: boolean;
   /** Ghost set — node IDs whose Manifold is appended to the return list
    *  so the bake includes them as overlays. Each Call card's 👁 toggle
-   *  drives this; saved files are never affected (only /preview gets it). */
+   *  drives this; saved files are never affected. */
   ghosts?: string[];
 }
 
-/** Bake a graph by emitting source + routing through /api/primitives/preview.
- *  Slice-1 implementation; the server uses the existing primitive-loader. */
-export async function bakeGraphPreview(graph: Graph, opts: BakeOptions): Promise<PreviewBake> {
+/** Emit the graph and ask the server whether it COMPILES. No WASM, no mesh, no
+ *  event-loop starvation — dep resolution + script emit only, and the server
+ *  caches it. See the module header for why this is not a bake. */
+export async function validateGraphBake(graph: Graph, opts: BakeOptions): Promise<GraphBakeCheck> {
   const r = emitGraph(graph, { id: opts.id, ghosts: opts.ghosts });
-  // Positional params for the existing /preview endpoint, in meta.params order.
-  const positional: (number | string | boolean)[] = Object.keys(graph.params).map((k) => {
-    const v = opts.paramValues?.[k];
-    return v ?? graph.params[k]!.default;
-  });
-  // Wall-clock the round-trip so we can report a precise cache-hit latency
-  // in the editor's "✓ cached · N ms" badge. Cache hits are typically a
-  // few ms; fresh bakes are 100ms+. The number = wall ms BEFORE we parse
-  // the body — includes network + JSON encode/decode, the actual end-user
-  // perceived time.
   const tStart = (typeof performance !== 'undefined' ? performance : Date).now();
-  const resp = await fetch(`/api/primitives/preview${opts.bust ? '?bust=1' : ''}`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      source: r.source,
-      name: opts.id,
-      params: positional,
-    }),
-  });
+  let resp: Response;
+  try {
+    resp = await fetch('/api/primitives/compile', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      // POST reads `bust` from the BODY (the GET arm is the one that takes ?bust=1).
+      body: JSON.stringify({ name: opts.id, source: r.source, bust: !!opts.bust }),
+    });
+  } catch (e: any) {
+    return { ok: false, message: `compile request failed: ${String(e?.message ?? e)}` };
+  }
   if (!resp.ok) {
     const text = await resp.text();
-    return { ok: false, message: `preview ${resp.status}: ${text.slice(0, 240)}` };
+    return { ok: false, message: `compile ${resp.status}: ${text.slice(0, 240)}` };
   }
-  const data = await resp.json() as PreviewBake;
+  const data = await resp.json();
   const fetchMs = +((typeof performance !== 'undefined' ? performance : Date).now() - tStart).toFixed(1);
-  // Stash the client-side latency in _t so the editor's badge can show it.
-  // Server's own _t breakdown is preserved alongside; _t.fetch_total is
-  // strictly the client-perspective end-to-end time.
-  (data as any)._t = { ...((data as any)._t ?? {}), fetch_total: fetchMs };
-  return data;
+  if (!data?.supported) return { ok: false, message: String(data?.reason ?? 'graph does not compile') };
+  return { ok: true, cacheHash: data.scriptHash, cached: !!data.cached, _t: { fetch_total: fetchMs } } as GraphBakeCheck;
 }
 
 /** Convenience: just emit the source (no bake). Used by the live source pane. */

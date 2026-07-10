@@ -92,11 +92,13 @@ export const scene = $state({
    *  orthographic (parallel, no foreshortening; good for inspecting a part).
    *  VIEW ONLY; OrbitControls works with both. DEFAULT orthographic (user pref). */
   cam3dOrtho: true,
-  /** Geometry BAKE backend — false = server (`/api/primitives/preview`, the
-   *  default), true = client (compile → Manifold Web Worker, the client-exec
-   *  path). Persisted in localStorage (`cad-client-bake`); the SceneControls
-   *  toggle flips it and the canvas re-bakes reactively. */
-  clientBake: typeof localStorage === 'undefined' || localStorage.getItem('cad-client-bake') !== '0', // client-first: default ON, opt OUT to server via '0'
+  // NOTE: `clientBake` was REMOVED 2026-07-10. The bake backend is no longer a
+  // hidden app-wide toggle — it is the tab you are on. The main canvas is always
+  // MF_CLIENT (Manifold Web Worker); the server bake lives behind the explicit
+  // MF_SERVER tab (`backend='manifold-server'` on PrimitiveDualCanvas). A global
+  // flag meant one stray click routed every mounted canvas — including /wells'
+  // 26-part completion strings — through /api/primitives/preview, which runs
+  // Manifold synchronously on Node's only thread and wedges the whole server.
   zDirLight: true,
   zDirIntensity: 1,
   /** Bearing (deg) of the directional light around Z: 0°=+Y (front, camera

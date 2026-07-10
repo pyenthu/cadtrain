@@ -1,26 +1,27 @@
 <!--
   BakeMenu.svelte — the 🔨 bake-controls popover, modelled on CanvasMenu.svelte.
 
-  Consolidates the three former rail buttons (🔨 bake-now · ⚡ auto-bake toggle ·
-  💻/☁ local-vs-server backend toggle) behind ONE "Bake" rail button. A compact
-  Flowbite-style dropdown anchored (position: fixed) to that button's bounding
-  rect, which GEP computes and passes in as `pos`.
+  Consolidates the two former rail buttons (🔨 bake-now · ⚡ auto-bake toggle)
+  behind ONE "Bake" rail button. A compact Flowbite-style dropdown anchored
+  (position: fixed) to that button's bounding rect, which GEP computes and passes
+  in as `pos`.
+
+  The old 💻/☁ local-vs-server backend toggle was REMOVED 2026-07-10: the bake
+  backend is the TAB you are on (MF_CLIENT / MF_SERVER), not a hidden app-wide
+  flag. See scene-state.svelte.ts.
 
   GEP OWNS the open/anchor (`bakeMenuOpen` + `bakeMenuPos` + `openBakeMenu`) and
-  the bake STATE + handlers (`runBake`, `setAutoBake`, `scene.clientBake` + its
-  localStorage persistence). This component is presentational: it reflects the
-  current state and calls back. CSS (.ge-bake-menu* / .ge-cm-*) mirrors CanvasMenu
-  so Svelte's scoped CSS applies.
+  the bake STATE + handlers (`runBake`, `setAutoBake`). This component is
+  presentational: it reflects the current state and calls back. CSS
+  (.ge-bake-menu* / .ge-cm-*) mirrors CanvasMenu so Svelte's scoped CSS applies.
 -->
 <script lang="ts">
   let {
     pos,
     bakeStale,
     autoBake,
-    clientBake,
     onBakeNow,
     onSetAutoBake,
-    onToggleClientBake,
     onClose,
   }: {
     /** Viewport position anchored to the Bake button (GEP's bakeMenuPos). */
@@ -29,11 +30,8 @@
     bakeStale: boolean;
     /** Auto-bake on/off (700 ms debounced rebake on every change). */
     autoBake: boolean;
-    /** Bake backend: true = LOCAL (client Web Worker), false = REMOTE (server). */
-    clientBake: boolean;
     onBakeNow: () => void;
     onSetAutoBake: (v: boolean) => void;
-    onToggleClientBake: () => void;
     onClose: () => void;
   } = $props();
 </script>
@@ -61,17 +59,6 @@
     <span class="ge-cm-label">Auto-bake</span>
     <span class="ge-cm-state">{autoBake ? 'on' : 'off'}</span>
   </label>
-  <!-- Local ⇄ Server backend toggle — stays open so you can flip + watch the
-       bake-pane badge. LOCAL = client Web Worker, SERVER = /api/primitives/preview. -->
-  <button class="ge-cm-row action" type="button"
-    onclick={() => onToggleClientBake()}
-    title={clientBake
-      ? 'Backend = LOCAL (client Web Worker). Click → switch to SERVER.'
-      : 'Backend = SERVER (/api/primitives/preview). Click → switch to LOCAL (client Web Worker).'}>
-    <span class="ge-cm-icon">{clientBake ? '💻' : '☁'}</span>
-    <span class="ge-cm-label">Local ⇄ Server</span>
-    <span class="ge-cm-state">{clientBake ? 'local' : 'server'}</span>
-  </button>
 </div>
 
 <style>

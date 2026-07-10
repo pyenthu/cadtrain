@@ -30,13 +30,23 @@
      *  saved scale can't leak into the parent/viewer scale. */
     viewZScale?: number;
     viewXScale?: number;
-    /** Geometry backend. 'manifold' (default) → /api/primitives/preview (the 3D +
-     *  GLB tabs, byte-identical). 'brep' → /api/brep/preview (server-side OCCT
-     *  true-curve mesh); the GLB half, segment dial + ⬇GLB are suppressed and the
-     *  segment dial is relabelled to the OCCT linear-deflection `tol`. 'tf' →
-     *  the client-side, MAIN-THREAD TrueForm kernel ($lib/shared/trueform-client);
-     *  like BREP it suppresses the GLB half + routes to its own bake path. */
-    backend?: 'manifold' | 'brep' | 'tf';
+    /** Geometry backend — EXPLICIT, never inferred, never falls back.
+     *
+     *  'manifold' (default, the MF_CLIENT tab + every main canvas) → compile on
+     *    the server, bake in the client Manifold Web Worker. The ONLY backend the
+     *    main canvas may use. A part the client kernel can't build is an ERROR;
+     *    it is NOT re-run on the server (that hid bugs and poisoned the dev
+     *    server's Manifold singleton — /plan 979).
+     *  'manifold-server' (the MF_SERVER tab ONLY) → /api/primitives/preview.
+     *    Manifold's API is synchronous and Node is single-threaded, so a heavy
+     *    bake starves the event loop and wedges every route. Diagnosis + parity
+     *    only; never auto-selected, never the main canvas.
+     *  'brep' → /api/brep/preview (server-side OCCT true-curve mesh); the GLB
+     *    half, segment dial + ⬇GLB are suppressed and the segment dial is
+     *    relabelled to the OCCT linear-deflection `tol`.
+     *  'tf' → the client-side, MAIN-THREAD TrueForm kernel
+     *    ($lib/shared/trueform-client); like BREP it suppresses the GLB half. */
+    backend?: 'manifold' | 'manifold-server' | 'brep' | 'tf';
     /** BREP mode: the emitted part source POSTed to /api/brep/preview. */
     brepSource?: string;
     /** BREP mode: param name → current value (graph.params order ↔ bake.args). */
@@ -134,6 +144,10 @@
   // the GLB half + routes to its own bake path (rebuildTf); unlike BREP it runs
   // entirely in the browser via $lib/shared/trueform-client.
   let isTf = $derived(backend === 'tf');
+  /** MF_SERVER backend — the ONLY code path in the app allowed to POST
+   *  /api/primitives/preview for the live mesh. Reached exclusively from the
+   *  MF_SERVER tab, which the user must click; nothing selects it implicitly. */
+  let isServerMf = $derived(backend === 'manifold-server');
   let effBakeGlb = $derived((isBrep || isTf) ? false : bakeGlb);
   // TrueForm bake time (ms) for the current mesh — appended to the stats line.
   let tfMs = $state<number | null>(null);
@@ -377,59 +391,57 @@
     }
     meshStatus = 'building';
     meshAc?.abort(); const ac = new AbortController(); meshAc = ac;
-    // CLIENT-SIDE BAKE — client-first by DEFAULT (`localStorage.cad-client-bake`,
-    // opt out with '0'). Compile the LIVE source → run the Manifold worker. The
-    // `{full,cutVC,instanced}` shape matches the server exactly, so the scene needs
-    // no changes. zScale/xScale stay render-time (not sent), keeping byte-parity.
+    // MF_CLIENT — the only backend the main canvas uses. Compile the LIVE source
+    // on the server, bake in the Manifold Web Worker. The `{full,cutVC,instanced}`
+    // shape matches MF_SERVER exactly, so the scene needs no changes.
+    // zScale/xScale stay render-time (not sent), keeping byte-parity.
     //
-    // NO SILENT FALLBACK. A client-bake FAILURE is surfaced as an error, never
-    // retried on the server. The old `catch → fetch('/preview')` cost hours: a WASM
-    // trap in the browser worker reappeared as a mystery *server* 400
-    // (`emval_methodCallers[caller] is not a function`), poisoned the dev server's
-    // Manifold singleton through the fallback request, and made the ⚡/☁ badge look
-    // stuck on "server" (it reports the backend that actually produced the mesh, so
-    // a client bake that always fell back always read as server). Below, `supported`
-    // is a different thing: a capability gap, not a failure — those parts route to
-    // the server deliberately.
-    const clientBake = scene.clientBake;
-    if (clientBake && name) {
+    // NO FALLBACK, of any kind. Neither a client-bake FAILURE nor a client-kernel
+    // capability GAP re-runs on the server. The old `catch → fetch('/preview')`
+    // cost hours: a WASM trap in the browser worker reappeared as a mystery
+    // *server* 400 (`emval_methodCallers[caller] is not a function`), poisoned the
+    // dev server's Manifold singleton through the fallback request, and made the
+    // backend badge look stuck on "server". The `supported === false` arm used to
+    // be excused as "a capability gap, not a masked failure" and still silently
+    // reached /preview — that is exactly the implicit server bake the MF_SERVER
+    // tab exists to make explicit. Say so and stop; the user clicks MF_SERVER.
+    if (!isServerMf) {
+      if (!name) { err = 'client bake needs a part name'; meshStatus = 'error'; meshBackend = 'client'; return; }
       try {
         // Cached compile (skips the /compile fetch on param scrubs — same source).
         const _tc0 = performance.now();
         const cd = await getCompiled(name, source ?? '', ac.signal, bust);
         const _tCompile = performance.now() - _tc0;
         if (ac.signal.aborted) return;
-        if (cd?.supported && cd.script) {
-          const options = { cutaway: cutFlag, instanced: true,
-            ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}),
-            ...(crease ? { creaseAngle: crease } : {}), ...(smooth ? { smooth } : {}), colorOuter, colorInner,
-            // #86: color-by-source LUT from compile → client bake tints each
-            // subpart in its own colour (a single override still wins in finalize).
-            ...(cd.partColors ? { parts: cd.partColors } : {}) };
-          const _tb0 = performance.now();
-          const result = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options, bust });
-          const _tBake = performance.now() - _tb0;
-          if (ac.signal.aborted || isCancelled(result)) return;
-          geo = result; geoVersion++; meshStatus = 'ok'; err = null; meshBackend = 'client';
-          if (bakeTimingsOn()) { try { console.log(`[bake-client] compile=${_tCompile.toFixed(1)}ms · worker(bake+transfer)=${_tBake.toFixed(1)}ms · cutaway=${scene.showCutaway ? 'on' : 'off'} · seg=${segUsed ?? 'full(256)'}${segArg ? ' (draft)' : ''}`); } catch {} }
+        if (!cd?.supported || !cd.script) {
+          err = `the client Manifold kernel cannot build this part${cd?.reason ? `: ${cd.reason}` : ''} — open the MF_SERVER tab to bake it on the server`;
+          meshStatus = 'error'; meshBackend = 'client';
           return;
         }
-        // Unsupported by the client kernel (e.g. a BREP source) → route to the
-        // server deliberately. This is a capability gap, not a masked failure.
-        console.info('[client-bake] client kernel does not support this part — using the server');
+        const options = { cutaway: cutFlag, instanced: true,
+          ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}),
+          ...(crease ? { creaseAngle: crease } : {}), ...(smooth ? { smooth } : {}), colorOuter, colorInner,
+          // #86: color-by-source LUT from compile → client bake tints each
+          // subpart in its own colour (a single override still wins in finalize).
+          ...(cd.partColors ? { parts: cd.partColors } : {}) };
+        const _tb0 = performance.now();
+        const result = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options, bust });
+        const _tBake = performance.now() - _tb0;
+        if (ac.signal.aborted || isCancelled(result)) return;
+        geo = result; geoVersion++; meshStatus = 'ok'; err = null; meshBackend = 'client';
+        if (bakeTimingsOn()) { try { console.log(`[bake-client] compile=${_tCompile.toFixed(1)}ms · worker(bake+transfer)=${_tBake.toFixed(1)}ms · cutaway=${scene.showCutaway ? 'on' : 'off'} · seg=${segUsed ?? 'full(256)'}${segArg ? ' (draft)' : ''}`); } catch {} }
+        return;
       } catch (e: any) {
         if (e?.name === 'AbortError' || ac.signal.aborted) return;
-        // A client-bake failure is a REAL failure. Show it. Do not re-run it on the
-        // server: that hides the bug, and re-running a kernel trap server-side
-        // corrupts the server's Manifold singleton for every later bake too.
         const msg = String(e?.message ?? e);
-        console.error('[client-bake] FAILED (no fallback):', msg);
+        console.error('[bake-client] FAILED (no fallback):', msg);
         err = `client bake failed: ${msg}`;
         meshStatus = 'error';
         meshBackend = 'client';
         return;
       }
     }
+    // MF_SERVER — the explicit, isolated server bake. See the `backend` prop doc.
     try {
       const r = await fetch('/api/primitives/preview' + (bust ? '?bust=1' : ''), {
         method: 'POST', headers: { 'content-type': 'application/json' },
@@ -745,10 +757,12 @@
       // (composites → UNSUPPORTED) for the server-inlined one ASYNCHRONOUSLY, and
       // only the NESTED ops change (s_tube stays booleanDifference at the root), so
       // the whole recipe must be in the key or the native re-bake never fires.
-      ? JSON.stringify({ b: 'tf', actual: tfActual, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), rcp: tfActual && tfRecipe ? tfRecipe : '', seg: effSegments, cli: scene.clientBake, cut: scene.showCutaway, warpNonce: scene.warpBakeNonce })
+      ? JSON.stringify({ b: 'tf', actual: tfActual, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), rcp: tfActual && tfRecipe ? tfRecipe : '', seg: effSegments, cut: scene.showCutaway, warpNonce: scene.warpBakeNonce })
       : isBrep
       ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
-      : JSON.stringify({ id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, clientBake: scene.clientBake });
+      // `b` keeps MF_CLIENT and MF_SERVER on separate cache entries, so the two
+      // tabs can show their meshes side by side (that IS the parity check).
+      : JSON.stringify({ b: backend, id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface });
     if (!Scene) return;
     // TF composite parts: while the server recipe is still resolving, `tfRecipe`
     // may still expose the PREVIOUS (stale-but-supported) recipe, so an edit
@@ -876,12 +890,15 @@
     onclick={() => { scene.fitLength = !scene.fitLength; scene.zFocus = 0; scene.scaleAuto = true; }}>⇕ fit</button>
   <!-- Shade mode (Smooth/Auto/Flat) lives in the gear Shade control now — the
        canvas ◐ quick-toggle was removed 2026-06-18 to keep one home. -->
-  <!-- Bake-backend badge (client-exec): which kernel produced the live mesh. -->
+  <!-- Bake-backend badge — REPORTS which kernel produced the live mesh; it is not
+       a switch. The backend is chosen by which tab you are on (MF_CLIENT /
+       MF_SERVER), never by a hidden toggle that silently moves every canvas in
+       the app onto the single-threaded server bake. -->
   {#if meshBackend && meshStatus === 'ok'}
-    <!-- svelte-ignore a11y_no_static_element_interactions a11y_click_events_have_key_events -->
-    <span class="pd-backend-badge {meshBackend}" role="button" tabindex="-1"
-      title={meshBackend === 'client' ? 'Baked client-side (Web Worker) — click to switch to server' : 'Baked server-side — click to switch to client'}
-      onclick={() => { scene.clientBake = !scene.clientBake; try { localStorage.setItem('cad-client-bake', scene.clientBake ? '1' : '0'); } catch {} }}>
+    <span class="pd-backend-badge {meshBackend}"
+      title={meshBackend === 'client'
+        ? 'MF_CLIENT — baked in the browser (Manifold Web Worker)'
+        : 'MF_SERVER — baked on the server (/api/primitives/preview)'}>
       {meshBackend === 'client' ? '⚡ client' : '☁ server'}</span>
   {/if}
   {#if scaleMenuOpen}

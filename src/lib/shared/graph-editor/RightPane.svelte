@@ -23,7 +23,7 @@
   import { graphToTf } from '$lib/cad/graph-to-tf';
   import { recipeHasUnsupported as recipeHasUnsupportedLocal, tfServerKey, tfRecipePending as computeTfRecipePending } from './tf-recipe-timing';
 
-  type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'tf';
+  type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'tf' | 'mfserver';
 
   let {
     /* ── INPUT (parent → pane) — pass STABLE references ── */
@@ -35,8 +35,6 @@
     active = true,                 // tab/pane visibility gate (props.active in parent)
     legacyLoad = null,             // legacy-load banner state
     sourceText,                    // emitted .asm.ts source
-    cutawayBusy = false,
-    cutawayStatus = null,
     rebuildStatus = null,
     restartBusy = false,
     restartStatus = null,
@@ -49,7 +47,6 @@
     /* ── CALLBACKS (pane → parent mutations) ── */
     onRebuild,                     // parent rebuildCache — clears cache + re-bakes
     onRestart,                     // parent restartDevServer
-    onLoadCutaway,                 // parent loadCutaway — re-bakes w/ cutaway, sets bake/cutawayBusy
     onGenerateMd,                  // parent generateMdWithAi — sets drawingMd
     /* ── SNIPPET ── */
     profilePreview,                // parent-scoped 2D profile preview (drag-wired)
@@ -67,8 +64,6 @@
     autoTf?: boolean;
     legacyLoad?: { id: string; reason: 'no-graph' | 'fetch-failed'; origin?: string } | null;
     sourceText: string;
-    cutawayBusy?: boolean;
-    cutawayStatus?: string | null;
     rebuildStatus?: string | null;
     restartBusy?: boolean;
     restartStatus?: string | null;
@@ -79,7 +74,6 @@
     drawingMd?: string;
     onRebuild?: () => void;
     onRestart?: () => void;
-    onLoadCutaway?: () => void;
     onGenerateMd?: () => void;
     profilePreview?: Snippet;
   } = $props();
@@ -129,6 +123,10 @@
     try {
       const t = localStorage.getItem('ge-right-tab');
       if (t === 'tf' && !autoTf) return; // /wells: keep the default 'bake'; TF only on an explicit click
+      // MF_SERVER is NEVER restored. It runs Manifold synchronously on Node's
+      // only thread; a page reload that silently reopened it would bake a whole
+      // well on the server and wedge every route. One deliberate click, always.
+      if (t === 'mfserver') return;
       if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg' || t === 'glb' || t === 'brep' || t === 'tf') rightTab = t;
     } catch { /* localStorage blocked — fine */ }
   });
@@ -360,8 +358,8 @@
   <div class="ge-pane-tabs" role="tablist">
     <button class="ge-pane-tab" class:active={rightTab === 'bake'}
       type="button" role="tab" aria-selected={rightTab === 'bake'}
-      data-tip={!hasSolidProducer ? '2D preview — resolved polygon (axis at r=0 for revolve, centered for cartesian)' : '3D bake — live mesh + GLB preview'}
-      onclick={() => setRightTab('bake')}>{!hasSolidProducer ? '2D preview' : '3D bake'}</button>
+      data-tip={!hasSolidProducer ? '2D preview — resolved polygon (axis at r=0 for revolve, centered for cartesian)' : 'MF_CLIENT — Manifold, baked in a browser Web Worker. The default, and the only backend on the main canvas.'}
+      onclick={() => setRightTab('bake')}>{!hasSolidProducer ? '2D preview' : 'MF_CLIENT'}</button>
     <button class="ge-pane-tab" class:active={rightTab === 'source'}
       type="button" role="tab" aria-selected={rightTab === 'source'}
       data-tip={`SRC — the emitted ${exemplarId}.asm.ts auto-generated from the graph`}
@@ -386,6 +384,10 @@
       type="button" role="tab" aria-selected={rightTab === 'tf'}
       data-tip="TF — TrueForm (Polydera) client-side exact-mesh kernel. Runs the WASM boolean/generator kernel on the MAIN THREAD (no worker); from-scratch generators + booleans."
       onclick={() => setRightTab('tf')}>TF</button>
+    <button class="ge-pane-tab mfserver" class:active={rightTab === 'mfserver'}
+      type="button" role="tab" aria-selected={rightTab === 'mfserver'}
+      data-tip="MF_SERVER — the SAME Manifold kernel, baked on the server via /api/primitives/preview. Rare: parity checks + diagnosing a client-bake failure. Manifold is synchronous and Node is single-threaded, so a heavy part here stalls every route until it finishes. Never opens by itself; never restored on reload."
+      onclick={() => setRightTab('mfserver')}>MF_SERVER</button>
   </div>
   <div class="ge-pane-bodies">
     <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
@@ -471,15 +473,6 @@
               return a + (Number.isFinite(n) ? n : 0);
             }, 0)}
             <span class="ge-cache-badge fresh" title={`hash: ${bakeMeta.cacheHash}`}>fresh · {Math.round(serverMs as number)} ms</span>
-          {/if}
-          {#if bakeMeta.cutawaySkipped}
-            <span class="ge-cache-badge skipped" title="Cutaway CSG auto-skipped for big manifolds (> 15k tris). Click Load to compute it.">cutaway off (perf)</span>
-            <button class="ge-cutaway-load-btn" type="button"
-              disabled={cutawayBusy} onclick={onLoadCutaway}
-              title="Bake cutaway on-demand for this part">
-              {cutawayBusy ? '🔄 …' : 'Load'}
-            </button>
-            {#if cutawayStatus}<span class="ge-rebuild-stat">{cutawayStatus}</span>{/if}
           {/if}
           <span class="ge-bake-meta-spacer"></span>
           {#if rebuildStatus}<span class="ge-rebuild-stat">{rebuildStatus}</span>{/if}
@@ -582,6 +575,32 @@
         {/if}
       {/if}
     </div>
+    <!-- MF_SERVER tab — the SAME Manifold kernel as MF_CLIENT, run on the server.
+         Mounted ONLY while this tab is the active tab of the active pane, so it
+         can never bake in the background. This is the one place in the app that
+         POSTs /api/primitives/preview for a live mesh. -->
+    <div class="ge-glb-body" class:hidden={rightTab !== 'mfserver'}>
+      {#if rightTab === 'mfserver' && (active ?? true)}
+        {#if PrimitiveDualCanvas && displayBake && typeof displayBake === 'object' && displayBake.source}
+          <div class="ge-mfserver-warn">
+            ☁ Server bake — Manifold runs synchronously on Node's single thread. A
+            large part stalls every route until it finishes. Use MF_CLIENT unless
+            you are checking parity or diagnosing a client-bake failure.
+          </div>
+          <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
+            args={displayBake.args ?? paramDefaults}
+            source={displayBake.source}
+            backend="manifold-server"
+            colorOuter={graph.colorOuter} colorInner={graph.colorInner} opacity={graph.opacity} texture={graph.texture} material={graph.material}
+            viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
+            bakeGlb={false}
+            autoScaleOwner={active && rightTab === 'mfserver'}
+            showControls={true} showLabels={false}/>
+        {:else}
+          <div class="ge-empty">No geometry yet — bake the part first (open the MF_CLIENT tab).</div>
+        {/if}
+      {/if}
+    </div>
     <!-- BREP tab — server-side OpenCascade (OCCT) true-curve render in the
          SHARED PrimitiveDualCanvas chrome (backend="brep"): same canvas,
          camera/lights/orbit, ⚙ scale gear, SceneControls, Z-pan, stats + 🔄.
@@ -677,10 +696,25 @@
 </section>
 
 <style>
+  /* MF_SERVER — visually marked as the exceptional path, so nobody parks on it. */
+  .ge-pane-tab.mfserver { color: #d98a2b; }
+  .ge-pane-tab.mfserver.active { color: #ffb454; }
+  .ge-mfserver-warn {
+    position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+    z-index: 6; max-width: 78%;
+    background: rgba(60, 40, 0, 0.88); border: 1px solid #8a6d00; border-radius: 4px;
+    padding: 5px 9px; color: #ffd98a; font: 10.5px/1.45 Arial; text-align: center;
+    pointer-events: none;
+  }
+
   /* Right pane: VERTICAL tab rail on the left + content. */
   .ge-right-pane { display: grid; grid-template-columns: auto 1fr; overflow: hidden; border-left: 1px solid #e5e7eb; }
-  .ge-pane-tabs { display: flex; flex-direction: column; gap: 0; background: #f5f5f4; border-right: 1px solid #e7e5e4; }
-  .ge-pane-tab { flex: 0 0 auto; writing-mode: vertical-rl; display: flex; align-items: center; justify-content: center; min-height: 70px; white-space: nowrap; padding: 4px 7px; font: 600 11px Arial; color: #78716c; background: transparent; border: 0; border-left: 3px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: 0.6px; transition: background 0.12s, color 0.12s, border-color 0.12s; }
+  /* 8 vertical tabs no longer fit a short viewport — scroll rather than clip the
+     last one (MF_SERVER was unreachable at 784px tall). Scrollbar hidden: the
+     tabs are their own affordance. */
+  .ge-pane-tabs { display: flex; flex-direction: column; gap: 0; background: #f5f5f4; border-right: 1px solid #e7e5e4; overflow-y: auto; scrollbar-width: none; }
+  .ge-pane-tabs::-webkit-scrollbar { width: 0; height: 0; }
+  .ge-pane-tab { flex: 0 0 auto; writing-mode: vertical-rl; display: flex; align-items: center; justify-content: center; min-height: 52px; white-space: nowrap; padding: 4px 7px; font: 600 11px Arial; color: #78716c; background: transparent; border: 0; border-left: 3px solid transparent; cursor: pointer; text-transform: uppercase; letter-spacing: 0.6px; transition: background 0.12s, color 0.12s, border-color 0.12s; }
   .ge-pane-tab code { font: 11px ui-monospace, monospace; color: #57534e; text-transform: none; letter-spacing: 0; }
   .ge-pane-tab:hover { background: #fafaf9; color: #1c1917; }
   .ge-pane-tab.active { color: #0c4a6e; border-left-color: #0369a1; background: #fff; }
@@ -771,9 +805,5 @@
   .ge-rebuild-btn:hover:not(:disabled) { background: #f5f5f4; }
   .ge-rebuild-btn:disabled { opacity: 0.7; cursor: progress; }
   .ge-rebuild-stat { font: 11px ui-monospace, monospace; color: #57534e; }
-  /* Lazy cutaway load button — sits next to the "cutaway off (perf)" badge */
-  .ge-cutaway-load-btn { font: 600 10px Arial; color: #fff; background: #b91c1c; border: 1px solid #991b1b; border-radius: 4px; padding: 2px 8px; cursor: pointer; transition: background 0.12s; }
-  .ge-cutaway-load-btn:hover:not(:disabled) { background: #991b1b; }
-  .ge-cutaway-load-btn:disabled { opacity: 0.7; cursor: progress; }
   .ge-source { margin: 0; padding: 10px 14px; font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; color: #1f2937; background: #fafaf9; overflow: auto; white-space: pre; }
 </style>
