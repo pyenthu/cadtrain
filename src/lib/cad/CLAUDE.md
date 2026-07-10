@@ -95,6 +95,33 @@ VisibleChainPass) travel with it.
 
 ## Manifold gotchas
 
+### `M.compose` UNIONS overlapping bodies — `place()` is not "just grouping"
+
+Measured (`lazy-place.test.ts`): `compose(bigCyl, cylNestedInside)` returns
+**exactly what `big.add(small)` returns** — same tri count, same volume. The inner
+body is **destroyed**. On *disjoint* bodies compose merely concatenates (volume
+and tris are the sums). So `place()` = grouping only when nothing overlaps.
+
+This is why a well cannot be one Manifold: every element sits inside the open
+hole, so composing 16 elements collapsed them to the outer hole alone (510 tris,
+genus 0 — the whole completion string gone).
+
+**`autoPlace` (primitive-loader) therefore keeps a list-returning geom fn's
+outputs as separate `_parts` and composes LAZILY** — the merged body is built only
+if something actually asks for one (a parent doing further CSG on a list-returning
+dep, or a consumer wanting one mesh). Reading `_parts` never pays for the union.
+On the deviated reference well that is 91 ms instead of 443 ms, and the geometry
+survives. `finalizeManifold` meshes `_parts` when a colour LUT is active; a
+`WarpNode`'s `children[]` emit already assumed separate parts.
+
+Two implementations must stay in lockstep: the TS `lazyPlace`/`autoPlace` in
+`src/lib/server/primitive-loader.ts`, and its **hand-written twin inside the
+compiled-script template literal** in the same file (the client bake path). Both
+are pinned — `lazy-place.test.ts` (server) and `lazy-place-compiled.test.ts`
+(client). Note the twin lives in a template literal: **no backticks in its
+comments**. Both must guard `then` and symbol lookups, or `await geomFn(...)` and
+console inspection silently force the union.
+
 ### Hand-wound raw mesh — preferred for swept/helical geometry
 
 For helical threads + swept profiles, build the triangle mesh by hand and

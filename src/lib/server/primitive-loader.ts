@@ -466,26 +466,62 @@ export async function buildPrimitiveGeom(
   // arrays via place(). Lets assemblies be authored as `return [A, B, [C, D]]`
   // without explicit place(...) wrappers, matching the user's JSX-style
   // mental model ("a list IS place"). Manifold returns pass through unchanged.
-  const autoPlace = (v: any): any => {
-    if (Array.isArray(v)) {
-      const placed = v.map(autoPlace);
-      const composed = helpers.place(placed);
-      // SEPARATE-PARTS: stash the pre-compose outputs so the renderer can mesh
-      // spatially-OVERLAPPING top-level parts (a part inside a transparent
-      // open-hole) SEPARATELY. `place()`/`M.compose` fuses overlapping bodies
-      // into one connected body (see manifold-helpers.place) — TF never composes,
-      // so it never fuses. The outermost (rendered) part is the one that matters;
-      // deps get further Manifold ops that strip this property, which is fine.
-      try {
-        const ms = placed.filter((p: any) => p && typeof p.getMesh === 'function');
-        if (ms.length > 1 && composed && typeof (composed as any).getMesh === 'function') {
-          (composed as any)._parts = ms;
-        }
-      } catch { /* non-critical — falls back to the composed single mesh */ }
-      return composed;
-    }
-    return v;
+  // SEPARATE-PARTS, and the compose is LAZY.
+  //
+  // `place()` is `M.compose`, and M.compose on OVERLAPPING bodies is a UNION:
+  // measured, `compose(bigCyl, cylNestedInside)` returns exactly what
+  // `big.add(small)` returns — the inner body is DESTROYED. (On disjoint bodies
+  // it merely concatenates.) A well is the pathological case: every element sits
+  // inside the open hole, so composing 16 elements collapsed them to the outer
+  // hole alone — 510 tris, genus 0, the entire completion string gone.
+  //
+  // The list is therefore kept as SEPARATE parts (`_parts`), which is what the
+  // renderer meshes (render-helpers `finalizeManifold`) and what a WarpNode's
+  // `children[]` emit already assumes. The single composed body is still needed
+  // when a PARENT does further CSG on a list-returning dep, or when a consumer
+  // wants one merged mesh — so it is built ON DEMAND and memoised, never eagerly.
+  // Reading `_parts` alone never pays for (nor is corrupted by) the union.
+  const isManifoldLike = (p: any) =>
+    !!p && (p.__isLazyPlace === true || typeof p.getMesh === 'function');
+
+  const lazyPlace = (placed: any[]): any => {
+    const ms = placed.filter(isManifoldLike);
+    // 0 or 1 real bodies → nothing to fuse; place() is trivial and eager.
+    if (ms.length <= 1) return helpers.place(placed);
+    let composed: any = null;
+    const force = () => (composed ??= helpers.place(placed));
+    return new Proxy(Object.create(null), {
+      get(_t, prop) {
+        if (prop === '_parts') return ms;
+        if (prop === '__isLazyPlace') return true;
+        // Test/diagnostic hook: null until something forced the union.
+        if (prop === '__composedOrNull') return composed;
+        // `await someLazy` probes `.then`, and console/util inspection probes
+        // symbols. Neither means "give me one merged body" — forcing a 16-way
+        // union there would defeat the whole point.
+        if (prop === 'then' || typeof prop === 'symbol') return undefined;
+        const t = force();
+        const v = t[prop];
+        return typeof v === 'function' ? v.bind(t) : v;
+      },
+      set(_t, prop, value) {
+        if (prop === '_parts' || prop === '__isLazyPlace') return true;
+        force()[prop] = value;
+        return true;
+      },
+      has(_t, prop) {
+        if (prop === '_parts' || prop === '__isLazyPlace') return true;
+        return prop in force();
+      },
+    });
   };
+
+  // K.62 Phase E.1: lists-are-groups. When a geom fn returns an Array, treat
+  // it as a topological compose group — recursively flatten any nested
+  // arrays via place(). Lets assemblies be authored as `return [A, B, [C, D]]`
+  // without explicit place(...) wrappers, matching the user's JSX-style
+  // mental model ("a list IS place"). Manifold returns pass through unchanged.
+  const autoPlace = (v: any): any => (Array.isArray(v) ? lazyPlace(v.map(autoPlace)) : v);
   // Adaptive call boundary — makes positional-style and object-style parts
   // interoperate without the caller having to know which style this fn uses.
   //
@@ -694,7 +730,36 @@ function __isSegmentKey(key) {
 }
 function __adapt(fn, metaKeys, isObjectStyle) {
   var __place = (typeof place === 'function') ? place : function (v) { return v; };
-  function autoPlace(v) { if (Array.isArray(v)) { var placed = v.map(autoPlace); var composed = __place(placed); try { var ms = placed.filter(function (p) { return p && typeof p.getMesh === 'function'; }); if (ms.length > 1 && composed && typeof composed.getMesh === 'function') composed._parts = ms; } catch (e) {} return composed; } return v; }
+  // LAZY compose - must mirror lazyPlace/autoPlace in this module's TS above.
+  // M.compose UNIONS overlapping bodies (destroying inner ones), so the list is
+  // kept as separate _parts and the merged body is built only on demand.
+  // (No backticks in here: this whole block lives inside a template literal.)
+  function __isManifoldLike(p) { return !!p && (p.__isLazyPlace === true || typeof p.getMesh === 'function'); }
+  function __lazyPlace(placed) {
+    var ms = placed.filter(__isManifoldLike);
+    if (ms.length <= 1) return __place(placed);
+    var composed = null;
+    function force() { if (!composed) composed = __place(placed); return composed; }
+    return new Proxy(Object.create(null), {
+      get: function (_t, prop) {
+        if (prop === '_parts') return ms;
+        if (prop === '__isLazyPlace') return true;
+        if (prop === '__composedOrNull') return composed;
+        if (prop === 'then' || typeof prop === 'symbol') return undefined;
+        var t = force(); var v = t[prop];
+        return (typeof v === 'function') ? v.bind(t) : v;
+      },
+      set: function (_t, prop, value) {
+        if (prop === '_parts' || prop === '__isLazyPlace') return true;
+        force()[prop] = value; return true;
+      },
+      has: function (_t, prop) {
+        if (prop === '_parts' || prop === '__isLazyPlace') return true;
+        return prop in force();
+      }
+    });
+  }
+  function autoPlace(v) { return Array.isArray(v) ? __lazyPlace(v.map(autoPlace)) : v; }
   var segKeyIdx = metaKeys.findIndex(__isSegmentKey);
   function clampSegInObj(obj, cap) {
     if (segKeyIdx < 0) return obj;
