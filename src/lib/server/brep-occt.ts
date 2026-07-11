@@ -19,6 +19,14 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import * as mathLib from '$lib/cad/math-lib';
+
+// The bare-name math surface a part/assembly body may reference (cos/sin/tau/…
+// PLUS ceil/hypot/sign/clamp/frac/lerp/deg/rad/pi/atan2/…). Mirror the primitive
+// sandbox's spread so the OCCT executor injects the SAME set — a body using an
+// un-injected math fn otherwise threw "<fn> is not defined" under BREP only.
+const MATH_NAMES = Object.keys(mathLib);
+const MATH_VALUES = MATH_NAMES.map((n) => (mathLib as any)[n]);
 
 let _ocReady: Promise<void> | null = null;
 
@@ -237,6 +245,7 @@ export async function brepFromSource(
   const replicad: any = await import('replicad');
   const { compileSketch } = await import('$lib/cad/sketch');
   const { resampleSpline } = await import('$lib/cad/spline-resample');
+  const { resolveProfile } = await import('$lib/shared/profile-presets');
   const {
     draw, makeBaseBox, makeCompound, drawPolysides,
     assembleWire, makeLine, genericSweep,
@@ -246,17 +255,79 @@ export async function brepFromSource(
   if (!m) return null;
   const fnBody = m[1];
 
+  // ── OCCT WASM heap hygiene ────────────────────────────────────────────────
+  // replicad's booleans (fuse/cut/intersect) and the sketchPoly/extrude helpers
+  // allocate a NEW OCCT shape but DO NOT free their operands (unlike translate/
+  // rotate, which delete their receiver, or makeCompound, which deletes its
+  // operands). In a 16+ part / 1000-unit well (w_sample_1/4) every per-part
+  // intermediate — two g_shaft revolves, the bore-subtract result, the mv copy,
+  // and a bbox-spanning sectionCut WEDGE — therefore piles up on the WASM heap for
+  // the whole compose (each per-part solid bakes fine ALONE; it is the
+  // accumulation). The heap grows to 2 GB, so this alone did not sink w_sample_1
+  // (that was a degenerate profile — see dedupePoly), but leaving ~100 dead
+  // B-rep solids resident is a latent OOM on ever-larger wells. Fix: track every
+  // wrapped shape, and at each dependency-part boundary (+ the top-level build)
+  // DELETE every shape created during that sub-build that is NOT the returned
+  // solid. Those non-escaping intermediates are provably dead once the
+  // `new Function` body returns (only the return value stays reachable), so this
+  // is pure memory hygiene — no geometry change, and no risk to reused handles
+  // (reuse only happens WITHIN a body, before its boundary sweep runs).
+  const tracked: any[] = [];            // underlying OCCT shapes, in creation order
+  const disposed = new WeakSet<object>();
+  const safeDelete = (s: any): void => {
+    if (!s || typeof s !== 'object' || disposed.has(s)) return;
+    disposed.add(s);
+    // Skip if replicad already freed it (makeCompound/translate null the wrapped
+    // handle) — calling delete() again throws inside its FinalizationRegistry.
+    if ((s as any)._wrapped == null) return;
+    try { if (typeof s.delete === 'function') s.delete(); } catch { /* already gone */ }
+  };
+  // Free every shape created since `mark` except those that escape (kept), then
+  // re-parent the survivors to the enclosing scope so ITS sweep can reclaim them.
+  const sweepSince = (mark: number, keptArr: any[]): void => {
+    const keep = new Set(keptArr);
+    for (let i = mark; i < tracked.length; i++) { const sh = tracked[i]; if (!keep.has(sh)) safeDelete(sh); }
+    tracked.length = mark;
+    for (const k of keptArr) tracked.push(k);
+  };
+
   // ── wrapped OCCT solid: Manifold-method names → replicad methods ──────────
   const WRAP = Symbol('occt');
   const unwrap = (v: any) => (v && v[WRAP]) ? v[WRAP] : v;
+  // Fold a boolean op over an operand that may be a single solid, a wrapped
+  // solid, an ARRAY of solids, or a `place(list)` group — mirroring Manifold,
+  // where `A.add(place([b,c,d]))` unions A with every element. Without this,
+  // `t.fuse(array)` threw deep in replicad ("Cannot read '$$' of undefined",
+  // bw_tubing) because a raw JS array has no OCCT handle. collectShapes flattens
+  // the operand to individual solids; we clone each (replicad booleans consume
+  // their operands) and apply the op one at a time — freeing each throwaway clone
+  // and each superseded intermediate immediately (neither escapes combineBool, so
+  // this never touches a handle the body still holds).
+  const combineBool = (base: any, o: any, op: 'fuse' | 'cut' | 'intersect'): any => {
+    const arr: any[] = []; collectShapes(o, arr);
+    if (arr.length === 0) return base;
+    let acc = base;
+    for (const s of arr) {
+      let piece: any; try { piece = s.clone(); } catch { piece = s; }
+      const next = acc[op](piece);
+      if (piece !== s) safeDelete(piece);   // our private clone — consumed by the boolean
+      if (acc !== base) safeDelete(acc);     // prior intermediate — superseded
+      acc = next;
+    }
+    return acc;
+  };
   function wrap(shape: any): any {
     if (!shape || typeof shape !== 'object') return shape;
+    // Track every OCCT solid that flows through the executor so the boundary
+    // sweeps can reclaim the non-escaping ones (dedup + re-tracking is harmless —
+    // safeDelete guards double-free and sweepSince dedups via a Set).
+    if (typeof (shape as any).mesh === 'function' && !disposed.has(shape)) tracked.push(shape);
     const proxy: any = new Proxy(shape, {
       get(t, prop) {
         if (prop === WRAP) return t;
-        if (prop === 'add' || prop === 'union') return (o: any) => wrap(t.fuse(unwrap(o)));
-        if (prop === 'subtract') return (o: any) => wrap(t.cut(unwrap(o)));
-        if (prop === 'intersect') return (o: any) => wrap(t.intersect(unwrap(o)));
+        if (prop === 'add' || prop === 'union') return (o: any) => wrap(combineBool(t, o, 'fuse'));
+        if (prop === 'subtract') return (o: any) => wrap(combineBool(t, o, 'cut'));
+        if (prop === 'intersect') return (o: any) => wrap(combineBool(t, o, 'intersect'));
         const val = (t as any)[prop];
         if (typeof val === 'function') return (...a: any[]) => {
           const r = val.apply(t, a.map(unwrap));
@@ -268,12 +339,35 @@ export async function brepFromSource(
     return proxy;
   }
 
-  // Build a closed replicad drawing from a 2D point list, sketch on a plane.
-  const sketchPoly = (pts: [number, number][], plane: 'XZ' | 'XY') => {
-    if (!Array.isArray(pts) || pts.length < 3) throw new Error('profile < 3 pts');
+  // Drop consecutive coincident points (and a trailing point equal to the first)
+  // from a 2D polygon. Manifold silently tolerates a zero-length edge — an
+  // authored profile hits one whenever two vertices collapse at a param extreme
+  // (e.g. bw_hanger's chamfer === length → [od/2, length-chamfer] == [od/2, 0]).
+  // OCCT's EXACT kernel instead throws a Standard_Failure building the degenerate
+  // edge, which poisoned the whole assembly bake (misread as a heap OOM). Removing
+  // a duplicate vertex is a geometric no-op, so this is pure robustness — it makes
+  // the BREP wire builder as forgiving as the Manifold oracle.
+  const POLY_EPS = 1e-6;
+  const dedupePoly = (pts: [number, number][]): [number, number][] => {
+    const out: [number, number][] = [];
+    for (const pt of pts) {
+      const prev = out[out.length - 1];
+      if (!prev || Math.abs(pt[0] - prev[0]) > POLY_EPS || Math.abs(pt[1] - prev[1]) > POLY_EPS) out.push([pt[0], pt[1]]);
+    }
+    // .close() re-adds the closing edge, so a trailing vertex ≈ the first would
+    // itself be a zero-length edge — trim any such.
+    while (out.length > 1 && Math.abs(out[0][0] - out[out.length - 1][0]) <= POLY_EPS && Math.abs(out[0][1] - out[out.length - 1][1]) <= POLY_EPS) out.pop();
+    return out;
+  };
+  // Build a closed replicad drawing from a 2D point list, sketch on a plane
+  // (optionally offset along the plane normal — `z` for a stack of XY sections).
+  const sketchPoly = (rawPts: [number, number][], plane: 'XZ' | 'XY', z?: number) => {
+    if (!Array.isArray(rawPts) || rawPts.length < 3) throw new Error('profile < 3 pts');
+    const pts = dedupePoly(rawPts);
+    if (pts.length < 3) throw new Error('profile < 3 pts (after coincident-vertex dedupe)');
     let d = draw([pts[0][0], pts[0][1]]);
     for (let i = 1; i < pts.length; i++) d = d.lineTo([pts[i][0], pts[i][1]]);
-    return d.close().sketchOnPlane(plane);
+    return z === undefined ? d.close().sketchOnPlane(plane) : d.close().sketchOnPlane(plane, z);
   };
   const asPts = (p: any): [number, number][] =>
     (typeof p === 'string' ? JSON.parse(p) : p) as [number, number][];
@@ -311,29 +405,70 @@ export async function brepFromSource(
     }
     return wrap(sketchPoly(prof, 'XZ').revolve());
   };
-  const extrudeXY = (profile: any, length: number, twist = 0) => {
+  // taper: MF's r_weld_extrude scales the top face by `1 - taper` (Z-down
+  // convention — taper > 0 narrows the far/bottom end). replicad's
+  // `extrusionProfile: { profile:'linear', endFactor }` scales the section
+  // linearly from 1 at the base to `endFactor` at the top, so endFactor = 1 −
+  // taper is the exact-kernel equivalent (a straight-ruled tapered prism, not a
+  // welded morph). Without this BREP extruded straight → g_star/new_assy came
+  // out ~22% over-volume vs the Manifold oracle.
+  const extrudeXY = (profile: any, length: number, twist = 0, taper = 0) => {
     const prof = asPts(profile);
     const sk = sketchPoly(prof, 'XY');
     const h = Math.max(0.01, length);
-    return wrap(twist ? sk.extrude(h, { twistAngle: twist }) : sk.extrude(h));
+    const opts: any = {};
+    if (twist) opts.twistAngle = twist;
+    if (taper) opts.extrusionProfile = { profile: 'linear', endFactor: Math.max(0.001, 1 - taper) };
+    return wrap(Object.keys(opts).length ? sk.extrude(h, opts) : sk.extrude(h));
   };
-  const r_weld_extrude = (a: any, length?: number, _divs?: number, twist?: number) => {
-    if (a && a.profile !== undefined) return extrudeXY(a.profile, a.length, a.twist ?? 0);
-    return extrudeXY(a, length ?? 2, twist ?? 0);
+  const r_weld_extrude = (a: any, length?: number, _divs?: number, twist?: number, taper?: number) => {
+    if (a && a.profile !== undefined) return extrudeXY(a.profile, a.length, a.twist ?? 0, a.taper ?? 0);
+    return extrudeXY(a, length ?? 2, twist ?? 0, taper ?? 0);
   };
-  const r_extrude = (a: any, height?: number, twist?: number) => {
-    if (a && a.profile !== undefined) return extrudeXY(a.profile, a.height ?? a.length, a.twist ?? 0);
-    return extrudeXY(a, height ?? 2, twist ?? 0);
+  const r_extrude = (a: any, height?: number, twist?: number, taper?: number) => {
+    if (a && a.profile !== undefined) return extrudeXY(a.profile, a.height ?? a.length, a.twist ?? 0, a.taper ?? 0);
+    return extrudeXY(a, height ?? 2, twist ?? 0, taper ?? 0);
   };
-  const r_loft = (a: any, length?: number, _divs?: number, twist?: number, bulge?: number) => {
-    // Approximate the scale-along-z bulge with replicad's extrusionProfile.
+  // r_loft — sweep a 2D section down z while SCALING it by a smooth
+  // shape-along-length curve (barrel/waist/flare/ogive/scurve) + twist. This is
+  // exactly what replicad's `extrusionProfile` CANNOT do: its 'linear'/'s-curve'
+  // scale monotonically from 1 → endFactor at the END, so a barrel (fat MIDDLE,
+  // equal ends) came out end-swollen (g_barrel diverged ~10% vol/bbox vs MF).
+  // Reproduce the engine's `scaleAt(t)` (r_loft.ts is the source of truth) and
+  // loft a stack of per-t scaled+rotated sections — a true exact-kernel loft
+  // matching the Manifold gridPatch build.
+  const r_loft = (a: any, length?: number, divsArg?: number, twist?: number, bulge?: number, shapeArg?: string) => {
     const prof = asPts(Array.isArray(a) ? a : a.profile);
-    const L = (a && a.length !== undefined) ? a.length : (length ?? 6);
-    const tw = (a && a.twist !== undefined) ? a.twist : (twist ?? 0);
-    const bl = (a && a.bulge !== undefined) ? a.bulge : (bulge ?? 0);
-    const sk = sketchPoly(prof, 'XY');
-    const ep = bl ? { profile: 's-curve' as const, endFactor: 1 + bl } : undefined;
-    return wrap(sk.extrude(Math.max(0.01, L), { twistAngle: tw || 0, ...(ep ? { extrusionProfile: ep } : {}) }));
+    const L = Math.max(0.01, (a && a.length !== undefined) ? a.length : (length ?? 6));
+    const tw = ((a && a.twist !== undefined) ? a.twist : (twist ?? 0)) as number;
+    const amp = Number((a && a.bulge !== undefined) ? a.bulge : (bulge ?? 0)) || 0;
+    const shape = (a && a.shape !== undefined) ? a.shape : (shapeArg ?? 'barrel');
+    const twRad = (Number(tw) || 0) * Math.PI / 180;
+    // No shape scaling AND no twist → a straight prism (fast, exact).
+    if (amp === 0 && !twRad) return extrudeXY(prof, L, 0, 0);
+    const smoothstep = (x: number) => x * x * (3 - 2 * x);
+    const scaleAt = (t: number): number => {
+      let s: number;
+      switch (shape) {
+        case 'waist':  s = 1 - amp * Math.sin(Math.PI * t); break;
+        case 'flare':  s = 1 + amp * t; break;
+        case 'ogive':  s = 1 - amp * t * t; break;
+        case 'scurve': s = 1 + amp * (smoothstep(t) - 0.5); break;
+        case 'barrel':
+        default:       s = 1 + amp * Math.sin(Math.PI * t); break;
+      }
+      return Math.max(0.02, s);
+    };
+    const N = Math.max(4, Math.min(96, Math.round((a && a.divs) || divsArg || 24)));
+    const sections: any[] = [];
+    for (let i = 0; i <= N; i++) {
+      const t = i / N;
+      const s = scaleAt(t), th = twRad * t, ct = Math.cos(th), st = Math.sin(th);
+      const scaled = prof.map(([x, y]) => [s * (x * ct - y * st), s * (x * st + y * ct)] as [number, number]);
+      sections.push(sketchPoly(scaled, 'XY', t * L));
+    }
+    // ruled = flat facets between rings (matches the welded gridPatch quads).
+    return wrap(sections[0].loftWith(sections.slice(1), { ruled: true }));
   };
   const r_cuboid = (w: number, h: number, d: number) => wrap(makeBaseBox(Math.max(0.01, w), Math.max(0.01, h), Math.max(0.01, d)));
 
@@ -404,6 +539,17 @@ export async function brepFromSource(
     return sweepOcct(a, section, closedPath === true);
   };
 
+  // warpSpline — bend a straight part onto a survey trajectory (deviated wells).
+  // The exact-kernel warp (deform a B-rep solid along an arbitrary 3D spline) is a
+  // genuine native-OCCT capability we do NOT implement here — it stays the curved/
+  // warp BREP hard-limit (#3). So warp is a NO-OP passthrough: a deviated assembly
+  // (w_sample_4, w_deviated_*) builds in its STRAIGHT form instead of throwing
+  // "warpSpline is not defined" and poisoning the whole bake. BREP geometry then
+  // DIVERGES from the Manifold oracle's warped shape for deviated wells (correctly
+  // flagged as a parity divergence — warp remains classified, not silently faked),
+  // but the straight solid bakes and meshes cleanly.
+  const warpSpline = (s: any) => s;
+
   // transforms — replicad/OCCT transforms DELETE their input shape's handle
   // after producing the moved copy (replicad Shape.translate/rotate call
   // this.delete()). A `repeat` that reuses ONE shape across N transforms
@@ -419,7 +565,49 @@ export async function brepFromSource(
     if (v[2]) sh = sh.rotate(v[2], [0, 0, 0], [0, 0, 1]);
     return wrap(sh);
   };
-  const place = (...args: any[]) => { const last = args[args.length - 1]; return last; };
+  // place(a, b, …) or place([a, b, …]) — topological compose. Manifold's place
+  // UNIONS overlapping bodies + groups disjoint ones; for BREP we keep the parts
+  // separate (flattened) and let any downstream boolean (combineBool) or the
+  // final collectShapes → makeCompound do the grouping — so a reused part isn't
+  // prematurely fused. Returns a wrapped solid (single) or an array of wrapped
+  // solids (multi), both of which collectShapes/combineBool flatten correctly.
+  const place = (...args: any[]) => {
+    const arr: any[] = []; collectShapes(args, arr);
+    if (arr.length === 0) return undefined;
+    if (arr.length === 1) return wrap(arr[0]);
+    return arr.map(wrap);
+  };
+
+  // sectionCut — subtract an AUTHORED angular WEDGE (pie slice spanning `az`
+  // degrees at bearing `offset`) from a solid, the exact-kernel twin of
+  // manifold-helpers.sectionCut. Used INSIDE part bodies (bw_casing/bw_cement/…)
+  // to bake a longitudinal half-section into the geometry (az 180 = half-pipe),
+  // NOT the render-time cutaway. Build the same pie-slice polygon MF builds,
+  // extrude it past both z-ends, and `.cut()` it — so BREP reproduces the same
+  // sectioned solid the Manifold oracle does (previously "sectionCut is not
+  // defined" failed 13 parts + every well assembly depending on bw_casing).
+  const sectionCut = (solid: any, opts?: { az?: number; offset?: number }) => {
+    const s = unwrap(solid);
+    if (!s || typeof s.cut !== 'function' || !s.boundingBox) return solid;
+    const az = Number(opts?.az ?? 180);
+    const offset = Number(opts?.offset ?? 0);
+    if (!(az > 0) || az >= 360) return solid; // az≤0 → no cut; ≥360 → full removal (leave solid; empty is fragile in OCCT)
+    const bb = s.boundingBox.bounds; // [[xmin,ymin,zmin],[xmax,ymax,zmax]]
+    const MARGIN = 20;
+    const R = Math.max(Math.abs(bb[0][0]), Math.abs(bb[1][0]), Math.abs(bb[0][1]), Math.abs(bb[1][1])) + MARGIN;
+    const zlen = (bb[1][2] - bb[0][2]) + 2 * MARGIN;
+    const z0 = bb[0][2] - MARGIN;
+    const seg = Math.max(2, Math.ceil(az / 5));
+    const pts: [number, number][] = [[0, 0]];
+    for (let i = 0; i <= seg; i++) {
+      const a = ((offset + (az * i) / seg) * Math.PI) / 180;
+      pts.push([R * Math.cos(a), R * Math.sin(a)]);
+    }
+    const wedge = sketchPoly(pts, 'XY').extrude(Math.max(0.01, zlen)).translate([0, 0, z0]);
+    const cutRes = s.cut(wedge);
+    safeDelete(wedge);   // private throwaway — free the bbox-spanning wedge now (16 of these in a well)
+    return wrap(cutRes);
+  };
   // Stack-ref offset (graded-delta z mate): stash the delta on the underlying
   // OCCT shape so stack() can read it (mirrors Manifold's `_stackRef`).
   const stackRefMap = new WeakMap<object, number>();
@@ -491,14 +679,16 @@ export async function brepFromSource(
   // all built before any runs).
   const depFns: Record<string, (args?: any) => any> = {};
   const NAMES = [
-    'p', 'sketch', 'r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid', 'r_sweep', 'resampleSpline',
-    'mv', 'rot', 'place', 'withStackRef', 'stack', 'list', 'group', 'cos', 'sin', 'tan', 'tau', 'PI',
-    'sqrt', 'abs', 'min', 'max', 'pow', 'floor', 'round',
+    'p', 'sketch', 'r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid', 'r_sweep',
+    'resampleSpline', 'resolveProfile', 'sectionCut', 'warpSpline',
+    'mv', 'rot', 'place', 'withStackRef', 'stack', 'list', 'group',
+    ...MATH_NAMES,
   ];
   const baseVals = (p: any) => [
-    p, sketch, r_revolve, r_weld_extrude, r_loft, r_extrude, r_cuboid, r_sweep, resampleSpline,
-    mv, rot, place, withStackRef, stackOcct, compoundOf, compoundOf, Math.cos, Math.sin, Math.tan, 2 * Math.PI, Math.PI,
-    Math.sqrt, Math.abs, Math.min, Math.max, Math.pow, Math.floor, Math.round,
+    p, sketch, r_revolve, r_weld_extrude, r_loft, r_extrude, r_cuboid, r_sweep,
+    resampleSpline, resolveProfile, sectionCut, warpSpline,
+    mv, rot, place, withStackRef, stackOcct, compoundOf, compoundOf,
+    ...MATH_VALUES,
   ];
   function bodyOf(src: string): string | null {
     const mm = src.match(/export\s+function\s+\w+\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
@@ -528,15 +718,29 @@ export async function brepFromSource(
     const dd = defaultsOf(depSrc[nm]);
     depFns[nm] = (args?: any) => {
       const merged = (args && typeof args === 'object' && !Array.isArray(args)) ? { ...dd, ...args } : args;
+      const mark = tracked.length;
       const s = runBody(depSrc[nm], merged ?? {});
-      return s ? wrap(s) : s;
+      const result = s ? wrap(s) : s;
+      // Reclaim every intermediate this sub-part built (revolves, bores, cut
+      // wedges, mv copies) — only `result` escapes, so the rest are provably
+      // dead. Bounds the live-shape set to O(finished parts) so a large well's
+      // working set stays flat instead of growing with every component.
+      const kept: any[] = []; collectShapes(result, kept);
+      sweepSince(mark, kept);
+      return result;
     };
   }
 
   const t0 = Date.now();
   try {
+    const mark = tracked.length;
     const solid = runBody(source, paramValues);
     if (!solid) return null;
+    // Free the top-level build's dead intermediates (the pre-mv per-part solids)
+    // before the final tessellation, so meshing the composed compound has the
+    // whole heap to itself. `solid` is the only survivor kept.
+    const kept: any[] = []; collectShapes(solid, kept);
+    sweepSince(mark, kept);
     return meshBrepSolid(solid, opts, t0);
   } catch (e: any) {
     const raw = e?.message ?? e;
