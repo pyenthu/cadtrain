@@ -22,11 +22,21 @@ const cut = {
 };
 
 describe('brep-adapter', () => {
-  it('builds an indexed BufferGeometry with OCCT normals for a solid', () => {
+  it('builds a NON-INDEXED BufferGeometry with crease-aware normals for a solid (E5)', () => {
+    // OCCT normals are NO LONGER passed through — the adapter recomputes
+    // crease-aware corner normals so a revolve shades smooth at parity with
+    // MF/TF (see brep-adapter header). Output is non-indexed (creases split).
     const g = brepGeometryFromResponse(solid);
     expect(g.getAttribute('position').count).toBe(3);
-    expect(g.index?.count).toBe(3);
-    expect(Array.from(g.getAttribute('normal').array)).toEqual(solid.normals);
+    expect(g.index).toBeNull(); // non-indexed
+    // The single triangle lies in z=0 with CCW winding → face normal +z; the
+    // crease-aware pass returns that unit normal on every corner.
+    const n = Array.from(g.getAttribute('normal').array as Float32Array);
+    for (let c = 0; c < 3; c++) {
+      expect(n[c * 3]).toBeCloseTo(0, 5);
+      expect(n[c * 3 + 1]).toBeCloseTo(0, 5);
+      expect(Math.abs(n[c * 3 + 2])).toBeCloseTo(1, 5);
+    }
     expect(g.getAttribute('color')).toBeUndefined();
   });
 
