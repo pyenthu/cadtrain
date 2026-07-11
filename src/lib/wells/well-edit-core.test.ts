@@ -296,3 +296,135 @@ describe('WellEditCore — onChange invocation count', () => {
     expect(onChange).toHaveBeenCalledTimes(3);
   });
 });
+
+describe('WellEditCore — session-batched undo (beginEdit / endEdit)', () => {
+  it('coalesces a burst of edits into ONE undo entry', () => {
+    const c = core();
+    c.beginEdit();
+    c.updateString(0, { od: 21 });
+    c.updateString(0, { od: 22 });
+    c.updateString(0, { od: 23 }); // three keystrokes, one field
+    c.endEdit();
+
+    expect(c.doc.ch![0].od).toBe(23);
+    expect(c.undoDepth).toBe(1);   // ONE history entry, not three
+
+    c.undo();
+    expect(c.doc.ch![0].od).toBe(20); // straight back to the pre-session value
+    expect(c.canUndo).toBe(false);
+  });
+
+  it('still fires onChange for every edit in the session (live updates)', () => {
+    const onChange = vi.fn();
+    const c = core(onChange);
+    c.session(() => {
+      c.updateString(0, { od: 21 });
+      c.updateString(0, { od: 22 });
+    });
+    expect(onChange).toHaveBeenCalledTimes(2); // reactive per edit …
+    expect(c.undoDepth).toBe(1);               // … one undo step
+  });
+
+  it('redo re-applies the whole coalesced session in one step', () => {
+    const c = core();
+    c.session(() => {
+      c.updateString(0, { od: 21 });
+      c.updateString(0, { od: 22 });
+    });
+    c.undo();
+    expect(c.doc.ch![0].od).toBe(20);
+    c.redo();
+    expect(c.doc.ch![0].od).toBe(22); // final session value restored at once
+  });
+
+  it('a fresh session after a prior one opens a NEW undo entry', () => {
+    const c = core();
+    c.session(() => { c.updateString(0, { od: 21 }); c.updateString(0, { od: 22 }); });
+    c.session(() => { c.updateString(0, { od: 30 }); c.updateString(0, { od: 31 }); });
+    expect(c.undoDepth).toBe(2);
+    c.undo(); expect(c.doc.ch![0].od).toBe(22); // back to end of session 1
+    c.undo(); expect(c.doc.ch![0].od).toBe(20); // back to before session 1
+  });
+
+  it('an edit OUTSIDE a session is still its own undo entry', () => {
+    const c = core();
+    c.updateString(0, { od: 21 });                 // solo edit → entry 1
+    c.session(() => { c.updateString(0, { od: 30 }); c.updateString(0, { od: 31 }); }); // entry 2
+    expect(c.undoDepth).toBe(2);
+  });
+
+  it('nested begin/endEdit collapse to the OUTERMOST session', () => {
+    const c = core();
+    c.beginEdit();
+    c.updateString(0, { od: 21 });
+    c.beginEdit();                 // nested — no new entry
+    c.updateString(0, { od: 22 });
+    c.endEdit();                   // inner close does not end coalescing
+    c.updateString(0, { od: 23 });
+    expect(c.inSession).toBe(true);
+    c.endEdit();                   // outer close ends the session
+    expect(c.inSession).toBe(false);
+    expect(c.undoDepth).toBe(1);
+    c.undo();
+    expect(c.doc.ch![0].od).toBe(20);
+  });
+
+  it('an empty session (no mutations) records no history', () => {
+    const c = core();
+    c.session(() => { /* nothing */ });
+    expect(c.undoDepth).toBe(0);
+    expect(c.canUndo).toBe(false);
+  });
+
+  it('doc IDENTITY is preserved across a coalesced session + undo', () => {
+    const c = core();
+    const ref = c.doc;
+    c.session(() => { c.addString(); c.updateString(2, { od: 7 }); });
+    c.undo();
+    expect(c.doc).toBe(ref);
+  });
+
+  it('unbalanced endEdit() is a harmless no-op', () => {
+    const c = core();
+    c.endEdit();                   // no open session
+    expect(c.inSession).toBe(false);
+    c.updateString(0, { od: 21 }); // behaves as a normal solo edit
+    expect(c.undoDepth).toBe(1);
+  });
+
+  it('session() closes the session even when the body throws', () => {
+    const c = core();
+    expect(() => c.session(() => {
+      c.updateString(0, { od: 21 });
+      throw new Error('boom');
+    })).toThrow('boom');
+    expect(c.inSession).toBe(false); // not left open
+    expect(c.undoDepth).toBe(1);     // the pre-throw edit is still captured (once)
+    c.undo();
+    expect(c.doc.ch![0].od).toBe(20);
+  });
+
+  it('undo mid-session force-closes it so the next edit starts fresh', () => {
+    const c = core();
+    c.beginEdit();
+    c.updateString(0, { od: 21 });
+    c.undo();                      // closes the session, restores od:20
+    expect(c.inSession).toBe(false);
+    expect(c.doc.ch![0].od).toBe(20);
+    c.updateString(0, { od: 40 }); // a new, independent undo entry
+    expect(c.undoDepth).toBe(1);
+    c.undo();
+    expect(c.doc.ch![0].od).toBe(20);
+  });
+
+  it('a session mixing survey + non-survey edits still signals survey:true once', () => {
+    const seen: WellChangeInfo[] = [];
+    const c = core((i) => seen.push(i));
+    c.session(() => {
+      c.updateString(0, { od: 21 });   // survey:false
+      c.updateStation(0, { dev: 15 }); // survey:true
+    });
+    expect(seen.map((i) => i.survey)).toEqual([false, true]);
+    expect(c.undoDepth).toBe(1); // but one undo entry for the whole session
+  });
+});
