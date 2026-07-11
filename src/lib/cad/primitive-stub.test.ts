@@ -11,7 +11,7 @@ import {
 // literal then evals it. A generated stub that throws here is exactly the 400
 // ("source missing valid meta") the user hit. So "extractMetaFromSource doesn't
 // throw + returns the params" is the precise regression assertion.
-import { extractMetaFromSource } from '../server/primitives-meta';
+import { extractMetaFromSource, evalMetaLiteral } from '../server/primitives-meta';
 
 /** Assert a generated source passes the save endpoint's meta validation and
  *  return the parsed params for further checks. */
@@ -91,5 +91,66 @@ describe('primitive-stub generators produce save-valid source', () => {
     // a bare comma list like `default: 0,4,` would be the bug
     expect(entry).not.toMatch(/default:\s*-?\d+\s*,\s*-?\d+\s*[,}]/);
     expect(entry).toContain('[[0,4]');
+  });
+});
+
+// metaLiteralRange (via evalMetaLiteral / extractMetaFromSource) walks braces to
+// slice the meta object. It MUST ignore braces inside string literals, or a doc
+// string containing a stray brace mis-slices meta → the part silently bakes to an
+// EMPTY solid (the bw_pup_perf incident, 2026-07-10). These cases lock in the
+// string-literal-aware brace counter.
+describe('metaLiteralRange is string-literal aware', () => {
+  it('REGRESSION: a lone } in a doc string does not truncate meta', () => {
+    // Old brace counter: the lone `}` inside `drawingMd` drops depth to 0 and
+    // early-closes meta mid-string → transpile throws / params lost.
+    const src = `
+export const meta = {
+  id: 'esc_note', name: 'Esc Note',
+  params: { length: { label: 'length', default: 4, unit: 'in' }, od: { default: 3.5 } },
+  drawingMd: 'Author note: close the block with a } and set params: {} inline.',
+};
+export function esc_note(length, od) { return null; }
+`;
+    const params = validate(src);
+    expect(Object.keys(params)).toEqual(['length', 'od']);
+    expect(params.length.default).toBe(4);
+    // Full round-trip: the whole doc string survived, so the range was correct.
+    const meta = evalMetaLiteral(src);
+    expect(meta.drawingMd).toBe('Author note: close the block with a } and set params: {} inline.');
+  });
+
+  it('an escaped quote inside a string keeps the string open across a brace', () => {
+    // Without backslash-escape handling, `\'` would be read as the closing
+    // quote, exposing the following `}` as a real (spurious) brace.
+    const src = `
+export const meta = {
+  id: 'esc_q', name: 'Esc Q',
+  params: { w: { default: 1 } },
+  note: 'escaped quote \\' then a lone } brace and a {pair}',
+};
+export function esc_q(w) { return null; }
+`;
+    const params = validate(src);
+    expect(Object.keys(params)).toEqual(['w']);
+    const meta = evalMetaLiteral(src);
+    expect(meta.note).toBe("escaped quote ' then a lone } brace and a {pair}");
+  });
+
+  it('a template literal with ${...}-like text and braces is skipped', () => {
+    // Backtick string carrying interpolation-LIKE text (escaped, so it stays
+    // literal and evals cleanly) plus balanced + lone braces.
+    const src = `
+export const meta = {
+  id: 'tpl', name: 'Tpl',
+  params: { seg: { default: 96 } },
+  drawingMd: \`Interp like \\\${count} and JSON { "a": 1 } and a lone } too\`,
+};
+export function tpl(seg) { return null; }
+`;
+    const params = validate(src);
+    expect(Object.keys(params)).toEqual(['seg']);
+    expect(params.seg.default).toBe(96);
+    const meta = evalMetaLiteral(src);
+    expect(meta.drawingMd).toBe('Interp like ${count} and JSON { "a": 1 } and a lone } too');
   });
 });
