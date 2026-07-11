@@ -66,6 +66,14 @@ export class WellEditCore {
   #redo: Wson[] = [];
   #onChange?: (info: WellChangeInfo) => void;
 
+  /** Open edit-session nesting depth. > 0 ⇒ mutations coalesce into ONE undo
+   *  entry (SVTC's beginEditSession / endEditSession — a burst of keystrokes in
+   *  one focused field is a single undo step, not one per character). */
+  #sessionDepth = 0;
+  /** True once THIS session has captured its pre-session snapshot, so every
+   *  later mutation in the same session mutates live but adds no history. */
+  #sessionSnapped = false;
+
   constructor(doc: Wson, onChange?: (info: WellChangeInfo) => void) {
     this.doc = doc;
     this.#onChange = onChange;
@@ -83,11 +91,28 @@ export class WellEditCore {
   }
 
   /** Push the CURRENT doc onto the undo stack + clear redo (a fresh edit branches
-   *  history). Call BEFORE applying a mutation. */
+   *  history). Call BEFORE applying a mutation.
+   *
+   *  Session batching: inside an open edit session only the FIRST mutation
+   *  snapshots (capturing the pre-session doc); subsequent mutations skip, so the
+   *  whole session collapses to one undo step. The snapshot still clones the doc
+   *  BEFORE the mutation, and since the first call runs before any session edit,
+   *  it captures the true pre-session state. */
   #snapshot(): void {
+    if (this.#sessionDepth > 0) {
+      if (this.#sessionSnapped) return; // already captured this session — coalesce
+      this.#sessionSnapped = true;
+    }
     this.#undo.push(clone(this.doc));
     if (this.#undo.length > CAP) this.#undo.shift();
     this.#redo.length = 0;
+  }
+
+  /** Force-close any open session + drop its snapped flag. History moves (undo /
+   *  redo / reset) end the current session so a following edit starts fresh. */
+  #endSessionSilently(): void {
+    this.#sessionDepth = 0;
+    this.#sessionSnapped = false;
   }
 
   #emit(cause: WellChangeInfo['cause'], survey: boolean): void {
@@ -177,11 +202,43 @@ export class WellEditCore {
   removeStation(index: number): boolean { return this.removeElement('profile', index); }
   updateStation(index: number, patch: Partial<SurveyStation>): boolean { return this.updateElement('profile', index, patch as Record<string, unknown>); }
 
+  // ── session batching (SVTC beginEditSession / endEditSession) ────────────────
+
+  /** True while an edit session is open — mutations coalesce to one undo entry. */
+  get inSession(): boolean { return this.#sessionDepth > 0; }
+
+  /** Open an edit session: every mutation until the matching `endEdit()` shares
+   *  ONE undo entry (a text field's keystroke burst → a single undo). Nestable —
+   *  only the OUTERMOST begin/end pair bounds the session, so composite editors
+   *  can wrap sub-edits freely. */
+  beginEdit(): void {
+    if (this.#sessionDepth === 0) this.#sessionSnapped = false;
+    this.#sessionDepth++;
+  }
+
+  /** Close the current edit session (balanced with `beginEdit()`; extra calls are
+   *  ignored). The outermost close ends coalescing, so the next mutation opens a
+   *  fresh undo entry. */
+  endEdit(): void {
+    if (this.#sessionDepth === 0) return;
+    this.#sessionDepth--;
+    if (this.#sessionDepth === 0) this.#sessionSnapped = false;
+  }
+
+  /** Run `fn` inside a `beginEdit()`/`endEdit()` session — all its mutations
+   *  collapse to one undo step. The session closes even if `fn` throws. */
+  session<T>(fn: () => T): T {
+    this.beginEdit();
+    try { return fn(); }
+    finally { this.endEdit(); }
+  }
+
   // ── history ──────────────────────────────────────────────────────────────────
 
   /** Undo the last mutation. Returns false (no change) when the undo stack is
    *  empty. Signals a survey change iff the restore altered the profile. */
   undo(): boolean {
+    this.#endSessionSilently();
     const snap = this.#undo.pop();
     if (snap === undefined) return false;
     const before = JSON.stringify(this.doc.profile ?? null);
@@ -195,6 +252,7 @@ export class WellEditCore {
 
   /** Redo the last undone mutation. Returns false when the redo stack is empty. */
   redo(): boolean {
+    this.#endSessionSilently();
     const snap = this.#redo.pop();
     if (snap === undefined) return false;
     const before = JSON.stringify(this.doc.profile ?? null);
@@ -209,6 +267,7 @@ export class WellEditCore {
   /** Load a different well (or clear to the current doc) + wipe history — a fresh
    *  doc has nothing to undo back into. Passing no `doc` just clears history. */
   reset(doc?: Wson): void {
+    this.#endSessionSilently();
     this.#undo.length = 0;
     this.#redo.length = 0;
     if (doc) this.#restoreInto(doc);
