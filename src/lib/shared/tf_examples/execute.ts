@@ -26,7 +26,7 @@
 import { tfRevolveProfile } from './revolve';
 import { tfExtrudeProfile } from './extrude';
 import { tfSweepSection } from './sweep-section';
-import { tfResult, tfMeshData, buildOpenCurve, capOpenEnds, runTfGuarded, weldMeshByPosition, applyTfCutaway, type TfDemoResult } from '../trueform-client';
+import { tfResult, tfMeshData, tfAnalyze, buildOpenCurve, capOpenEnds, runTfGuarded, weldMeshByPosition, applyTfCutaway, type TfDemoResult, type TfMeshData, type TfMeshStats, type TfCutPlane } from '../trueform-client';
 import type { TfRecipe, TfInstr, Vec3 } from '$lib/cad/graph-to-tf';
 import { warpMeshJS, subdivideAxialAdaptive, densifyProfileAxial } from '$lib/cad/warp-spline';
 
@@ -514,11 +514,74 @@ function buildInstr(t: any, instr: TfInstr): any {
 }
 
 /**
+ * CONCATENATE flat triangle-mesh data (a plain vertex/index APPEND — NO boolean).
+ * The separate-parts analogue of Manifold's `mergeBufferGeometries` in
+ * `render-helpers.ts:finalizeSeparateParts`: overlapping / coincident bodies
+ * survive untouched (a tubing string inside an open hole stays a string; 9
+ * concentric coincident-face casings never reach TF's mesh boolean, so they can't
+ * trap). Each part's face indices are offset by the running vertex base so the
+ * combined buffer indexes the appended vertices correctly. Pure — no WASM.
+ */
+function concatMeshData(datas: TfMeshData[]): TfMeshData {
+  if (datas.length === 1) return datas[0];
+  let nPts = 0, nFaces = 0;
+  for (const d of datas) { nPts += d.points.length; nFaces += d.faces.length; }
+  const points = new Float32Array(nPts);
+  const faces = new Int32Array(nFaces);
+  let po = 0, fo = 0, vBase = 0;
+  for (const d of datas) {
+    points.set(d.points, po);
+    for (let i = 0; i < d.faces.length; i++) faces[fo + i] = d.faces[i] + vBase;
+    po += d.points.length;
+    fo += d.faces.length;
+    vBase += d.points.length / 3;
+  }
+  return { points, faces };
+}
+
+/**
+ * Aggregate the per-PART topology verdicts into one honest whole-assembly stat,
+ * WITHOUT ever building (or booleaning) a combined handle. Each part was already
+ * built cleanly, so `tfAnalyze(tf, part)` is safe; summing avoids allocating a
+ * coincident-face concat handle just to analyse it. closed/manifold = AND across
+ * parts; χ / tris / verts / boundary loops / volume = SUM (a disjoint union's χ
+ * is the sum of its bodies'). Volume is only meaningful when every part closed.
+ */
+function aggregateStats(tf: any, meshes: any[]): TfMeshStats {
+  let tris = 0, verts = 0, euler = 0, boundaryLoops = 0, signedVolume = 0, volume = 0;
+  let closed = true, manifold = true, allClosed = true;
+  for (const m of meshes) {
+    const s = tfAnalyze(tf, m);
+    tris += s.tris; verts += s.verts; euler += s.euler;
+    boundaryLoops += Math.max(0, s.boundaryLoops);
+    closed = closed && s.closed;
+    manifold = manifold && s.manifold;
+    if (s.closed && Number.isFinite(s.volume)) { signedVolume += s.signedVolume; volume += s.volume; }
+    else allClosed = false;
+  }
+  return {
+    tris, verts, closed, manifold, euler, boundaryLoops,
+    signedVolume: allClosed ? signedVolume : NaN,
+    volume: allClosed ? volume : NaN,
+  };
+}
+
+/**
  * Execute a `TfRecipe` against a live TrueForm kernel → a {@link TfDemoResult}
- * (mesh data + tf's topology verdict, cut when `opts.cutaway`). Builds each root
- * output instr, unions them into one solid, orients it outward
- * (`positivelyOriented`, try/catch like the demos), and finalises via
- * {@link tfResult} (the same cutaway + analyse back-end every demo uses).
+ * (mesh data + tf's topology verdict, cut when `opts.cutaway`). Builds each
+ * unconsumed ROOT output instr as its OWN body and — BY DEFAULT — keeps them
+ * SEPARATE: their render meshes are CONCATENATED (a flat vertex/index append, no
+ * `booleanUnion`), mirroring the Manifold `finalizeSeparateParts` path. This
+ * honours the no-compose rule (no union unless a graph explicitly asks) AND
+ * removes the `w_multi_string` trap (concentric coincident-face casings whose
+ * union aborts TF's mesh boolean at 192 segs — Manifold + BREP build the same
+ * union fine; only TF's boolean aborts). The historical union-fold happens ONLY
+ * when a single root output exists (byte-identical to before — and g_dp_joint /
+ * g_dp_stand mated stacks are a single `{op:'union',mated}` instr, so their
+ * intentional end-to-end WELD still runs inside buildInstr) or when the recipe
+ * opts in via `recipe.compose`. Each body is oriented outward
+ * (`positivelyOriented`, try/catch like the demos) and finalised via
+ * {@link tfResult} (fold path) / {@link applyTfCutaway} (separate path).
  *
  * `tf` is the initialised module, `t` the same handle cast to any (the demos
  * pass both) — this driver never calls `ensureTf` so it stays testable with a
@@ -546,53 +609,90 @@ export function executeTfRecipe(
       try { return t.positivelyOriented(m); } catch { return m; }
     });
 
+    // SEPARATE-by-default: the recipe's unconsumed ROOT outputs are DISTINCT
+    // bodies, so we do NOT booleanUnion-fold them (see the doc block above — no
+    // compose, and no coincident-face w_multi_string trap). The fold is kept ONLY
+    // when there's a single root (byte-identical to the historical path, incl. the
+    // g_dp_joint / g_dp_stand mated stack, which is ONE `{op:'union',mated}` instr
+    // whose end-to-end weld runs inside buildInstr) or the recipe opts in via
+    // `compose`. An explicit `.add()` (→ `{op:'booleanUnion'}`) or a grouping
+    // container (→ `{op:'union'}`) still folds INSIDE buildInstr regardless.
+    const separate = recipe.compose !== true && partMeshes.length > 1;
+
     // PER-PART meshes for the per-part-texture display (task #2/#3): extract each
-    // part's flat mesh data NOW — BEFORE the union below may consume the handles.
+    // part's flat mesh data NOW — BEFORE the fold below may consume the handles.
     // Built REGARDLESS of cutaway (BUG 2 fix): the per-part material (steel/etc.)
     // must show on the FULL view whether or not the cut toggle is on — the scene
     // renders `parts` on the full view and the merged grey/red section on the cut
     // view (per-part material ON the cut section is out of scope, v1). A SINGLE
     // output part with its own appearance (e.g. a `material` preset — bw_open_hole =
-    // one steel g_shaft) must still render per-part so its metalness/tint lands;
-    // `appearance.some(Boolean)` gates to appearance-bearing recipes, so parts with
-    // NO appearance stay on the merged single-mesh path (byte-identical).
+    // one steel g_shaft) must still render per-part so its metalness/tint lands.
+    // The SEPARATE path ALSO needs the per-part data (to concatenate the full
+    // render mesh), so extract it whenever appearance-bearing OR separate.
     const appearance = recipe.partAppearance;
     const wantParts = !!appearance && appearance.some(Boolean) && partMeshes.length >= 1;
-    const partData = wantParts ? partMeshes.map((m) => tfMeshData(m)) : null;
+    const partData = (wantParts || separate) ? partMeshes.map((m) => tfMeshData(m)) : null;
 
-    // PER-PART CUT meshes (v2 — per-part material on the CUTAWAY cross-section).
-    // When a cutaway is requested for an appearance-bearing recipe, cut EACH part
-    // on its OWN +x,+y quadrant box so the cut view can render a per-part list
-    // (outer skin in the part's material · revealed interior grey section) instead
-    // of one merged grey/red mesh. We cut a FRESH handle rebuilt from the extracted
-    // part data — NOT the original `partMeshes[i]` — so the per-part boolean never
-    // disturbs the handle the merged union below still consumes. Same world x=0/y=0
-    // planes as the merged section (applyTfCutaway self-guards → uncut on failure,
-    // which simply shows that part with no revealed section). BORE_EXT-style margin
-    // is inside applyTfCutaway; a part that doesn't cross the plane keeps its skin.
-    let cutParts: { data: TfMeshData; appearance?: any }[] | null = null;
-    if (wantParts && opts?.cutaway && partData) {
-      cutParts = partData.map((pd, i) => {
+    // PER-PART CUT meshes — cut EACH part on its OWN +x,+y quadrant box (same
+    // world x=0/y=0 planes for every part). Feeds BOTH the per-part-material cut
+    // display (`cutParts`, v2) AND — in the separate path — the concatenated cut
+    // `data`. We cut a FRESH handle rebuilt from the extracted part data (not the
+    // original `partMeshes[i]`), so a per-part boolean never disturbs a handle the
+    // fold path still consumes. applyTfCutaway self-guards → uncut + no planes on
+    // failure (that part shows with no revealed section); a part that doesn't
+    // cross the plane keeps its skin. Computed only when needed (cutaway + we have
+    // per-part data + something reads it).
+    let perPartCut: { data: TfMeshData; planes?: TfCutPlane[] }[] | null = null;
+    if (opts?.cutaway && partData && (wantParts || separate)) {
+      perPartCut = partData.map((pd) => {
         const fresh = t.mesh(pd.faces, pd.points);
-        const { mesh: cm } = applyTfCutaway(t, fresh);
-        return { data: tfMeshData(cm), appearance: appearance![i] };
+        const { mesh: cm, planes } = applyTfCutaway(t, fresh);
+        return { data: tfMeshData(cm), planes };
       });
     }
 
-    // Merged union — the single-mesh `data` + cutaway + stats (back-compat: the
-    // composition's unconsumed outputs, mirroring dp_joint's box+tube+pin weld).
-    let solid = partMeshes[0];
-    for (let i = 1; i < partMeshes.length; i++) {
-      solid = t.booleanUnion(solid, partMeshes[i]).mesh;
+    let merged: TfDemoResult;
+    if (!separate) {
+      // FOLD — single root output (or opt-in `compose`): union the roots into one
+      // solid (a no-op copy for a single part) + finalise via tfResult (the same
+      // cutaway + analyse back-end every demo uses). Mirrors dp_joint's welded box+
+      // tube+pin. Unchanged historical behaviour.
+      let solid = partMeshes[0];
+      for (let i = 1; i < partMeshes.length; i++) {
+        solid = t.booleanUnion(solid, partMeshes[i]).mesh;
+      }
+      // Enforce one consistent outward orientation (harmless if already positive).
+      try { solid = t.positivelyOriented(solid); } catch { /* keep the union as-is */ }
+      merged = tfResult(tf, t, solid, { cutaway: opts?.cutaway, cuttable: true });
+    } else {
+      // SEPARATE — concatenate the per-part render meshes (flat append, NO boolean).
+      // full-view mesh = concat of the uncut parts; cut-view `data` = concat of the
+      // per-part cuts. Stats are aggregated from the clean per-part verdicts (no
+      // coincident-face combined handle is ever built or booleaned).
+      const fullConcat = concatMeshData(partData!);
+      const stats = aggregateStats(tf, partMeshes);
+      const anyPlanes = opts?.cutaway ? perPartCut?.find((c) => c.planes)?.planes : undefined;
+      if (opts?.cutaway && perPartCut && anyPlanes) {
+        // A cutaway ran on ≥1 part → `data` is the CUT concat + `cutPlanes`, and
+        // `fullData` carries the UNCUT concat so the cross-section toggle is a pure
+        // view-switch with no re-bake (mirrors the fold path's tfResult {data,fullData}).
+        const cutConcat = concatMeshData(perPartCut.map((c) => c.data));
+        merged = { data: cutConcat, stats, cutPlanes: anyPlanes, fullData: fullConcat };
+      } else {
+        // No cutaway (or nothing crossed the plane) → `data` IS the full mesh.
+        merged = { data: fullConcat, stats };
+      }
     }
-    // Enforce one consistent outward orientation (harmless if already positive).
-    try { solid = t.positivelyOriented(solid); } catch { /* keep the union as-is */ }
-    const merged = tfResult(tf, t, solid, { cutaway: opts?.cutaway, cuttable: true });
-    if (partData) merged.parts = partData.map((data, i) => ({ data, appearance: appearance![i] }));
-    // Attach the per-part cut list ONLY when the merged cutaway actually produced
+
+    // Per-part APPEARANCE display, both paths: `parts` (full-view material) rides
+    // on the result so the full view always shows each part's material; `cutParts`
+    // (per-part cut material) is attached ONLY when the cutaway actually produced
     // the exposed planes — the render path gates its per-part-cut arm on the same
     // `cutPlanes`, so the two stay consistent (no cutParts without planes to shade).
-    if (cutParts && merged.cutPlanes) merged.cutParts = cutParts;
+    if (wantParts && partData) merged.parts = partData.map((data, i) => ({ data, appearance: appearance![i] }));
+    if (wantParts && perPartCut && merged.cutPlanes) {
+      merged.cutParts = perPartCut.map((c, i) => ({ data: c.data, appearance: appearance![i] }));
+    }
     return merged;
   });
 }

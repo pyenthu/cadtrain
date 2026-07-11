@@ -132,6 +132,18 @@ export interface TfRecipe {
    *  part). Drives the per-part-mesh TF render (each part its own textured mesh).
    *  Sparse: an entry is undefined when that output has no explicit appearance. */
   partAppearance?: (TfAppearance | undefined)[];
+  /** OPT-IN fold flag (Priority-2 seam, default off). By DEFAULT the executor
+   *  keeps the unconsumed ROOT outputs as SEPARATE bodies (no `booleanUnion`
+   *  fold — mirrors the Manifold `finalizeSeparateParts` path, and avoids the
+   *  coincident-face TF-boolean trap that aborts `w_multi_string`: 9 concentric
+   *  tubes whose casing-OD == cement-ID faces make TF's mesh boolean emit
+   *  non-manifold garbage and abort at 192 segs). Set `true` to RE-ENABLE the
+   *  old "fold every root into one solid" behaviour — the graph genuinely wants
+   *  its outputs welded into a single Manifold-style solid. Sourced from an
+   *  optional `compose` flag on the graph's ROOT container/list node (see
+   *  graphToTfInner). The UI toggle + a formal ContainerNode `compose` schema
+   *  field are the follow-up (no UI built here). */
+  compose?: boolean;
   /** Human-readable notes — approximations + unsupported nodes hit. */
   notes: string[];
 }
@@ -727,8 +739,15 @@ function lowerNode(
         notes.push(`call ${node.id}: composite '${src}' produced no output instrs — UNSUPPORTED`);
         return { op: 'UNSUPPORTED', nodeType: `call:${src}`, detail: 'composite empty' };
       }
-      // One output → splice it directly; several → union them (the sub-part's
-      // unconsumed outputs, mirroring executeTfRecipe's multi-root union).
+      // One output → splice it directly; several → wrap in a grouping `union`
+      // instr. A composite Call is a SINGLE node in the parent graph, so its
+      // multiple sub-outputs collapse to one instr here (buildInstr folds a
+      // `{op:'union'}` grouping node). NOTE: this differs from the parent's OWN
+      // unconsumed roots, which executeTfRecipe now keeps SEPARATE by default
+      // (no fold) — see TfRecipe.compose. Splicing a multi-body composite as
+      // separate parent roots would need lifting sub-instrs into the parent's
+      // output list; deferred (composite-of-composite is rare) — the seam is the
+      // recipe-level `compose` flag.
       return subInstrs.length === 1 ? subInstrs[0]! : { op: 'union', children: subInstrs };
     }
 
@@ -994,6 +1013,12 @@ function graphToTfInner(
     outputs = [graph.root];
   }
 
+  // OPT-IN fold: honour a `compose` flag on the ROOT container/list node → the
+  // executor RE-UNIONS the unconsumed roots into one solid (default off = keep
+  // them separate; see TfRecipe.compose + executeTfRecipe). Only the top-level
+  // container carries it; a nested union/group still folds inside buildInstr.
+  const compose = !!(root && (root as any).compose === true);
+
   // Effective appearance (wired material ▸ per-part override) → TfAppearance, per
   // output part. The output may be a transform/warp WRAPPER around the Call that
   // carries the material — walk DOWN through wrappers, first non-empty wins (so a
@@ -1033,7 +1058,7 @@ function graphToTfInner(
       partAppearance.push(apprOf(id));
     }
   }
-  return { instrs, notes, ...(partAppearance.some(Boolean) ? { partAppearance } : {}) };
+  return { instrs, notes, ...(partAppearance.some(Boolean) ? { partAppearance } : {}), ...(compose ? { compose: true } : {}) };
 }
 
 // ─── pretty-printer ──────────────────────────────────────────────────────────
