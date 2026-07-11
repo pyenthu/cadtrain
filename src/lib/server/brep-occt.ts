@@ -245,6 +245,7 @@ export async function brepFromSource(
   const replicad: any = await import('replicad');
   const { compileSketch } = await import('$lib/cad/sketch');
   const { resampleSpline } = await import('$lib/cad/spline-resample');
+  const { splineSampler, spline3DFrames } = await import('$lib/cad/warp-spline');
   const { resolveProfile } = await import('$lib/shared/profile-presets');
   const {
     draw, makeBaseBox, makeCompound, drawPolysides,
@@ -539,16 +540,132 @@ export async function brepFromSource(
     return sweepOcct(a, section, closedPath === true);
   };
 
-  // warpSpline — bend a straight part onto a survey trajectory (deviated wells).
-  // The exact-kernel warp (deform a B-rep solid along an arbitrary 3D spline) is a
-  // genuine native-OCCT capability we do NOT implement here — it stays the curved/
-  // warp BREP hard-limit (#3). So warp is a NO-OP passthrough: a deviated assembly
-  // (w_sample_4, w_deviated_*) builds in its STRAIGHT form instead of throwing
-  // "warpSpline is not defined" and poisoning the whole bake. BREP geometry then
-  // DIVERGES from the Manifold oracle's warped shape for deviated wells (correctly
-  // flagged as a parity divergence — warp remains classified, not silently faked),
-  // but the straight solid bakes and meshes cleanly.
-  const warpSpline = (s: any) => s;
+  // warpSpline — BREP-native deviated-well warp (E4: warp via spline sweep). Bend
+  // a straight element onto a survey trajectory by RE-SWEEPING its cross-section
+  // along the spline, since Manifold.warp (per-vertex displacement) has no
+  // exact-kernel twin. A straight part is a prism — a constant cross-section
+  // extruded along Z; warping is that SAME section swept along the curved survey
+  // path with BRepOffsetAPI_MakePipeShell (replicad.genericSweep — the sweepOcct
+  // machinery, polyline spine + forceProfileSpineOthogonality torsion-min transport).
+  //
+  // The section is EXTRACTED from the input solid's start cap (outer wire = solid
+  // boundary; inner wires = bores), so whatever was baked in rides along: a
+  // section-cut casing arrives as a HALF-annulus and sweeps to a curved
+  // half-section DIRECTLY — the 180° cut lives in the profile BEFORE the sweep,
+  // which is the correct/robust way to section a deviated part. (Cutting the
+  // CURVED solid with the axis-aligned sectionCut wedge is geometrically WRONG:
+  // the z-extruded wedge does not follow the trajectory, so it over-removes
+  // downhole where the part deviated off-axis — measured ~67% removed, not 50%.)
+  //
+  // The z→arc-length map + frame convention mirror warpManifoldAlongSpline so a
+  // STRAIGHT survey reproduces the un-warped solid: a section point's local (x,y)
+  // becomes an offset on the spline frame at arc-length s = z − (originZ ?? z0)
+  // (planar: in-plane N + world-Y B; 3D: RMF via spline3DFrames). Any solid with
+  // no z-cap (unswept/odd) — or a sweep that throws — passes through unchanged so
+  // warp never poisons a bake (the pre-E4 straight-passthrough safety is kept).
+  const yRangeOf = (cp: number[][]): number => {
+    let a = Infinity, b = -Infinity;
+    for (const p of cp) { const y = Number(p[1]) || 0; if (y < a) a = y; if (y > b) b = y; }
+    return b - a;
+  };
+  // Sampler over the (already arc-length-resampled) survey path — the SAME planar
+  // world-Y / 3D-RMF split warpManifoldAlongSpline uses, so BREP + Manifold agree
+  // on which way the section faces + how far along it sits.
+  const makeWarpSampler = (path: number[][]) => {
+    const is3D = yRangeOf(path) > 1e-6;
+    const fr = is3D ? spline3DFrames(path as any) : null;
+    const sp = is3D ? null : splineSampler(path.map((p) => [p[0], p[2]]) as any);
+    const total = fr ? fr.total : sp!.total;
+    const at = (s: number): { pos: number[]; N: number[]; B: number[] } => {
+      if (fr) { const r = fr.at(s); return { pos: r.pos as number[], N: r.N as number[], B: r.B as number[] }; }
+      const r = sp!.sampleAt(s); const t = r.tan as number[]; const nl = Math.hypot(t[2], t[0]) || 1;
+      return { pos: r.pos as number[], N: [t[2] / nl, 0, -t[0] / nl], B: [0, 1, 0] };
+    };
+    return { total, at };
+  };
+  // Extract the start-cap cross-section of a straight prism as 2D loops (outer +
+  // inner bores). Densely samples each cap wire via pointAt, then collapses
+  // collinear runs back to the polygon vertices → a lean faceted section.
+  // NOTE Face.outerWire() DELETES the face handle, so clone the face BEFORE
+  // reading its inner wires (else "This object has been deleted").
+  const extractCapSection = (u: any): { outer: [number, number][]; inner: [number, number][][]; z0: number; z1: number } | null => {
+    let bb: any; try { bb = u.boundingBox.bounds; } catch { return null; }
+    const z0 = bb[0][2], z1 = bb[1][2];
+    let cap: any = null, best = Infinity;
+    for (const f of u.faces) {
+      let nz = 0; try { nz = f.normalAt().z; } catch { continue; }
+      if (Math.abs(nz) < 0.99) continue;           // cap normal must be ∥ Z
+      let cz = 0; try { cz = f.center.z; } catch { continue; }
+      if (cz < best) { best = cz; cap = f; }        // top cap = min-z (Z-down)
+    }
+    if (!cap) return null;
+    const sampleLoop = (w: any): [number, number][] => {
+      let nEdge = 4; try { nEdge = w.edges.length; } catch { /* keep default */ }
+      const N = Math.max(48, nEdge * 6);
+      const raw: [number, number][] = [];
+      for (let i = 0; i < N; i++) { const v = w.pointAt(i / N); raw.push([v.x, v.y]); }
+      const dq: [number, number][] = [];
+      for (const p of raw) { const q = dq[dq.length - 1]; if (!q || Math.hypot(p[0] - q[0], p[1] - q[1]) > 1e-5) dq.push(p); }
+      const co: [number, number][] = [];
+      for (let i = 0; i < dq.length; i++) {
+        const a = dq[(i - 1 + dq.length) % dq.length], b = dq[i], c = dq[(i + 1) % dq.length];
+        if (Math.abs((b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])) > 1e-4) co.push(b);
+      }
+      return co.length >= 3 ? co : dq;
+    };
+    let outer: [number, number][]; const inner: [number, number][][] = [];
+    try {
+      const capC = cap.clone();
+      outer = sampleLoop(cap.outerWire());            // consumes `cap`
+      try { for (const iw of capC.innerWires()) inner.push(sampleLoop(iw)); } catch { /* no bores */ }
+    } catch { return null; }
+    if (outer.length < 3) return null;
+    return { outer, inner, z0, z1 };
+  };
+  const warpSpline = (solidArg: any, path: any, opts?: any): any => {
+    const u = unwrap(solidArg);
+    if (!u || typeof u.mesh !== 'function' || !Array.isArray(path) || path.length < 2) return solidArg;
+    const sec = extractCapSection(u);
+    if (!sec) return solidArg;                        // no section to sweep → leave straight
+    const S = makeWarpSampler(path.map((q: any) => [Number(q[0]) || 0, Number(q[1]) || 0, Number(q[2]) || 0]));
+    const zBase = (opts && opts.originZ !== undefined) ? Number(opts.originZ) : sec.z0;
+    const sStart = sec.z0 - zBase, sEnd = sec.z1 - zBase;
+    if (!(sEnd > sStart)) return solidArg;
+    // Spine sample count ≈ input path resolution over the covered arc (refine bumps
+    // it modestly). The polyline spine rides the SAME resampled points the Manifold
+    // warp bends along — identical fidelity, no BSpline-approximation risk (the
+    // documented MakePipeShell pathology).
+    const refine = Math.max(1, Math.min(8, Math.floor(opts?.refine ?? 1)));
+    const step = S.total / Math.max(1, path.length - 1);
+    const nSpine = Math.max(6, Math.min(200, Math.round(((sEnd - sStart) / step) * (refine > 1 ? 1.5 : 1))));
+    const spinePts: number[][] = [];
+    for (let i = 0; i <= nSpine; i++) spinePts.push(S.at(sStart + (sEnd - sStart) * (i / nSpine)).pos);
+    const f0 = S.at(sStart); const P0 = f0.pos, Nf = f0.N, Bf = f0.B;
+    const p3 = (a: number, b: number) => [
+      P0[0] + Nf[0] * a + Bf[0] * b, P0[1] + Nf[1] * a + Bf[1] * b, P0[2] + Nf[2] * a + Bf[2] * b,
+    ];
+    // Plant a 2D loop in the start frame at pos(sStart) and pipe it along the spine.
+    const sweepLoop = (loop: [number, number][]) => {
+      const se: any[] = [];
+      for (let i = 0; i < spinePts.length - 1; i++) se.push(makeLine(spinePts[i], spinePts[i + 1]));
+      const spineWire = assembleWire(se);
+      const ed: any[] = [];
+      for (let i = 0; i < loop.length; i++) {
+        ed.push(makeLine(p3(loop[i][0], loop[i][1]), p3(loop[(i + 1) % loop.length][0], loop[(i + 1) % loop.length][1])));
+      }
+      return genericSweep(assembleWire(ed), spineWire, { forceProfileSpineOthogonality: true });
+    };
+    try {
+      let result = sweepLoop(sec.outer);
+      // Bores: sweep each inner loop + subtract on the CURVED solid. The exact OCCT
+      // kernel subtracts coaxial curved sweeps cleanly (unlike the Manifold mesh
+      // boolean's coincident-tilted-cap slivers — memory r_sweep_normals_and_twist).
+      for (const inn of sec.inner) result = result.cut(sweepLoop(inn));
+      return wrap(result);
+    } catch {
+      return solidArg;                                // sweep failed → straight fallback, never poison
+    }
+  };
 
   // transforms — replicad/OCCT transforms DELETE their input shape's handle
   // after producing the moved copy (replicad Shape.translate/rotate call
