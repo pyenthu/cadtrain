@@ -134,16 +134,40 @@ export interface MeshOpts {
   tolerance?: number;
   angularTolerance?: number;
   cut?: boolean;        // half-section cutaway (remove the y<0 half)
+  colorOuter?: string;  // '#rrggbb' for the outer/original skin (cut arm); absent → legacy red
+  colorInner?: string;  // '#rrggbb' for the bore + newly-exposed cut faces; absent → legacy grey
+}
+
+/** Legacy cut-arm vertex colours — the historical BREP red (outer skin) / grey
+ *  (bore + cut cross-section) convention. Used verbatim when the request omits
+ *  the corresponding colour override, so an un-coloured cut stays byte-identical. */
+const LEGACY_CUT_OUTER: [number, number, number] = [0.8, 0.06, 0.06];
+const LEGACY_CUT_INNER: [number, number, number] = [0.45, 0.45, 0.45];
+
+/** '#rrggbb' (or bare 'rrggbb') → [r,g,b] floats in 0..1; `fallback` on a
+ *  missing/malformed string. Mirrors render-helpers `hexToRgb` so the BREP cut
+ *  arm honours the SAME per-part colours the Manifold cutVC path does. */
+function cutHexToRgb(hex: string | undefined, fallback: [number, number, number]): [number, number, number] {
+  const m = /^#?([0-9a-f]{6})$/i.exec((hex ?? '').trim());
+  if (!m) return fallback;
+  const v = m[1];
+  return [
+    parseInt(v.slice(0, 2), 16) / 255,
+    parseInt(v.slice(2, 4), 16) / 255,
+    parseInt(v.slice(4, 6), 16) / 255,
+  ];
 }
 
 /**
  * Tessellate an OCCT solid → BrepMesh, optionally with a HALF-SECTION CUTAWAY
- * coloured red (outer skin) / grey (bore + cut cross-section), mirroring the
- * Manifold cutVC convention (manifoldToCutVC). When cut, removes the y<0 half
- * with a box, then classifies each triangle red/grey by the SAME rule the
- * Manifold path uses (radial-inward normal = bore; on the y≈0 cut plane;
- * near-axis cap) and emits a NON-INDEXED coloured mesh. No cut → plain indexed
- * mesh + OCCT normals (the existing fast path).
+ * coloured by the part's `colorOuter` (outer skin) / `colorInner` (bore + cut
+ * cross-section), mirroring the Manifold cutVC convention (manifoldToCutVC).
+ * When cut, removes the y<0 half with a box, then classifies each triangle
+ * outer/inner by the SAME rule the Manifold path uses (radial-inward normal =
+ * bore; on the y≈0 cut plane; near-axis cap) and emits a NON-INDEXED coloured
+ * mesh. Each colour falls back to the legacy red/grey when its override is
+ * absent (#997). No cut → plain indexed mesh + OCCT normals (the existing fast
+ * path, unaffected by the colours).
  */
 async function meshBrepSolid(solid: any, opts: MeshOpts, t0: number): Promise<BrepMesh> {
   const replicad: any = await import('replicad');
@@ -181,6 +205,12 @@ async function meshBrepSolid(solid: any, opts: MeshOpts, t0: number): Promise<Br
   }
 
   // Cut path → NON-INDEXED + per-vertex colours (classification is per-tri).
+  // Outer/original faces take `colorOuter`, the bore + newly-exposed cut faces
+  // take `colorInner` (the SAME red↔grey roles as before, now the part's real
+  // colours). Each falls back to the legacy red/grey when its override is absent,
+  // so an un-coloured request is byte-identical to the pre-#997 behaviour.
+  const outerRgb = cutHexToRgb(opts.colorOuter, LEGACY_CUT_OUTER);
+  const innerRgb = cutHexToRgb(opts.colorInner, LEGACY_CUT_INNER);
   const nt = tris.length / 3;
   const outPos = new Array(nt * 9);
   const outCol = new Array(nt * 9);
@@ -205,7 +235,7 @@ async function meshBrepSolid(solid: any, opts: MeshOpts, t0: number): Promise<Br
     const nzNorm = Math.abs(nz / nLen);
     const maxR = Math.max(Math.sqrt(ax * ax + ay * ay), Math.sqrt(bx * bx + by * by), Math.sqrt(cxv * cxv + cyv * cyv));
     const isGrey = isBore || onCutY || onCutX || (nzNorm > 0.8 && maxR < maxOD / 2 + 0.05);
-    const r = isGrey ? 0.45 : 0.8, g = isGrey ? 0.45 : 0.06, bl = isGrey ? 0.45 : 0.06;
+    const [r, g, bl] = isGrey ? innerRgb : outerRgb;
     const o = i * 9;
     outPos[o] = ax; outPos[o + 1] = ay; outPos[o + 2] = az;
     outPos[o + 3] = bx; outPos[o + 4] = by; outPos[o + 5] = bz;

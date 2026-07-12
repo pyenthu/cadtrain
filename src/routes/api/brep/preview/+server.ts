@@ -15,11 +15,15 @@ export const POST = async ({ request, fetch }) => {
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
 
-  const { kind, profile, source, paramValues, tolerance, angularTolerance, cut } = body ?? {};
+  const { kind, profile, source, paramValues, tolerance, angularTolerance, cut, colorOuter, colorInner } = body ?? {};
   const opts = {
     tolerance: typeof tolerance === 'number' ? tolerance : undefined,
     angularTolerance: typeof angularTolerance === 'number' ? angularTolerance : undefined,
-    cut: cut === true,   // half-section cutaway (inner-grey / outer-red)
+    cut: cut === true,   // half-section cutaway (inner / outer, coloured below)
+    // The cut arm's outer/inner vertex colours = the part's real appearance
+    // (#997). Absent → brep-occt falls back to the legacy red/grey.
+    colorOuter: typeof colorOuter === 'string' ? colorOuter : undefined,
+    colorInner: typeof colorInner === 'string' ? colorInner : undefined,
   };
 
   // ISOLATION CONTRACT: the BREP path is OPTIONAL/experimental. It must NEVER
