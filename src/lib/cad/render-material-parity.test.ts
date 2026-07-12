@@ -36,7 +36,7 @@ import { compilePrimitiveScript } from '$lib/server/primitive-loader';
 import { analyzeParts, resolveDepColors } from '$lib/server/part-colors';
 import { runCompiledManifold } from './bake-worker-core';
 import { deserializeComponentResult } from './mesh-serial';
-import { graphToTf } from './graph-to-tf';
+import { graphToTf } from '$lib/engines/trueform/graph-to-tf';
 import type { Graph } from './composition-graph-types';
 import { brepResponseToGeo } from '$lib/engines/brep/brep-adapter';
 import { brepFromSource } from '$lib/engines/brep/brep-occt';

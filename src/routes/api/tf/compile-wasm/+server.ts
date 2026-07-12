@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { graphToTf } from '$lib/cad/graph-to-tf';
+import { graphToTf } from '$lib/engines/trueform/graph-to-tf';
 import { recipeToWasm, recipeToBytes, recipeOpCount, RECIPE_FMT } from '$lib/cad/tf-wat-emit';
 
 // POST /api/tf/compile-wasm — compile a part's composition GRAPH → a TrueForm

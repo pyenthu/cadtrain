@@ -32,7 +32,7 @@
  * TOOLCHAIN: pure-JS `wabt` (`wat2wasm`) — no Python, no native binaries (Rule 1).
  */
 
-import type { TfRecipe, TfInstr } from './graph-to-tf';
+import type { TfRecipe, TfInstr } from '$lib/engines/trueform/graph-to-tf';
 
 /** Recipe wire-format version carried in the module (recipe_fmt export). */
 export const RECIPE_FMT = 1;

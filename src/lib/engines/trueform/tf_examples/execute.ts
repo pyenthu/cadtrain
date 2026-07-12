@@ -27,7 +27,7 @@ import { tfRevolveProfile } from './revolve';
 import { tfExtrudeProfile } from './extrude';
 import { tfSweepSection } from './sweep-section';
 import { tfResult, tfMeshData, tfAnalyze, buildOpenCurve, capOpenEnds, runTfGuarded, weldMeshByPosition, applyTfCutaway, type TfDemoResult, type TfMeshData, type TfMeshStats, type TfCutPlane } from '../trueform-client';
-import type { TfRecipe, TfInstr, Vec3 } from '$lib/cad/graph-to-tf';
+import type { TfRecipe, TfInstr, Vec3 } from '$lib/engines/trueform/graph-to-tf';
 import { warpMeshJS, subdivideAxialAdaptive, densifyProfileAxial } from '$lib/cad/warp-spline';
 
 /** Flatten a `[[x,y,z]…]` path → the `[n*3]` Float32Array `buildOpenCurve` /

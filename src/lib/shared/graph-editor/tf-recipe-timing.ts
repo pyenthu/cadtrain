@@ -13,7 +13,7 @@
 // server resolve with the graph/params/bust key it was FOR; the recipe is
 // "pending" until that stamp matches the live graph, and the canvas holds its
 // mesh until then → one build, not two.
-import type { TfRecipe } from '$lib/cad/graph-to-tf';
+import type { TfRecipe } from '$lib/engines/trueform/graph-to-tf';
 
 /** Does any instr (or a nested boolean/transform/union child) stay UNSUPPORTED?
  *  Mirrors execute.ts's recipeHasUnsupported WITHOUT importing it (that would

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import type { TfRecipe } from '$lib/cad/graph-to-tf';
+import type { TfRecipe } from '$lib/engines/trueform/graph-to-tf';
 import { recipeHasUnsupported, tfServerKey, tfRecipePending } from './tf-recipe-timing';
 
 // A DIRECT-engine recipe (revolve/box/cyl → all supported). Real graphToTf output

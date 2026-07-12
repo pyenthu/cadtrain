@@ -20,7 +20,7 @@
   // graph → TrueForm recipe compiler (pure, no WASM). Lets the TF tab's "actual"
   // mode build the part NATIVELY in tf from its graph ops instead of importing
   // the baked Manifold mesh.
-  import { graphToTf } from '$lib/cad/graph-to-tf';
+  import { graphToTf } from '$lib/engines/trueform/graph-to-tf';
   import { recipeHasUnsupported as recipeHasUnsupportedLocal, tfServerKey, tfRecipePending as computeTfRecipePending } from './tf-recipe-timing';
 
   type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'tf' | 'mfserver';
@@ -173,7 +173,7 @@
   });
   // recipeHasUnsupportedLocal / tfServerKey / computeTfRecipePending are pure —
   // extracted to ./tf-recipe-timing.ts (unit-tested there).
-  let tfRecipeServer = $state<import('$lib/cad/graph-to-tf').TfRecipe | undefined>(undefined);
+  let tfRecipeServer = $state<import('$lib/engines/trueform/graph-to-tf').TfRecipe | undefined>(undefined);
   // The recipe the canvas uses: the server-resolved one when present (composites),
   // else the instant client one.
   let tfRecipe = $derived(tfRecipeServer ?? tfRecipeLocal);

@@ -120,7 +120,7 @@
      *  the part NATIVELY in TrueForm from this recipe (revolve/box/cyl/boolean/
      *  transform/warp ops). Absent or containing an unsupported node → the TF tab
      *  BLANKS with an error (no Manifold-mesh import — native-only, per user rule). */
-    tfRecipe?: import('$lib/cad/graph-to-tf').TfRecipe;
+    tfRecipe?: import('$lib/engines/trueform/graph-to-tf').TfRecipe;
     /** TF "actual" mode only: true while a COMPOSITE part's server recipe is
      *  still resolving (RightPane's /api/tf/compile round-trip). `tfRecipe` may
      *  transiently still hold the PREVIOUS resolved recipe (stale-but-supported),
@@ -160,7 +160,7 @@
   /** Collect the distinct UNSUPPORTED nodeTypes in a recipe (deep walk) — names
    *  the ops TrueForm can't build, for the native-only error message (the TF tab
    *  never imports a Manifold mesh — no native build ⇒ blank canvas + this reason). */
-  function unsupportedOpsOf(r: import('$lib/cad/graph-to-tf').TfRecipe | undefined): string[] {
+  function unsupportedOpsOf(r: import('$lib/engines/trueform/graph-to-tf').TfRecipe | undefined): string[] {
     const out = new Set<string>();
     const walk = (i: any) => {
       if (!i) return;
@@ -570,9 +570,9 @@
       // (no WASM) so the native-only error path is instant + the worker only ever
       // gets buildable work.
       const [{ tfMeshToGeo, hexToRgb01 }, { recipeHasUnsupported }, { tfBakeClient, isTfCancelled }, { materialPreset }, { warpVertex }] = await Promise.all([
-        import('$lib/shared/trueform-adapter'),
-        import('$lib/shared/tf_examples/execute'),
-        import('$lib/shared/tf-bake-client'),
+        import('$lib/engines/trueform/trueform-adapter'),
+        import('$lib/engines/trueform/tf_examples/execute'),
+        import('$lib/engines/trueform/tf-bake-client'),
         import('$lib/shared/material-preset'),
         import('$lib/cad/warp-geom'),
       ]);

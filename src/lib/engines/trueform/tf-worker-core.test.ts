@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildTfRecipe, packTfResult, type TfWorkerRequest } from './tf-worker-core';
 import type { TfDemoResult } from './trueform-client';
-import type { TfRecipe } from '$lib/cad/graph-to-tf';
+import type { TfRecipe } from '$lib/engines/trueform/graph-to-tf';
 
 /**
  * PURE tf-worker-core tests — the WASM kernel only runs in-browser (cross-origin

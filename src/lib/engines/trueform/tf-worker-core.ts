@@ -31,7 +31,7 @@
  */
 import { executeTfRecipe } from './tf_examples/execute';
 import type { TfDemoResult, TfMeshStats, TfCutPlane } from './trueform-client';
-import type { TfRecipe, TfAppearance } from '$lib/cad/graph-to-tf';
+import type { TfRecipe, TfAppearance } from '$lib/engines/trueform/graph-to-tf';
 
 /** A build request — the JSON-cloneable message the main thread posts to the
  *  worker. Executes a graph→TF recipe (the "actual" part path) and honours

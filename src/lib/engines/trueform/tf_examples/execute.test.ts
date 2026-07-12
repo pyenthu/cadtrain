@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { executeTfRecipe, recipeHasUnsupported, TfUnsupportedError } from './execute';
-import type { TfRecipe, TfInstr } from '$lib/cad/graph-to-tf';
+import type { TfRecipe, TfInstr } from '$lib/engines/trueform/graph-to-tf';
 
 /**
  * PURE executor tests — a MOCK `t` (plain object recording every kernel call)

@@ -8,7 +8,7 @@ import {
   RECIPE_FMT,
   RECIPE_OFFSET,
 } from './tf-wat-emit';
-import { graphToTf, type TfRecipe } from './graph-to-tf';
+import { graphToTf, type TfRecipe } from '$lib/engines/trueform/graph-to-tf';
 
 /**
  * tf-wat-emit (TODO #49) — proves a TF recipe survives a round-trip through the
