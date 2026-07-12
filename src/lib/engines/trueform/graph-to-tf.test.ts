@@ -208,6 +208,81 @@ describe('graphToTf', () => {
     expect(inst.path[31][2]).toBeCloseTo(7.531, 3);
   });
 
+  it('editing the section def pts FORMULA refreshes the recipe (circle vs ellipse) — TF stale-section bug', () => {
+    // BUG (fixed): on the TF tab, editing a sweep part's SECTION function-expr
+    // did NOT refresh the bake. The r_sweep arm derived the section from the
+    // wired circle expr's `rad` BINDING only, ignoring the def's actual `pts`
+    // FORMULA — so a formula edit that kept `rad` (circle→ellipse) produced a
+    // byte-identical recipe. The fix EVALUATES the wired def's real output with
+    // the live params. Two graphs, identical except the def's `pts` formula.
+    const mkSweep = (): Graph => mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_sweep'] },
+        n_circle: {
+          id: 'n_circle', type: 'expr', defId: 'd_circle',
+          bindings: { rad: { kind: 'param', param: 'rad' }, num_pts: { kind: 'param', param: 'num_arcs' } },
+        },
+        n_sec: {
+          id: 'n_sec', type: 'spline',
+          // STALE cached literal control points (radius 1.5) — NOT a fallback the
+          // fix relies on; the recipe must come from the live formula, not these.
+          points: [[1.5, 0, 0], [0, 1.5, 0], [-1.5, 0, 0]],
+          pointsExpr: { kind: 'expr', expr: '_x_n_circle_pts' },
+          samples: { kind: 'literal', value: 32 }, closed: true,
+        },
+        n_path: {
+          id: 'n_path', type: 'spline',
+          points: [[0, 0, 0], [0, 0, 2], [0, 0, 4], [0, 0, 6]],
+          samples: { kind: 'literal', value: 16 }, closed: false,
+        },
+        n_sweep: {
+          id: 'n_sweep', type: 'call', src: 'r_sweep', alias: 'body',
+          args: {
+            path: { kind: 'expr', expr: '_x_n_path_path' },
+            section: { kind: 'expr', expr: '_x_n_sec_path' },
+            closedPath: { kind: 'literal', value: false },
+            caps: { kind: 'literal', value: true },
+          },
+        },
+      },
+      'n_root',
+      { rad: { default: 0.6 }, num_arcs: { default: 12 } },
+    );
+    // `pts` = a circle of radius `rad` (the sweep_tube_demo def).
+    const circleFormula = 'poly = []\nfor i = 0 to num_pts\n  poly.append([rad*cos(tau * i / num_pts), rad*sin(tau * i / num_pts), 0])\nreturn poly';
+    // Same `rad`, but the x-amplitude is DOUBLED → a non-circular ellipse.
+    const ellipseFormula = 'poly = []\nfor i = 0 to num_pts\n  poly.append([2*rad*cos(tau * i / num_pts), rad*sin(tau * i / num_pts), 0])\nreturn poly';
+    const mkDef = (formula: string) => ({
+      id: 'd_circle', name: 'circle',
+      params: [{ name: 'rad', default: 2 }, { name: 'num_pts', default: 12 }],
+      consts: [], vars: [],
+      outputs: [{ name: 'pts', formula, shape: 'list', elem: 'point' }],
+    });
+
+    const gCircle = mkSweep(); (gCircle as any).exprDefs = [mkDef(circleFormula)];
+    const gEllipse = mkSweep(); (gEllipse as any).exprDefs = [mkDef(ellipseFormula)];
+
+    const rc = graphToTf(gCircle);
+    const re = graphToTf(gEllipse);
+
+    // Circle → the circular fast path, radius = the LIVE `rad` (0.6), NOT the
+    // stale 1.5 literal (proves the evaluated formula drives the recipe).
+    const ic = rc.instrs[0] as Extract<TfInstr, { op: 'sweep' }>;
+    expect(ic.op).toBe('sweep');
+    expect(ic.radius).toBeCloseTo(0.6, 6);
+
+    // Ellipse → non-circular → sweep_section carrying the LIVE ellipse loop
+    // (x-amplitude 1.2 = 2·rad). On `main` this was still `op:'sweep'` r=0.6.
+    const ie = re.instrs[0] as Extract<TfInstr, { op: 'sweep_section' }>;
+    expect(ie.op).toBe('sweep_section');
+    const maxAbsX = Math.max(...ie.section.map((p) => Math.abs(p[0])));
+    expect(maxAbsX).toBeCloseTo(1.2, 4);
+
+    // The bug's signature: on `main` both recipes were IDENTICAL (formula ignored).
+    // The fix makes the FORMULA edit change the recipe.
+    expect(JSON.stringify(rc.instrs)).not.toBe(JSON.stringify(re.instrs));
+  });
+
   it('r_sweep of a NON-circular literal section → a sweep_section instr (not UNSUPPORTED), #50', () => {
     // A section spline with LITERAL, non-circular points (a rounded rectangle-ish
     // loop) that sectionRadiusOf rejects — now lowers to the arbitrary-section
