@@ -99,7 +99,9 @@ export interface ProjectedScene {
   fitToContainer: boolean;
   /** Source triangle count (across all entries). */
   triCount: number;
-  /** Source triangles skipped before emit — back-face-culled + degenerate. */
+  /** Triangles skipped before emit — back-face-culled + 3D-degenerate (source
+   *  level) + PROJECTION-degenerate (a warped part's edge-on caps whose distinct
+   *  3D verts collapse onto one 2D line — dropped at projection, #984). */
   culledCount: number;
   /** True when ANY entry took the high-poly flat-fill fallback. */
   flatFill: boolean;
@@ -176,6 +178,37 @@ function alphaStr(a: number): string {
 // r×k clamped to 1 → hex (a lighter/darker shade of a base colour).
 function scaleHex(r: number, g: number, b: number, k: number): string {
   return rgbHex(r * k, g * k, b * k);
+}
+
+// Screen coords are written to the SVG at 2-decimal precision (`toFixed(2)` → a
+// 0.01px grid). `OUT_Q` is that grid's inverse; the emit stage rounds through it.
+const OUT_Q = 100;
+const roundPx = (n: number): number => Math.round(n * OUT_Q) / OUT_Q;
+
+/**
+ * A projected triangle is DEGENERATE (#984) when, AT THE 2-DECIMAL PRECISION its
+ * vertices are WRITTEN (`toFixed(2)`), its three corners are collinear — i.e. it
+ * would serialise as a ZERO-AREA `<polygon>`. This is the exact origin of the
+ * "degenerate triangle in a warped part's SVG": `projectScene` receives only
+ * triangles with real 3D area (svg-reduce drops 3D-degenerate tris up front), but
+ * a warped/deviated part's EDGE-ON caps + silhouette-tangent facets project TWO
+ * DISTINCT 3D verts onto ONE 2D line — legal geometry, illegal 2D triangle. The
+ * old net was a triplicated `Math.abs(det) < 1e-7` guard on FULL-precision coords,
+ * which (a) is a magic number real bent-tube slivers land right on (det ≈ 1.3e-7)
+ * and (b) checks different values than it writes, so a long-base / sub-0.01px-tall
+ * sliver can pass yet still round collinear in the file. Testing on the ROUNDED
+ * coords makes the "no zero-area polygon in the SVG" invariant exact. The rounded
+ * grid quantum is 1e-4 (0.01×0.01), so `|det| < 5e-5` (< half a quantum, robust to
+ * float noise in `k/100`) ⇒ collinear-at-output ⇒ drop. NaN/∞-safe.
+ */
+export function projectedDegenerate(
+  ax: number, ay: number, bx: number, by: number, cx: number, cy: number,
+): boolean {
+  const rax = roundPx(ax), ray = roundPx(ay);
+  const rbx = roundPx(bx), rby = roundPx(by);
+  const rcx = roundPx(cx), rcy = roundPx(cy);
+  const det = (rbx - rax) * (rcy - ray) - (rby - ray) * (rcx - rax);
+  return !Number.isFinite(det) || Math.abs(det) < 5e-5;
 }
 
 /**
@@ -262,6 +295,17 @@ export function projectScene(
   let triCount = 0;
   let culledCount = 0;
   let flatFill = false;
+
+  // Prevent projection-degenerate tris (#984) at the EARLIEST legal layer: the
+  // bake can't fix them (the 3D geometry is legal) — they are born HERE, when a
+  // warped part's edge-on cap / silhouette facet projects onto a 2D line. Dropping
+  // them at projection keeps the CACHED scene.tris (reused across every light /
+  // x-ray re-shade) free of triangles that could serialise as zero-area polygons,
+  // instead of relying on a per-emit-path guard downstream.
+  const pushTri = (t: ProjTri): void => {
+    if (projectedDegenerate(t.ax, t.ay, t.bx, t.by, t.cx, t.cy)) { culledCount++; return; }
+    tris.push(t);
+  };
 
   const p = new THREE.Vector3(), nrm = new THREE.Vector3();
   const Pa = new THREE.Vector3(), Pb = new THREE.Vector3(), Pc = new THREE.Vector3();
@@ -354,7 +398,7 @@ export function projectScene(
       if (entryFlat) {
         // Monster mesh → ONE flat-fill face (shade = mean of corner shades,
         // resolved at shade time). Store all 3 corner normals + flat flag.
-        tris.push({
+        pushTri({
           ax: sx[ia], ay: sy[ia], bx: sx[ib], by: sy[ib], cx: sx[ic], cy: sy[ic],
           n: [vn[ia * 3], vn[ia * 3 + 1], vn[ia * 3 + 2],
               vn[ib * 3], vn[ib * 3 + 1], vn[ib * 3 + 2],
@@ -386,7 +430,7 @@ export function projectScene(
 
       if (K <= 1) {
         // Flat enough (or no normals) → one gradient from the corner normals.
-        tris.push({
+        pushTri({
           ax: sx[ia], ay: sy[ia], bx: sx[ib], by: sy[ib], cx: sx[ic], cy: sy[ic],
           n: [vn[ia * 3], vn[ia * 3 + 1], vn[ia * 3 + 2],
               vn[ib * 3], vn[ib * 3 + 1], vn[ib * 3 + 2],
@@ -434,7 +478,7 @@ export function projectScene(
         const r0 = rowStart[i], r1 = rowStart[i + 1];
         for (let j = 0; j < K - i; j++) {
           const p00 = r0 + j, p01 = r0 + j + 1, p10 = r1 + j;
-          tris.push({
+          pushTri({
             ax: gpx[p00], ay: gpy[p00], bx: gpx[p01], by: gpy[p01], cx: gpx[p10], cy: gpy[p10],
             n: [gnx[p00], gny[p00], gnz[p00], gnx[p01], gny[p01], gnz[p01], gnx[p10], gny[p10], gnz[p10]],
             z: (gpz[p00] + gpz[p01] + gpz[p10]) / 3, r: br, g: bgc, b: bl, pi: entry.pi, flat: false,
@@ -442,7 +486,7 @@ export function projectScene(
           emittedInEntry++;
           if (j < K - i - 1) {
             const p11 = r1 + j + 1;
-            tris.push({
+            pushTri({
               ax: gpx[p01], ay: gpy[p01], bx: gpx[p11], by: gpy[p11], cx: gpx[p10], cy: gpy[p10],
               n: [gnx[p01], gny[p01], gnz[p01], gnx[p11], gny[p11], gnz[p11], gnx[p10], gny[p10], gnz[p10]],
               z: (gpz[p01] + gpz[p11] + gpz[p10]) / 3, r: br, g: bgc, b: bl, pi: entry.pi, flat: false,
@@ -562,8 +606,10 @@ export function shadeAndEmit(scene: ProjectedScene, opts: ShadeOptions): SvgEmit
     z: number, alpha: number, bucket: 0 | 1,
   ): number {
     const [br, bgc, bl] = mute(br0, bg0, bl0);
+    // Degenerate at OUTPUT precision → would serialise as a zero-area polygon (#984).
+    if (projectedDegenerate(ax, ay, bx, by, cx, cy)) return 0;
     const det = (bx - ax) * (cy - ay) - (by - ay) * (cx - ax);
-    if (!Number.isFinite(det) || Math.abs(det) < 1e-7) return 0; // degenerate
+    if (!Number.isFinite(det) || Math.abs(det) < 1e-7) return 0; // gradient-math guard
     const poly = document.createElementNS(SVG_NS, 'polygon');
     poly.setAttribute(
       'points',
@@ -616,8 +662,7 @@ export function shadeAndEmit(scene: ProjectedScene, opts: ShadeOptions): SvgEmit
     // TEXTURED part (#63c) → flat procedural <pattern> fill, no Gouraud gradient.
     const patId = partTexture ? patternFor(t.pi, t.r, t.g, t.b) : null;
     if (patId) {
-      const det = (t.bx - t.ax) * (t.cy - t.ay) - (t.by - t.ay) * (t.cx - t.ax);
-      if (!Number.isFinite(det) || Math.abs(det) < 1e-7) continue;
+      if (projectedDegenerate(t.ax, t.ay, t.bx, t.by, t.cx, t.cy)) continue;
       const poly = document.createElementNS(SVG_NS, 'polygon');
       poly.setAttribute('points', `${t.ax.toFixed(2)},${t.ay.toFixed(2)} ${t.bx.toFixed(2)},${t.by.toFixed(2)} ${t.cx.toFixed(2)},${t.cy.toFixed(2)}`);
       poly.setAttribute('fill', `url(#${patId})`);
@@ -631,8 +676,7 @@ export function shadeAndEmit(scene: ProjectedScene, opts: ShadeOptions): SvgEmit
       const s = (
         shadeN(t.n[0], t.n[1], t.n[2]) + shadeN(t.n[3], t.n[4], t.n[5]) + shadeN(t.n[6], t.n[7], t.n[8])
       ) / 3;
-      const det = (t.bx - t.ax) * (t.cy - t.ay) - (t.by - t.ay) * (t.cx - t.ax);
-      if (!Number.isFinite(det) || Math.abs(det) < 1e-7) continue;
+      if (projectedDegenerate(t.ax, t.ay, t.bx, t.by, t.cx, t.cy)) continue;
       const [mr, mg, mb] = mute(t.r, t.g, t.b);
       const poly = document.createElementNS(SVG_NS, 'polygon');
       poly.setAttribute('points', `${t.ax.toFixed(2)},${t.ay.toFixed(2)} ${t.bx.toFixed(2)},${t.by.toFixed(2)} ${t.cx.toFixed(2)},${t.cy.toFixed(2)}`);
