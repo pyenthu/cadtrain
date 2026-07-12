@@ -168,7 +168,7 @@
   // the popup; GEP owns only the open flag + anchor + commit→graph.exprs wiring.
   import ExpressionBuilderPopup from './expr/ExpressionBuilderPopup.svelte';
   import ExpressionsMenu from './expr/ExpressionsMenu.svelte';
-  import TypeDefinerPopover from '$lib/shared/TypeDefinerPopover.svelte';
+  import TypeDefinerPopover from '$lib/shared/types/TypeDefinerPopover.svelte';
   import AutoWireSuggestPanel from './AutoWireSuggestPanel.svelte';
   import type { ExprDef } from '$lib/cad/composition-graph-types';
   // Sketch NODE CARD render arm (Phase E Step 2, block 1). Takes the ONE per-pane

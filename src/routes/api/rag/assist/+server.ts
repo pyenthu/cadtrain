@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
-import { createAnthropicClient } from '$lib/shared/anthropic-api';
+import { createAnthropicClient } from '$lib/server/anthropic-api';
 import { toClaudeTools, toolListText } from '$lib/cad/editor-tools-schema';
 
 /**

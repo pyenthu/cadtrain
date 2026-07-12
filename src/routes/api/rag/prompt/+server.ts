@@ -2,7 +2,7 @@ import { json, error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { topK } from '$lib/server/rag-query';
 import { buildRagPrompt } from '$lib/server/rag-prompt';
-import { createAnthropicClient } from '$lib/shared/anthropic-api';
+import { createAnthropicClient } from '$lib/server/anthropic-api';
 import { tryL1 } from '$lib/server/rag-l1';
 
 /**

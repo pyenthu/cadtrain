@@ -33,7 +33,7 @@
 import { json, error } from '@sveltejs/kit';
 import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
-import { createAnthropicClient } from '$lib/shared/anthropic-api';
+import { createAnthropicClient } from '$lib/server/anthropic-api';
 import { checkRateLimit } from '$lib/rate_limit';
 import { discoverHelpers, discoverOperators } from '$lib/engines/manifold/manifold-helpers-meta';
 import { extractMetaFromSource, extractFunctionName } from '$lib/server/primitives-meta';

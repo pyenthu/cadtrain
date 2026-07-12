@@ -5,7 +5,7 @@
    * under /primitives (a tool sibling of /primitives/profiles), not a new
    * top-level route. Plan: docs/plans/typed-ports.md.
    */
-  import TypeDefinerPanel from '$lib/shared/TypeDefinerPanel.svelte';
+  import TypeDefinerPanel from '$lib/shared/types/TypeDefinerPanel.svelte';
 </script>
 
 <div class="tp-page">

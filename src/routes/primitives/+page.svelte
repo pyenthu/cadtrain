@@ -23,7 +23,7 @@
   import { onMount, tick } from 'svelte';
   import GraphEditorPane from '$lib/shared/graph-editor/GraphEditorPane.svelte';
   import AiMenu from '$lib/shared/graph-editor/AiMenu.svelte';
-  import CacheBrowser from '$lib/shared/CacheBrowser.svelte';
+  import CacheBrowser from '$lib/shared/volume/CacheBrowser.svelte';
   import {
     type Entry, type FolderNode, MOVE_TARGET_RE,
     tabLabel, subtreeCount, subtreeMatches, sortFolders, nodeAt, findPartDir,

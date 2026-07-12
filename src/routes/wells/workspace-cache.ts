@@ -18,7 +18,7 @@
  * empty-workspace behaviour — nothing throws on load.
  */
 
-import type { LoadedFile } from '$lib/shared/WellSideNav.svelte';
+import type { LoadedFile } from '$lib/wells/WellSideNav.svelte';
 
 const DB_NAME = 'cadtrain-wells';
 const DB_VERSION = 1;

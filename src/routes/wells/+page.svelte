@@ -7,7 +7,7 @@
    *   far-left icons   left .wson file tree   top tabs, one pane per open doc
    *
    * REUSE:
-   *   - LEFT FILE TREE: `$lib/shared/FolderTreeSidebar.svelte` — the parameterised
+   *   - LEFT FILE TREE: `$lib/shared/volume/FolderTreeSidebar.svelte` — the parameterised
    *     distillation of the /primitives VS-Code folder tree (chevron + folder
    *     icon + count + live filter). It lists the bundled `.wson` files.
    *   - TAB SYSTEM: the /primitives multi-tab pattern (a `Tab[]` + `activeKey`,
@@ -21,8 +21,8 @@
    * This shell imports NOTHING from `$lib/wells/**` so it builds standalone.
    */
   import { tick } from 'svelte';
-  import { type FolderTree } from '$lib/shared/FolderTreeSidebar.svelte';
-  import WellSideNav, { type LoadedFile, type LoadMeta } from '$lib/shared/WellSideNav.svelte';
+  import { type FolderTree } from '$lib/shared/volume/FolderTreeSidebar.svelte';
+  import WellSideNav, { type LoadedFile, type LoadMeta } from '$lib/wells/WellSideNav.svelte';
   import WellToolbar from './WellToolbar.svelte';
   import WellViewPlaceholder from './WellViewPlaceholder.svelte';
   import { wsonFiles, parseWsonFile, summarise, type WsonFile, type WsonDoc } from './wson-summary';

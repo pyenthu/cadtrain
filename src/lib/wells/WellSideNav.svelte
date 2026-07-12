@@ -42,7 +42,7 @@
 </script>
 
 <script lang="ts">
-  import FolderTreeSidebar, { type FolderTree } from './FolderTreeSidebar.svelte';
+  import FolderTreeSidebar, { type FolderTree } from '$lib/shared/volume/FolderTreeSidebar.svelte';
 
   let {
     tree,
