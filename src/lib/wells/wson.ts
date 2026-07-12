@@ -37,10 +37,38 @@ export interface OpenHoleSection { bitSize: number; top: number; bot: number; }
 
 export type CasingType = 'conductor' | 'surface' | 'intermediate' | 'production' | 'liner' | 'tubing';
 
+/** NORSOK D-010 well-barrier role — for Well-Barrier-Schematic colouring
+ *  (primary = blue, secondary = red, none = uncoloured). */
+export type BarrierRole = 'primary' | 'secondary' | 'none';
+
+/** A single cemented depth span (metres, Z-down). Used for STAGE cementing
+ *  (DV tool) where set cement occupies two-or-more DISJOINT intervals. */
+export interface CementSpan { top: number; bot: number; }
+
+/** Per-string cement SPEC (#996) — the ONLY authored cement input in the derived
+ *  model. Cement is NOT an authored `{od,id}` part: its geometry is DERIVED
+ *  (nearest outer boundary − casing OD) from the casing/hole program, so only the
+ *  AXIAL extent + barrier metadata are authored here.
+ *   - `toc` — top of cement (metres, shallower than the string shoe). The single
+ *     [toc, shoe] cemented span.
+ *   - `intervals` — OVERRIDES `toc` for STAGE cementing (disjoint spans).
+ *   - `role` — NORSOK barrier role (blue/red WBS colouring).
+ *   - `verified` — barrier verification status (bond log / displacement calc).
+ *  ADDITIVE / optional: a string with no `cement` is UNCEMENTED — we never invent
+ *  a TOC (an invented cement top is a false barrier claim, per the research doc). */
+export interface CasingCement {
+  toc?: number;
+  intervals?: CementSpan[];
+  role?: BarrierRole;
+  verified?: boolean;
+}
+
 /** A cased-hole / tubular string. OD/ID inches; top/bot metres. */
 export interface CasingString {
   od: number; id?: number; top: number; bot: number;
   grade?: string; weight?: number; type?: CasingType;
+  /** Per-string cement spec (#996). Absent ⇒ uncemented (no cement derived). */
+  cement?: CasingCement;
 }
 
 export interface Perforation {
@@ -173,6 +201,17 @@ export function lintWson(w: Wson): WsonIssue[] {
       warn(`ch[${i}].od`, `deeper string has larger OD than ch[${i - 1}] (nesting violated)`);
     }
   }
+  // Per-string cement spec (#996): TOC shallower than the shoe; interval ordering.
+  ch.forEach((c, i) => {
+    const cem = c.cement;
+    if (!cem) return;
+    if (cem.toc != null && !(cem.toc < c.bot)) {
+      warn(`ch[${i}].cement.toc`, `TOC ${cem.toc} must be shallower than shoe ${c.bot}`);
+    }
+    (cem.intervals ?? []).forEach((iv, j) => {
+      if (!(iv.top < iv.bot)) err(`ch[${i}].cement.intervals[${j}]`, `top ${iv.top} must be < bot ${iv.bot}`);
+    });
+  });
 
   // Open hole + cement + perfs: ordering.
   (w.oh ?? []).forEach((o, i) => { if (!(o.top < o.bot)) err(`oh[${i}]`, `top ${o.top} must be < bot ${o.bot}`); });

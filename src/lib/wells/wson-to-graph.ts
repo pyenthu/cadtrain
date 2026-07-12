@@ -39,7 +39,7 @@ import { exprBlockMember } from '$lib/graph/graph-exprs';
 import { normaliseKey, resolveStructural } from './registry';
 import { buildTrajectory } from './assemble';
 import { isDeviated, recomputeAutoTops } from './wson';
-import type { CasingString, CementInterval, Completion, OpenHoleSection, Wson } from './wson';
+import type { BarrierRole, CasingString, CementInterval, CementSpan, Completion, OpenHoleSection, Wson } from './wson';
 
 /** The assembly-level param every generated well exposes, so segment count stays
  *  a single dial on the well rather than a literal baked into each element —
@@ -104,6 +104,178 @@ function cementDims(wson: Wson, interval: CementInterval, i: number): { od: numb
     );
   }
   return { od: clean(outer), wall: clean(wall) };
+}
+
+// ─── #996: cement as a DERIVED annulus (outer boundary − casing) ─────────────
+//
+// Cement is NOT an authored `{od,id}` part — it is `outerBoundary − casingOD`,
+// clipped axially to `[TOC, shoe]`, where the outer boundary is the NEAREST
+// casing-ID / open-hole wall radially OUTSIDE the string at each depth. Because
+// that boundary changes with depth (open hole below the previous shoe, then the
+// previous casing's ID up in the lap zone), the interval is SEGMENTED at every
+// tubular/hole breakpoint and one concentric annulus is built per segment.
+// Algorithm + NORSOK D-010 grounding: docs/research/cement-annulus-detection.md.
+//
+// DERIVED, not authored: change the casing program and the cement re-derives for
+// free. Distinct from the legacy `wson.cementing` array (an authored inner-OD
+// interval) — the two coexist; a well typically uses one or the other.
+
+/** Radial gap tolerance (inches) — a candidate outer boundary must clear the
+ *  casing OD by at least this to count (guards degenerate / zero-gap annuli). */
+const CEMENT_EPS_R = 1e-4;
+/** Axial contiguity tolerance (metres) when merging adjacent equal-OD segments. */
+const CEMENT_EPS_Z = 1e-6;
+
+/** One derived cement annulus segment — the geometry (od/id inches, top/bot
+ *  metres) PLUS the barrier metadata (annulus letter + NORSOK role). Exported so
+ *  a test can pin the derivation directly and the viewer can colour per WBS. */
+export interface DerivedCementSegment {
+  /** Index into `wson.ch` of the cemented string this annulus wraps. */
+  stringIndex: number;
+  /** Annulus letter (A/B/C…) — radial nesting identity (NORSOK convention). */
+  annulus: string;
+  /** NORSOK barrier role for blue/red WBS colouring. */
+  role: BarrierRole;
+  /** Axial span (metres, Z-down): `top` shallower, `bot` deeper. */
+  top: number; bot: number;
+  /** Outer diameter (inches) = nearest boundary radially outside the string. */
+  od: number;
+  /** Inner diameter (inches) = the cemented string's OD (annulus inner wall). */
+  id: number;
+  /** What bounds the annulus on the outside at this segment. */
+  against: 'openhole' | 'casing';
+}
+
+/** A radial boundary with its depth span — a casing OD/ID wall or an open-hole
+ *  wall, in the units they are authored (radius inches, depth metres). */
+interface CementBoundary {
+  kind: 'holeWall' | 'casingInner' | 'casingOuter';
+  r: number; top: number; bot: number;
+}
+
+/** Every radial boundary in the casing + hole program, each with its depth span.
+ *  A casing contributes its OUTER (od/2) and, when known, INNER (id/2) walls; an
+ *  open-hole section contributes its wall (bitSize/2). */
+function collectCementBoundaries(wson: Wson): CementBoundary[] {
+  const bs: CementBoundary[] = [];
+  (wson.ch ?? []).forEach((c) => {
+    bs.push({ kind: 'casingOuter', r: c.od / 2, top: c.top, bot: c.bot });
+    if (c.id != null) bs.push({ kind: 'casingInner', r: c.id / 2, top: c.top, bot: c.bot });
+  });
+  (wson.oh ?? []).forEach((o) => {
+    bs.push({ kind: 'holeWall', r: o.bitSize / 2, top: o.top, bot: o.bot });
+  });
+  return bs;
+}
+
+/** The annulus letter for the cement OUTSIDE the casing at `stringIndex`. Radial
+ *  nesting per NORSOK: annulus **A** is the innermost (tubing ↔ production-casing)
+ *  void, so cement OUTSIDE the innermost casing sits in **B**, the next casing out
+ *  in **C**, … Ranks casings by OD ascending (smallest = innermost) and reserves
+ *  'A' for the tubing annulus we do not cement. */
+function cementAnnulusLetter(chs: CasingString[], stringIndex: number): string {
+  const od = chs[stringIndex].od;
+  // rank = how many OTHER casings are radially INSIDE this one (strictly smaller).
+  const rank = chs.filter((c, i) => i !== stringIndex && c.od < od).length;
+  // +1 reserves 'A' for the innermost (tubing↔casing) annulus — cement is on casings.
+  return String.fromCharCode(65 + rank + 1);
+}
+
+/**
+ * DERIVE the cement annulus segments for every casing string carrying a `cement`
+ * spec. Per the algorithm in the research doc: for each cemented interval, cut at
+ * every boundary breakpoint, and between consecutive cuts take the NEAREST
+ * boundary radially outside the string OD (an open-hole wall or a larger casing's
+ * ID) as the annulus outer wall; merge adjacent equal-OD runs.
+ *
+ * Emits NOTHING for an uncemented string, a string with no TOC, a segment with no
+ * outer boundary, or a degenerate (zero/negative) annulus — surfaced via `warn`,
+ * never fabricated (never invent a TOC or bake an inside-out annulus).
+ *
+ * PURE — no graph/DOM. `warn` is optional (defaults to a no-op) so a test can
+ * capture the skip reasons.
+ */
+export function deriveCementSegments(
+  wson: Wson,
+  warn: (msg: string) => void = () => {},
+): DerivedCementSegment[] {
+  const chs = wson.ch ?? [];
+  const boundaries = collectCementBoundaries(wson);
+  const out: DerivedCementSegment[] = [];
+
+  chs.forEach((S, stringIndex) => {
+    const spec = S.cement;
+    if (!spec) return;
+    // Cemented interval(s): explicit multi-interval (stage cementing) OVERRIDES
+    // the single [TOC, shoe]. No TOC and no intervals ⇒ uncemented ⇒ emit nothing.
+    const intervals: CementSpan[] = (spec.intervals && spec.intervals.length)
+      ? spec.intervals
+      : (spec.toc != null ? [{ top: spec.toc, bot: S.bot }] : []);
+    if (!intervals.length) return;
+
+    const rInner = S.od / 2;
+    const role: BarrierRole = spec.role ?? 'primary';
+    const annulus = cementAnnulusLetter(chs, stringIndex);
+
+    for (const iv of intervals) {
+      if (!(iv.bot > iv.top)) {
+        warn(`cement string ${stringIndex}: non-positive interval [${iv.top}, ${iv.bot}]`);
+        continue;
+      }
+      // Breakpoints: the interval ends + every boundary span endpoint that falls
+      // STRICTLY inside, so the outer boundary is constant between consecutive cuts.
+      const cuts = new Set<number>([iv.top, iv.bot]);
+      for (const b of boundaries) {
+        if (b.top > iv.top && b.top < iv.bot) cuts.add(b.top);
+        if (b.bot > iv.top && b.bot < iv.bot) cuts.add(b.bot);
+      }
+      const sorted = [...cuts].sort((a, b) => a - b);
+
+      const segs: DerivedCementSegment[] = [];
+      for (let k = 0; k < sorted.length - 1; k++) {
+        const d0 = sorted[k], d1 = sorted[k + 1];
+        const dm = (d0 + d1) / 2;
+        // Candidate outer radii: boundaries covering the segment midpoint, strictly
+        // OUTSIDE the casing OD, that are a VOID-facing wall (a hole face, or a
+        // larger casing's ID). The string's own OD (casingOuter) + ID are excluded
+        // by kind + radius. NEAREST (min radius) wins → the radial A/B/C nesting.
+        let rOuter = Infinity;
+        let against: 'openhole' | 'casing' = 'openhole';
+        for (const b of boundaries) {
+          if (!(b.top <= dm && dm <= b.bot)) continue;
+          if (b.r <= rInner + CEMENT_EPS_R) continue;
+          if (b.kind !== 'holeWall' && b.kind !== 'casingInner') continue;
+          if (b.r < rOuter) { rOuter = b.r; against = b.kind === 'holeWall' ? 'openhole' : 'casing'; }
+        }
+        if (!Number.isFinite(rOuter)) {
+          warn(`cement string ${stringIndex}: no outer boundary at ${dm}m — open annulus, skipped`);
+          continue;
+        }
+        if (rOuter - rInner < CEMENT_EPS_R) {
+          warn(`cement string ${stringIndex}: degenerate annulus at ${dm}m (od ${S.od} ≥ hole)`);
+          continue;
+        }
+        segs.push({
+          stringIndex, annulus, role,
+          top: clean(d0), bot: clean(d1),
+          od: clean(rOuter * 2), id: clean(rInner * 2),
+          against,
+        });
+      }
+      // Collapse artificial cuts: adjacent, contiguous, same-OD, same-boundary runs.
+      for (const s of segs) {
+        const prev = out[out.length - 1];
+        if (prev && prev.stringIndex === s.stringIndex && prev.against === s.against
+            && Math.abs(prev.od - s.od) < CEMENT_EPS_R && Math.abs(prev.bot - s.top) < CEMENT_EPS_Z) {
+          prev.bot = s.bot;
+        } else {
+          out.push({ ...s });
+        }
+      }
+    }
+  });
+
+  return out;
 }
 
 /** Build the Call + its placing Mv. `top` is the element's down-hole start (m). */
@@ -458,6 +630,22 @@ export function wsonToGraph(wson: Wson): Graph {
       `cem_${i}`, `CEM_${i + 1}`, 'bw_cement',
       structuralArgs('cement', { od }, c.bot - c.top, { wall, segments: true }),
       c.top,
+    ));
+  });
+
+  // #996 — DERIVED cement: each casing carrying a `cement` spec grows its annulus
+  // (nearest outer boundary − casing OD) as one-or-more per-segment `bw_cement`
+  // Calls, clipped to [TOC, shoe] and segmented at every tubular/hole breakpoint
+  // (so an open-hole→cased-lap transition splits into 2 concentric annuli). Each
+  // carries its annulus letter (A/B/C…) in the alias for the editor + WBS. Emitted
+  // OUTER→INNER (before casing). ADDITIVE — coexists with the authored `cementing`
+  // array above; a well typically authors one or the other.
+  deriveCementSegments(wson).forEach((seg, i) => {
+    const wall = clean((seg.od - seg.id) / 2);
+    elements.push(element(
+      `dcem_${seg.stringIndex}_${i}`, `CEM_${seg.annulus}_${i + 1}`, 'bw_cement',
+      structuralArgs('cement', { od: seg.od }, seg.bot - seg.top, { wall, segments: true }),
+      seg.top,
     ));
   });
 
