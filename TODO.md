@@ -1,6 +1,5 @@
 # TODO — crisp. Full detail in `/plan` (Gantt) + `docs/plans/*`.
 > **Execution:** `batches.md` groups these into issue-and-run batches ("run Batch N to completion").
-> **✅ Shipped 2026-07-12** (`main`): BREP sweep MakePipeShell-throw → rail-loft recovery (`666086d`, fixed the `sweep_tube_demo` flicker) · TF sweep-section evaluates the wired def `pts` formula (`55636f1`) · graph↔shared overlap audit (`docs/research/graph-shared-overlap.md`). Earlier: engine modularization **E1** (`da7399f`) · smooth-BREP **E5** (`39757ed`).
 
 ### Active focus
 - **#940/#22 Modularize GraphEditorPane** — Phase 4 (inline, browser-verify each cut): pull part-actions · bake-orchestration · expr-actions · keymap/save · canvas-interaction · CSS onto `controller.svelte.ts` + a `GraphCommand` labeled-undo layer; NodeCard per-type split. (`graph-editor-pane.md`, `modularize-round2.md`)
