@@ -1,3 +1,9 @@
+> **ARCHIVED 2026-07-13** during the /research reorg. Self-contained no-go:
+> evaluates adopting brep.io (a browser-based BREP viewer) and finds it adds
+> no capability we don't already have via the server-side OCCT BREP tab, and
+> a client-side WASM kernel conflicts with the SSR-off architecture. No later
+> doc depends on this one; kept for provenance, not active reference.
+
 # Feasibility note — brep.io experimentation (item #15)
 
 > 2026-06-16. Short read-only assessment. Question: would brep.io / brep-based

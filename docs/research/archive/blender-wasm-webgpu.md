@@ -1,3 +1,10 @@
+> **ARCHIVED 2026-07-13** during the /research reorg. Decisive NO-GO: no
+> in-browser WASM/WebGPU Blender port exists and a full port is infeasible
+> (no f64/exact predicates in WGSL) and GPL-blocked. The one reusable idea —
+> Geometry-Nodes Fields — already lives in `blender-fields-for-nodes.md`; the
+> WebGPU/COOP-COEP lessons are already covered by `trueform-webgpu.md`. Kept
+> for provenance, not active reference.
+
 # In-browser Blender (WASM + WebGPU) — does it exist, and is it feasible?
 
 **Status:** research note (2026-07-03). Research only — no code touched.
