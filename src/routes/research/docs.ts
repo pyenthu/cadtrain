@@ -76,6 +76,34 @@ function slugOf(path: string): string {
   return file.replace(/\.md$/i, '').toLowerCase();
 }
 
+/** The category clusters, in display order — mirrors /design's abstracted
+ *  subsystems (editor · kernel · wells · AI · architecture) so /research reads
+ *  against the same mental model. `Findings` is the catch-all, shown last. */
+export const CATEGORY_ORDER = [
+  'Node editors',
+  'Geometry kernels',
+  'Wells',
+  'Local AI',
+  'Architecture',
+  'Findings',
+] as const;
+
+/** Map a doc to one canonical category from a hint (an optional
+ *  `<!-- research-group: X -->` marker) + its slug. Checked in an order that
+ *  resolves overlaps: Node → Wells → Local AI → Geometry, so `webgpu-slm` lands
+ *  in Local AI (not Geometry) and `wells-tf-verification` in Wells (not
+ *  Geometry). Everything unmatched falls to Architecture. Normalising here
+ *  (rather than per-file markers) keeps the whole scheme in one place. */
+function canonicalCategory(slug: string, marker: string | null): string {
+  const hay = `${marker ?? ''} ${slug}`.toLowerCase();
+  if (/node editor|(^|[^a-z])ne-|svelteflow|blender-fields|\bvpl\b|flyde|node-?red|\bunit\b/.test(hay)) return 'Node editors';
+  if (/\bwells?\b|svtc|wson|wbd|cement|dtx|schematic/.test(hay)) return 'Wells';
+  if (/\bslm\b|web-?llm|\bllm\b|functionary|fncall|function-call|synthetic/.test(hay)) return 'Local AI';
+  if (/brep|occt|trueform|(^|[^a-z])tf(-|\b)|sweep|normal|shading|\bmesh\b|webgpu|wasm|revolve|kernel|\bcsg\b/.test(hay)) return 'Geometry kernels';
+  if (/architecture|overlap|authoring|shared/.test(hay)) return 'Architecture';
+  return 'Architecture';
+}
+
 function build(): Doc[] {
   const out: Doc[] = [];
 
@@ -83,7 +111,7 @@ function build(): Doc[] {
     const slug = slugOf(path);
     // Skip archived snapshot variants for v1.
     if (/\.archived-/i.test(slug)) continue;
-    const category = categoryMarkerOf(raw) ?? 'Research';
+    const category = canonicalCategory(slug, categoryMarkerOf(raw));
     const body = stripMarker(raw);
     out.push({ slug, title: titleOf(body, slug), excerpt: excerptOf(body), body, group: 'Research', category });
   }
@@ -105,14 +133,14 @@ export const docs: Doc[] = build();
 
 export const bySlug = new Map<string, Doc>(docs.map((d) => [d.slug, d]));
 
-/** Ordered category list (tab clusters): Node editors first, other Research,
- *  then Findings. */
+/** Ordered category list (tab clusters), following CATEGORY_ORDER — only the
+ *  categories that actually have docs, in the canonical /design-aligned order.
+ *  Any unforeseen category (should not happen) sorts to the end alphabetically. */
 export const categories: string[] = (() => {
-  const seen = new Set<string>();
-  const order: string[] = [];
-  for (const d of docs) if (!seen.has(d.category)) { seen.add(d.category); order.push(d.category); }
-  const rank = (c: string) => (c === 'Node editors' ? 0 : c === 'Findings' ? 2 : 1);
-  return order.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  const present = new Set(docs.map((d) => d.category));
+  const ordered = CATEGORY_ORDER.filter((c) => present.has(c));
+  const extra = [...present].filter((c) => !CATEGORY_ORDER.includes(c as any)).sort();
+  return [...ordered, ...extra];
 })();
 
 export function getDoc(slug: string | undefined): Doc | undefined {
