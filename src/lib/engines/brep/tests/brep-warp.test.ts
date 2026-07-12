@@ -23,7 +23,18 @@ const stdFetch = (async (url: any): Promise<any> => {
   return { ok: false, status: 404, json: async () => ({}) };
 }) as unknown as typeof fetch;
 
-beforeAll(async () => { await helpers.initManifold(); });
+// Each case bakes a deviated sweep through BOTH the Manifold oracle AND OCCT/BREP
+// (MakePipeShell + a full deflection-adaptive tessellation) — several seconds of
+// pure WASM CPU. Alone that fits vitest's 5s default, but in the FULL parallel
+// run the fork workers contend for the 10 cores and a single bake creeps past 5s
+// → "Test timed out in 5000ms" (flaky only under load; green in isolation). Same
+// root cause + same fix as the sibling cutaway-perbody-skip spec: raise the budget
+// (a cap adds ZERO time to a fast run) rather than shrink the geometry the asserts
+// depend on. Applied to the initManifold hook too — under load its WASM init can
+// itself brush the 10s hook default.
+const HEAVY_BREP_TIMEOUT_MS = 60_000;
+
+beforeAll(async () => { await helpers.initManifold(); }, HEAVY_BREP_TIMEOUT_MS);
 
 // bw_casing SHAPE, inline: 24-gon annulus (od/2 minus od/2−wall) + 180° section
 // cut, then warp along the survey spline. `path`/`opts` interpolated so cases
@@ -41,7 +52,7 @@ export function w_dev_cas() {
 const DEV_PATH = '[[0,0,0],[-0.21,2.561,11.576],[3,0,20],[9,0,30]]';
 
 describe('brep-warp (E4): MakePipeShell sweep of a cross-section along the survey spline', () => {
-  it('single-cut casing — the swept half-section FOLLOWS the deviated spline', async () => {
+  it('single-cut casing — the swept half-section FOLLOWS the deviated spline', { timeout: HEAVY_BREP_TIMEOUT_MS }, async () => {
     const src = casingWarp(`resampleSpline(${DEV_PATH}, 32, false)`, '{ refine: 40 }');
     const brep = await bakeBREP(src, {}, stdFetch);
     const mf = await bakeMF(src, 'w_dev_cas', {}, stdFetch);
@@ -66,7 +77,7 @@ describe('brep-warp (E4): MakePipeShell sweep of a cross-section along the surve
     console.log(`[E4 casing] BREP vol=${brep.volume.toFixed(1)} tris=${brep.tris} bbox=${JSON.stringify(brep.bbox.max.map((x) => +x.toFixed(1)))} | MF vol=${mf.volume.toFixed(1)} tris=${mf.tris}`);
   });
 
-  it('STRAIGHT survey reproduces the un-warped half-section (parity invariant)', async () => {
+  it('STRAIGHT survey reproduces the un-warped half-section (parity invariant)', { timeout: HEAVY_BREP_TIMEOUT_MS }, async () => {
     const src = casingWarp('resampleSpline([[0,0,0],[0,0,15],[0,0,30]], 16, false)', '{ refine: 40 }');
     const brep = await bakeBREP(src, {}, stdFetch);
     // A straight survey down +z must NOT curve: bbox stays within a straight
@@ -81,7 +92,7 @@ describe('brep-warp (E4): MakePipeShell sweep of a cross-section along the surve
     expect(Math.abs(brep.volume - straightHalf) / straightHalf, 'straight-survey vol ≈ un-warped half-annulus').toBeLessThan(0.05);
   });
 
-  it('open-hole (solid disk) + multi-element on ONE spline (w1_oh_warp shape)', async () => {
+  it('open-hole (solid disk) + multi-element on ONE spline (w1_oh_warp shape)', { timeout: HEAVY_BREP_TIMEOUT_MS }, async () => {
     // Two elements swept along the same deviated survey: a section-cut casing at
     // arc-length [35,75] and an open-hole disk at [0,100] (originZ:0 → absolute
     // placement). Mirrors w1_oh_warp's `[warpSpline(mv(C)), warpSpline(A)]` list.
@@ -106,7 +117,7 @@ export function w1_oh() {
     console.log(`[E4 multi] BREP vol=${brep.volume.toFixed(1)} tris=${brep.tris} bbox=${JSON.stringify(brep.bbox.max.map((x) => +x.toFixed(1)))}`);
   });
 
-  it('curvature is monotone along the spline (centroid of each z-band tracks the survey)', async () => {
+  it('curvature is monotone along the spline (centroid of each z-band tracks the survey)', { timeout: HEAVY_BREP_TIMEOUT_MS }, async () => {
     // Slice the swept casing into z-bands; each band's centroid x must climb with
     // z (the survey drifts monotonically toward +x after its early wiggle) — a
     // straight tube would keep centroid x ≈ 0 for every band.
