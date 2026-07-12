@@ -969,10 +969,11 @@
   <T.DirectionalLight position={dirPos} intensity={scene.zDirIntensity} />
 {/if}
 
-<!-- VIEW-ONLY scale: X/Y = diameter exaggeration (xScale), Z = depth
-     compression (zScale). Wraps BOTH stacked renders + their offsets so the
-     whole composition scales together; the geometry on disk + the bake stay
-     true. The camera auto-fit + OrbitControls target above account for it. -->
+<!-- VIEW-ONLY scale: X and Y = uniform radial diameter exaggeration (xScale on
+     BOTH axes, so radially-symmetric parts stay round), Z = depth compression
+     (zScale). Wraps BOTH stacked renders + their offsets so the whole
+     composition scales together; the geometry on disk + the bake stay true.
+     The camera auto-fit + OrbitControls target above account for it. -->
 <T.Group scale={[scene.xScale, scene.xScale, scene.zScale]}>
 <!-- TOP — live mesh, stacked on the part (Z) axis. -->
 <T.Group position={meshPos}>
