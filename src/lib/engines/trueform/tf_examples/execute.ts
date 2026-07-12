@@ -25,6 +25,7 @@
  */
 import { tfRevolveProfile } from './revolve';
 import { tfExtrudeProfile } from './extrude';
+import { tfLoftProfile } from './loft';
 import { tfSweepSection } from './sweep-section';
 import { tfResult, tfMeshData, tfAnalyze, buildOpenCurve, capOpenEnds, runTfGuarded, weldMeshByPosition, applyTfCutaway, type TfDemoResult, type TfMeshData, type TfMeshStats, type TfCutPlane } from '../trueform-client';
 import type { TfRecipe, TfInstr, Vec3 } from '$lib/engines/trueform/graph-to-tf';
@@ -376,6 +377,19 @@ function buildInstr(t: any, instr: TfInstr): any {
         divs: instr.divs,
         twist: instr.twist,
         scaleTop: instr.scaleTop,
+        segments: instr.segments,
+      });
+    case 'loft':
+      // A 2D section swept down Z while SCALED by a smooth shape-along-length
+      // curve (barrel/waist/flare/ogive/scurve) + twist → the ported welded-grid
+      // loft (tf_examples/loft.ts), the native analogue of Manifold's r_loft +
+      // BREP's ThruSections loft. Watertight + positively oriented by the builder.
+      return tfLoftProfile(t, instr.profile, {
+        length: instr.length,
+        divs: instr.divs,
+        twist: instr.twist,
+        bulge: instr.bulge,
+        shape: instr.shape,
         segments: instr.segments,
       });
     case 'profile':
@@ -737,6 +751,7 @@ function instrHasUnsupported(instr: TfInstr): boolean {
     case 'profile':
       return (instr.profile?.length ?? 0) < MIN_PROFILE_PTS;
     case 'weld_extrude':
+    case 'loft':
       // A section needs at least a triangle's worth of points to enclose area.
       return (instr.profile?.length ?? 0) < MIN_PROFILE_PTS;
     case 'sweep':
