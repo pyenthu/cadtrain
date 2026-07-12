@@ -4,6 +4,15 @@ The geometry core. Free to import from `src/lib/shared/*`. The old wells /
 training / pipe / rules code it used to sit beside was archived 2026-06-01
 (`archive/src/lib/...` — see `archive/CADTRAIN_CLEANUP.md`).
 
+> **⚠ 2026-07-12 — the ENGINE files MOVED to `src/lib/engines/` (E1 `da7399f`).**
+> `render-helpers`, `manifold-helpers`(+`-meta`), `manifold-mesh`, `warp-spline`,
+> `bake-{client,worker,worker-core}`, `mesh-serial` → `engines/manifold/`;
+> `graph-to-tf` → `engines/trueform/`; `brep-occt`/`brep-client` → `engines/brep/`.
+> The map below still lists them under `cad/` — they are at the new `engines/…`
+> path now. **STAYED in `cad/`:** `stdlib/`, `composition-*`, `sketch`, `csg-2d`,
+> `inline-profile`, `profile-templates`, `primitive-sandbox`, `survey-to-xyz`,
+> `manifold-trap`, `math-lib`, `part-id`, `param-keys`.
+
 ## Directory map
 
 ```

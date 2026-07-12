@@ -5,6 +5,17 @@ Components and helpers shared by the routes (`/graph-editor`,
 Domain libs may import from here; this directory must not import from
 domain libs.
 
+> **⚠ 2026-07-12 — `shared/` was modularized (#16 `6b72b40`) into themed subdirs;
+> the files listed below at the root now live in these:** `viewer/` (PrimitiveDual*,
+> SceneControls, scene-state, warp, vertex-alpha-partition, instance-colors,
+> part-appearance, material-{preset,textures}) · `svg/` (PrimitiveSvgView,
+> CompJsonSilhouette, svg-{emit,reduce,camera,silhouette}) · `profiles/` (ProfileFn*,
+> ProfilePalette, profile-{fn-compose,presets}) · `ui/` (NavMenu, ParamGrid,
+> dragNumber, floating-tip) · `types/` (TypeDefiner{Panel,Popover}) · `volume/`
+> (FolderTreeSidebar, CacheBrowser). The **ENGINE** files (`tf-*`, `trueform-*`,
+> `brep-adapter`, `crease-normals`) MOVED to `src/lib/engines/` (E1); `anthropic-api`
+> → `src/lib/server/`; `WellSideNav` → `src/lib/wells/`. The tree below predates this.
+
 ```
 src/lib/shared/
 ├── graph-editor/               # THE CAD editor, decomposed (modularize K.65 / docs/plans/graph-editor-pane.md)
