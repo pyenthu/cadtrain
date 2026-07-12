@@ -3,6 +3,42 @@
 **Status:** DEEP TODO (parked exploration, 2026-07-04). Task #4.
 **Rule:** extends project **Rule 25** (warp/segmentation resolution is a BUILD-TIME
 axial-Z concern, never a post-bake MeshGL rewrite).
+**Scope (2026-07-12):** ONE curvature→density model, applied in ALL THREE engines
+(MF · TF · BREP) — not a wells-only or Manifold-only fix.
+
+## 🎨 Visual plan — one curvature model, three engines (2026-07-12)
+
+The density of Z-subdivision is driven by the spline's **local curvature**, so a
+long-straight-with-a-small-bend part gets rings ONLY where it curves — collapsing
+vert/tri counts on the straight runs.
+
+```
+Today (uniform):     |‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖‖|   rings everywhere (up to the 256 cap)
+Curvature-adaptive:  |  ·   ·   ·  ‖‖‖‖‖  ·   ·   ·  |   dense only where it bends
+                     └─── straight ──┘└bend┘└─ straight ─┘
+```
+
+```mermaid
+flowchart LR
+  SP["survey / warp spline"] --> KZ["kappa(z): local curvature<br/>per axial station"]
+  KZ --> DZ["dz(z) = sqrt(8 * eps / kappa)<br/>clamp [minSpacing, maxSpacing]"]
+  DZ --> RINGS["non-uniform axial rings<br/>(WHERE, not just how many)"]
+  RINGS --> MF["MF: mesh-warp axial subdivide<br/>warp-spline.ts / r_revolve axisPath"]
+  RINGS --> TF["TF: planAxialStations<br/>station COUNT from turned angle"]
+  RINGS --> BR["BREP: spine sample density<br/>nSpine in the MakePipeShell sweep (#988)"]
+```
+
+**One model, three integration points** — the `kappa(z) -> dz` function is shared;
+each engine consumes it where it lays down axial resolution:
+
+| Engine | Where axial density is set TODAY | Adaptive change |
+|---|---|---|
+| **MF** | `warp-spline.ts` refine / `r_revolve` `zSegEff` (length-based) | drive ring PLACEMENT by `kappa(z)`, not length |
+| **TF** | `planAxialStations` / `maxStations` (already count-capped) | set the count from the summed turned-angle; cluster stations in bends |
+| **BREP** | `nSpine` in `warpSpline` (`brep-occt.ts`, `MIN_SPINE`/`MAX_SPINE` clamp) | sample the spine polyline denser where `kappa` is high — this is `/plan` #988 |
+
+The math (`dz = sqrt(8 * eps / kappa)`, sagitta tolerance) and the two fidelity
+levels (curvature-driven COUNT vs PLACEMENT) below are shared across all three.
 
 ## ✅ CHOSEN APPROACH (decided WITH the user, 2026-07-05)
 
