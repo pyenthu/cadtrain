@@ -41,11 +41,13 @@ export const scene = $state({
    *  OD/wall in the viewport. Read by builder.finalizeManifold via
    *  the setRenderZScale getter. UI lives in the SceneControls gear. */
   zScale: 1.0,
-  /** Render-time X (diameter / radial) exaggeration — VIEW ONLY. >1 fattens the
-   *  diameter so a long thin tool's bore/wall detail stays readable when zScale
-   *  compresses the length; <1 thins it. Applied (with zScale) as a scene-level
-   *  scale on the whole render group in PrimitiveDualScene; the part on disk +
-   *  the bake stay TRUE scale. The camera auto-fit accounts for both. */
+  /** Render-time RADIAL (X and Y together) diameter exaggeration — VIEW ONLY.
+   *  >1 fattens the diameter so a long thin tool's bore/wall detail stays readable
+   *  when zScale compresses the length; <1 thins it. Applied (with zScale) as a
+   *  scene-level scale [xScale, xScale, zScale] on the whole render group in
+   *  PrimitiveDualScene — X and Y always scale uniformly, so radially-symmetric
+   *  parts stay round; the part on disk + the bake stay TRUE scale. The camera
+   *  auto-fit accounts for both. */
   xScale: 1.0,
   /** When true, xScale/zScale are AUTO-set on each part load to normalize the
    *  displayed aspect ratio (a long thin tool reads thick + long-but-not-too-long;

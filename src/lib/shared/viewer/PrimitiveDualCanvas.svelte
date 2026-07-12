@@ -888,7 +888,7 @@
     }
   });
 
-  // #12: dismiss the X-dia / Z-depth scale popover on a click OUTSIDE it. The
+  // #12: dismiss the Radial / Z-depth scale popover on a click OUTSIDE it. The
   // toggle button itself is excluded so its own click still toggles (the open
   // click bubbles to window — without the guard it would immediately re-close).
   function closeScaleOnOutside(e: MouseEvent) {
@@ -912,8 +912,8 @@
   {#if name}<div class="pd-title">{name}</div>{/if}
   {#if description}<div class="pd-desc">{description}</div>{/if}
   <!-- View-scale settings — a gear below the title opens a small menu to
-       exaggerate the X-diameter and compress the Z-depth (view-only) so long
-       thin tools stay readable without losing diametric detail. -->
+       exaggerate the radial (X+Y) diameter and compress the Z-depth (view-only)
+       so long thin tools stay readable without losing diametric detail. -->
   <button class="pd-scale-btn" type="button" class:on={scaleMenuOpen}
     title="Diameter / depth view scale"
     onclick={() => (scaleMenuOpen = !scaleMenuOpen)}>⚙ scale</button>
@@ -938,7 +938,7 @@
   {#if scaleMenuOpen}
     <div class="pd-scale-menu">
       <div class="pd-scale-row">
-        <span class="pd-scale-lbl">X-dia ×{scene.xScale.toFixed(2)}</span>
+        <span class="pd-scale-lbl">Radial ×{scene.xScale.toFixed(2)}</span>
         <input type="range" min="0.25" max="8" step="0.25" bind:value={scene.xScale} oninput={() => (scene.scaleAuto = false)} />
       </div>
       <div class="pd-scale-row">
