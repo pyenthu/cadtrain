@@ -2,7 +2,7 @@
  * Shared PartColorLUT types — used by render-helpers (client + server bake) and
  * part-colors (server compile). No server-only imports here.
  */
-import type { PartAppearance } from '$lib/shared/part-appearance';
+import type { PartAppearance } from '$lib/shared/viewer/part-appearance';
 
 export interface PartColorLUT {
   /** hashId → outer '#rrggbb' (each part's external skin). */

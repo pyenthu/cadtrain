@@ -464,7 +464,7 @@
   // Lazy-load PrimitiveDualCanvas — WebGL / threlte → SSR-incompatible.
   onMount(async () => {
     try {
-      const mod = await import('$lib/shared/PrimitiveDualCanvas.svelte');
+      const mod = await import('$lib/shared/viewer/PrimitiveDualCanvas.svelte');
       PrimitiveDualCanvas = mod.default;
     } catch { /* fall back to "scene unavailable" message */ }
     try {

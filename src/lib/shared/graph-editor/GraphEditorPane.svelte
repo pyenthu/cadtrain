@@ -28,7 +28,7 @@
 -->
 <script lang="ts">
   import { onMount } from 'svelte';
-  import { scene } from '$lib/shared/scene-state.svelte';
+  import { scene } from '$lib/shared/viewer/scene-state.svelte';
   import {
     newGraph,
     addCall,

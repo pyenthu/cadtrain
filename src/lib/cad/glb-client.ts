@@ -25,7 +25,7 @@
  */
 import * as THREE from 'three';
 import { GLTFExporter } from 'three/examples/jsm/exporters/GLTFExporter.js';
-import type { PartAppearance } from '$lib/shared/part-appearance';
+import type { PartAppearance } from '$lib/shared/viewer/part-appearance';
 
 /** MATL presets → PBR constants. Mirrors the scene's own material table so a
  *  downloaded GLB shades like the viewport did. Unknown/absent → plain steel-ish

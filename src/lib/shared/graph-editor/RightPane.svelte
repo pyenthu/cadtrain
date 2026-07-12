@@ -69,7 +69,7 @@
     restartStatus?: string | null;
     mdAiBusy?: boolean;
     /** TODO #24 — plotted-spline diagnostic overlays; forwarded to the 3D bake. */
-    splineOverlays?: import('$lib/shared/PrimitiveDualScene.svelte').SplineOverlay[];
+    splineOverlays?: import('$lib/shared/viewer/PrimitiveDualScene.svelte').SplineOverlay[];
     rightTab?: RightTab;
     drawingMd?: string;
     onRebuild?: () => void;
@@ -83,7 +83,7 @@
   let PrimitiveSvgView = $state<any>(null);
   onMount(async () => {
     try {
-      const mod = await import('$lib/shared/PrimitiveDualCanvas.svelte');
+      const mod = await import('$lib/shared/viewer/PrimitiveDualCanvas.svelte');
       PrimitiveDualCanvas = mod.default;
     } catch { /* canvas unavailable */ }
   });

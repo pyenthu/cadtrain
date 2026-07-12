@@ -13,7 +13,7 @@
  */
 
 import * as THREE from 'three';
-import type { PartAppearance } from '$lib/shared/part-appearance';
+import type { PartAppearance } from '$lib/shared/viewer/part-appearance';
 
 export interface SerializedGeometry {
   positions: number[];

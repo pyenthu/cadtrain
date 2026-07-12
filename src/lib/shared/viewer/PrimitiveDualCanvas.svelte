@@ -15,14 +15,14 @@
   import { deserializeComponentResult } from '$lib/engines/manifold/mesh-serial';
   import { bakeClient, isCancelled } from '$lib/engines/manifold/bake-client';
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/engines/brep/brep-adapter';
-  import { scene } from '$lib/shared/scene-state.svelte';
+  import { scene } from '$lib/shared/viewer/scene-state.svelte';
 
   let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, material = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, onBakeTimings = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfActual = false, tfRecipe = undefined, tfPending = false }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
     /** Spline DIAGNOSTIC overlays (TODO #24) — plotted splines' resolved curves +
      *  control points, drawn INSIDE the live-mesh group so they align with the
      *  baked geometry. VIEW-ONLY; passed straight through to PrimitiveDualScene. */
-    overlays?: import('$lib/shared/PrimitiveDualScene.svelte').SplineOverlay[];
+    overlays?: import('$lib/shared/viewer/PrimitiveDualScene.svelte').SplineOverlay[];
     /** Saved per-part editor VIEW scale (VIEW-ONLY) for the PRIMARY open part.
      *  When set, opening this part APPLIES the saved z/x exaggeration to `scene`
      *  and disables auto-normalize (scene.scaleAuto = false); when both are
@@ -270,8 +270,8 @@
 
   onMount(async () => {
     const [scn, controls] = await Promise.all([
-      import('$lib/shared/PrimitiveDualScene.svelte'),
-      import('$lib/shared/SceneControls.svelte'),
+      import('$lib/shared/viewer/PrimitiveDualScene.svelte'),
+      import('$lib/shared/viewer/SceneControls.svelte'),
     ]);
     // No rebuild() here — setting Scene re-fires the keyed $effect below,
     // which owns ALL rebuild triggering (single path, no double-fetch).
@@ -573,7 +573,7 @@
         import('$lib/engines/trueform/trueform-adapter'),
         import('$lib/engines/trueform/tf_examples/execute'),
         import('$lib/engines/trueform/tf-bake-client'),
-        import('$lib/shared/material-preset'),
+        import('$lib/shared/viewer/material-preset'),
         import('$lib/cad/warp-geom'),
       ]);
       const importsMs = performance.now() - _tImp0; // dynamic-import cost (0 after 1st)

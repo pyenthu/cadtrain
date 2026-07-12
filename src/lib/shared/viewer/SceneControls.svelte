@@ -7,7 +7,7 @@
   //
   // Mounted by parent pages as a sibling to <Canvas> inside a
   // position:relative container.
-  import { scene } from '$lib/shared/scene-state.svelte';
+  import { scene } from '$lib/shared/viewer/scene-state.svelte';
   let open = $state(false);
   // Warp now bakes into the geometry server-side (a ~hundreds-of-ms re-bake),
   // so trigger it only on COMMIT — the master toggle, an axis switch, or an

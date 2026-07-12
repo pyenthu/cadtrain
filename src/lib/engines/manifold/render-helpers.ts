@@ -13,9 +13,9 @@ import { getCutBox, tagManifold } from './manifold-helpers';
 import { SECTION_ID, triSourceIds } from '$lib/cad/part-id';
 import { warpVertex, type WarpSpec } from '$lib/cad/warp-geom';
 import type { PartColorLUT } from '$lib/cad/part-lut-types';
-import type { PartAppearance, PartMesh } from '$lib/shared/part-appearance';
+import type { PartAppearance, PartMesh } from '$lib/shared/viewer/part-appearance';
 export type { PartColorLUT } from '$lib/cad/part-lut-types';
-export type { PartAppearance, PartMesh } from '$lib/shared/part-appearance';
+export type { PartAppearance, PartMesh } from '$lib/shared/viewer/part-appearance';
 
 export { CIRCULAR_SEGMENTS_DEFAULT, CIRCULAR_SEGMENTS_COMPOSE, setCircularSegmentMode, initManifold } from './manifold-helpers';
 function rgbMap(hexById: Record<number, string>): Map<number, [number, number, number]> {

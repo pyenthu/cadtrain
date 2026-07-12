@@ -731,7 +731,7 @@ export type Graph = {
    *  VIEW-ONLY (a material property) — never touches geometry/bake. Round-trips
    *  through emit (`meta.texture` + the serialised graph block) and
    *  `hydrateGraph`, exactly like `opacity`. The name is resolved to a shared
-   *  `THREE.Texture` by `$lib/shared/material-textures.getMaterialTexture`;
+   *  `THREE.Texture` by `$lib/shared/viewer/material-textures.getMaterialTexture`;
    *  unknown names resolve to `undefined` (no map). PER-SUBPART texture in a
    *  composed assembly is NOT supported (one vertex-coloured mesh has no
    *  per-subpart UVs) — this is a PER-PART property. */

@@ -24,7 +24,7 @@
   // Lazy-load the same Threlte scene used by /primitives so we get camera +
   // lights + warp toggle for free; it just doesn't need a GLB pane here.
   onMount(async () => {
-    const m = await import('$lib/shared/PrimitiveDualScene.svelte');
+    const m = await import('$lib/shared/viewer/PrimitiveDualScene.svelte');
     Scene = m.default;
   });
 

@@ -114,7 +114,7 @@ export interface WellPart {
    *  so it is a usable Svelte `{#each}` key and a selection id. */
   id: string;
   geo: import('three').BufferGeometry;
-  appearance?: import('$lib/shared/part-appearance').PartAppearance;
+  appearance?: import('$lib/shared/viewer/part-appearance').PartAppearance;
 }
 
 export interface BakedWell {

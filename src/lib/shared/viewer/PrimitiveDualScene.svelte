@@ -36,13 +36,13 @@
   import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js';
   import * as THREE from 'three';
   import { onMount } from 'svelte';
-  import { scene } from '$lib/shared/scene-state.svelte';
+  import { scene } from '$lib/shared/viewer/scene-state.svelte';
   // TEMP warp experiment — mirror ComponentScene/ComponentSceneGlb so the
   // warp toggle works in the combined canvas too (was dropped in the rewrite).
-  import { attachWarpShader, subdivideAlongZ } from '$lib/shared/warp';
-  import { getMaterialTexture } from '$lib/shared/material-textures';
-  import { materialPreset } from '$lib/shared/material-preset';
-  import { partitionTrianglesByAlpha } from '$lib/shared/vertex-alpha-partition';
+  import { attachWarpShader, subdivideAlongZ } from '$lib/shared/viewer/warp';
+  import { getMaterialTexture } from '$lib/shared/viewer/material-textures';
+  import { materialPreset } from '$lib/shared/viewer/material-preset';
+  import { partitionTrianglesByAlpha } from '$lib/shared/viewer/vertex-alpha-partition';
 
   let {
     geo = null,

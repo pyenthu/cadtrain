@@ -17,9 +17,9 @@
 import { recognizeComposite } from './recognize-composite';
 import { evalMetaLiteral } from './primitives-meta';
 import { usesOf, fetchDepSource } from './primitive-loader';
-import { colorsForInstance, DEFAULT_INNER_COLOR } from '$lib/shared/instance-colors';
+import { colorsForInstance, DEFAULT_INNER_COLOR } from '$lib/shared/viewer/instance-colors';
 import { partHashId } from '$lib/cad/part-id';
-import type { PartAppearance } from '$lib/shared/part-appearance';
+import type { PartAppearance } from '$lib/shared/viewer/part-appearance';
 import type { PartColorLUT } from '$lib/cad/part-lut-types';
 export type { PartColorLUT } from '$lib/cad/part-lut-types';
 

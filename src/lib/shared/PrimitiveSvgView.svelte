@@ -45,7 +45,7 @@
    * light-angle slider spins L about the view so the highlight sweeps.
    */
   import * as THREE from 'three';
-  import { scene } from '$lib/shared/scene-state.svelte';
+  import { scene } from '$lib/shared/viewer/scene-state.svelte';
   import {
     deserializeComponentResult,
     type SerializedComponentResult,
