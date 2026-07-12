@@ -69,6 +69,18 @@ export function unwireGraph(graph: Graph, ref: WireRef): Graph {
   }
 }
 
+/** Build the WireRef for a container (list/stack/group) output wire feeding
+ *  `child`. The ref MUST carry the child's TRUE index in `container.children` —
+ *  NOT its position among the VISIBLE slots. The root Output card filters out
+ *  consumed children from its visible slots, so the visible index and the true
+ *  index disagree whenever a consumed child precedes a wired one; since
+ *  `unwireGraph`→`removeContainerChildAt` clears `children[index]`, a
+ *  visible-index ref would delete a SIBLING wire. */
+export function containerChildRef(graph: Graph, containerId: NodeId, child: NodeId): WireRef {
+  const kids = (graph.nodes[containerId] as { children?: NodeId[] } | undefined)?.children;
+  return { kind: 'container-child', nodeId: containerId, index: kids ? kids.indexOf(child) : -1 };
+}
+
 /** Human-readable label for the delete popover ("delete <this>"). */
 export function describeWireRef(graph: Graph, ref: WireRef): string {
   const nm = (id: NodeId): string => {

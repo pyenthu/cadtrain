@@ -13,7 +13,7 @@
     rootOutputSockY, extractParamRefs, warpPathCY, warpPathCX,
   } from './geom';
   import { exprBlockMember } from '$lib/graph/graph-exprs';
-  import type { WireRef } from './wire-delete';
+  import { containerChildRef, type WireRef } from './wire-delete';
   import { spliceWireKey, type SpliceWire } from './wire-splice';
 
   let {
@@ -580,14 +580,16 @@
                   {@const tgt = n.id === graph.root
                     ? { x: rootPos.x, y: rootPos.y + rootOutputSockY(nodeSize(graph, n).h, i, visKids.length) }
                     : slotIn(n.id, i)}
-                  <!-- Splice uses the TRUE children[] index (root's visKids is
-                       filtered of consumed nodes, so `i` ≠ children index there);
-                       delete keeps its existing visKids-index ref unchanged. -->
-                  {@const sw = mkWire({ kind: 'container-child', nodeId: n.id, index: (n as any).children.indexOf(childId) }, childId)}
+                  <!-- Both splice AND delete key off the TRUE children[] index
+                       (root's visKids is filtered of consumed nodes, so the
+                       visible loop index `i` ≠ the children index there — using
+                       `i` for delete removed a SIBLING wire). containerChildRef
+                       resolves the child's real index; sw.ref carries it. -->
+                  {@const sw = mkWire(containerChildRef(graph, n.id, childId), childId)}
                   {@const swKey = spliceWireKey(sw)}
                   <path class="ge-wire output" class:root={n.id === graph.root}
                     d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
-                  <path class="ge-wire-hit" class:splice-target={dragActive && spliceTargetKey === swKey} data-splice={JSON.stringify(sw)} data-splice-key={swKey} onpointerup={drop(sw)} d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit({ kind: 'container-child', nodeId: n.id, index: i })}/>
+                  <path class="ge-wire-hit" class:splice-target={dragActive && spliceTargetKey === swKey} data-splice={JSON.stringify(sw)} data-splice-key={swKey} onpointerup={drop(sw)} d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit(sw.ref)}/>
                 {/if}
               {/each}
             {/if}

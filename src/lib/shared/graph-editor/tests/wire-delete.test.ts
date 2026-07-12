@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { unwireGraph, describeWireRef, type WireRef } from '../wire-delete';
+import { unwireGraph, describeWireRef, containerChildRef, type WireRef } from '../wire-delete';
 import type { Graph } from '$lib/graph/composition-graph';
 
 /** Minimal graph builder — enough for the unwire mutators (which read/spread the
@@ -49,6 +49,41 @@ describe('unwireGraph', () => {
     const graph = { ...g({ c: { id: 'c', type: 'call', src: 'x', args: {} }, mat: { id: 'mat', type: 'material' } }), materialBindings: { c: 'mat' } } as any;
     const out = unwireGraph(graph, { kind: 'material', partId: 'c' }) as any;
     expect(out.materialBindings?.c).toBeUndefined();
+  });
+
+  it('container-child: deletes the CLICKED output wire, not a sibling shifted by a consumed child', () => {
+    // Root Output collects [A, B, C]. B is consumed (wired into a method), so
+    // the root card FILTERS it out of its visible slots → visible = [A, C].
+    // C therefore renders at visible index 1 but is children[2]. Clicking C's
+    // wire must delete C, not children[1] (=B) — the reported "multi-part card"
+    // bug where deleting one connector removed a different one.
+    const graph = g({
+      A: { id: 'A', type: 'call', src: 'x', args: {} },
+      B: { id: 'B', type: 'call', src: 'y', args: {} },
+      C: { id: 'C', type: 'call', src: 'z', args: {} },
+      m: { id: 'm', type: 'method', op: 'add', obj: 'B', arg: 'B' },
+      r: { id: 'r', type: 'list', children: ['A', 'B', 'C'] },
+    });
+
+    // The UI builds the ref from the CHILD, so it resolves C's TRUE index (2).
+    const ref = containerChildRef(graph, 'r', 'C');
+    expect(ref).toEqual({ kind: 'container-child', nodeId: 'r', index: 2 });
+
+    const out = unwireGraph(graph, ref);
+    expect((out.nodes.r as any).children).toEqual(['A', 'B']); // exactly C removed
+
+    // Regression pin: the OLD ref used the VISIBLE loop index (1 for C), which
+    // removes children[1] (=B) — the wrong wire. Keep this asserting the bug so
+    // any revert to a visible-index ref fails loudly.
+    const buggy = unwireGraph(graph, { kind: 'container-child', nodeId: 'r', index: 1 });
+    expect((buggy.nodes.r as any).children).toEqual(['A', 'C']); // WRONG child gone
+  });
+
+  it('containerChildRef: -1 for an absent child / missing container', () => {
+    const graph = g({ r: { id: 'r', type: 'list', children: ['A'] }, A: { id: 'A', type: 'call', src: 'x', args: {} } });
+    expect(containerChildRef(graph, 'r', 'A').kind === 'container-child' && (containerChildRef(graph, 'r', 'A') as any).index).toBe(0);
+    expect((containerChildRef(graph, 'r', 'Z') as any).index).toBe(-1);
+    expect((containerChildRef(graph, 'nope', 'A') as any).index).toBe(-1);
   });
 
   it('describeWireRef: readable labels', () => {
