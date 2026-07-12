@@ -50,8 +50,8 @@
     deserializeComponentResult,
     type SerializedComponentResult,
   } from '$lib/engines/manifold/mesh-serial';
-  import { buildSvgCamera } from '$lib/shared/svg-camera';
-  import { projectScene, shadeAndEmit, type ProjectedScene, type ProjectEntry } from '$lib/shared/svg-emit';
+  import { buildSvgCamera } from '$lib/shared/svg/svg-camera';
+  import { projectScene, shadeAndEmit, type ProjectedScene, type ProjectEntry } from '$lib/shared/svg/svg-emit';
 
   let {
     meshJson = null,

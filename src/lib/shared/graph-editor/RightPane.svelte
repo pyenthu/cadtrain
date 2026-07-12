@@ -89,7 +89,7 @@
   });
   onMount(async () => {
     try {
-      const mod = await import('$lib/shared/PrimitiveSvgView.svelte');
+      const mod = await import('$lib/shared/svg/PrimitiveSvgView.svelte');
       PrimitiveSvgView = mod.default;
     } catch { /* svg view unavailable */ }
   });

@@ -33,11 +33,11 @@
 // tuning constant + the view params arrive via `opts`.
 
 import * as THREE from 'three';
-import { triangleKeepMask } from '$lib/shared/svg-reduce';
+import { triangleKeepMask } from '$lib/shared/svg/svg-reduce';
 import {
   buildWelded, classifyOutlineEdges, chainEdges,
   mergeCollinearPolyline, polylineToPath,
-} from '$lib/shared/svg-silhouette';
+} from '$lib/shared/svg/svg-silhouette';
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 

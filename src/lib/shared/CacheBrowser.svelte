@@ -61,7 +61,7 @@
   async function ensureSvgView() {
     if (!SvgView) {
       try {
-        SvgView = (await import('$lib/shared/PrimitiveSvgView.svelte')).default;
+        SvgView = (await import('$lib/shared/svg/PrimitiveSvgView.svelte')).default;
       } catch (e) {
         /* leave null — preview just won't show */
       }

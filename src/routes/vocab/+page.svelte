@@ -468,7 +468,7 @@
       PrimitiveDualCanvas = mod.default;
     } catch { /* fall back to "scene unavailable" message */ }
     try {
-      const mod = await import('$lib/shared/CompJsonSilhouette.svelte');
+      const mod = await import('$lib/shared/svg/CompJsonSilhouette.svelte');
       CompJsonSilhouette = mod.default;
     } catch { /* silhouette renderer optional */ }
   });
