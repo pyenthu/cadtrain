@@ -124,9 +124,9 @@ Legend: ✅ SHIPPED · 🔲 TODO · ◐ PARTIAL.
 The seams already exist; this phase makes the library authoritative and clears
 stale docs.
 - ✅ 12-tool registry `EDITOR_TOOLS` + `toClaudeTools()` + `toolListText()`
-  (`src/lib/cad/editor-tools-schema.ts`).
+  (`src/lib/graph/editor-tools-schema.ts`).
 - ✅ Pure dispatcher `dispatchEditorTool` + `readEditorState`
-  (`src/lib/cad/editor-tools.ts` + `.test.ts`).
+  (`src/lib/graph/editor-tools.ts` + `.test.ts`).
 - ✅ Backend-agnostic loop `runAssistLoop` (`postTurn` seam, `MAX_STEPS=6`, Stop,
   capped/error states) + per-pane `createAssistSession` factory
   (`src/lib/shared/graph-editor/ge-assist.ts` / `.svelte.ts` / `.test.ts`).
@@ -184,7 +184,7 @@ The biggest near-term accuracy/token win, **no training**.
 
 ### P3 — WebLLM local runtime  (= #2, data-residency runtime)
 The runtime the whole system targets. Default OFF, Anthropic stays dev fallback.
-- 🔲 `src/lib/cad/ai/webllm/engine.ts` — lazy `@mlc-ai/web-llm` in a **Web
+- 🔲 `src/lib/graph/ai/webllm/engine.ts` — lazy `@mlc-ai/web-llm` in a **Web
   Worker** (never the bake/render thread), WebGPU feature-detect, Cache-Storage
   weights. Start **Qwen2.5-1.5B-Instruct** + XGrammar constrained to
   `toJsonSchema()`.
@@ -313,9 +313,9 @@ with the editor" true over time, enforced (not aspirational) by the sync test.
   in `ai-multishot-assist.md` §H and `ai-rag-system.md`; it was never built and
   is **superseded by #27's `verdict:'error'` rows in `ai/feedback/turns.jsonl`**.
   Do not build two sinks.
-- **Path refs** — several docs cite `src/lib/cad/ai/editor-tools*` and
+- **Path refs** — several docs cite `src/lib/graph/ai/editor-tools*` and
   `src/lib/shared/ge-assist.svelte.ts`; actual shipped paths are
-  `src/lib/cad/editor-tools*` and `src/lib/shared/graph-editor/ge-assist.*`
+  `src/lib/graph/editor-tools*` and `src/lib/shared/graph-editor/ge-assist.*`
   (`.ts` pure loop + `.svelte.ts` factory). Use the actual paths going forward.
 - **Tool count** — docs variously say "7 tools" / "12 tools"; actual shipped =
   **12** (`getEditorState, addParam, setParamSchema, wireArgToParam, setCallArg,
@@ -325,7 +325,7 @@ with the editor" true over time, enforced (not aspirational) by the sync test.
 ---
 
 ## Files (pointers; NO implementation in this commit)
-- Registry/dispatcher/loop (SHIPPED): `src/lib/cad/editor-tools-schema.ts`,
+- Registry/dispatcher/loop (SHIPPED): `src/lib/graph/editor-tools-schema.ts`,
   `editor-tools.ts` (+`.test.ts`), `src/lib/shared/graph-editor/ge-assist.ts`
   (+`.svelte.ts`, `.test.ts`), `AiMenu.svelte`, `src/routes/api/rag/assist/+server.ts`.
 - RAG (SHIPPED): `src/lib/server/{rag-corpus,rag-query,rag-prompt,rag-l1}.ts`,
@@ -333,6 +333,6 @@ with the editor" true over time, enforced (not aspirational) by the sync test.
 - New (roadmap): `editor-tools-coverage.test.ts` (P0); missing-tool arms +
   `src/routes/api/ai/feedback/+server.ts` + `AiMenu` verdict UI (P1);
   `src/lib/server/ai-docs-corpus.ts` + synthetic generator + embeddings +
-  `toJsonSchema()` (P2); `src/lib/cad/ai/webllm/{engine,corpus,prompt}.ts` (P3);
+  `toJsonSchema()` (P2); `src/lib/graph/ai/webllm/{engine,corpus,prompt}.ts` (P3);
   fine-tune/MLC pipeline (P4, dev-only).
 </content>

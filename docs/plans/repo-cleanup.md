@@ -50,7 +50,7 @@ tree, CLAUDE.md Rule 2) rather than hard `rm`, except for untracked scratch.
 | `ingest-comp-list.ts` | 2026-06-06 | `docs/HISTORY.md`, `/plan` | one-off SVTC component ingest (historical) |
 | `sync-svtc-compjson.ts` | 2026-06-06 | `docs/HISTORY.md`, `/plan` | one-off sync (historical) |
 | `demo-composition-graph.ts` | 2026-06-06 | `docs/plans/composition-architecture.md` | demo / proof-of-concept |
-| `spike_makerjs.ts` | 2026-06-12 | comment in `src/lib/cad/sketch.ts` | spike; sketch shipped |
+| `spike_makerjs.ts` | 2026-06-12 | comment in `src/lib/graph/sketch.ts` | spike; sketch shipped |
 | `spike_sketch.ts` / `spike_sketch_node.ts` | 2026-06-12 | none | spikes; sketch shipped |
 | `spike_csg_originalid.ts` | 2026-05-27 | source comments + HISTORY + plan | spike that informed `part-id.ts`; result captured, script not needed |
 | `bench_helix.ts` / `test_raw_helix.ts` | 2026-05-20 | `docs/CAD_AUTHORING.md` | benchmark/experiment; findings in memory `bench_extrude_findings` |

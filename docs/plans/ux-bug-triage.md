@@ -177,7 +177,7 @@ src/lib/shared/graph-editor/GraphEditorPane.svelte:1817
   graph = setLayout(graph, dragging, { x: dragOrig.x + dx, y: dragOrig.y + dy, w: dragOrig.w });
 ```
 
-`setLayout` (`src/lib/cad/composition-graph-mutate.ts:20-22`) returns a **new**
+`setLayout` (`src/lib/graph/composition-graph-mutate.ts:20-22`) returns a **new**
 `graph` object (`{ ...graph, layout: { ...graph.layout, [id]: xy } }`).
 Reassigning `graph` invalidates every `$derived`/`{#each}` that reads it — all
 node cards, all param wires, and every `bezier()` route recompute on **each**

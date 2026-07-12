@@ -90,7 +90,7 @@ slivers).
 
 ## Why (what's wrong today)
 
-Two independent resolutions meet in the warp (`src/lib/cad/warp-spline.ts`):
+Two independent resolutions meet in the warp (`src/lib/graph/warp-spline.ts`):
 
 - **Spline subdivision = the PATH.** `catmullRomDense(cp)` makes a dense polyline
   + arc-length table; `at(s)` samples position + frame at ANY `s`. Effectively
@@ -115,7 +115,7 @@ no slivers, fast.
 ## What already exists (build on it, don't rebuild)
 
 `r_revolve(profile, segments, zSegments?, axisPath?)`
-(`src/lib/cad/stdlib/r_revolve.ts`) ALREADY does build-time axial rings on the 2D
+(`src/lib/graph/stdlib/r_revolve.ts`) ALREADY does build-time axial rings on the 2D
 profile before revolving (Rule 25):
 
 - `axisPath` = a deviated well trajectory (`[z,dx,dy]` knots); each ring's centre
@@ -196,9 +196,9 @@ radius (e.g. `ε = 0.02·r`) so the tolerance auto-scales with part size.
 ## References
 
 - Rule 25 (build-time Z-segmentation) — root `CLAUDE.md`.
-- `src/lib/cad/warp-spline.ts` — `warpManifoldAlongSpline`, `splineSampler`,
+- `src/lib/graph/warp-spline.ts` — `warpManifoldAlongSpline`, `splineSampler`,
   `spline3DFrames` (the current uniform-`refine` warp).
-- `src/lib/cad/stdlib/r_revolve.ts` lines ~92–210 — the `axisPath` deviated tube +
+- `src/lib/graph/stdlib/r_revolve.ts` lines ~92–210 — the `axisPath` deviated tube +
   uniform axial densifier (the primary integration point).
 - SVTC `~/code/SVTC/src/lib/apps/wson/threeD/manifoldCut.js` `warpGeometry` +
   `Wson3DScene.svelte` `CylinderGeometry(r, r, len, 48, heightSegs)` — the fast

@@ -4,7 +4,7 @@
 > `docs/plans/sweep-thread-engine.md`). Revolve, extrude, helix, thread, flute
 > and lobe are all just **a single parametric surface** `fn(u,v) → [x,y,z]`,
 > laid down as ONE welded `gridPatch` + caps. stdlib engine
-> (`src/lib/cad/stdlib/r_surface.ts`), git-tracked, read-only in the GUI
+> (`src/lib/graph/stdlib/r_surface.ts`), git-tracked, read-only in the GUI
 > (Rule 21).
 
 ## The idea (manifold by construction)
@@ -90,7 +90,7 @@ volume part CAN pass a function to a stdlib engine.
 
 ## r_helical_surface now delegates
 
-`src/lib/cad/stdlib/r_helical_surface.ts` builds its `threadFn` (tooth / runout /
+`src/lib/graph/stdlib/r_helical_surface.ts` builds its `threadFn` (tooth / runout /
 seam / taper — the thread's IDENTITY) and calls
 `r_surface(threadFn, Nθ, Nz, true, true, true)` instead of hand-rolling the
 `gridPatch` + cap fans + `weldAndBuild`. Verified **byte-identical**: the
@@ -104,14 +104,14 @@ whose centroid is the axis — exactly what the old axis-apex cap fan produced.
 ## Z-down
 
 `v → z` with z=0 the TOP and larger z DEEPER (down-hole), consistent with every
-other engine (`src/lib/cad/CLAUDE.md`).
+other engine (`src/lib/graph/CLAUDE.md`).
 
 ## Reference
 
 - Plan: `docs/plans/sweep-thread-engine.md` (⭐ THE CONVERGENCE; Options 0–4).
 - Thread engine that delegates here: `docs/parts/r_helical_surface.md`.
-- Welded toolkit: `src/lib/cad/manifold-mesh.ts` (`gridPatch` / `weldAndBuild`);
-  Rule 25 + `src/lib/cad/CLAUDE.md` (volume-sign check — `weldAndBuild` flips a
+- Welded toolkit: `src/lib/graph/manifold-mesh.ts` (`gridPatch` / `weldAndBuild`);
+  Rule 25 + `src/lib/graph/CLAUDE.md` (volume-sign check — `weldAndBuild` flips a
   negative-volume solid so the caller never has to wind triangles perfectly).
 - **Option 4 (undercut) stays reserved** — a single-valued surface can't make
   overhanging flanks; build the tooth as one swept ribbon + `body.subtract(ribbon)`

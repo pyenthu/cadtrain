@@ -170,7 +170,7 @@ export const details: Record<number, PlanDetail> = {
     ],
     refs: [
       'docs/plans/wells-build-architecture.md (P1–P3, WellBakePool)',
-      'src/lib/cad/bake-worker.ts + bake-client.ts (reused pipeline)',
+      'src/lib/graph/bake-worker.ts + bake-client.ts (reused pipeline)',
       'src/lib/wells/WellSchematic3D.svelte (the main-thread $derived.by stack to move off-thread)',
     ],
     recorded: false,
@@ -237,7 +237,7 @@ export const details: Record<number, PlanDetail> = {
     ],
     refs: [
       'docs/plans/curvature-adaptive-warp-subdivision.md',
-      'src/lib/cad/bake-worker-core.ts (_axialMaxZSpan dial)',
+      'src/lib/graph/bake-worker-core.ts (_axialMaxZSpan dial)',
     ],
     recorded: false,
   },
@@ -273,7 +273,7 @@ export const details: Record<number, PlanDetail> = {
       'Merged meshes carry per-source material groups',
     ],
     refs: [
-      'src/lib/cad/tf-worker-core.ts (per-part material + merge)',
+      'src/lib/graph/tf-worker-core.ts (per-part material + merge)',
       'memory: session_handoff_2026-07-06',
     ],
     recorded: false,
@@ -299,7 +299,7 @@ export const details: Record<number, PlanDetail> = {
       'docs/plans/warp-part-along-spline.md (items: originZ wiring)',
       'docs/plans/complex-params-list-of-parts.md',
       'docs/plans/parts-params.md',
-      'src/lib/cad/nodes/kinds/parts-map.ts (P3, shipped)',
+      'src/lib/graph/nodes/kinds/parts-map.ts (P3, shipped)',
     ],
     recorded: false,
   },

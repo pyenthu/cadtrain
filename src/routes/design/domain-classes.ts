@@ -2,7 +2,7 @@
  * domain-classes.ts — the composition-graph DOMAIN MODEL as a Mermaid class
  * diagram, for the /design "Class model" tab (UmlClassDiagram.svelte).
  *
- * Source of truth: src/lib/cad/composition-graph-types.ts. The GraphNode class
+ * Source of truth: src/lib/graph/composition-graph-types.ts. The GraphNode class
  * LIST + inheritance edges are AUTO-DERIVED from the `GraphNode` union by
  * scripts/gen-design-diagrams.mjs — so an added/removed node type surfaces on
  * the next regen. The namespace grouping + per-class FIELD lines are a curated,

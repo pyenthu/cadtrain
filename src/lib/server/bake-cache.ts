@@ -32,7 +32,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, rm, stat, unlink, writeFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { volumePath } from './volume';
-import { ENGINE_HASH } from '$lib/cad/engine-hash';
+import { ENGINE_HASH } from '$lib/graph/engine-hash';
 
 const CACHE_DIR = 'cache';
 /** SHA-256 hex truncated to 16 chars — 64-bit collision space. */
@@ -144,7 +144,7 @@ export function hashBakeKey(
   // stdlib) don't appear in `body`, so without this a fix to one of them would
   // keep hitting the pre-fix cache entry. `engineHash` is a defaulted arg only
   // so tests can drive two engine states without editing real files; production
-  // always uses the build-time ENGINE_HASH constant. See src/lib/cad/engine-hash.ts.
+  // always uses the build-time ENGINE_HASH constant. See src/lib/graph/engine-hash.ts.
   h.update('engine:');
   h.update(engineHash);
   h.update('|');

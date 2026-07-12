@@ -148,7 +148,7 @@ return m;
 
 ### 5. `getCutBox()` — don't module-cache wasm-bound Manifolds
 
-The cutBox used for the cutaway view used to be cached in a module-local variable. Vite SSR HMR rebuilds the module → cached Manifold class identity goes stale → embind throws `Expected null or instance of Manifold, got an instance of Manifold` on the next `subtract`. Fix: rebuild every call. (Already fixed in `src/lib/cad/manifold-helpers.ts:getCutBox`, but if you write similar caches elsewhere, don't.)
+The cutBox used for the cutaway view used to be cached in a module-local variable. Vite SSR HMR rebuilds the module → cached Manifold class identity goes stale → embind throws `Expected null or instance of Manifold, got an instance of Manifold` on the next `subtract`. Fix: rebuild every call. (Already fixed in `src/lib/graph/manifold-helpers.ts:getCutBox`, but if you write similar caches elsewhere, don't.)
 
 ### 6. `CrossSection.extrude` does NOT take an arbitrary 3D path
 
@@ -327,7 +327,7 @@ return geom;
 ## Where to look next
 
 - Existing primitives in `<volume>/primitives/` — copy a v5 / v6 as a starting point. Same shape.
-- Bundle primitives at `src/lib/cad/components/*.ts` — git-tracked, more elaborate (validate functions, family classification).
-- `src/lib/cad/CLAUDE.md` — domain rules including the gotchas above.
-- `src/lib/cad/manifold-helpers.ts` — the helper toolkit; read it to discover what's available.
+- Bundle primitives at `src/lib/graph/components/*.ts` — git-tracked, more elaborate (validate functions, family classification).
+- `src/lib/graph/CLAUDE.md` — domain rules including the gotchas above.
+- `src/lib/graph/manifold-helpers.ts` — the helper toolkit; read it to discover what's available.
 - `~/.claude/projects/-Users-neerajsethi-code-cadtrain/memory/*.md` — lessons from prior sessions.

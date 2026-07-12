@@ -304,11 +304,11 @@ Steps 1–2 are pure geometry → **headless (build + vitest)**, no browser
 ## References
 - `docs/plans/curvature-adaptive-warp-subdivision.md` — the *post-warp* sibling
   (sagitta math, the pure-JS `warpMeshJS` decision, clip-plane cutaway).
-- `src/lib/cad/manifold-mesh.ts` — `sweepAlongPath` / `sweepFrames` /
+- `src/lib/graph/manifold-mesh.ts` — `sweepAlongPath` / `sweepFrames` /
   `loftStations` / `revolveProfile` / `subdivideProfileAxial` / `sweepAnnular`.
-- `src/lib/cad/stdlib/r_revolve.ts` (lines ~92–210, the `axisPath` shear) ·
+- `src/lib/graph/stdlib/r_revolve.ts` (lines ~92–210, the `axisPath` shear) ·
   `r_sweep.ts` · `r_weld_extrude.ts`.
-- `src/lib/cad/warp-spline.ts` — `warpMeshJS` (post-warp, positions+normals) ·
+- `src/lib/graph/warp-spline.ts` — `warpMeshJS` (post-warp, positions+normals) ·
   `spline3DFrames` · `catmullRomDense`. **READ-ONLY (in-flight edits).**
 - SVTC `~/code/SVTC/src/lib/apps/wson/threeD/manifoldCut.js` — `warpGeometry`
   (PT frame, pure-JS vertex warp) · `boreNDivisions` (uniform 1 ring/5 MD) ·

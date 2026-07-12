@@ -19,7 +19,7 @@ used for sweeping… but it needs to be a single mesh." Hunch (correct): also **
 ### A. Section = a 2D REGION, not just one loop
 - Represent the xSection as a Manifold **`CrossSection`** (2D): outer boundary + inner
   holes. CrossSection natively supports `.add/.subtract/.intersect` (2D booleans) + holes.
-  Helpers already exist in `src/lib/cad/csg-2d.ts` (`cs`, `extrude_csg`, `ext`, `resample`).
+  Helpers already exist in `src/lib/graph/csg-2d.ts` (`cs`, `extrude_csg`, `ext`, `resample`).
 - A closed **planar (XY) spline** → one boundary loop; multiple loops/shapes → CSG'd
   into a single CrossSection.
 

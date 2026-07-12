@@ -69,7 +69,7 @@ describe('runCompiledManifold — hand-written script', () => {
 
 describe('runCompiledManifold — real compiled primitive (r_cuboid)', () => {
   it('compiles r_cuboid via the PR1 compiler and bakes it client-side', async () => {
-    const source = readFileSync(resolve('src/lib/cad/stdlib/r_cuboid.ts'), 'utf8');
+    const source = readFileSync(resolve('src/lib/graph/stdlib/r_cuboid.ts'), 'utf8');
     // No deps → fetchFn is never called; a throwing stub proves it.
     const fetchFn = (async () => { throw new Error('no dep fetch expected'); }) as unknown as typeof fetch;
     const { script, scriptHash } = await compilePrimitiveScript(source, 'r_cuboid', fetchFn);

@@ -71,7 +71,7 @@ The behavioral rules — three-layer model, name-collision convention,
 
 `loadGeomFromSource`, `parseImports`, `enforceSplitGrammar`,
 `expandInstancePropRefs` are still kept so the Builder tab can preview in-flight
-edits to bundle primitives in `src/lib/cad/components/*.ts`. No library part uses
+edits to bundle primitives in `src/lib/graph/components/*.ts`. No library part uses
 it any more — every `library/<cat>/<id>/` now has a `part.json`. Plan:
 `~/.claude/plans/grammar-split-init-compose.md` (which describes the intermediate
 split-grammar TS shape; the JSON pivot supersedes Stage G onward).

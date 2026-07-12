@@ -4,7 +4,7 @@
  * Lives in its own module so per-primitive component files can import the
  * helpers without depending on (or cycling through) builder.ts. Each
  * primitive's geom() ends up reading just from here:
- *     import { cyl, tube, mv } from '$lib/cad/manifold-helpers';
+ *     import { cyl, tube, mv } from '$lib/graph/manifold-helpers';
  *
  * The Manifold WASM is initialised once via initManifold(); after that,
  * cyl/tube/mv/rot use the live `M` reference. Callers MUST await
@@ -16,10 +16,10 @@ import Module from 'manifold-3d';
 // revolve path (revolveProfile). manifold-mesh imports nothing from here (it
 // reads the wasm singleton off globalThis), so this import is acyclic.
 import { subdivideProfileAxial, getAxialMaxZSpan, getAxialMaxSegPerEdge, revolveProfile, weldAndBuild } from './manifold-mesh';
-import { triSourceIds } from '$lib/cad/part-id';
+import { triSourceIds } from '$lib/graph/part-id';
 // Trap detection lives in `manifold-trap.ts` — no `manifold-3d` import there, so
 // the MAIN-THREAD bake-client can use it without pulling the WASM module in.
-export { isManifoldFatalTrap, describeManifoldError } from '$lib/cad/manifold-trap';
+export { isManifoldFatalTrap, describeManifoldError } from '$lib/graph/manifold-trap';
 
 // CIRCULAR_SEGMENTS_DEFAULT — used when nothing overrides.
 // CIRCULAR_SEGMENTS_COMPOSE — temporarily set by compose.ts via
@@ -29,7 +29,7 @@ export const CIRCULAR_SEGMENTS_DEFAULT = 256;
 export const CIRCULAR_SEGMENTS_COMPOSE = 96;
 
 // Global WASM/Module singleton — Vite SSR + the bundle's
-// `import.meta.glob` for `src/lib/cad/components/*.ts` produce SEPARATE
+// `import.meta.glob` for `src/lib/graph/components/*.ts` produce SEPARATE
 // module instances of this file at runtime. The bundled components
 // close over their instance's `M` binding directly; if that instance's
 // `initManifold` never runs, the binding stays null. Even worse: when
@@ -881,7 +881,7 @@ function sectionCutWedge(solid: any, az: number, offset: number): any {
   // ≤ maxZSpan so the cut faces inherit z-rings that bend smoothly. We use
   // refineToLength (edge subdivision) NOT extrude(zlen, nDiv, 0): the latter
   // trips manifold-3d's degenerate-slice bug (nDivisions>0 && twist===0 →
-  // "Not manifold" — see src/lib/cad/CLAUDE.md). The wedge is small + this is
+  // "Not manifold" — see src/lib/graph/CLAUDE.md). The wedge is small + this is
   // pre-subtract, so the refine is cheap. maxZSpan <= 0 (no warp) → bare
   // extrude → byte-identical to the golden non-warp bake.
   const maxZSpanRaw = getAxialMaxZSpan() ?? 0;

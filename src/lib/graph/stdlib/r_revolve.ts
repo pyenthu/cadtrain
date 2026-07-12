@@ -2,7 +2,7 @@
  * r_revolve — function-first surface of revolution (welded method).
  *
  * STANDARD-LIBRARY PRIMITIVE. This is a git-tracked, type-checked stdlib
- * primitive (src/lib/cad/stdlib/), NOT a volume part — it is canonical here
+ * primitive (src/lib/graph/stdlib/), NOT a volume part — it is canonical here
  * and read-only in the GUI. The src/server resolver (primitive-paths /
  * /api/primitives/source) serves stdlib primitives BEFORE the volume, and
  * /api/primitives/save refuses to write them (edit here + redeploy).

@@ -2,8 +2,8 @@
 
 **Status:** planning (2026-06-28). Locks the architecture for expression-driven
 threads + a unified sweep engine, decided in a long design thread. Build order +
-contracts below. Engines live in `src/lib/cad/stdlib/` (Rule 21); the welded-mesh
-toolkit is `src/lib/cad/manifold-mesh.ts` (`gridPatch`/`capFan`/`weldAndBuild`,
+contracts below. Engines live in `src/lib/graph/stdlib/` (Rule 21); the welded-mesh
+toolkit is `src/lib/graph/manifold-mesh.ts` (`gridPatch`/`capFan`/`weldAndBuild`,
 Rule 25).
 
 ## The core decision (why this shape)
@@ -99,7 +99,7 @@ geometry the expression owns* and *how manifoldness is guaranteed*.
 5. **4** (undercut band + CSG) — reserved tail; only for overhanging flanks.
 
 ## Where things live (user, 2026-06-28)
-- **Engines** → `src/lib/cad/stdlib/` (git-tracked, read-only in the GUI, Rule 21):
+- **Engines** → `src/lib/graph/stdlib/` (git-tracked, read-only in the GUI, Rule 21):
   the new `r_helical_surface` (Option 2) + later `r_sweep` (Option 3).
 - **Example parts** → a NEW `basic/thread_grooves/` group on the volume.
 

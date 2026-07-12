@@ -109,12 +109,12 @@ Key files: `execute.ts` (`isRevolveTree`, `densifyRevolveTree`, warp case ~450�
 
 Bake already sets `_axialMaxZSpan` when the compiled script contains `warpSpline(`:
 
-- `src/lib/cad/bake-worker-core.ts` ~182–185 (`WARP_AXIAL_MAX_ZSPAN = 1.5`)
+- `src/lib/graph/bake-worker-core.ts` ~182–185 (`WARP_AXIAL_MAX_ZSPAN = 1.5`)
 - `src/routes/api/primitives/preview/+server.ts` ~261–265
 
 That dial is the Manifold stand-in for `densifyRevolveTree` — densify at **build** time while the geom tree runs (Rule 25).
 
-**Gap:** `r_revolve` **ignores** the dial. It only densifies when `zSegments ≥ 1` or an in-engine deviation path is set (`src/lib/cad/stdlib/r_revolve.ts` ~142–180). `g_shaft` ships `zSegments: 0`, so under a warp bake the shafts stay lean → hollow + `sectionCut` run on 2-ring bodies → cut faces get long diagonals → `warpManifoldAlongSpline` turns them into the bridging tri.
+**Gap:** `r_revolve` **ignores** the dial. It only densifies when `zSegments ≥ 1` or an in-engine deviation path is set (`src/lib/graph/stdlib/r_revolve.ts` ~142–180). `g_shaft` ships `zSegments: 0`, so under a warp bake the shafts stay lean → hollow + `sectionCut` run on 2-ring bodies → cut faces get long diagonals → `warpManifoldAlongSpline` turns them into the bridging tri.
 
 Contrast: the old helper `revolve()` in `manifold-helpers.ts` **does** call `subdivideProfileAxial(…, getAxialMaxZSpan())` — but volume parts use **`r_revolve`**, not that helper.
 
@@ -151,21 +151,21 @@ flowchart TB
 
 ### Primary (TF-equivalent)
 
-In `src/lib/cad/stdlib/r_revolve.ts`:
+In `src/lib/graph/stdlib/r_revolve.ts`:
 
 - When `getAxialMaxZSpan()` is set **and** effective `zSegments` is still 0, densify the `(r,z)` profile with that max Z-span (same math as the inlined `zSegments` block / `subdivideProfileAxial` in `manifold-mesh.ts`).
-- Import `getAxialMaxZSpan` from `$lib/cad/manifold-mesh` (stdlib engine modules can import; the old “sandbox can’t inject” comment does not apply here).
+- Import `getAxialMaxZSpan` from `$lib/graph/manifold-mesh` (stdlib engine modules can import; the old “sandbox can’t inject” comment does not apply here).
 - Dial off + `zSegments: 0` → **byte-identical** lean bake (non-warp parts unchanged).
 - Dial on (warp bake) → dense rings **before** hollow / cut / warp — same structural order as TF.
 
 ### Secondary (keep + tighten)
 
-In `src/lib/cad/manifold-helpers.ts` `sectionCut`:
+In `src/lib/graph/manifold-helpers.ts` `sectionCut`:
 
 - Keep existing wedge `refineToLength(maxZSpan)`.
 - After `solid.subtract(wedge)`, also `refineToLength(maxZSpan)` when dial on — catches boolean remesh leftovers on cut faces.
 
-**Do not** use `extrude(zlen, nDiv, 0)` — manifold-3d degenerate-slice bug (`nDivisions > 0 && twist === 0` → `"Not manifold"`; see `src/lib/cad/CLAUDE.md`).
+**Do not** use `extrude(zlen, nDiv, 0)` — manifold-3d degenerate-slice bug (`nDivisions > 0 && twist === 0` → `"Not manifold"`; see `src/lib/graph/CLAUDE.md`).
 
 No TF changes. No volume edits to `bw_casing` (engine fix covers all consumers).
 
@@ -186,15 +186,15 @@ No TF changes. No volume edits to `bw_casing` (engine fix covers all consumers).
 
 | File | Role |
 |------|------|
-| `src/lib/cad/stdlib/r_revolve.ts` | **Primary fix** — honor axial dial |
-| `src/lib/cad/manifold-mesh.ts` | `getAxialMaxZSpan` / `subdivideProfileAxial` |
-| `src/lib/cad/manifold-helpers.ts` | `sectionCut` wedge + post-subtract refine |
-| `src/lib/cad/bake-worker-core.ts` | sets dial when `warpSpline(` in script |
+| `src/lib/graph/stdlib/r_revolve.ts` | **Primary fix** — honor axial dial |
+| `src/lib/graph/manifold-mesh.ts` | `getAxialMaxZSpan` / `subdivideProfileAxial` |
+| `src/lib/graph/manifold-helpers.ts` | `sectionCut` wedge + post-subtract refine |
+| `src/lib/graph/bake-worker-core.ts` | sets dial when `warpSpline(` in script |
 | `src/routes/api/primitives/preview/+server.ts` | same dial on server bake |
-| `src/lib/cad/warp-spline.ts` | `warpManifoldAlongSpline` |
+| `src/lib/graph/warp-spline.ts` | `warpManifoldAlongSpline` |
 | `src/lib/shared/tf_examples/execute.ts` | TF reference (`densifyRevolveTree`) |
-| `src/lib/cad/sectioncut-warp-axial.test.ts` | existing wedge densify tests — extend |
-| `src/lib/cad/stdlib/r_revolve.test.ts` | dial ON lean densify unit |
+| `src/lib/graph/sectioncut-warp-axial.test.ts` | existing wedge densify tests — extend |
+| `src/lib/graph/stdlib/r_revolve.test.ts` | dial ON lean densify unit |
 
 ---
 

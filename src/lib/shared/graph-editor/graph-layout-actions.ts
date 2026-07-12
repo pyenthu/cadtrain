@@ -4,8 +4,8 @@
 // IN (mirrors the geom.ts captured-state pattern), so nothing here reads
 // `$state`. The shell keeps the thin `autoLayout`/`undoAutoLayout`/`pushApart`
 // entry points (they own the `undoLayout` snapshot + assign `graph`).
-import { type Graph, type NodeId } from '$lib/cad/composition-graph';
-import { autoLayoutGraph, forceSeparate } from '$lib/cad/composition-layout';
+import { type Graph, type NodeId } from '$lib/graph/composition-graph';
+import { autoLayoutGraph, forceSeparate } from '$lib/graph/composition-layout';
 import {
   nodeSize,
   outputSocketAt,

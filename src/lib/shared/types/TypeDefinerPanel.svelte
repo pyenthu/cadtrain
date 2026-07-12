@@ -10,7 +10,7 @@
   import {
     allPortTypes, portType, defineRecordType, listOf,
     type PortType,
-  } from '$lib/cad/port-types';
+  } from '$lib/graph/port-types';
 
   type DraftField = { name: string; typeId: string; list: boolean };
   type Draft = { id: string; label: string; fields: DraftField[] };

@@ -57,7 +57,7 @@
     STACK_REF_PARAM,
     type Graph,
     type NodeId,
-  } from '$lib/cad/composition-graph';
+  } from '$lib/graph/composition-graph';
   import { dragNumber } from '$lib/shared/ui/dragNumber';
   import { PROFILE_REGISTRY } from '$lib/shared/profiles/profile-presets';
   import {
@@ -69,9 +69,9 @@
     WARP_CHILD_CY, WARP_PATH_CY, warpSolidCY, CUTAWAY_CHILD_CY,
   } from './geom';
   import { isCallDrifted, refreshCallArgs } from './graph-editor-bake.svelte';
-  import { portType, listOf, structColor } from '$lib/cad/port-types';
-  import { inferStructure, structLabel } from '$lib/cad/struct-type';
-  import { isImperative } from '$lib/cad/expr-imperative';
+  import { portType, listOf, structColor } from '$lib/graph/port-types';
+  import { inferStructure, structLabel } from '$lib/graph/struct-type';
+  import { isImperative } from '$lib/graph/expr-imperative';
   import { producerLabel, parseProfileExpr, argStr, argFrom } from './args';
 
   // typed-expression-outputs (Phase B) — the SOCKET descriptor for an expr

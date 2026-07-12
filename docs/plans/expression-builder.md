@@ -357,7 +357,7 @@ export type GraphExpr = {
   bake signature never shifts.
 - **Multiple outputs** = multiple `GraphExpr` rows. One builder popup can author
   one expr (single output) or, in the multi-output mode, several at once.
-- **Topological evaluation** — `src/lib/cad/graph-exprs.ts` (pure, tested):
+- **Topological evaluation** — `src/lib/graph/graph-exprs.ts` (pure, tested):
   parse each `src` to an AST, extract its `e.*` references (SymbolNodes in the
   `e.` namespace), build a dependency DAG among exprs, topo-sort, **detect cycles**
   (return a clear error, never throw uncaught), and emit `const e_<name> = <src>;`
@@ -477,7 +477,7 @@ let errors= $derived(ast ? validate(ast, schema) : [{ msg: 'Parse error' }]);
 Each green on `bun run build` + `bun run test` (vitest — NOT bare `bun test`).
 
 1. **PR-1 — model + topo-eval (pure, no UI).** `GraphExpr` type + sparse
-   `graph.exprs?`; `src/lib/cad/graph-exprs.ts` (parse refs, DAG, topo-sort, cycle
+   `graph.exprs?`; `src/lib/graph/graph-exprs.ts` (parse refs, DAG, topo-sort, cycle
    detect, emit order); wire into `composition-emit.ts` (prepend `const e_*`
    block; no-op when empty). `graph-exprs.test.ts`: topo order; cycle → error; an
    `e.*` referencing `p.*`; **no-exprs ⇒ byte-identical emit**. Add `mathjs` dep
@@ -535,11 +535,11 @@ Each green on `bun run build` + `bun run test` (vitest — NOT bare `bun test`).
 
 ## 11. Files this will touch
 
-- `src/lib/cad/composition-graph-types.ts` — `GraphExpr`, `graph.exprs?`.
-- `src/lib/cad/graph-exprs.ts` — **NEW** pure topo-eval + ref extraction.
-- `src/lib/cad/expr-schema.ts` — **NEW** shared allowlist (inputs rule + fn set +
+- `src/lib/graph/composition-graph-types.ts` — `GraphExpr`, `graph.exprs?`.
+- `src/lib/graph/graph-exprs.ts` — **NEW** pure topo-eval + ref extraction.
+- `src/lib/graph/expr-schema.ts` — **NEW** shared allowlist (inputs rule + fn set +
   arity), imported by validator AND emitter.
-- `src/lib/cad/composition-emit.ts` — prepend topo-ordered `const e_*` block.
+- `src/lib/graph/composition-emit.ts` — prepend topo-ordered `const e_*` block.
 - `src/lib/shared/graph-editor/ExpressionBuilderPopup.svelte` + the block
   components under `graph-editor/expr/` — **NEW**.
 - `src/lib/shared/graph-editor/RightPane.svelte` — the EXPR tab (PR-5).

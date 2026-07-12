@@ -15,7 +15,7 @@
  * proxy: the pre-fix build ALSO satisfied "more verts + still manifold".
  *
  * Metric + geometry reuse the #64 describe block in
- * `src/lib/cad/sectioncut-warp-axial.test.ts` (`edgeSpan()`), on the same
+ * `src/lib/graph/sectioncut-warp-axial.test.ts` (`edgeSpan()`), on the same
  * 40-long hollow casing (RO 3.5 / RI 3.1) — but the warp spline is derived from
  * S4's ACTUAL survey trajectory, so this is the deviated rung, not a synthetic
  * curve. Headless (CLAUDE.md Rule 26): Manifold runs in Node, no browser.
@@ -25,7 +25,7 @@ import { describe, it, expect, beforeAll, afterEach } from 'vitest';
 import { initManifold, sectionCut } from '$lib/engines/manifold/manifold-helpers';
 import { setAxialMaxZSpan } from '$lib/engines/manifold/manifold-mesh';
 import { warpManifoldAlongSpline } from '$lib/engines/manifold/warp-spline';
-import { r_revolve } from '$lib/cad/stdlib/r_revolve';
+import { r_revolve } from '$lib/graph/stdlib/r_revolve';
 import { buildTrajectory } from './assemble';
 import { parseWson, type Wson } from './wson';
 

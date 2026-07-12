@@ -68,7 +68,7 @@ out of the same move. **Zero engine change.** This is the g_wavy_star plan.
   mesh size scales with sample count.
 
 ### Tier 2 — sketch + spline + fillet (NEEDS ONE ENGINE FIX)
-The sketch engine (`src/lib/cad/sketch.ts`) already has `spline` (Bézier) and
+The sketch engine (`src/lib/graph/sketch.ts`) already has `spline` (Bézier) and
 `fillet` (Maker.js arc) ops, sampled at `segments`. True smooth arcs with
 **independent per-corner fillet radii** — the canonical smooth-profile path.
 - *Gap:* the `sketch` graph node takes a **static ops array** — no loop. A
@@ -121,6 +121,6 @@ the **profile itself** has straight segments (g_star) or the **z-slicing**
 
 - `docs/plans/wavy-star.md` — the concrete Tier-1/Tier-2 build plan
 - `docs/research/cad_authoring_patterns.archived-2026-06-01.md` — prior snapshot
-- `src/lib/cad/sketch.ts` (spline/fillet) · `composition-emit.ts` (sketch emit)
+- `src/lib/graph/sketch.ts` (spline/fillet) · `composition-emit.ts` (sketch emit)
 - g_star investigation (2026-06-14): polygon straight edges + `divs:12` = blocky
 - [Replicad (OCCT/BREP reference)](https://replicad.xyz/docs/examples/wavy-vase)

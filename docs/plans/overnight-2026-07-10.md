@@ -34,7 +34,7 @@ data or real trust.
    Manifold's `MeshGL`. Subdividing a finished welded Manifold OOB-crashes the
    WASM core and poisons the singleton so every *later* bake fails.
 5. **If you change `manifold-helpers.ts` or `manifold-mesh.ts`, you MUST bump
-   `KERNEL_VERSION`** in `src/lib/cad/bake-worker-core.ts`. Those modules are
+   `KERNEL_VERSION`** in `src/lib/graph/bake-worker-core.ts`. Those modules are
    transitive engine imports: they change neither the part source nor `scriptHash`,
    so both the server bake cache and the client IndexedDB cache keep serving the
    pre-fix mesh and your fix looks broken. This has now bitten twice (`+cap1`,

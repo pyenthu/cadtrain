@@ -1,7 +1,7 @@
 # Plan: TXFMN — a single transform card replacing the mv/rot strips
 
 **Status:** PROPOSED (not built). 2026-06-16.
-**Scope:** `src/lib/cad/composition-graph-*.ts`, `composition-emit.ts`,
+**Scope:** `src/lib/graph/composition-graph-*.ts`, `composition-emit.ts`,
 `src/lib/shared/graph-editor/{geom.ts,wire-state.svelte.ts,GraphEditorPane.svelte}`.
 **Goal:** collapse the two separate `mv` + `rot` inline strips into ONE compact
 **TXFMN** card with two sections (ROT / MV), each row carrying a ƒ-expr input
@@ -109,7 +109,7 @@ not-yet-migrated in-memory graph still type-checks. New code never CREATES them.
 
 `removeNode` (mutate.ts:971) and `nodesUsing`/`predecessorsOf` type-guards
 (`n.type==='mv'||n.type==='rot'`) all gain `||n.type==='txfmn'`. Grep
-`'mv'\|'rot'` across `src/lib/cad` + `graph-editor` — every hit is a guard or a
+`'mv'\|'rot'` across `src/lib/graph` + `graph-editor` — every hit is a guard or a
 render branch to extend.
 
 ---

@@ -6,7 +6,7 @@ and **if/then** — no JS/TS, no variable declarations. Extends the imperative b
 was started (#11) but never finished for full visual output editing.
 
 ## What exists (the foundation)
-- `src/lib/cad/expr-imperative.ts` — the IMPERATIVE accumulator model for list outputs:
+- `src/lib/graph/expr-imperative.ts` — the IMPERATIVE accumulator model for list outputs:
   `poly = []` / `for i = 0 to N { point = [x,y]; poly.append(point) }` / return poly.
   Parses ↔ serializes ↔ compiles to a JS IIFE (real for-loop + push). Statements TODAY:
   **assign** + **append**; blocks: **for** (with an optional 2nd iterator). Body exprs are

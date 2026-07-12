@@ -19,7 +19,7 @@ import { stdlibSource } from '$lib/server/stdlib';
 // GET /api/primitives/source?name=helix_band
 //   → { source: "<JSDoc + function + body>" }
 
-const HELPERS_PATH = resolve(process.cwd(), 'src/lib/cad/manifold-helpers.ts');
+const HELPERS_PATH = resolve(process.cwd(), 'src/lib/engines/manifold/manifold-helpers.ts');
 
 function extractSource(src: string, name: string): string {
   // Same algorithm as the client-side extractor — keeps the two in sync.

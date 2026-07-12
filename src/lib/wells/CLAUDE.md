@@ -64,7 +64,7 @@ in `WellSchematic3D`. Design: `docs/plans/wells-build-architecture.md` §3b/3c/3
   geometry cache key incl. survey fingerprint), `shellReplyToGeometry`, and
   `bakeWellShells(pool, specs, onGeo, onError)` (streaming keep-all reconcile).
   THREE lives here. Tested: `well-bake-client.test.ts`.
-- **Reuses** `$lib/cad/mesh-serial` (`serializeGeometry`/`deserializeGeometry`,
+- **Reuses** `$lib/graph/mesh-serial` (`serializeGeometry`/`deserializeGeometry`,
   now exported) for the single-geometry round-trip. The `WellSchematic3D` render-
   path swap (progressive `$state` map, drop `{#key geomKey}`) is the P2 follow-on
   needing browser verification — the pool/worker/seam are the foundation.
@@ -87,7 +87,7 @@ simple `assemble.ts` trajectory walk for the cutaway schematic.
   cutTube / cutSphere` build primitives DIRECTLY in manifold-3d then half-section
   cut; `manifoldToColoredGeo` (per-vertex grey cut-face colors). **Adapted to
   cadtrain's SHARED Manifold singleton** — `initManifold()` delegates to
-  `$lib/cad/manifold-helpers` (`globalThis.__cadtrain_manifold__`), no 2nd WASM
+  `$lib/graph/manifold-helpers` (`globalThis.__cadtrain_manifold__`), no 2nd WASM
   Module; explicit per-primitive segment counts so the global 256 is untouched.
   (SVTC's dgeo-curtain / debug-cutter builders were intentionally NOT ported.)
 - `threeD/index.ts` — `buildWellDirection(profile, td)` (+ vertical fallback) +

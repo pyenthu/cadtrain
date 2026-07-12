@@ -18,8 +18,8 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { extractGraphFromSource } from '$lib/shared/graph-editor/graph-editor-bake';
-import { hydrateGraph } from '$lib/cad/composition-graph-hydrate';
-import { emitGraph } from '$lib/cad/composition-emit';
+import { hydrateGraph } from '$lib/graph/composition-graph-hydrate';
+import { emitGraph } from '$lib/graph/composition-emit';
 
 const ROOT = process.cwd();
 const GRAPH_DIR = join(ROOT, 'tests/golden/graph');

@@ -19,7 +19,7 @@ Keep it simple and visually consistent with the existing dark routes.
   The archived `MarkdownView` component is gone — we render with `marked`
   directly, no need to revive it.
 - **`import.meta.glob` precedent**: `src/lib/server/stdlib.ts` uses
-  `import.meta.glob('/src/lib/cad/stdlib/*.ts', { query:'?raw', import:'default', eager:true })`
+  `import.meta.glob('/src/lib/graph/stdlib/*.ts', { query:'?raw', import:'default', eager:true })`
   to inline raw file text into the build at compile time. We reuse this exact
   pattern, pointed at `/docs/research/*.md` + `/docs/FINDINGS.md`. The leading-
   slash path is relative to the Vite project root (the repo root), so `/docs/...`

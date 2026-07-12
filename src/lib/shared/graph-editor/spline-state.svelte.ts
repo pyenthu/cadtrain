@@ -26,9 +26,9 @@ import {
   setSplinePlot,
   asLiteral,
   type Graph,
-} from '$lib/cad/composition-graph';
-import { resolveWiredSplinePoints } from '$lib/cad/spline-eval';
-import { resampleSpline } from '$lib/cad/spline-resample';
+} from '$lib/graph/composition-graph';
+import { resolveWiredSplinePoints } from '$lib/graph/spline-eval';
+import { resampleSpline } from '$lib/graph/spline-resample';
 
 // ─── plotted-spline diagnostic overlays (TODO #24) ─────────────────────────
 // Auto-colour palette — distinct hues so PATH vs SECTION (and any further

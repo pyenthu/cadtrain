@@ -13,7 +13,7 @@
   screen-fixed. Positioning (x/y/w/h) comes from GEP's layout constants.
 -->
 <script lang="ts">
-  import { hasStackRef, type Graph } from '$lib/cad/composition-graph';
+  import { hasStackRef, type Graph } from '$lib/graph/composition-graph';
 
   let {
     x, y, w, h,

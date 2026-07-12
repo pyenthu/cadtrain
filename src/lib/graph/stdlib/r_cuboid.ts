@@ -1,7 +1,7 @@
 /**
  * r_cuboid — axis-aligned box, centered at the origin.
  *
- * STANDARD-LIBRARY PRIMITIVE. Lives in `src/lib/cad/stdlib/` — git-tracked,
+ * STANDARD-LIBRARY PRIMITIVE. Lives in `src/lib/graph/stdlib/` — git-tracked,
  * canonical, read-only in the GUI. Served BEFORE the volume by the resolver,
  * write endpoints reject the id.
  *

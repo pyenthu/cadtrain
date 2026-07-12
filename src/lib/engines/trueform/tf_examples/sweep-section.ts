@@ -1,7 +1,7 @@
 /**
  * tf_examples/sweep-section — ARBITRARY 2D-SECTION swept solid for TrueForm
  * (TODO #50/#51). The general analogue of Manifold's `sweepAlongPath`
- * (`src/lib/cad/manifold-mesh.ts`), aimed at `tf.mesh(faces, points)`.
+ * (`src/lib/graph/manifold-mesh.ts`), aimed at `tf.mesh(faces, points)`.
  *
  * ┌ WHY THIS EXISTS ───────────────────────────────────────────────────────────┐
  * │ TrueForm's ONLY native path generator is `tubeMesh` — a fixed CIRCULAR       │

@@ -21,7 +21,7 @@ import { bakeCacheKey } from '$lib/engines/manifold/bake-worker-core';
 import { ENGINE_HASH } from './engine-hash';
 
 // A real leaf engine (no meta.uses) so compile needs no dep fetch.
-const R_CUBOID = readFileSync(resolve('src/lib/cad/stdlib/r_cuboid.ts'), 'utf8');
+const R_CUBOID = readFileSync(resolve('src/lib/graph/stdlib/r_cuboid.ts'), 'utf8');
 const noFetch = (async () => { throw new Error('no dep fetch expected'); }) as unknown as typeof fetch;
 
 const PARAMS = [2, 3, 4];

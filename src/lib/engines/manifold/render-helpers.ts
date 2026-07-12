@@ -10,11 +10,11 @@ import * as THREE from 'three';
 // component files can import them without depending on this file. Re-exported
 // here for back-compat with anything still importing them from this file.
 import { getCutBox, tagManifold } from './manifold-helpers';
-import { SECTION_ID, triSourceIds } from '$lib/cad/part-id';
-import { warpVertex, type WarpSpec } from '$lib/cad/warp-geom';
-import type { PartColorLUT } from '$lib/cad/part-lut-types';
+import { SECTION_ID, triSourceIds } from '$lib/graph/part-id';
+import { warpVertex, type WarpSpec } from '$lib/graph/warp-geom';
+import type { PartColorLUT } from '$lib/graph/part-lut-types';
 import type { PartAppearance, PartMesh } from '$lib/shared/viewer/part-appearance';
-export type { PartColorLUT } from '$lib/cad/part-lut-types';
+export type { PartColorLUT } from '$lib/graph/part-lut-types';
 export type { PartAppearance, PartMesh } from '$lib/shared/viewer/part-appearance';
 
 export { CIRCULAR_SEGMENTS_DEFAULT, CIRCULAR_SEGMENTS_COMPOSE, setCircularSegmentMode, initManifold } from './manifold-helpers';
@@ -96,7 +96,7 @@ export function getRenderZScale(): number { return _renderZScale; }
  * geom's natural units.
  */
 /** Default outer/inner viewer hexes — the historical red/grey convention
- *  (docs: src/lib/cad/CLAUDE.md "Vertex colours classify faces"). Used only
+ *  (docs: src/lib/graph/CLAUDE.md "Vertex colours classify faces"). Used only
  *  to fill the OTHER side when the caller supplies just one of the two
  *  per-part colour overrides. When NEITHER is supplied the override is
  *  undefined and the legacy heuristic runs byte-identically. */

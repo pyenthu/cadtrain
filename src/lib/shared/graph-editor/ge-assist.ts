@@ -24,8 +24,8 @@
  * (logFixError) and fed back as an `is_error` tool_result so the model can
  * recover on the next turn.
  */
-import { dispatchEditorTool, readEditorState, type EditorContext } from '$lib/cad/editor-tools';
-import type { Graph } from '$lib/cad/composition-graph';
+import { dispatchEditorTool, readEditorState, type EditorContext } from '$lib/graph/editor-tools';
+import type { Graph } from '$lib/graph/composition-graph';
 
 /** Hard cap on model turns per `run()`. SVTC used 5; 6 covers a realistic edit
  *  (addParam → wireArgToParam → addCall → addCsg → setMethodInput → confirm). */

@@ -28,7 +28,7 @@ export const DELETE = async ({ url }) => {
   // Stdlib primitives live in git-tracked src/ — they can't be archived or
   // deleted from the volume. Remove the file in src + redeploy instead.
   if (isStdlib(id)) {
-    throw error(403, `"${id}" is a built-in (src) primitive — it can't be deleted from the volume; remove src/lib/cad/stdlib/${id}.ts and redeploy.`);
+    throw error(403, `"${id}" is a built-in (src) primitive — it can't be deleted from the volume; remove src/lib/graph/stdlib/${id}.ts and redeploy.`);
   }
 
   const archiveDir = volumePath(join('primitives', ARCHIVE));

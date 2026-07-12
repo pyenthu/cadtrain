@@ -502,7 +502,7 @@
         ...(cd.partColors ? { parts: cd.partColors } : {}) };
       const result: any = await bakeClient.run({ script: cd.script, scriptHash: cd.scriptHash, params: args, options, bust });
       if (ac.signal.aborted || isCancelled(result)) return;
-      const { exportGlbClient } = await import('$lib/cad/glb-client');
+      const { exportGlbClient } = await import('$lib/graph/glb-client');
       // A cut GLB exports the half-section (cutVC); otherwise the solid.
       const parts = glbCut ? result.cutParts : result.parts;
       const full = glbCut ? result.cutVC : result.full;
@@ -574,7 +574,7 @@
         import('$lib/engines/trueform/tf_examples/execute'),
         import('$lib/engines/trueform/tf-bake-client'),
         import('$lib/shared/viewer/material-preset'),
-        import('$lib/cad/warp-geom'),
+        import('$lib/graph/warp-geom'),
       ]);
       const importsMs = performance.now() - _tImp0; // dynamic-import cost (0 after 1st)
       if (ac.signal.aborted) return;

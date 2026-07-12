@@ -112,7 +112,7 @@
 </div>
 
 <p class="uml-caption">
-  Source of truth: <code>src/lib/cad/composition-graph-types.ts</code> · drag to pan · zoom with the buttons
+  Source of truth: <code>src/lib/graph/composition-graph-types.ts</code> · drag to pan · zoom with the buttons
 </p>
 
 <style>

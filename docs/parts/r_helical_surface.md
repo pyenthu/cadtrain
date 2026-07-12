@@ -3,7 +3,7 @@
 > KEYSTONE thread engine (Option 2 of `docs/plans/sweep-thread-engine.md`).
 > A helical thread as ONE welded displacement surface `r(θ, z)` — manifold
 > **by construction**: no separate band, no inter-turn weld, no CSG.
-> stdlib engine (`src/lib/cad/stdlib/r_helical_surface.ts`), git-tracked,
+> stdlib engine (`src/lib/graph/stdlib/r_helical_surface.ts`), git-tracked,
 > read-only in the GUI (Rule 21).
 >
 > **DELEGATES to `r_surface` (2026-06-28).** This engine now builds its
@@ -104,5 +104,5 @@ the valid cutaway confirms correct orientation.
 - Band+sweep predecessor (helix-as-traversal-axis): `r_threads`
   (`src/volume_backup/primitives/basic/r_threads.prim.ts`) — borrowed its tooth
   profiles + cap winding.
-- Welded toolkit: `src/lib/cad/manifold-mesh.ts` (`gridPatch`/`capFan`/
-  `weldAndBuild`); Rule 25 + `src/lib/cad/CLAUDE.md` (volume-sign check).
+- Welded toolkit: `src/lib/graph/manifold-mesh.ts` (`gridPatch`/`capFan`/
+  `weldAndBuild`); Rule 25 + `src/lib/graph/CLAUDE.md` (volume-sign check).

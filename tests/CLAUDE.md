@@ -8,7 +8,7 @@ Two layers, both gitignored from the production Docker image.
 - `src/lib/training/phash.test.ts` — DCT correctness, Hamming distance
 - `src/lib/training/image_diff.test.ts` — SSIM + Sobel edge diff
 - `src/lib/training/retrieval.test.ts` — RAG ranking on synthetic primitives
-- `src/lib/cad/mesh-serial.test.ts` — { full, cutVC } JSON round-trip
+- `src/lib/graph/mesh-serial.test.ts` — { full, cutVC } JSON round-trip
 - `src/lib/authoring/compose.test.ts` — pre-existing module-resolution failure, unrelated to the product split
 
 ## End-to-end — Playwright (`bun run test:e2e`)

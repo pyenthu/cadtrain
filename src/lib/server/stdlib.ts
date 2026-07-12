@@ -1,7 +1,7 @@
 /**
  * stdlib + stdlib/stale — the git-tracked, type-checked "standard library"
- * primitives that live in src (src/lib/cad/stdlib/<id>.ts, deprecated ones in
- * src/lib/cad/stdlib/stale/<id>.ts), NOT on the volume.
+ * primitives that live in src (src/lib/graph/stdlib/<id>.ts, deprecated ones in
+ * src/lib/graph/stdlib/stale/<id>.ts), NOT on the volume.
  *
  * WHY src and not the volume: engine/standard-library primitives are
  * infrastructure, not user content. Keeping them in src buys version
@@ -27,8 +27,8 @@
  * from src.
  *
  * Adding a stdlib primitive: drop a new `<id>.ts` (exporting `meta` + a
- * function named `<id>`) into src/lib/cad/stdlib/. It auto-registers here.
- * Deprecating: `git mv src/lib/cad/stdlib/<id>.ts src/lib/cad/stdlib/stale/`.
+ * function named `<id>`) into src/lib/graph/stdlib/. It auto-registers here.
+ * Deprecating: `git mv src/lib/graph/stdlib/<id>.ts src/lib/graph/stdlib/stale/`.
  */
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
@@ -36,14 +36,14 @@ export type StdOrigin = 'stdlib' | 'stdstale';
 
 // Eager raw-source maps — separate per-origin glob so we know which dir
 // each id came from (drives the sidebar grouping + the "stale" warning).
-const stdlibRaw = import.meta.glob('/src/lib/cad/stdlib/*.ts', {
+const stdlibRaw = import.meta.glob('/src/lib/graph/stdlib/*.ts', {
   query: '?raw', import: 'default', eager: true,
 }) as Record<string, string>;
 // Deprecated engines now live in a `stale/` SUBFOLDER of stdlib (relocated
 // 2026-06-28 from the old top-level stdstale/ dir). Origin stays 'stdstale' so
 // the API/sidebar/picker keep classifying + flagging them unchanged. The main
 // stdlib glob above is non-recursive (*.ts), so it does NOT pick these up.
-const stdstaleRaw = import.meta.glob('/src/lib/cad/stdlib/stale/*.ts', {
+const stdstaleRaw = import.meta.glob('/src/lib/graph/stdlib/stale/*.ts', {
   query: '?raw', import: 'default', eager: true,
 }) as Record<string, string>;
 

@@ -41,8 +41,8 @@ lists the spline).
 
 ### 1.1 The 12 shipped tools
 
-`src/lib/cad/editor-tools-schema.ts` (`EDITOR_TOOLS`) + dispatch
-`src/lib/cad/editor-tools.ts` (`dispatchEditorTool`):
+`src/lib/graph/editor-tools-schema.ts` (`EDITOR_TOOLS`) + dispatch
+`src/lib/graph/editor-tools.ts` (`dispatchEditorTool`):
 
 | Tool | Backing mutator | Area |
 |---|---|---|

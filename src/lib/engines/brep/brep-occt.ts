@@ -19,7 +19,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import * as mathLib from '$lib/cad/math-lib';
+import * as mathLib from '$lib/graph/math-lib';
 
 // The bare-name math surface a part/assembly body may reference (cos/sin/tau/…
 // PLUS ceil/hypot/sign/clamp/frac/lerp/deg/rad/pi/atan2/…). Mirror the primitive
@@ -83,7 +83,7 @@ export async function extractRevolveProfile(
   source: string,
   paramValues: Record<string, number> = {},
 ): Promise<[number, number][] | null> {
-  const { compileSketch } = await import('$lib/cad/sketch');
+  const { compileSketch } = await import('$lib/graph/sketch');
   // Param list is `(p)` for parts with params, `()` for paramless parts — match
   // either. Body is everything up to the final brace (the function is last).
   const m = source.match(/export\s+function\s+\w+\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
@@ -243,8 +243,8 @@ export async function brepFromSource(
 ): Promise<BrepMesh | null> {
   await ensureOC();
   const replicad: any = await import('replicad');
-  const { compileSketch } = await import('$lib/cad/sketch');
-  const { resampleSpline } = await import('$lib/cad/spline-resample');
+  const { compileSketch } = await import('$lib/graph/sketch');
+  const { resampleSpline } = await import('$lib/graph/spline-resample');
   const { splineSampler, spline3DFrames } = await import('$lib/engines/manifold/warp-spline');
   const { resolveProfile } = await import('$lib/shared/profiles/profile-presets');
   const {

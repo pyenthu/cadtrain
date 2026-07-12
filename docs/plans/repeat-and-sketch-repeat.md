@@ -286,7 +286,7 @@ the window — the de-clutter payoff the user wants from item #3/#7.
   `composition-graph-mutate.ts` (`addSketch`, `addSketchOp`, `setSketchOpField`,
   `setSketchOpMode`, `setSketchOpKind`, `moveSketchOp`, `removeSketchOp`,
   `setSketchSegments`, spline-point helpers).
-- **Compile** — `src/lib/cad/sketch.ts`: `compileSketch(ops, segments)`→`(r,z)[]`.
+- **Compile** — `src/lib/graph/sketch.ts`: `compileSketch(ops, segments)`→`(r,z)[]`.
   `toVerts` walks ops with a **running cursor**: `mode:'rel'` ops accumulate
   `(Δr,Δz)` from the previous vertex (first point op forced absolute);
   fillet/chamfer attach a `corner` mod to the **preceding** vertex; the op list
@@ -297,7 +297,7 @@ the window — the de-clutter payoff the user wants from item #3/#7.
 - **Live preview** — `sketchEditor` derived (~L2350) maps `node.ops` → resolved
   **numeric** `SketchOp[]` and calls `compileSketch` client-side for the outline.
   This is the SECOND expansion site that MUST agree with emit (§3.3).
-- **Card geometry** — `src/lib/cad/sketch-layout.ts`: `sketchEntryH(op)` +
+- **Card geometry** — `src/lib/graph/sketch-layout.ts`: `sketchEntryH(op)` +
   `sketchColLayout(ops, cols)` is the single source of truth for row Y / column X;
   `sketchSock*` / `nodeSize` / `miniLayout` delegate. Sockets key on a **flat
   integer `idx`** into `ops`.
@@ -504,27 +504,27 @@ Sequencing notes:
 ## 5. Files touched
 
 **Feature 1 (Sketch repeat):**
-- `src/lib/cad/composition-graph-types.ts` — `SketchRepeatNode`,
+- `src/lib/graph/composition-graph-types.ts` — `SketchRepeatNode`,
   `SketchRepeatRef`, widen `SketchNode.ops`, `GraphNode` union.
-- `src/lib/cad/composition-graph-mutate.ts` — `addSketchRepeat` (model on
+- `src/lib/graph/composition-graph-mutate.ts` — `addSketchRepeat` (model on
   `addPolygonRepeat`), count/loopVar/advance/binding/prototype-op mutators,
   hydrate guard (in `composition-graph-hydrate.ts`).
-- `src/lib/cad/sketch.ts` — UNCHANGED (re-exports `SketchOp`); house
+- `src/lib/graph/sketch.ts` — UNCHANGED (re-exports `SketchOp`); house
   `expandSketchOps` here or in a new `sketch-repeat.ts`.
-- `src/lib/cad/composition-emit.ts` — `case 'sketch'` spread,
+- `src/lib/graph/composition-emit.ts` — `case 'sketch'` spread,
   `emitSketchOpObject` factor, `serialiseGraph` tag, `computeConsumedSet`.
-- `src/lib/cad/sketch-layout.ts` — `sketchEntryH` `repeat-ref` case.
+- `src/lib/graph/sketch-layout.ts` — `sketchEntryH` `repeat-ref` case.
 - `src/lib/shared/graph-editor/GraphEditorPane.svelte` (or `SketchEditorPane`
   post-split) — footers, rail, op-row markup, `sketchEditor` derived.
-- Tests: new `src/lib/cad/sketch-repeat.test.ts`; extend
+- Tests: new `src/lib/graph/sketch-repeat.test.ts`; extend
   `tests/e2e/graph-editor.spec.ts`.
 
 **Feature 2 (Repeat window):**
-- `src/lib/cad/composition-graph-types.ts` — extend `RepeatNode`
+- `src/lib/graph/composition-graph-types.ts` — extend `RepeatNode`
   (`loopVar?`/`bindings?`/`modifiers?`); reuse `NodeTransform` (P0).
-- `src/lib/cad/composition-graph-mutate.ts` — `setRepeatLoopVar`, repeat-binding
+- `src/lib/graph/composition-graph-mutate.ts` — `setRepeatLoopVar`, repeat-binding
   helpers, `add/set/move/removeRepeatModifier`; extend `collectEdges` repeat arm.
-- `src/lib/cad/composition-emit.ts` — `case 'repeat'` per-iteration arrow + fold
+- `src/lib/graph/composition-emit.ts` — `case 'repeat'` per-iteration arrow + fold
   (backward-compat gate); `validateGraph` repeat arm.
 - `src/lib/shared/graph-editor/GraphEditorPane.svelte` — `editingRepeatId` state +
   open/close + `repeatEditor` derived + overlay mount + canvas badge; or a new

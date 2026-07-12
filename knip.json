@@ -12,8 +12,8 @@
     "svelte.config.js",
     "playwright.config.ts",
     "vitest.config.ts",
-    "src/lib/cad/stdlib/*.ts",
-    "src/lib/cad/stdlib/stale/*.ts"
+    "src/lib/graph/stdlib/*.ts",
+    "src/lib/graph/stdlib/stale/*.ts"
   ],
   "project": ["src/**/*.{ts,svelte}"],
   "ignore": [

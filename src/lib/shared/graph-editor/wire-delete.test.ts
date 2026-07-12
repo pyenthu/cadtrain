@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { unwireGraph, describeWireRef, type WireRef } from './wire-delete';
-import type { Graph } from '$lib/cad/composition-graph';
+import type { Graph } from '$lib/graph/composition-graph';
 
 /** Minimal graph builder — enough for the unwire mutators (which read/spread the
  *  named node + finalize). root is a list container. */

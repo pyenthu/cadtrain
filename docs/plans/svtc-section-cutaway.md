@@ -104,7 +104,7 @@ render-time clip.
 
 Both use `manifold.subtract(halfSpaceBox)`. The difference is **what they cut**.
 
-### cadtrain today (`src/lib/cad/render-helpers.ts`)
+### cadtrain today (`src/lib/graph/render-helpers.ts`)
 
 `finalizeManifold` (lines ~248-284) cuts the **whole composed/baked stack**
 manifold: `cutawayVC(warped, cutBox, …)` → `scaled.subtract(cutBox)` →
@@ -306,7 +306,7 @@ reason the boolean has stayed around.
 - SVTC: `~/code/SVTC/src/lib/apps/wson/threeD/manifoldCut.js` (cut + warp),
   `~/code/SVTC/src/lib/apps/wson/Wson3DScene.svelte` (callers, `geomKey`,
   camera), `~/code/SVTC/src/lib/apps/wson/threeD/direction.ts` (centerline).
-- cadtrain now: `src/lib/cad/render-helpers.ts` (`finalizeManifold`,
+- cadtrain now: `src/lib/graph/render-helpers.ts` (`finalizeManifold`,
   `cutawayVC`, `manifoldToCutVC`, `tryInstanceFinalize`),
   `src/lib/shared/PrimitiveDualScene.svelte` (cutVC render, `liveMat`),
   `src/lib/shared/PrimitiveDualCanvas.svelte:244` (`createRenderer`),

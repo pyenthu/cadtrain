@@ -24,12 +24,12 @@
     sketchCols, sketchSockR, sketchSockZ, sketchSockVal, sketchRowVisible,
     miniBez, extractParamRefs, CARD_PAD, CARD_TITLE_H, PARAM_H, PARAM_GAP,
   } from './geom';
-  import { sketchEntryH } from '$lib/cad/sketch-layout';
+  import { sketchEntryH } from '$lib/graph/sketch-layout';
   import { argStr, argFrom } from './args';
   import {
     addSketchOp, setSketchOpField, moveSketchOp, removeSketchOp, addSketchRepeat,
     removeSketchSplinePoint, setSketchScale, type Graph,
-  } from '$lib/cad/composition-graph';
+  } from '$lib/graph/composition-graph';
   import type { SketchState } from './sketch-state.svelte';
   import type { WireState } from './wire-state.svelte';
 

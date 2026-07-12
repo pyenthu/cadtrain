@@ -24,8 +24,8 @@
   import { T, useThrelte, useTask } from '@threlte/core';
   import { OrbitControls, interactivity, HTML } from '@threlte/extras';
   import * as THREE from 'three';
-  import { resampleSpline, type Vec3 } from '$lib/cad/spline-resample';
-  import { planeAxes, applyPlaneLock, pointsBbox, gridFor, type SplineView } from '$lib/cad/spline-view';
+  import { resampleSpline, type Vec3 } from '$lib/graph/spline-resample';
+  import { planeAxes, applyPlaneLock, pointsBbox, gridFor, type SplineView } from '$lib/graph/spline-view';
 
   let {
     points,

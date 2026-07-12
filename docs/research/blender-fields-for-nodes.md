@@ -3,8 +3,8 @@
 **Status:** research note (2026-06-29). Studies Blender's *Fields* model and maps it
 onto our typed-socket / expression-output system. Cross-links
 [`docs/plans/parametric-surface-solid.md`](../plans/parametric-surface-solid.md),
-[`src/lib/cad/port-types.ts`](../../src/lib/cad/port-types.ts),
-[`src/lib/cad/composition-graph-types.ts`](../../src/lib/cad/composition-graph-types.ts)
+[`src/lib/graph/port-types.ts`](../../src/lib/graph/port-types.ts),
+[`src/lib/graph/composition-graph-types.ts`](../../src/lib/graph/composition-graph-types.ts)
 (`ExprOut`), and the `r_surface` / `r_helical_surface` engines.
 
 > **Headline:** our parametric surface `fn(u,v)` already *is* a **field over the uv

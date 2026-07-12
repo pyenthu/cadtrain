@@ -328,5 +328,5 @@ transparency gap using data the server already ships.
 - src/lib/shared/svg-emit.ts
 - src/lib/shared/PrimitiveSvgView.svelte
 - src/lib/shared/graph-editor/RightPane.svelte
-- src/lib/cad/mesh-serial.ts
+- src/lib/graph/mesh-serial.ts
 - src/lib/shared/PrimitiveDualScene.svelte

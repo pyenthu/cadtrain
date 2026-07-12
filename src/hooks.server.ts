@@ -172,7 +172,7 @@ export const handle: Handle = async ({ event, resolve }) => {
   // null when no remote is configured (prod) or X-Volume-Local:1 is set
   // (e2e) — fall through to the local handler in that case.
   if (VOLUME_PROXY_PATHS.has(path)) {
-    // STDLIB BYPASS — stdlib primitives (src/lib/cad/stdlib/*.ts) live in src,
+    // STDLIB BYPASS — stdlib primitives (src/lib/graph/stdlib/*.ts) live in src,
     // are baked into the LOCAL build by import.meta.glob('?raw'), and have
     // nothing to do with the volume. Proxying them to prod silently masked
     // local edits — see memory `stdlib_source_proxy_masks_local_edits`. The

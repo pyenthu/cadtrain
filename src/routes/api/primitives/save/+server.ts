@@ -38,9 +38,9 @@ export const POST = async ({ request }) => {
   }
   // Stdlib primitives are canonical in git-tracked src/ and read-only here —
   // refuse to fork one onto the volume (where it would shadow nothing and just
-  // drift). Edit src/lib/cad/stdlib/<id>.ts and redeploy instead.
+  // drift). Edit src/lib/graph/stdlib/<id>.ts and redeploy instead.
   if (isStdlib(id)) {
-    throw error(403, `"${id}" is a built-in (src) primitive — edit src/lib/cad/stdlib/${id}.ts and redeploy; it can't be saved to the volume.`);
+    throw error(403, `"${id}" is a built-in (src) primitive — edit src/lib/graph/stdlib/${id}.ts and redeploy; it can't be saved to the volume.`);
   }
   // Optional target folder for a NEW primitive (the sidebar "+ add" affordance).
   // Allowlisted to the known group folders — no traversal. Ignored when the id

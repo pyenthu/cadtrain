@@ -1,4 +1,4 @@
-# `src/lib/cad/` — CAD domain code
+# `src/lib/graph/` — CAD domain code
 
 The geometry core. Free to import from `src/lib/shared/*`. The old wells /
 training / pipe / rules code it used to sit beside was archived 2026-06-01
@@ -15,7 +15,7 @@ training / pipe / rules code it used to sit beside was archived 2026-06-01
 ## Directory map
 
 ```
-src/lib/cad/
+src/lib/graph/
 ├── composition-graph.ts     # node-graph model (Call/Container/Method/Mv/Rot/Repeat/Polygon/PolyRepeat; ArgValue literal|expr|param; hydrate + migrations)
 ├── composition-emit.ts      # graph → emitted source body (meta.graph round-trip)
 ├── composition-emit-profile.ts # polygon/profile emit path

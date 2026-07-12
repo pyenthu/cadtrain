@@ -95,7 +95,7 @@ reads. Phase 2 turns that shape into a real worker pool for *all* elements.
 
 Everything is serialized through the ONE shared Manifold singleton
 (`initManifold()` in `manifoldCut.ts` delegates to
-`$lib/cad/manifold-helpers`), so there is zero parallelism even across cores.
+`$lib/graph/manifold-helpers`), so there is zero parallelism even across cores.
 
 ---
 

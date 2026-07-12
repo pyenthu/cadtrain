@@ -119,14 +119,14 @@
     type CsgOp,
     type MvNode,
     type RotNode,
-  } from '$lib/cad/composition-graph';
-  import { emitGraph, consumedByCall } from '$lib/cad/composition-emit';
+  } from '$lib/graph/composition-graph';
+  import { emitGraph, consumedByCall } from '$lib/graph/composition-emit';
   // (resolveWiredSplinePoints / resampleSpline moved to spline-state.svelte.ts — #940 spline cut)
   // (emitProfileGraph moved to profile-preview-state.svelte.ts with the resolve effect — #940 CUT 2)
-  import { validateGraphBake } from '$lib/cad/composition-bake';
-  import { autoLayoutGraph } from '$lib/cad/composition-layout';
-  import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/cad/sketch';
-  import { sketchColLayout, sketchEntryH } from '$lib/cad/sketch-layout';
+  import { validateGraphBake } from '$lib/graph/composition-bake';
+  import { autoLayoutGraph } from '$lib/graph/composition-layout';
+  import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/graph/sketch';
+  import { sketchColLayout, sketchEntryH } from '$lib/graph/sketch-layout';
   // Pure socket / card / position geometry (P1/G1 extraction — see
   // docs/plans/modularize.md). These take captured state (graph, pan/zoom,
   // CARD_Y0, PARAM_W, cardObstacles, sketch.sketchOpsScrollTop) as explicit args.
@@ -170,7 +170,7 @@
   import ExpressionsMenu from './expr/ExpressionsMenu.svelte';
   import TypeDefinerPopover from '$lib/shared/types/TypeDefinerPopover.svelte';
   import AutoWireSuggestPanel from './AutoWireSuggestPanel.svelte';
-  import type { ExprDef } from '$lib/cad/composition-graph-types';
+  import type { ExprDef } from '$lib/graph/composition-graph-types';
   // Sketch NODE CARD render arm (Phase E Step 2, block 1). Takes the ONE per-pane
   // `sketch` SketchState instance; only SETS sketch.sketchExprPop (the coord
   // ƒ-popover still renders in the shell — the Phase-E-revert fix).
@@ -1357,7 +1357,7 @@
   // PARAM_W × PARAM_H, with PARAM_GAP between rows. The whole card is wide
   // enough to wrap the chip + padding; the socket sits OUTSIDE the card's
   // right edge so it can be drag-wired from.
-  // CARD_X0 / CARD_PAD / CARD_TITLE_H are imported from $lib/cad/graph-editor-geom.
+  // CARD_X0 / CARD_PAD / CARD_TITLE_H are imported from $lib/graph/graph-editor-geom.
   // ─── Properties card (pinned ABOVE Params) ────────────────────────────────
   // A small viewport-glued card holding part-level z-offset / colour / material.
   // It sits at the very top-left (PROPS_X0, PROPS_Y0); the Params card is then
@@ -1399,7 +1399,7 @@
   // p.totalLen don't clip. Constants below are the FIXED footprint of the
   // pin + input + trash; the label slot expands to fit the longest name.
   // PARAM_W_MIN / PARAM_H / PARAM_GAP (+ the chip-footprint consts used by
-  // chipWidthFor) are imported from $lib/cad/graph-editor-geom.
+  // chipWidthFor) are imported from $lib/graph/graph-editor-geom.
   // Live longest-label-len → live chip width. Updates as params are added
   // / renamed / deleted; the wire endpoints + socket positions all read
   // PARAM_W so they track the chip's growing/shrinking right edge.
@@ -1507,7 +1507,7 @@
   // Each line/spline op renders two STACKED sub-rows (r over z) like a polygon
   // vertex; fillet/chamfer is a single short row. SVG wire sockets sit at the
   // computed sub-row centres so params can be wired onto a coord.
-  // sketchEntryH + sketchColLayout live in $lib/cad/sketch-layout (pure, tested).
+  // sketchEntryH + sketchColLayout live in $lib/graph/sketch-layout (pure, tested).
   // All row/socket geometry delegates to sketchColLayout so the HTML rows and
   // SVG sockets share ONE column partition. `cols` defaults to 1 → byte-identical
   // to the legacy single-column walk (36 + Σ sketchEntryH(prior ops)).
@@ -1536,7 +1536,7 @@
   // ─── inline mv/rot transform STRIPS + socket positions ──────────────────
   // The strip geometry + socket/output position math (inlineXform*, nodeSize,
   // outputSocketAt / inputSocketAt / containerSlotInputAt, the STRIP_* consts)
-  // now live in `$lib/cad/graph-editor-geom.ts` (pure, tested). They take
+  // now live in `$lib/graph/graph-editor-geom.ts` (pure, tested). They take
   // `graph` as their first argument; the render code below passes it in.
 
   // ─── picker — drops graph nodes (polygon, solids, ops, position) ────────
@@ -1631,7 +1631,7 @@
         }
         // Stdlib glob-cache patch — Vite's `import.meta.glob('/stdlib/*.ts')`
         // caches the matched set at first module load; adding a NEW file to
-        // src/lib/cad/stdlib/ doesn't refresh it without a server restart
+        // src/lib/graph/stdlib/ doesn't refresh it without a server restart
         // (the source + bake endpoints still resolve it because they read
         // fs directly). Probe the source endpoint for a known stdlib id
         // here so a freshly-added primitive becomes pickable WITHOUT a
@@ -2271,7 +2271,7 @@
 
   // ─── auto-layout (Phase 20) ────────────────────────────────────────────
   // 📐 Auto-layout runs the heuristic layered algorithm in
-  // src/lib/cad/composition-layout.ts → rearranges every node by depth
+  // src/lib/graph/composition-layout.ts → rearranges every node by depth
   // column with a barycenter tiebreaker (cheap, deterministic, ~120 LOC,
   // zero deps). One-step undo restores the prior layout.
   //

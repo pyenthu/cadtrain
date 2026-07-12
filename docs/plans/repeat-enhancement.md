@@ -44,7 +44,7 @@
 
 ---
 
-## 1. Model layer (`src/lib/cad/`)
+## 1. Model layer (`src/lib/graph/`)
 
 ### 1.1 `composition-graph-types.ts` — `RepeatNode`
 Change the shape, keep legacy `child` resolvable:

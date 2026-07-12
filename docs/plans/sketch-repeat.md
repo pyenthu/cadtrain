@@ -24,7 +24,7 @@
 Verified against the tree at 2026-06-23. `composition-graph.ts` was split, so
 the model + mutators now live in two files.
 
-- **Op model** — `src/lib/cad/composition-graph-types.ts`:
+- **Op model** — `src/lib/graph/composition-graph-types.ts`:
   - `SketchOpEntry` = discriminated union on `op`: `line` / `spline` (each with
     `r,z` ArgValues + optional `mode:'abs'|'rel'`; spline also `pts`/`h0`/`h1`),
     `fillet` (`radius`), `chamfer` (`dist`).
@@ -33,18 +33,18 @@ the model + mutators now live in two files.
     scale, ArgValue, default 1) — the repeat design must not disturb them; they
     apply as a final multiply in `compileSketch`, downstream of expansion.
   - `GraphNode` union ends with `… | PolygonNode | PolyRepeatNode | SketchNode`.
-- **Mutators** — `src/lib/cad/composition-graph-mutate.ts`: `addSketch`,
+- **Mutators** — `src/lib/graph/composition-graph-mutate.ts`: `addSketch`,
   `addSketchOp`, `setSketchOpField`, `setSketchOpMode`, `setSketchOpKind`,
   `moveSketchOp`, `removeSketchOp`, `setSketchSegments`, the spline-point
   helpers, and the `scaleX/Y` setters. `addPolygonRepeat` (the model for
   `addSketchRepeat`) also lives here.
-- **Compile** — `src/lib/cad/sketch.ts`: `compileSketch(ops: SketchOp[],
+- **Compile** — `src/lib/graph/sketch.ts`: `compileSketch(ops: SketchOp[],
   segments, scaleX?, scaleY?)` → `(r,z)[]`. `toVerts` walks ops with a **running
   cursor**: `mode:'rel'` ops accumulate `(Δr,Δz)` from the previous vertex; the
   first point op is forced absolute. fillet/chamfer attach a `corner` mod to the
   **preceding** vertex. The op list is a **closed loop** (`% n` wraparound).
   compileSketch sees **numeric** ops only. **Stays UNCHANGED** (see §1.1).
-- **Emit** — `src/lib/cad/composition-emit.ts` `case 'sketch'`: emits a runtime
+- **Emit** — `src/lib/graph/composition-emit.ts` `case 'sketch'`: emits a runtime
   `sketch([ {op:'line', r:…, z:…}, … ], seg, scaleX, scaleY)` call; each field
   goes through `emitValueExpr(ArgValue)`. The injected sandbox `sketch(...)` runs
   `compileSketch`. The sketch node is wired to a consumer via the `__POLY__<id>`
@@ -55,7 +55,7 @@ the model + mutators now live in two files.
   `node.ops` → resolved **numeric** `SketchOp[]` via the param scope + the coord
   expr evaluator, and calls `compileSketch` **client-side** for the editor
   outline. **This is the SECOND expansion site** that must agree with emit (§3.2).
-- **Card geometry** — `src/lib/cad/sketch-layout.ts`: `sketchEntryH(op)` (24 for
+- **Card geometry** — `src/lib/graph/sketch-layout.ts`: `sketchEntryH(op)` (24 for
   corner ops, else 45) + `sketchColLayout(ops, cols)` is the SINGLE source of
   truth for row Y / column X; the node card + editor sockets all delegate to it.
   Sockets are SVG circles keyed by a **flat integer `idx`** into `ops`.
@@ -253,7 +253,7 @@ concatenate. Factor this into a **pure shared expander** so the preview and emit
 cannot drift:
 
 ```ts
-// src/lib/cad/sketch-repeat.ts — pure, unit-tested. Client preview calls it;
+// src/lib/graph/sketch-repeat.ts — pure, unit-tested. Client preview calls it;
 // the emit path produces the equivalent SOURCE. A round-trip test asserts they
 // compile to identical points.
 export function expandSketchOps(
@@ -316,7 +316,7 @@ Each ends green on `bun run build` + `bun run test` (vitest — NOT bare
 
 1. **PR-1 — Model + pure expander (no UI, no emit).** Add `SketchRepeatNode`,
    `SketchRepeatRef`, widen `SketchNode.ops`, extend the `GraphNode` union, add
-   the `sketchEntryH` `repeat-ref` case. Add `src/lib/cad/sketch-repeat.ts` with
+   the `sketchEntryH` `repeat-ref` case. Add `src/lib/graph/sketch-repeat.ts` with
    `expandSketchOps` + the node mutators (`addSketchRepeat`,
    `setSketchRepeatCount/LoopVar/Advance`, prototype-op mutators that delegate to
    the existing sketch-op mutators keyed by the repeat node id, bindings reuse).
@@ -343,23 +343,23 @@ Each ends green on `bun run build` + `bun run test` (vitest — NOT bare
 
 ## 6. Files this will touch (for the implementer)
 
-- `src/lib/cad/composition-graph-types.ts` — `SketchRepeatNode`,
+- `src/lib/graph/composition-graph-types.ts` — `SketchRepeatNode`,
   `SketchRepeatRef`, widen `SketchNode.ops`, extend `GraphNode`.
-- `src/lib/cad/composition-graph-mutate.ts` — `addSketchRepeat` (model on
+- `src/lib/graph/composition-graph-mutate.ts` — `addSketchRepeat` (model on
   `addPolygonRepeat`), repeat-node setters, prototype-op mutators, hydrate guard.
-- `src/lib/cad/sketch-repeat.ts` — **NEW**: pure `expandSketchOps` (keeps
+- `src/lib/graph/sketch-repeat.ts` — **NEW**: pure `expandSketchOps` (keeps
   `sketch.ts` lean).
-- `src/lib/cad/sketch.ts` — UNCHANGED (re-exports `SketchOp` for the expander).
-- `src/lib/cad/composition-emit.ts` — `case 'sketch'` spread, `emitSketchOpObject`
+- `src/lib/graph/sketch.ts` — UNCHANGED (re-exports `SketchOp` for the expander).
+- `src/lib/graph/composition-emit.ts` — `case 'sketch'` spread, `emitSketchOpObject`
   factor, `serialiseGraph` map, `computeConsumedSet`.
-- `src/lib/cad/sketch-layout.ts` — `sketchEntryH` `repeat-ref` case.
+- `src/lib/graph/sketch-layout.ts` — `sketchEntryH` `repeat-ref` case.
 - `src/lib/shared/graph-editor/sketch-state.svelte.ts` — `sketchEditor` derived
   calls `expandSketchOps`; add repeat-node mutation helpers if the class owns them.
 - `src/lib/shared/graph-editor/SketchNodeCard.svelte` +
   `SketchEditorPane.svelte` — `+ repeat` footer, ref summary row.
 - `src/lib/shared/graph-editor/NodeCard.svelte` — the `sketch_repeat` card render
   arm (or a new `SketchRepeatCard.svelte`).
-- Tests: new `src/lib/cad/sketch-repeat.test.ts`; extend
+- Tests: new `src/lib/graph/sketch-repeat.test.ts`; extend
   `tests/e2e/graph-editor.spec.ts`.
 
 ## 7. Relationship to other roadmap items

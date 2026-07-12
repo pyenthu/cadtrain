@@ -64,7 +64,7 @@ we want. For a "rounded star" with flatter arms, shape the modulation
 ## Strategy #1 — sketch + spline + fillet (canonical upgrade)
 
 True smooth Bézier arms with **filleted corners** via the sketch engine
-(`src/lib/cad/sketch.ts`: `spline` / `fillet` ops, `segments` sampling).
+(`src/lib/graph/sketch.ts`: `spline` / `fillet` ops, `segments` sampling).
 Sharper, more controllable than #2 (each corner radius independent), and the
 "production" way to author smooth profiles.
 
@@ -104,5 +104,5 @@ needs 5× hand-authored op groups. Two ways to close it:
 ## Files in scope
 
 - #2: graph authoring only (volume part `g_wavy_star`) — no `src/` changes.
-- #1: `src/lib/cad/composition-graph.ts`, `composition-emit.ts`,
-  `GraphEditorPane.svelte` (sketch card), maybe `src/lib/cad/sketch.ts`.
+- #1: `src/lib/graph/composition-graph.ts`, `composition-emit.ts`,
+  `GraphEditorPane.svelte` (sketch card), maybe `src/lib/graph/sketch.ts`.

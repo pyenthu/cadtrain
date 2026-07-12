@@ -25,13 +25,13 @@
  */
 import { createHash } from 'node:crypto';
 import { transformSync } from 'esbuild';
-import { ENGINE_HASH } from '$lib/cad/engine-hash';
+import { ENGINE_HASH } from '$lib/graph/engine-hash';
 import * as helpers from '$lib/engines/manifold/manifold-helpers';
-import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
+import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive-sandbox';
 import { compileProfileBuild } from './profile-fn';
 import { recognizeComposite } from './recognize-composite';
-import { partHashId } from '$lib/cad/part-id';
-import { paramKeysOf } from '$lib/cad/param-keys';
+import { partHashId } from '$lib/graph/part-id';
+import { paramKeysOf } from '$lib/graph/param-keys';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
 /**
@@ -920,7 +920,7 @@ export async function compilePrimitiveScript(
   // no manual KERNEL_VERSION bump and nothing to compute in the worker. The
   // script TEXT is unchanged (deps still fold in exactly as before), only its
   // hash advances. `engineHash` is a defaulted arg only so tests can drive two
-  // engine states without editing real files. See src/lib/cad/engine-hash.ts.
+  // engine states without editing real files. See src/lib/graph/engine-hash.ts.
   const scriptHash = createHash('sha256').update(`engine:${engineHash}\0`).update(script).digest('hex');
   const depMap = await collectDepSources(source, fetchFn);
   return { script, scriptHash, depNames: [...depMap.keys()].sort() };

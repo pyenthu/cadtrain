@@ -1,7 +1,7 @@
 # `src/lib/engines/` — the geometry-kernel layer
 
 The three geometry kernels that bake the same composition graph, carved out of
-`src/lib/cad/` + `src/lib/shared/` 2026-07-12 (E1 `da7399f`). Each is a right-pane
+`src/lib/graph/` + `src/lib/shared/` 2026-07-12 (E1 `da7399f`). Each is a right-pane
 tab in the CAD editor (`shared/graph-editor/RightPane.svelte`).
 
 ```
@@ -22,7 +22,7 @@ src/lib/engines/
 - **engines → UI: NEVER.** No engine file may import from `src/lib/shared/*`
   or from a route. Keeps the kernels headless (they run in Node tests + workers).
 - **engines → cad: GRAPH TYPES ONLY.** An engine may import the composition-graph
-  *types* it bakes (`src/lib/cad/composition-graph*`), not the cad editor/UI glue.
+  *types* it bakes (`src/lib/graph/composition-graph*`), not the cad editor/UI glue.
 
 ## What each folder holds
 

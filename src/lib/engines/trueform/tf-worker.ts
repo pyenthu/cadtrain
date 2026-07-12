@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 /**
  * tf-worker — the client-side TrueForm executor Web Worker (mirrors
- * `src/lib/cad/bake-worker.ts` for the TF backend).
+ * `src/lib/graph/bake-worker.ts` for the TF backend).
  *
  * Building TrueForm geometry on the main thread janked the UI on every spline
  * drag (the whole executeTfRecipe / boolean-fold / warpMeshJS pipeline ran inline

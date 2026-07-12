@@ -25,7 +25,7 @@
 
 import * as helpers from './manifold-helpers';
 import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from './manifold-mesh';
-import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
+import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive-sandbox';
 import { finalizeManifold, type RenderMaterial, type PartColorLUT } from './render-helpers';
 import { serializeComponentResult, type SerializedComponentResult, type SerializedGeometry } from './mesh-serial';
 
@@ -35,7 +35,7 @@ import { serializeComponentResult, type SerializedComponentResult, type Serializ
  *
  *  N4 (2026-07-10): ENGINE-MODULE edits no longer need a manual bump here. A fix
  *  inside manifold-helpers / manifold-mesh / warp-spline / render-helpers / stdlib
- *  now moves `ENGINE_HASH` (src/lib/cad/engine-hash.ts), which is folded into the
+ *  now moves `ENGINE_HASH` (src/lib/graph/engine-hash.ts), which is folded into the
  *  server-computed `scriptHash` (compilePrimitiveScript). This IndexedDB key is
  *  `KERNEL_VERSION + scriptHash + …`, so a moved scriptHash busts the client cache
  *  AUTOMATICALLY — the historical `+cap1`/`+cut2` hand-bumps below would be

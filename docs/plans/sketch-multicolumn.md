@@ -357,7 +357,7 @@ card's socket contract isn't disturbed while the sketch column work stabilises.
 - `src/lib/shared/GraphEditorPane.svelte` (helpers ~L2392-2410, `nodeSize`
   ~L2464-2472, `miniLayout` ~L3117-3126, toolbar ~L6606-6616, full-tab card
   markup ~L6774-6864, on-graph card markup ~L6189-6267, CSS ~L8583-8627)
-- `src/lib/cad/composition-graph.ts` (`LayoutXY` L244, `setLayout` L481,
+- `src/lib/graph/composition-graph.ts` (`LayoutXY` L244, `setLayout` L481,
   hydrate L325-341)
-- `src/lib/cad/composition-emit.ts` (`serialiseGraph` layout round-trip L649-655)
-- `src/lib/cad/sketch.test.ts` (model for a `sketchColLayout` unit test)
+- `src/lib/graph/composition-emit.ts` (`serialiseGraph` layout round-trip L649-655)
+- `src/lib/graph/sketch.test.ts` (model for a `sketchColLayout` unit test)

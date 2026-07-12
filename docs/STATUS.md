@@ -30,7 +30,7 @@ roadmap → `/plan` (Rule 19). Read this at the start of a working session.
 ## Client-side execution (in progress)
 
 Geometry **execution** is moving off the server into a browser **Web Worker**
-(`src/lib/cad/bake-worker.ts` + `bake-client.ts`): the server stays the COMPILER
+(`src/lib/graph/bake-worker.ts` + `bake-client.ts`): the server stays the COMPILER
 (`/api/primitives/compile` → dep-inlined Manifold script + `scriptHash`), the
 client EXECUTOR bakes the script. **Toggle:** 💻/☁ button in the graph-editor
 left rail (or `localStorage.cad-client-bake`) → `scene.clientBake`; the bake pane

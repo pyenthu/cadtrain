@@ -767,13 +767,13 @@ export type Graph = {
    *  ⇒ the emitted source is byte-identical to today (no migration). When
    *  non-empty, composition-emit prepends the topo-ordered `const e_<name> =
    *  …;` block ahead of the body; references to `e.<name>` in any ArgValue
-   *  `expr` resolve to those consts. See src/lib/cad/graph-exprs.ts. */
+   *  `expr` resolve to those consts. See src/lib/graph/graph-exprs.ts. */
   exprs?: GraphExpr[];
   /** Expression DEFINITIONS (B.7 / id 914, v3) — reusable per-part calc defs,
    *  instanced by `ExprNode{defId}` nodes. SPARSE + optional → absent/empty ⇒
    *  byte-identical emit (no instances ⇒ no prelude). Editing a def updates
    *  every instance. Round-trips via serialiseGraph/hydrateGraph. See
-   *  docs/plans/expression-builder.md §v3 + src/lib/cad/graph-exprs.ts. */
+   *  docs/plans/expression-builder.md §v3 + src/lib/graph/graph-exprs.ts. */
   exprDefs?: ExprDef[];
 };
 
@@ -788,7 +788,7 @@ export type PartAppearance = { colorOuter?: string; colorInner?: string; materia
  *  (arithmetic + allowlisted CAD math, no assignments / no arbitrary JS).
  *  An `e.*` is DERIVED from `p.*` params and other `e.*` exprs and lives in a
  *  separate namespace from `p.*` so the positional bake signature never shifts.
- *  See docs/plans/expression-builder.md §3 + src/lib/cad/graph-exprs.ts. */
+ *  See docs/plans/expression-builder.md §3 + src/lib/graph/graph-exprs.ts. */
 export type GraphExpr = {
   name: string;
   src: string;

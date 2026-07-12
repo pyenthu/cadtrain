@@ -70,7 +70,7 @@ cylinders never appear.
 ```ts
 export async function initManifold(): Promise<any> {
   if (_wasm) return _wasm;
-  await cadInitManifold();                       // $lib/cad/manifold-helpers
+  await cadInitManifold();                       // $lib/graph/manifold-helpers
   _wasm = (globalThis as any).__cadtrain_manifold__?.wasm ?? null;
   if (!_wasm) throw new Error('...singleton unavailable...');
   return _wasm;
@@ -259,7 +259,7 @@ Do **not** drop COEP app-wide to fix this — TrueForm's pthreads need it
 - `…:294-296` `compCount`/`strings` counted from WSON, not geometry (why badge says "7 strings" with 0 tris)
 - `…:369-370` parametric build effect gated on `manifoldReady`; `…:393` comps `null` when `!cutActive`
 - `src/lib/wells/threeD/manifoldCut.ts:86-93` — `initManifold` delegates to shared singleton, throws if wasm null
-- `src/lib/cad/manifold-helpers.ts:192-212` — shared `initManifold`; default wasm resolution at `:199-204`
+- `src/lib/graph/manifold-helpers.ts:192-212` — shared `initManifold`; default wasm resolution at `:199-204`
 - `src/hooks.server.ts:147-152,254` — app-wide `COOP:same-origin` + `COEP:require-corp`; `:135-145` = it's for TrueForm, not Manifold
 - `vite.config.js:56-57` — dev COOP/COEP parity
 - `server.js:8-19` — prod cross-origin-isolation + static-asset header note

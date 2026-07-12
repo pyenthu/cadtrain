@@ -8,7 +8,7 @@ tests verify).
 
 The `/graph-editor` page IS the visual+bake+data integration test of
 the composition architecture. The data layer has its own unit tests
-(`src/lib/cad/composition-graph.test.ts`, 10/10 pass) — but the
+(`src/lib/graph/composition-graph.test.ts`, 10/10 pass) — but the
 acceptance contract for the editor is end-to-end through the GUI:
 **click, drag, type, save → assert the canvas + the source pane + the
 on-disk file all agree.**

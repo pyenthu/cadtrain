@@ -66,7 +66,7 @@ our bake cache + instancing + stack assembly cheap. We can't just "switch."
 
 ## Meanwhile (shipped, no kernel change)
 
-`r_loft` (`src/lib/cad/stdlib/r_loft.ts`, 2026-06-14) — welded scale-along-Z
+`r_loft` (`src/lib/graph/stdlib/r_loft.ts`, 2026-06-14) — welded scale-along-Z
 loft (barrel/waist/flare/ogive/scurve + twist) covers the "radius varies
 smoothly along length" class inside Manifold. Demo part: `g_barrel`.
 

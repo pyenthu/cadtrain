@@ -18,7 +18,7 @@
 <script lang="ts">
   import { entryIdxForEvalIdx } from './geom';
   import type { PolyPreviewState } from './poly-preview-state.svelte';
-  import type { Graph } from '$lib/cad/composition-graph';
+  import type { Graph } from '$lib/graph/composition-graph';
 
   let {
     polyUI,

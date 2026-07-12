@@ -43,9 +43,9 @@ const ENGINE_GLOBS = [
   '/src/lib/engines/manifold/render-helpers.ts',
   // Injected into the bake sandbox by name, so a change to its minimum-curvature
   // math moves baked geometry without moving any part's source or scriptHash.
-  '/src/lib/cad/survey-to-xyz.ts',
-  '/src/lib/cad/stdlib/**/*.ts',
-  '!/src/lib/cad/stdlib/**/*.test.ts', // co-located engine tests don't affect baked geometry
+  '/src/lib/graph/survey-to-xyz.ts',
+  '/src/lib/graph/stdlib/**/*.ts',
+  '!/src/lib/graph/stdlib/**/*.test.ts', // co-located engine tests don't affect baked geometry
 ];
 
 /** Eager raw-source map: path → file text, inlined into the build at compile
@@ -59,14 +59,14 @@ export const ENGINE_SOURCES = import.meta.glob(
     '/src/lib/engines/manifold/manifold-mesh.ts',
     '/src/lib/engines/manifold/warp-spline.ts',
     '/src/lib/engines/manifold/render-helpers.ts',
-    '/src/lib/cad/survey-to-xyz.ts',
-    '/src/lib/cad/stdlib/**/*.ts',
-    '!/src/lib/cad/stdlib/**/*.test.ts',
+    '/src/lib/graph/survey-to-xyz.ts',
+    '/src/lib/graph/stdlib/**/*.ts',
+    '!/src/lib/graph/stdlib/**/*.test.ts',
   ],
   { query: '?raw', import: 'default', eager: true },
 ) as Record<string, string>;
 
-/** Normalise a glob key to a bundle-independent relative path (`lib/cad/…`) so
+/** Normalise a glob key to a bundle-independent relative path (`lib/graph/…`) so
  *  the SERVER and CLIENT bundles derive the SAME digest for the same sources —
  *  a nice-to-have (each cache is its own namespace, so they need only be stable
  *  WITHIN a bundle, not equal across bundles). */

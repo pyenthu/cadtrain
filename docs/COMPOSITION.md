@@ -10,10 +10,10 @@ the whole body. This doc is the canonical reference for that pipeline.
 
 Companion files (DON'T duplicate their content):
 
-- `src/lib/cad/composition-tree.ts` — implementation.
+- `src/lib/graph/composition-tree.ts` — implementation.
 - `src/lib/shared/CompositionEditor.svelte` — UI + editor-side semantics.
 - `src/lib/server/part-colors.ts` — color LUT, `analyzeAssembly` branch.
-- `src/lib/cad/part-id.ts` — `partHashId`, the per-instance hash.
+- `src/lib/graph/part-id.ts` — `partHashId`, the per-instance hash.
 - `src/lib/server/primitive-loader.ts` — `tagInstanceSources`, signature rewrite.
 - Root `CLAUDE.md` Rules 13 / 17 / 20 / 21 — volume layout + authoring layers.
 

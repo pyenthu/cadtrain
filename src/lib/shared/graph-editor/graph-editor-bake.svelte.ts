@@ -18,7 +18,7 @@
  * RETURNS the new graph) so this module stays free of any single pane's `graph`
  * $state — the caller does `graph = refreshCallArgs(graph, id)`.
  */
-import { asLiteral, finalize, type Graph, type NodeId } from '$lib/cad/composition-graph';
+import { asLiteral, finalize, type Graph, type NodeId } from '$lib/graph/composition-graph';
 import { callDrift } from './graph-editor-bake';
 
 export { extractGraphFromSource, extractDrawingMdFromSource, callDrift } from './graph-editor-bake';

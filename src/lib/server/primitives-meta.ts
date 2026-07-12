@@ -84,7 +84,7 @@ export interface PrimMeta {
   }>;
   /** K.63 composition graph (new graph-editor format). Present on assemblies
    *  built via /graph-editor; absent on leaves and legacy assemblies.
-   *  Pure JSON (Graph from $lib/cad/composition-graph) — the load path in
+   *  Pure JSON (Graph from $lib/graph/composition-graph) — the load path in
    *  /graph-editor reads this directly without re-parsing the body. */
   graph?: any;
 }

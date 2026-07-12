@@ -129,7 +129,7 @@ None yet. Sensible bounds (informally enforced by the dials):
   definition (per the auto-generated banner). Hand edits to the body
   are discarded.
 * `meta.uses` lists `r_weld_extrude` — the stdlib extrude primitive
-  (Rule 21). Resolved by the loader from `src/lib/cad/stdlib/`.
+  (Rule 21). Resolved by the loader from `src/lib/graph/stdlib/`.
 * Function signature is `export function g_spiral(p)` (single object
   arg). The loader detects object-style via `sigNames.length === 1 &&
   metaKeys.length > 0` and passes a single bundled object so `p.NPts`

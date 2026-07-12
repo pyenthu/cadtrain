@@ -29,7 +29,7 @@ instances) and any large drill-string assembly amplify this further.
 2. **A separate WASM instance per worker** has a one-time cold-load cost
    (~50–150 ms). Worth pooling.
 3. **Mesh data must serialize across the boundary** — we already have
-   `src/lib/cad/mesh-serial.ts` (used by the existing /preview path).
+   `src/lib/graph/mesh-serial.ts` (used by the existing /preview path).
 4. **Two execution sites:**
    - **Server-side (/api/primitives/preview)** — Node `worker_threads` pool;
      each worker holds a long-lived `manifold-3d` instance + the sandbox helper
@@ -104,8 +104,8 @@ src/lib/server/prim-worker.ts        ← Node worker entrypoint
 src/lib/server/prim-pool.ts          ← worker_threads pool + dispatch
 src/lib/server/primitive-loader.ts   ← buildPrimitiveGeom uses pool.fan() then folds
 src/lib/server/recognize-composite.ts ← + recognizeDispatches()
-src/lib/cad/mesh-serial.ts           ← already exists, no changes needed
-src/lib/cad/prim-worker.ts           ← (phase 2) browser worker; same protocol
+src/lib/graph/mesh-serial.ts           ← already exists, no changes needed
+src/lib/graph/prim-worker.ts           ← (phase 2) browser worker; same protocol
 ```
 
 ## Benchmark plan

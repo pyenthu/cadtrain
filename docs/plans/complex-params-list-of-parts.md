@@ -24,7 +24,7 @@ produces `list<part>` — and where params today are scalars, #38 adds `record` 
 ## 0. What exists today (the load-bearing facts)
 
 ### Params are flat scalars
-`ParamSchema` (`src/lib/cad/composition-graph-types.ts:519`):
+`ParamSchema` (`src/lib/graph/composition-graph-types.ts:519`):
 
 ```ts
 export type ParamSchema = {
@@ -55,7 +55,7 @@ ArgValue carries only `{ kind:'param', param:string }` → emits `p.<name>`. The
 no field-path today (no `p.spec.od`).
 
 ### The typed-port + record machinery is already built
-`src/lib/cad/port-types.ts`:
+`src/lib/graph/port-types.ts`:
 - `PortType { id, elem, card, of?, fields?, feeds? }` with `elem` ∈
   `scalar|flag|point|op|transform|geometry|object` and `card ∈ one|list`.
 - `defineRecordType(id,label,fields)` (`port-types.ts:103`) registers a nominal
@@ -64,7 +64,7 @@ no field-path today (no `p.spec.od`).
   or `list<Casing>`); a single record **broadcasts** into `list<thatRecord>`.
 - `PT_GEOMETRY` (`:154`) = a baked solid; there is NO `list<geometry>` yet.
 
-`src/lib/cad/struct-type.ts` already models `{ kind:'record'; fields }` and
+`src/lib/graph/struct-type.ts` already models `{ kind:'record'; fields }` and
 `{ kind:'list'; of; len? }` (`struct-type.ts:37`), and `structColor` already
 renders `record`/`list<record>` violet (`port-types.ts:186`).
 
@@ -85,7 +85,7 @@ existing, shared, atomic-write (Rule 4) store for user record types.
 ### The list producers that already emit a mapped array
 - `RepeatNode` (`composition-graph-types.ts:140`) emits
   `Array.from({length:N}, (_,i) => …)` via `RepeatKind.emitExpr`
-  (`src/lib/cad/nodes/kinds/repeat.ts:15`); `op:'list'` returns the bare array,
+  (`src/lib/graph/nodes/kinds/repeat.ts:15`); `op:'list'` returns the bare array,
   `stack`/`place` wrap it. `computeListProducers` (`composition-emit.ts:631`) marks
   `repeat` with `op:'list'` so a Stack spreads it.
 - `ExprNode` + `ExprDef` (`composition-graph-types.ts:369–407`) emit a numeric
@@ -203,7 +203,7 @@ export type PartsMapNode = {
 };
 ```
 
-Register `PartsMapKind` in `src/lib/cad/nodes/registry.ts` (alongside `RepeatKind`)
+Register `PartsMapKind` in `src/lib/graph/nodes/registry.ts` (alongside `RepeatKind`)
 implementing the `NodeKind` interface (`node-kind.ts:95`).
 
 ### Emit
@@ -318,7 +318,7 @@ first-class and the emit trivial. **Recommend `parts_map`; note Repeat as fallba
 - **Serialization is already structural** — record/list defaults ride
   `stringifyTyped` + the verbatim `params:` pass-through, so a part that uses them
   emits cleanly and a part that doesn't is untouched.
-- **Golden emit stays green.** `src/lib/cad/nodes/emit-golden.test.ts` ("every
+- **Golden emit stays green.** `src/lib/graph/nodes/emit-golden.test.ts` ("every
   volume part re-emits byte-identical", `:87`) is unaffected because: (a) no
   existing part has a non-number param, (b) `parts_map`/`list<geometry>` code paths
   only fire on the new node type, (c) `emitValueExpr` gains a `field?` branch that

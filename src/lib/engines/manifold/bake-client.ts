@@ -18,7 +18,7 @@
  * exercise the pure core (`bake-worker-core.ts`) directly, not this file.
  */
 import { deserializeComponentResult } from './mesh-serial';
-import { isManifoldFatalTrap, describeManifoldError } from '$lib/cad/manifold-trap';
+import { isManifoldFatalTrap, describeManifoldError } from '$lib/graph/manifold-trap';
 import { bakeCacheKey, type BakeOptions, type TransferableComponentResult } from './bake-worker-core';
 import type * as THREE from 'three';
 

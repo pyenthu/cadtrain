@@ -17,7 +17,7 @@
  * would risk TDZ; assigning references sidesteps that). PER-PANE class (NOT a
  * module singleton): /primitives mounts every tab's pane at once.
  */
-import type { Graph } from '$lib/cad/composition-graph-types';
+import type { Graph } from '$lib/graph/composition-graph-types';
 import { GraphHistory } from './graph-history.svelte';
 import type { WireState } from './wire-state.svelte';
 import type { CanvasInteractionState } from './canvas-interaction.svelte';

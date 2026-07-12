@@ -10,8 +10,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { emitGraph } from '$lib/cad/composition-emit';
-import { hydrateGraph } from '$lib/cad/composition-graph-hydrate';
+import { emitGraph } from '$lib/graph/composition-emit';
+import { hydrateGraph } from '$lib/graph/composition-graph-hydrate';
 import { SEGMENTS_PARAM, WsonTranslateError, wsonToGraph } from './wson-to-graph';
 import { parseWson } from './wson';
 import type { Wson } from './wson';

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { newGraph, addCall, type CallNode, type Graph } from '$lib/cad/composition-graph';
+import { newGraph, addCall, type CallNode, type Graph } from '$lib/graph/composition-graph';
 import { runAssistLoop, MAX_STEPS, type AnthMessage, type AssistTurnResponse, type PostTurn } from './ge-assist';
 
 /**

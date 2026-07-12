@@ -46,16 +46,16 @@
 |---|---|---:|---|
 | 1 | `src/lib/shared/GraphEditorPane.svelte` | **9635** | THE editor (script 4778 · markup ~3370 · style ~1460) |
 | 2 | `src/routes/vocab/+page.svelte` | 1687 | route page |
-| 3 | `src/lib/cad/composition-graph.ts` | 1653 | graph model |
+| 3 | `src/lib/graph/composition-graph.ts` | 1653 | graph model |
 | 4 | `src/routes/primitives/+page.svelte` | 1573 | route page (sidebar + tabs) |
 | 5 | `src/lib/shared/ProfileFnEditor.svelte` | 1156 | component |
-| 6 | `src/lib/cad/builder.ts` | 1048 | legacy build + live render helpers |
-| 7 | `src/lib/cad/composition-tree.ts` | 798 | TreeNode model |
-| 8 | `src/lib/cad/composition-emit.ts` | 699 | graph→source |
+| 6 | `src/lib/graph/builder.ts` | 1048 | legacy build + live render helpers |
+| 7 | `src/lib/graph/composition-tree.ts` | 798 | TreeNode model |
+| 8 | `src/lib/graph/composition-emit.ts` | 699 | graph→source |
 | 9 | `src/routes/design/+page.svelte` | 696 | **undocumented route** (see §3) |
 | 10 | `src/lib/authoring/rule-translator.ts` | 587 | vocab translator |
 | 11 | `src/lib/server/primitive-loader.ts` | 576 | resolver/loader |
-| 12 | `src/lib/cad/manifold-helpers.ts` | 559 | raw shape toolkit |
+| 12 | `src/lib/graph/manifold-helpers.ts` | 559 | raw shape toolkit |
 | 13 | `src/lib/server/manifold-bake.ts` | 540 | bake |
 | 14 | `src/lib/shared/PrimitiveDualCanvas.svelte` | 532 | dual canvas |
 

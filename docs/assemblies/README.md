@@ -6,7 +6,7 @@ spool stack", "give me an HF-1 production packer", "show me a
 4-valve Christmas tree"), the corresponding `.md` here documents:
 
 1. Which **primitives** compose the assembly (one to N entries from
-   `src/lib/cad/parts/`).
+   `src/lib/graph/parts/`).
 2. A **starter `AuthoredComponent` spec** — JSON with `parts` +
    `transform` so any session can paste it into `/author` (or feed it
    into `buildAuthored()`) and get a working render.

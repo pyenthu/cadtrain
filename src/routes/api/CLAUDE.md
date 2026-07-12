@@ -28,8 +28,8 @@ profiles `.prvl.ts` / `.prex.ts`); all path resolution goes through
 
 **Stdlib/stdstale-first (Rule 21):** before the volume, `source` + `list`
 consult `src/lib/server/stdlib.ts` — the git-tracked engines in
-`src/lib/cad/stdlib/` (active, currently `r_cuboid`) and
-`src/lib/cad/stdstale/` (deprecated: `r_revolve`, `r_extrude`,
+`src/lib/graph/stdlib/` (active, currently `r_cuboid`) and
+`src/lib/graph/stdstale/` (deprecated: `r_revolve`, `r_extrude`,
 `r_weld_extrude`). Either origin wins over a same-named volume copy
 (`editable:false`); `list` returns separate `stdlib` + `stdstale` groups;
 `save`/`delete` reject both (HTTP 403 — edit in src + redeploy).

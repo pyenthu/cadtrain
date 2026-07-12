@@ -1,10 +1,10 @@
 import { json, error } from '@sveltejs/kit';
 import { graphToTf } from '$lib/engines/trueform/graph-to-tf';
-import { recipeToWasm, recipeToBytes, recipeOpCount, RECIPE_FMT } from '$lib/cad/tf-wat-emit';
+import { recipeToWasm, recipeToBytes, recipeOpCount, RECIPE_FMT } from '$lib/graph/tf-wat-emit';
 
 // POST /api/tf/compile-wasm — compile a part's composition GRAPH → a TrueForm
 // instruction RECIPE (graphToTf) → an OPAQUE WASM module carrying that recipe
-// (see src/lib/cad/tf-wat-emit.ts for the wire format + honest concealment note).
+// (see src/lib/graph/tf-wat-emit.ts for the wire format + honest concealment note).
 //
 // Request  : { graph: Graph, params?: Record<string, number> }
 // Response : the WASM binary as `application/wasm` bytes. A small JSON header is

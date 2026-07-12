@@ -22,7 +22,7 @@ import { resolveProfile } from '$lib/shared/profiles/profile-presets';
 // `resample` lives in cad/csg-2d and is also sandbox-injected for volume parts.
 // Importing here gives r_weld_extrude its own perimeter-densification path so
 // the smoothness/normal experiment works the same way r_extrude callers do.
-import { resample } from '$lib/cad/csg-2d';
+import { resample } from '$lib/graph/csg-2d';
 
 declare const G: any;
 

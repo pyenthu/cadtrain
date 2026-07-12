@@ -29,7 +29,7 @@ Geometry **execution** is decoupled from **compilation**:
   `meta.uses` deps and inlines them into one self-contained Manifold script,
   returning that script plus a `scriptHash`.
 - **Client = the EXECUTOR.** A browser Web Worker
-  (`src/lib/cad/bake-worker.ts` + `bake-client.ts`) runs the compiled script and
+  (`src/lib/graph/bake-worker.ts` + `bake-client.ts`) runs the compiled script and
   bakes the mesh. Toggle: the 💻/☁ button in the graph-editor left rail
   (or `localStorage.cad-client-bake`) → `scene.clientBake`. The bake pane shows a
   `⚡client` / `☁server` badge. This kills the stale-bake ("déjà-vu") bug

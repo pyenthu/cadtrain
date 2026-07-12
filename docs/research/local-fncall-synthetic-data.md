@@ -52,7 +52,7 @@ prompt". Same runtime, same seam, same `dispatchEditorTool` — different weight
 
 ### Why it fits: the whole fn-call turn runs in the browser, no server
 The model output is a tool call against the LIVE in-memory composition `Graph`, executed
-by `dispatchEditorTool` (`src/lib/cad/editor-tools.ts`) — no round-trip. Client-side
+by `dispatchEditorTool` (`src/lib/graph/editor-tools.ts`) — no round-trip. Client-side
 *geometry* execution already exists in spirit (the bake-worker, `docs/plans/client-side-execution.md`);
 this adds client-side *reasoning*. The "graph" the model edits is our in-memory
 composition `Graph`, NOT a graph database — ignore the Cytoscape/Neo4j/graph-lib framing
@@ -74,7 +74,7 @@ TF-IDF few-shot corpus (#2 §5.1), not for the graph.
 
 ### XGrammar CFG constrained to OUR editor-tool call syntax
 - Pass XGrammar a strict CFG/regex so the model can ONLY emit tokens matching our exact
-  tool-call shape — the tool NAMES from `EDITOR_TOOLS` (`src/lib/cad/editor-tools-schema.ts`)
+  tool-call shape — the tool NAMES from `EDITOR_TOOLS` (`src/lib/graph/editor-tools-schema.ts`)
   and args drawn from the `ArgValue` union (`literal | expr | param`). Output is then
   *guaranteed* parseable by `dispatchEditorTool` — no regex-scrape, no malformed-JSON
   failure mode (the #2 §5.3 improvement over SVTC's regex parse).

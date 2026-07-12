@@ -110,7 +110,7 @@ graph" requirement.
   - ✅ **Per-corner fillet (engine)** (`1faaf0f`). `compileSketch` fillets each
     corner with its OWN radius via `makerjs.path.fillet` (was
     `chain.fillet(min(radii))` = all corners, one radius). Unfilleted corners
-    stay sharp. Tests in `src/lib/cad/sketch.test.ts`.
+    stay sharp. Tests in `src/lib/graph/sketch.test.ts`.
   - ✅ **Click-to-fillet/chamfer + live radius dial** (`91c3da9`). Click a
     corner with the fillet/chamfer tool to round/bevel THAT corner; a
     slider+number dial edits its radius/dist live; gold badge marks modified

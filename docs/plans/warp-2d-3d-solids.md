@@ -9,7 +9,7 @@
 
 One warp node, one engine, mode auto-selected — the author never chooses.
 
-- **Engine** `src/lib/cad/warp-spline.ts`. `warpManifoldAlongSpline(m, cp, opts)`
+- **Engine** `src/lib/graph/warp-spline.ts`. `warpManifoldAlongSpline(m, cp, opts)`
   (`:204`) bends a built Manifold via `Manifold.warp`; `warpMeshJS(...)` (`:285`)
   is the pure-JS position+normal twin used by the client/TF warp step. Both map a
   vertex's **z → arc-length** along the spline and place its (x, y) on a local
@@ -24,7 +24,7 @@ One warp node, one engine, mode auto-selected — the author never chooses.
     `sweepFrames` double-reflection) carried along the curve, re-derived
     right-handed (`det[N,B,T] = +1`, `:141-147`) so `warp` keeps a positive
     volume. Mapping (`:240-247`): `x → N`, `y → B`, `z → arc-length`.
-- **Node** `src/lib/cad/nodes/kinds/warp.ts` + `WarpNode`
+- **Node** `src/lib/graph/nodes/kinds/warp.ts` + `WarpNode`
   (`composition-graph-types.ts:486`). Fields: `child` / `children[]` (multi-input
   #36b, `:493`), `path`, `refine`, `stretch`, `validate`, `originZ` (#36c b,
   `:504`). Emit (`warp.ts:26-48`): `warpSpline(child, path, { … })`; ≥2 children
@@ -160,10 +160,10 @@ lands.
 
 ## Critical files
 
-`src/lib/cad/warp-spline.ts` (engine — `warpManifoldAlongSpline` `:204`,
+`src/lib/graph/warp-spline.ts` (engine — `warpManifoldAlongSpline` `:204`,
 `warpMeshJS` `:285`, `is3DPath` `:123`, `frameN` `:109`, planar mapping
-`:248-261`) · `src/lib/cad/nodes/kinds/warp.ts` (emit/validate/sockets) ·
-`src/lib/cad/composition-graph-types.ts:486` (`WarpNode`) ·
+`:248-261`) · `src/lib/graph/nodes/kinds/warp.ts` (emit/validate/sockets) ·
+`src/lib/graph/composition-graph-types.ts:486` (`WarpNode`) ·
 `src/lib/shared/graph-editor/SplineEditorPopup.svelte` +
 `spline-state.svelte.ts` + `spline-view.ts:13` (plane lock) ·
-`src/lib/cad/nodes/emit-golden.test.ts` + `warp-spline.test.ts` (gates).
+`src/lib/graph/nodes/emit-golden.test.ts` + `warp-spline.test.ts` (gates).

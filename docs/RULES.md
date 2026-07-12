@@ -27,12 +27,12 @@ identification, ...) that drive constrained parametrization downstream.
   its bottom connection at –connLength.
 - Two of the same composition stack into a string without orientation
   flips: pin (bottom of upper joint) mates into box (top of lower joint).
-- Documented at the top of `src/lib/cad/components-l3.ts` and
-  `src/lib/cad/rules/tubing.ts`.
+- Documented at the top of `src/lib/graph/components-l3.ts` and
+  `src/lib/graph/rules/tubing.ts`.
 
 ## 3. Primitive registry
 
-`src/lib/cad/library.ts` exports `COMPONENTS: ComponentDef[]`,
+`src/lib/graph/library.ts` exports `COMPONENTS: ComponentDef[]`,
 which is built from:
 
 ```ts
@@ -40,7 +40,7 @@ export const COMPONENTS = [...BASE_COMPONENTS, ...VARIATION_SPECS.map(deriveVari
 ```
 
 - **BASE_COMPONENTS** — hand-authored entries with a unique geometry
-  builder registered in `src/lib/cad/builder.ts`.
+  builder registered in `src/lib/graph/builder.ts`.
 - **VARIATION_SPECS** — small spec table; `deriveVariation(spec)`
   returns a ComponentDef that inherits the parent's params + builder
   geometry, overriding only `defaults` and (optionally) per-param
@@ -52,7 +52,7 @@ one entry in `VARIATION_SPECS` — no builder code required.
 
 ## 4. Composite generator pipeline
 
-For tubing and drill-pipe: rules files in `src/lib/cad/rules/`
+For tubing and drill-pipe: rules files in `src/lib/graph/rules/`
 encode the input → output transform.
 
 ```
@@ -107,7 +107,7 @@ visible. Connection lengths get a 5× visibility bump on top.
 | `CONN_VIEW_LENGTH_FRAC` | 0.02 | base scale for connection length |
 | `CONN_VIEW_BUMP` | 5 | extra multiplier so threads aren't sub-pixel |
 
-Defined in `src/lib/cad/rules/tubing.ts`; mirrored with
+Defined in `src/lib/graph/rules/tubing.ts`; mirrored with
 `TJ_*` names in `rules/drill_pipe.ts`. Tweak in one place to rescale
 the entire composition library.
 
@@ -194,9 +194,9 @@ yes → 3 (Component). If it ships as one welded/manufactured piece → 2
 ## 10. Forbidden
 
 - **No dynamic eval of generated code in the browser.** Builder code
-  changes happen in `src/lib/cad/builder.ts` and require a
+  changes happen in `src/lib/graph/builder.ts` and require a
   reload. (Plan tasks 9 + 10 cover the spec-MD → codegen pipeline.)
-- **No cross-import between domain dirs** — `src/lib/cad/*` and
+- **No cross-import between domain dirs** — `src/lib/graph/*` and
   `src/lib/wells/*` (when the latter exists) MUST NOT import each
   other. Both may import from `src/lib/shared/*`.
 - **No emoji in committed code/docs** unless explicitly requested.

@@ -99,7 +99,7 @@ exclusions) so it's a fast WASM compute call an external app can hammer
   Source is *optional in list*, included on `GET /parts/{id}` (§7 IP note).
 - **Graph** = the composition-graph JSON (`Call/Container/Method/Mv/Rot/
   Repeat/Polygon/PolyRepeat`, `ArgValue = literal|expr|param`) —
-  `src/lib/cad/composition-graph.ts`. The canonical authoring artifact.
+  `src/lib/graph/composition-graph.ts`. The canonical authoring artifact.
 - **Geometry** = mesh-JSON (`preview`) | GLB bytes (`bake-preview`) | SVG.
 
 ### Structured errors (all v1)

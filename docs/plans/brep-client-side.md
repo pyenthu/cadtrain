@@ -84,12 +84,12 @@ BREP tab (RightPane) → PrimitiveDualCanvas backend="brep" (rebuildBrep, ~L456)
 
 | Piece | Path |
 |---|---|
-| OCCT executor + tessellate + cutaway | `src/lib/server/brep-occt.ts` (this task's prompt mislabels it `src/lib/cad/…`) |
+| OCCT executor + tessellate + cutaway | `src/lib/server/brep-occt.ts` (this task's prompt mislabels it `src/lib/graph/…`) |
 | Server endpoint (never-500 isolation contract) | `src/routes/api/brep/preview/+server.ts` |
 | Response → THREE geo adapter | `src/lib/shared/brep-adapter.ts` (**already client-side, kernel-neutral — reuse verbatim**) |
 | Canvas BREP dispatch | `src/lib/shared/PrimitiveDualCanvas.svelte` `rebuildBrep()` (~L456) |
 | BREP tab UI | `src/lib/shared/graph-editor/RightPane.svelte` (`rightTab==='brep'`) |
-| Manifold client precedent | `src/lib/cad/bake-worker.ts` + `bake-worker-core.ts` + `bake-client.ts` |
+| Manifold client precedent | `src/lib/graph/bake-worker.ts` + `bake-worker-core.ts` + `bake-client.ts` |
 | Client-exec flag precedent | `scene.clientBake` in `src/lib/shared/scene-state.svelte.ts` |
 
 **The split point inside `brep-occt.ts`:** the file already separates cleanly.
@@ -204,7 +204,7 @@ throwaway button on `/primitives` (never a new route — memory
   the existence proof.
 
 ### P1 — Client executor behind the flag (server fallback intact) — **GATE: build green + BREP parts render client-side, flag ON**
-- Create `src/lib/cad/brep-executor.ts` exporting
+- Create `src/lib/graph/brep-executor.ts` exporting
   `brepFromSourceClient(source, params, opts, occ)` — **copied** from
   `brep-occt.ts`'s `brepFromSource` with the two Node-only pieces removed
   (bootstrap → injected `occ`; `getDepSource`/`collectDeps` → deleted, deps are
@@ -250,8 +250,8 @@ server-builder BREP path is retained permanently for batch/STEP-export/low-power
 ## 4. Files (by phase)
 
 - **P0:** throwaway `brep-worker.ts` spike + a hidden `/primitives` button.
-- **P1:** `src/lib/cad/brep-executor.ts` (portable, copied from `brep-occt.ts`);
-  `src/lib/cad/brep-worker.ts`; `src/lib/cad/brep-client.ts` (this branch ships
+- **P1:** `src/lib/graph/brep-executor.ts` (portable, copied from `brep-occt.ts`);
+  `src/lib/graph/brep-worker.ts`; `src/lib/graph/brep-client.ts` (this branch ships
   the stub); `src/lib/shared/scene-state.svelte.ts` (`clientBrep` flag);
   `src/lib/shared/PrimitiveDualCanvas.svelte` (`rebuildBrep` branch + badge);
   optionally `/api/primitives/compile` `kernel:'occt'` tag.
@@ -302,14 +302,14 @@ Per the task's "safe scaffold only if low-risk + non-breaking" clause, and Rule
 lands **only the zero-risk, headless-verifiable pieces** and STOPS before the
 worker that imports the 10 MB emscripten binding (that build+browser step is P0):
 
-- `src/lib/cad/brep-client.ts` — the main-thread client API **stub + protocol
+- `src/lib/graph/brep-client.ts` — the main-thread client API **stub + protocol
   types**, structurally following `bake-client.ts`. It does **not** import
   replicad and does **not** instantiate a worker (so Vite never bundles the
   emscripten glue → zero build risk). `brepClientEnabled()` reads the
   `cad-client-brep` flag (default OFF); `runBrepClient()` currently throws
   `BREP_CLIENT_NOT_READY` until P1 wires the real worker. **Nothing imports it on
   the hot path → zero behaviour change.**
-- `src/lib/cad/brep-client.test.ts` — asserts the flag defaults OFF and the stub
+- `src/lib/graph/brep-client.test.ts` — asserts the flag defaults OFF and the stub
   contract, so the scaffold is unit-verified headless (`bun run test`).
 
 This mirrors the exact precedent: `bake-client.ts` shipped in PR2 "NOT wired

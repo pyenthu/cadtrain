@@ -22,7 +22,7 @@
     Pure-presentational: all graph mutation lives in the parent (GraphEditorPane)
     via the callbacks. State here (`confirmId`) is per-instance `$state`.
   */
-  import type { ExprDef } from '$lib/cad/composition-graph';
+  import type { ExprDef } from '$lib/graph/composition-graph';
 
   let {
     defs,

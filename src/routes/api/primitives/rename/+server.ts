@@ -87,7 +87,7 @@ export const POST = async ({ url }) => {
   if (!oldId || !ID_RE.test(oldId)) throw error(400, 'id query param required');
   if (!newId || !ID_RE.test(newId)) throw error(400, 'to (new id) required: lowercase letters, digits, underscore');
   if (oldId === newId) return json({ ok: true, oldId, newId, note: 'no change' });
-  if (isStdlib(oldId)) throw error(403, `"${oldId}" is a built-in stdlib primitive — rename in src/lib/cad/stdlib/ + redeploy.`);
+  if (isStdlib(oldId)) throw error(403, `"${oldId}" is a built-in stdlib primitive — rename in src/lib/graph/stdlib/ + redeploy.`);
   if (isStdlib(newId)) throw error(409, `"${newId}" collides with a stdlib primitive — pick a different name.`);
 
   const hit = await findPrim(oldId, { includeArchive: true });

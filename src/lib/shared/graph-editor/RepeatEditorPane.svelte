@@ -38,7 +38,7 @@
     setRepeatBodyExpr,
     clearRepeatBodyExpr,
     type Graph,
-  } from '$lib/cad/composition-graph';
+  } from '$lib/graph/composition-graph';
 
   let {
     repeatId,

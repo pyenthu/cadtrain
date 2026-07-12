@@ -13,7 +13,7 @@ import { isStdlib } from '$lib/server/stdlib';
 // Rule 16), moving the file IS the regroup. The id is unchanged — findPrim
 // resolves it by id from wherever it now lives, so cross-references still work.
 //
-// Stdlib primitives (src/lib/cad/stdlib/) can't be moved — they're git-tracked.
+// Stdlib primitives (src/lib/graph/stdlib/) can't be moved — they're git-tracked.
 // Proxied to prod via hooks.server.ts (single live store).
 
 const ID_RE = /^[a-z][a-z0-9_]*$/i;
@@ -29,7 +29,7 @@ export const POST = async ({ url }) => {
   if (!id || !ID_RE.test(id)) throw error(400, 'id query param required');
   if (!to || !CAT_RE.test(to)) throw error(400, 'to must be a 1–3 segment volume folder path of [a-z][a-z0-9_]* (e.g. "basic", "completions/drill_pipe", or a custom folder) — not profiles/stdlib/stdstale');
   if (isStdlib(id)) {
-    throw error(403, `"${id}" is a built-in (src) primitive — it can't be moved; it lives in src/lib/cad/stdlib/.`);
+    throw error(403, `"${id}" is a built-in (src) primitive — it can't be moved; it lives in src/lib/graph/stdlib/.`);
   }
 
   // Resolve where it currently lives (active only — don't fish parts out of

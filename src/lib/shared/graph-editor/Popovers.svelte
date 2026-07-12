@@ -37,7 +37,7 @@
     STACK_REF_PARAM,
     type Graph,
     type NodeId,
-  } from '$lib/cad/composition-graph';
+  } from '$lib/graph/composition-graph';
   import { PROFILE_REGISTRY, defaultsFor, type ProfileDef } from '$lib/shared/profiles/profile-presets';
   import { profileProducers, producerLabel, kindsForSet } from './args';
 

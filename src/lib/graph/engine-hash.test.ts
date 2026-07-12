@@ -12,9 +12,9 @@ import { hashEngineSources, ENGINE_HASH, ENGINE_SOURCES } from './engine-hash';
 
 describe('hashEngineSources — pure content hash', () => {
   const fixture: Record<string, string> = {
-    '/src/lib/cad/manifold-mesh.ts': 'export function gridPatch() { return 1; }',
-    '/src/lib/cad/manifold-helpers.ts': 'export const cyl = () => {};',
-    '/src/lib/cad/stdlib/r_cuboid.ts': 'export function r_cuboid() {}',
+    '/src/lib/graph/manifold-mesh.ts': 'export function gridPatch() { return 1; }',
+    '/src/lib/graph/manifold-helpers.ts': 'export const cyl = () => {};',
+    '/src/lib/graph/stdlib/r_cuboid.ts': 'export function r_cuboid() {}',
   };
 
   it('is deterministic — same input → same digest (test #3)', () => {
@@ -27,27 +27,27 @@ describe('hashEngineSources — pure content hash', () => {
 
   it('is order-invariant (keys sorted before hashing)', () => {
     const reordered: Record<string, string> = {
-      '/src/lib/cad/stdlib/r_cuboid.ts': fixture['/src/lib/cad/stdlib/r_cuboid.ts']!,
-      '/src/lib/cad/manifold-mesh.ts': fixture['/src/lib/cad/manifold-mesh.ts']!,
-      '/src/lib/cad/manifold-helpers.ts': fixture['/src/lib/cad/manifold-helpers.ts']!,
+      '/src/lib/graph/stdlib/r_cuboid.ts': fixture['/src/lib/graph/stdlib/r_cuboid.ts']!,
+      '/src/lib/graph/manifold-mesh.ts': fixture['/src/lib/graph/manifold-mesh.ts']!,
+      '/src/lib/graph/manifold-helpers.ts': fixture['/src/lib/graph/manifold-helpers.ts']!,
     };
     expect(hashEngineSources(reordered)).toBe(hashEngineSources(fixture));
   });
 
   it('CHANGES when any engine file CONTENT changes (test #1 — the +cap1/+cut2 fix)', () => {
-    const edited = { ...fixture, '/src/lib/cad/manifold-mesh.ts': 'export function gridPatch() { return 2; }' };
+    const edited = { ...fixture, '/src/lib/graph/manifold-mesh.ts': 'export function gridPatch() { return 2; }' };
     expect(hashEngineSources(edited)).not.toBe(hashEngineSources(fixture));
   });
 
   it('CHANGES on a whitespace-only edit (content-exact, byte-sensitive)', () => {
-    const ws = { ...fixture, '/src/lib/cad/manifold-mesh.ts': fixture['/src/lib/cad/manifold-mesh.ts']! + '\n' };
+    const ws = { ...fixture, '/src/lib/graph/manifold-mesh.ts': fixture['/src/lib/graph/manifold-mesh.ts']! + '\n' };
     expect(hashEngineSources(ws)).not.toBe(hashEngineSources(fixture));
   });
 
   it('CHANGES when an engine file is added or removed', () => {
-    const added = { ...fixture, '/src/lib/cad/warp-spline.ts': 'export const w = 0;' };
+    const added = { ...fixture, '/src/lib/graph/warp-spline.ts': 'export const w = 0;' };
     expect(hashEngineSources(added)).not.toBe(hashEngineSources(fixture));
-    const { '/src/lib/cad/stdlib/r_cuboid.ts': _drop, ...removed } = fixture;
+    const { '/src/lib/graph/stdlib/r_cuboid.ts': _drop, ...removed } = fixture;
     expect(hashEngineSources(removed)).not.toBe(hashEngineSources(fixture));
   });
 
@@ -55,9 +55,9 @@ describe('hashEngineSources — pure content hash', () => {
     // Same relative path under a different absolute prefix → identical digest, so
     // the SERVER and CLIENT bundles agree even if Vite emits differently-rooted keys.
     const abs: Record<string, string> = {
-      '/abs/proj/src/lib/cad/manifold-mesh.ts': fixture['/src/lib/cad/manifold-mesh.ts']!,
-      '/abs/proj/src/lib/cad/manifold-helpers.ts': fixture['/src/lib/cad/manifold-helpers.ts']!,
-      '/abs/proj/src/lib/cad/stdlib/r_cuboid.ts': fixture['/src/lib/cad/stdlib/r_cuboid.ts']!,
+      '/abs/proj/src/lib/graph/manifold-mesh.ts': fixture['/src/lib/graph/manifold-mesh.ts']!,
+      '/abs/proj/src/lib/graph/manifold-helpers.ts': fixture['/src/lib/graph/manifold-helpers.ts']!,
+      '/abs/proj/src/lib/graph/stdlib/r_cuboid.ts': fixture['/src/lib/graph/stdlib/r_cuboid.ts']!,
     };
     expect(hashEngineSources(abs)).toBe(hashEngineSources(fixture));
   });

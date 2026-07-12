@@ -18,7 +18,7 @@ Pipeline as found:
 1. **Weld → indexed Manifold** — `manifold-mesh.ts` `weldAndBuild` builds
    `new Manifold(new Mesh({ numProp:3, … }))`, positions only, indexed. No
    normals here (would be stripped on the round-trip anyway).
-2. **Normals via Manifold** — `src/lib/cad/builder.ts`:
+2. **Normals via Manifold** — `src/lib/graph/builder.ts`:
    - `manifoldToGeo` (`:752`) and `manifoldToCutVC` (`:801`) both call
      `manifold.calculateNormals(3, 60)` and copy vertProperties idx 3..5 into
      the BufferGeometry `normal` attribute. Falls back to
@@ -191,6 +191,6 @@ Today `smoothShade` is computed (id-matched gate + `forceSmoothShade`). Plan:
   coarse loft and a designed shallow chamfer).
 
 Cross-refs: `docs/research/smooth-shading-normals.md`,
-`docs/plans/kernel-strategy.md`, `src/lib/cad/CLAUDE.md` §Rendering +
+`docs/plans/kernel-strategy.md`, `src/lib/graph/CLAUDE.md` §Rendering +
 "Non-planar twisted quads", memories `flatshading_twisted_quad_smoothshade_gate`,
 `welded_orientation_volume_sign`, `feedback_expose_dont_hide`.

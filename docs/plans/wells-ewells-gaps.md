@@ -13,7 +13,7 @@ cache (folder + tabs restore).
 
 ---
 ## A. BUILD ARCHITECTURE + PERF  ← do this FIRST (decides everything downstream)
-- [ ] **A1 · Multi-threaded build via cadtrain's bake API (the "significant enhancement")** — the 3D schematic is SLOW vs ewells (ewells = instant 2D SVG; cadtrain builds real Manifold CSG shells + cutaways on the MAIN THREAD → janky, worst on long strings). Route the wells geometry build through the client Web-Worker bake pipeline (`src/lib/cad/bake-worker.ts` + `bake-client.ts`; server = compiler) so CSG runs OFF the main thread + parallelizes.
+- [ ] **A1 · Multi-threaded build via cadtrain's bake API (the "significant enhancement")** — the 3D schematic is SLOW vs ewells (ewells = instant 2D SVG; cadtrain builds real Manifold CSG shells + cutaways on the MAIN THREAD → janky, worst on long strings). Route the wells geometry build through the client Web-Worker bake pipeline (`src/lib/graph/bake-worker.ts` + `bake-client.ts`; server = compiler) so CSG runs OFF the main thread + parallelizes.
   - [ ] design pass: what unit is baked (per-string? whole well? batched?) + how results compose in the scene
   - [ ] parallelize per-string / per-component builds
   - [ ] progressive render (show strings as they finish; don't block on the whole well)

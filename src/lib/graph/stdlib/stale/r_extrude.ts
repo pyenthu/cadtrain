@@ -2,7 +2,7 @@
  * r_extrude — function-first linear extrusion (prism) with optional twist.
  *
  * STANDARD-LIBRARY PRIMITIVE. Git-tracked, type-checked stdlib primitive
- * (src/lib/cad/stdlib/), NOT a volume part — canonical here and read-only in
+ * (src/lib/graph/stdlib/), NOT a volume part — canonical here and read-only in
  * the GUI. Served BEFORE the volume by the resolver; /api/primitives/save
  * refuses it (edit here + redeploy).
  *

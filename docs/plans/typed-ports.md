@@ -200,7 +200,7 @@ Then per-part `graph.typeDefs[]` + def→instance propagation has a real consume
 - Type IDENTITY: nominal (`'list<point>'` string id) vs structural (`{elem,card}`
   compared field-wise). Start nominal (simple, matches Blender's named sockets);
   the research warned against deep structural/tree typing early.
-- Where the registry lives: `src/lib/cad/port-types.ts` (pure, importable by emit
+- Where the registry lives: `src/lib/graph/port-types.ts` (pure, importable by emit
   + the editor). Hooks that need DOM (render) stay thin / data-only; the editor
   reads `color`/`glyph` and draws.
 - Coexistence with the current `ArgValue` (`literal|expr|param`) — ports are about

@@ -58,7 +58,7 @@ model.
 ## Data shapes
 
 ```ts
-// src/lib/cad/composition-graph.ts
+// src/lib/graph/composition-graph.ts
 export type NodeId = string;     // 'n_abc123' — short stable id, generated at create-time
 
 export type GraphNode =
@@ -175,11 +175,11 @@ backward compat.**
 
 | File | Status | Role |
 |---|---|---|
-| `src/lib/cad/composition-graph.ts` | **NEW** | Graph type + mutations: `addCall(graph, src, args?)` → returns `{graph, nodeId}` with fresh alias allocated; `removeNode`, `wireArg`, `unwireArg`, `addParam`, `removeParam`, etc. Pure functions returning new graphs (no in-place mutation). |
-| `src/lib/cad/composition-emit.ts` | **NEW** | `emitGraph(graph): { meta: object; body: string }`. Walks the graph in topological order, emits `const A = <src>(<args>)` lines, returns lines for the function body + the meta object including the graph JSON literal. |
-| `src/lib/cad/composition-bake.ts` | **NEW** | `bakeGraph(graph, paramValues, loadPrim): Promise<Manifold>`. Interprets the graph directly — no sandbox eval. Each Call node fetches its primitive's bake function via `loadPrim(src)`, calls it with resolved args, applies mv/rot/method wrappers, composes children. |
-| `src/lib/cad/composition-tree.ts` | **DELETED** | The old TreeNode + applyToSource layer goes away. composition-graph.ts replaces it. |
-| `src/lib/cad/assembly-deps.ts` | **DELETED** | The text-sniffing dep-snapshot becomes structural: edges + Call.src + Param schemas are the dependency set. No re-parsing of source needed. |
+| `src/lib/graph/composition-graph.ts` | **NEW** | Graph type + mutations: `addCall(graph, src, args?)` → returns `{graph, nodeId}` with fresh alias allocated; `removeNode`, `wireArg`, `unwireArg`, `addParam`, `removeParam`, etc. Pure functions returning new graphs (no in-place mutation). |
+| `src/lib/graph/composition-emit.ts` | **NEW** | `emitGraph(graph): { meta: object; body: string }`. Walks the graph in topological order, emits `const A = <src>(<args>)` lines, returns lines for the function body + the meta object including the graph JSON literal. |
+| `src/lib/graph/composition-bake.ts` | **NEW** | `bakeGraph(graph, paramValues, loadPrim): Promise<Manifold>`. Interprets the graph directly — no sandbox eval. Each Call node fetches its primitive's bake function via `loadPrim(src)`, calls it with resolved args, applies mv/rot/method wrappers, composes children. |
+| `src/lib/graph/composition-tree.ts` | **DELETED** | The old TreeNode + applyToSource layer goes away. composition-graph.ts replaces it. |
+| `src/lib/graph/assembly-deps.ts` | **DELETED** | The text-sniffing dep-snapshot becomes structural: edges + Call.src + Param schemas are the dependency set. No re-parsing of source needed. |
 | `src/lib/shared/CompositionEditor.svelte` | **REWRITTEN** | Imports + Composition panes + Parameters accordion become direct views over the graph. `applyToSource` calls disappear. Drag-to-wire on slots. `$state` graph; `$derived` views; no source round-trip. Drops Auto-wire chip, drift refresh, K.66 chrome (the drift becomes a node-property hash diff at most). |
 | `src/lib/server/primitive-loader.ts` | Updated | When loading an `.asm.ts` part, return `{ graph, params }` from `meta.graph`. Skip the regex `p`-injection ritual for asm parts — that lives in the bake interpreter. Primitive parts (`.prim.ts`, `.rev.ts`) keep their existing path. |
 | `src/routes/api/primitives/preview/+server.ts` | Updated | When the part is asm + has `meta.graph`, route through `bakeGraph` directly. Otherwise existing path. |
@@ -316,8 +316,8 @@ just adds the bake interpreter + a minimal GUI on top.
 
 ## What we delete (no compat)
 
-- `src/lib/cad/composition-tree.ts` — replaced by `composition-graph.ts`.
-- `src/lib/cad/assembly-deps.ts` — replaced by structural diffs on the graph.
+- `src/lib/graph/composition-tree.ts` — replaced by `composition-graph.ts`.
+- `src/lib/graph/assembly-deps.ts` — replaced by structural diffs on the graph.
 - The text-eval bake path for asm parts in `primitive-loader.ts`.
 - The K.66 drift chrome that sniffs source: rewritten as a graph-level diff.
 - The K.67 auto-wire chip + tree-body-drift auto-fire (already declared

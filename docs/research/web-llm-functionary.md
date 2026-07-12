@@ -10,7 +10,7 @@ client-side), and (c) a concrete model-candidate + integration shortlist.
 **Goal.** Run the cadtrain ✨ editor assistant's *tool-call turn* fully in the
 browser so no graph, instruction, or corpus leaves the org — including building
 the few-shot/prompt databases locally — behind the **same** tool-call interface
-as the Anthropic backend (`dispatchEditorTool` in `src/lib/cad/editor-tools.ts`).
+as the Anthropic backend (`dispatchEditorTool` in `src/lib/graph/editor-tools.ts`).
 Default OFF; Anthropic stays default + fallback.
 
 > ⚠️ **No verified internet access while writing this.** Library names, model
@@ -170,7 +170,7 @@ SVTC `rag.js` (confirmed by reading it):
 - `retrieve(query, topK=5)` → cosine vs every chunk, filter score > 0.05.
 - `buildRagContext(query, topK=5)` → `"RELEVANT CONTEXT…\n- [source] text\n…"`.
 
-**cadtrain port (`src/lib/cad/ai/webllm/corpus.ts`):** ingest the same records
+**cadtrain port (`src/lib/graph/ai/webllm/corpus.ts`):** ingest the same records
 the server `parts.jsonl` corpus carries (`rag-corpus.ts` shape: `id`, `kind`,
 `description`, `tags[]`, `params[]`, `structure_summary`, `exemplar_path`).
 Source the records **client-side** from either (a) a bundled JSON snapshot
@@ -205,7 +205,7 @@ optional pass-2 for a confirmation sentence. The multi-shot loop in
 `ge-assist.svelte.ts` (`ai-rag-system.md` §B) drives this exactly as it drives
 the Anthropic backend; the only swap is "ask the worker" vs "POST the endpoint."
 
-`src/lib/cad/ai/webllm/prompt.ts` assembles the system prompt locally:
+`src/lib/graph/ai/webllm/prompt.ts` assembles the system prompt locally:
 persona + `toolListText()` (from `editor-tools-schema.ts`) + `buildRagContext()`
 few-shots + retrieved exemplars + `readEditorState(graph, ctx)` — the **same
 context the Anthropic system prompt gets**, just built in the browser.
@@ -217,14 +217,14 @@ context the Anthropic system prompt gets**, just built in the browser.
 `docs/research/webgpu-slm.md` §3 already established that the design is
 backend-agnostic. Concretely:
 
-1. **`toJsonSchema()`** in `src/lib/cad/editor-tools-schema.ts` — a sibling to
+1. **`toJsonSchema()`** in `src/lib/graph/editor-tools-schema.ts` — a sibling to
    `toClaudeTools()` (same `EDITOR_TOOLS` source). `toClaudeTools()` already
    produces `{name, description, input_schema:{type:'object', properties,
    required}}`; `toJsonSchema()` wraps that into the per-tool grammar XGrammar
    wants (tool name selects the arg schema; e.g. a top-level
    `{name: enum[...], input: oneOf[...]}` schema). **Same source of truth, three
    lowerings** (`toClaudeTools`, `toolListText`, `toJsonSchema`).
-2. **Worker** `src/lib/cad/ai/webllm/engine.ts` — lazy `import('@mlc-ai/web-llm')`,
+2. **Worker** `src/lib/graph/ai/webllm/engine.ts` — lazy `import('@mlc-ai/web-llm')`,
    `CreateMLCEngine(MODEL_ID, {initProgressCallback})`, WebGPU feature-detect
    (`navigator.gpu`), weights cached in the browser Cache API (persist across
    sessions). Runs in a **Web Worker** (SVTC runs on the main thread — cadtrain

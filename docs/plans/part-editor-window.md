@@ -1,8 +1,8 @@
 # Dedicated part-editor window — embedded `mv` / `rot` transforms
 
 Plan owner: graph-editor / transforms. Status: **PLAN ONLY** (no `src/`
-changes yet). Target files: `src/lib/cad/composition-graph.ts`,
-`src/lib/cad/composition-emit.ts`, `src/lib/shared/GraphEditorPane.svelte`
+changes yet). Target files: `src/lib/graph/composition-graph.ts`,
+`src/lib/graph/composition-emit.ts`, `src/lib/shared/GraphEditorPane.svelte`
 (+ a new `src/lib/shared/PartTransformEditor.svelte`).
 
 > Line numbers below were read against the current tree on 2026-06-15 and
@@ -217,7 +217,7 @@ return expr;
   Document in the window UI ("applied top → bottom"). The common CAD order is
   **rotate then translate**; the user controls it by row order, so put `rot`
   above `mv` by default when both are added.
-- **Z-down convention** (`src/lib/cad/CLAUDE.md`): `mv(part,[0,0,+N])` moves
+- **Z-down convention** (`src/lib/graph/CLAUDE.md`): `mv(part,[0,0,+N])` moves
   *down-hole*. The window's z input keeps that sign meaning; no transform on
   the convention itself — we reuse the exact `mv`/`rot` helpers, so geometry
   is identical to a wrapper today.

@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { withManifoldTrapGuard } from '$lib/server/manifold-guard';
-import { isManifoldFatalTrap } from '$lib/cad/manifold-trap';
+import { isManifoldFatalTrap } from '$lib/graph/manifold-trap';
 import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from '$lib/engines/manifold/manifold-mesh';
 import { buildPrimitiveGeom, hashDepSources } from '$lib/server/primitive-loader';
 import { finalizeManifold, lazyPartsOf } from '$lib/engines/manifold/render-helpers';

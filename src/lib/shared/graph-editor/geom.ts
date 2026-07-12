@@ -21,10 +21,10 @@ import {
   type NodeId,
   type MvNode,
   type RotNode,
-} from '$lib/cad/composition-graph';
-import { sketchColLayout, SKETCH_COL_W, SKETCH_COL_GAP } from '$lib/cad/sketch-layout';
-import { kindOf } from '$lib/cad/nodes/registry';
-import type { SizeConsts } from '$lib/cad/nodes/node-kind';
+} from '$lib/graph/composition-graph';
+import { sketchColLayout, SKETCH_COL_W, SKETCH_COL_GAP } from '$lib/graph/sketch-layout';
+import { kindOf } from '$lib/graph/nodes/registry';
+import type { SizeConsts } from '$lib/graph/nodes/node-kind';
 
 // ─── Params-card geometry constants ────────────────────────────────────────
 // Outer card sits at (CARD_X0, CARD_Y0); the title bar takes CARD_TITLE_H;

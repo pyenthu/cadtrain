@@ -25,7 +25,7 @@
       title: 'One model, a registry of descriptors',
       body:
         'The composition-graph node model is a NodeKind registry — kindOf(node) returns a descriptor that owns emit / validate / size / sockets — instead of a switch(node.type) scattered across the codebase. Adding a node type is one file, not fifteen edits.',
-      cites: 'src/lib/cad/nodes/  ·  registry.ts · kinds/*.ts',
+      cites: 'src/lib/graph/nodes/  ·  registry.ts · kinds/*.ts',
       diagram: `flowchart LR
   A["switch(node.type)<br/>…15 arms…"]:::old -->|refactor| B["kindOf(node)<br/>= descriptor"]:::new
   B --> C[".emit()"]:::leaf
@@ -72,7 +72,7 @@
       title: 'Golden-emit as the safety net',
       body:
         'emit-golden.test.ts freezes ~20 parts’ emitted source byte-for-byte (fixtures under tests/golden/). Re-emit the graph, compare to the frozen bytes — diff = 0 means a refactor is provably behaviour-preserving. This is what makes big rewrites and parallel subagents safe.',
-      cites: 'src/lib/cad/nodes/emit-golden.test.ts · tests/golden/',
+      cites: 'src/lib/graph/nodes/emit-golden.test.ts · tests/golden/',
       diagram: `flowchart LR
   G["graph"]:::leaf --> E["emit()"]:::leaf --> C{"byte-compare"}:::cmp
   F["frozen .js<br/>(~20 parts)"]:::frozen --> C
@@ -111,7 +111,7 @@
       title: 'Z-down, everywhere',
       body:
         'The drilling convention runs through every helper: the top of a tool is the LOWER z, and mv(part,[0,0,+N]) moves the part DOWN-HOLE. One sign convention, encoded once, so nothing has to second-guess which way is deeper.',
-      cites: 'src/lib/cad/CLAUDE.md · every helper',
+      cites: 'src/lib/graph/CLAUDE.md · every helper',
       diagram: `flowchart TB
   T["surface · z = 0"]:::top --> D["mv(part, [0,0,+N])<br/>down-hole · z increases"]:::bot
   classDef top fill:#eef4fb,stroke:#3b82c4,color:#1e3a5f;

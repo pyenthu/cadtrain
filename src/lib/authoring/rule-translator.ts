@@ -24,10 +24,10 @@
 import {
   applyToSource, addAssemblyParam, newNodeId,
   type TreeNode, type ImportDef,
-} from '../cad/composition-tree';
+} from '../graph/composition-tree';
 import {
   buildAssemblySource, buildRevolveSource, templatesFor,
-} from '../cad/profile-templates';
+} from '../graph/profile-templates';
 // K.63 graph-based compose-rule emitter (Phase 14). The legacy text-body
 // translator (`translateAsm`) is kept for back-compat; new compositions
 // emit `meta.graph` via `translateAsmGraph`.
@@ -38,8 +38,8 @@ import {
   setRepeatOp, appendContainerChild,
   asLiteral, asExpr, asParam,
   type Graph, type NodeId, type ArgValue, type CsgOp,
-} from '../cad/composition-graph';
-import { emitGraph } from '../cad/composition-emit';
+} from '../graph/composition-graph';
+import { emitGraph } from '../graph/composition-emit';
 
 // ─── Schema types ──────────────────────────────────────────────────────
 

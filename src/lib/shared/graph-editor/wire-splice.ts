@@ -28,7 +28,7 @@ import {
   type Graph,
   type GraphNode,
   type NodeId,
-} from '$lib/cad/composition-graph';
+} from '$lib/graph/composition-graph';
 import type { WireRef } from './wire-delete';
 
 /** A splice target = the wire's target-slot ref + the SOURCE node feeding it. */

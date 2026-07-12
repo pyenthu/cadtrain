@@ -8,7 +8,7 @@
  * well into that language and the engines (Manifold · TrueForm · BREP) and the
  * editor come along for free.
  *
- * The output is a REAL `Graph` (`$lib/cad/composition-graph-types`), not a
+ * The output is a REAL `Graph` (`$lib/graph/composition-graph-types`), not a
  * wells-private intermediate, precisely so the well can be saved as a volume
  * `.asm.ts` (carrying `meta.graph`) and mounted with `<GraphEditorPane {id} />`.
  *
@@ -33,9 +33,9 @@
  * NO FALLBACK: an untranslatable well throws `WsonTranslateError`. We never
  * emit a stand-in shape — a wrong well is worse than a visible error.
  */
-import type { ArgValue, CallNode, ContainerNode, Graph, GraphNode, MvNode, NodeId, ParamSchema, SplineNode, WarpNode } from '$lib/cad/composition-graph-types';
-import { asExpr, asLiteral, asParam } from '$lib/cad/composition-graph-types';
-import { exprBlockMember } from '$lib/cad/graph-exprs';
+import type { ArgValue, CallNode, ContainerNode, Graph, GraphNode, MvNode, NodeId, ParamSchema, SplineNode, WarpNode } from '$lib/graph/composition-graph-types';
+import { asExpr, asLiteral, asParam } from '$lib/graph/composition-graph-types';
+import { exprBlockMember } from '$lib/graph/graph-exprs';
 import { normaliseKey, resolveStructural } from './registry';
 import { buildTrajectory } from './assemble';
 import { isDeviated, recomputeAutoTops } from './wson';

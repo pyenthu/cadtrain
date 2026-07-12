@@ -48,9 +48,9 @@ import {
   type MvNode,
   type RotNode,
   type CallNode,
-} from '$lib/cad/composition-graph';
-import { exprBlockMember } from '$lib/cad/graph-exprs';
-import { checkOutputFeeds, slotExpectedType, POLYGON_POINTS, SPLINE_POINTS } from '$lib/cad/wire-check';
+} from '$lib/graph/composition-graph';
+import { exprBlockMember } from '$lib/graph/graph-exprs';
+import { checkOutputFeeds, slotExpectedType, POLYGON_POINTS, SPLINE_POINTS } from '$lib/graph/wire-check';
 import { releaseImplicitCapture } from './pointer-capture';
 
 /** wireFrom is either a node's output socket OR a param's output chip. On

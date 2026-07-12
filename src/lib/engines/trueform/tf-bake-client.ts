@@ -1,6 +1,6 @@
 /**
  * tf-bake-client — the MAIN-THREAD API for the client-side TrueForm executor
- * (mirrors `src/lib/cad/bake-client.ts` for the TF backend).
+ * (mirrors `src/lib/graph/bake-client.ts` for the TF backend).
  *
  * Owns ONE `tf-worker.ts` Web Worker and a "latest-wins" job queue: a fast spline
  * drag supersedes in-flight bakes (they resolve to {@link TF_CANCELLED} instead of
@@ -45,7 +45,7 @@ export function isTfCancelled(r: TfBakeResult): r is typeof TF_CANCELLED {
 /** What the caller asks for — a native recipe build, honouring cutaway. */
 export interface TfBakeArgs {
   mode: 'native';
-  recipe?: import('$lib/cad/graph-to-tf').TfRecipe;
+  recipe?: import('$lib/graph/graph-to-tf').TfRecipe;
   cutaway: boolean;
 }
 

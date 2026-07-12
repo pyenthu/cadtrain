@@ -9,7 +9,7 @@
 
 ## Bottom line
 Do **NOT** `.warp` a pre-built solid. Build the warped surface **directly as a
-welded raw mesh** with the existing toolkit (`src/lib/cad/manifold-mesh.ts`:
+welded raw mesh** with the existing toolkit (`src/lib/graph/manifold-mesh.ts`:
 `gridPatch`/`capFan`/`weldAndBuild`). **`primitives/raw_helix_4/source.ts`
 (`:207-238`) is already a spline-sweep** — clone it; the helix is just one rail
 + one frame. `.warp` is disqualified: it can't vary the profile (fixed prism),

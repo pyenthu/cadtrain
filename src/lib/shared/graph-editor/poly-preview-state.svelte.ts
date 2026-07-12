@@ -20,7 +20,7 @@
 import {
   addPolygonPoint, removePolygonPoint, setPolygonCoord,
   type Graph, type NodeId,
-} from '$lib/cad/composition-graph';
+} from '$lib/graph/composition-graph';
 import { entryIdxForEvalIdx } from './geom';
 
 type Mode = 'revolve' | 'cartesian';

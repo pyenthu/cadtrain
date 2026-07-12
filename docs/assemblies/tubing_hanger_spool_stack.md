@@ -120,8 +120,8 @@ size. Bind to the catalog rows in `static/kb/api/tubing-hanger.json`.
 ## References
 
 - `static/kb/api/tubing-hanger.json` — 11-row KB (7 spool variants + 4 couplings)
-- `src/lib/cad/parts/tubing_hanger_spool.ts` — primitive geom
-- `src/lib/cad/parts/tubing_hanger_coupling.ts` — primitive geom
+- `src/lib/graph/parts/tubing_hanger_spool.ts` — primitive geom
+- `src/lib/graph/parts/tubing_hanger_coupling.ts` — primitive geom
 - Vendor: https://miracleoilfield.com/tubing-hanger-spools-and-couplings/ (accessed 2026-05-13)
 
 ## Open questions / TODOs

@@ -85,7 +85,7 @@ Both must learn about `e.<name>`.
 
 ### 3.2 Topological evaluation of exprs
 
-Add a pure helper (new module `src/lib/cad/graph-exprs.ts`, leaf — imports only
+Add a pure helper (new module `src/lib/graph/graph-exprs.ts`, leaf — imports only
 types):
 
 ```ts

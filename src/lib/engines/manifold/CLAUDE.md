@@ -3,9 +3,9 @@
 The primary geometry engine — mesh CSG + the welded-mesh toolkit. Holds
 `render-helpers`, `manifold-helpers`(+`-meta`), `manifold-mesh`, `warp-spline`,
 `mesh-serial`, and the client bake path (`bake-{client,worker,worker-core}`).
-Carved out of `src/lib/cad/` 2026-07-12 (E1 `da7399f`). Engine-layer overview +
+Carved out of `src/lib/graph/` 2026-07-12 (E1 `da7399f`). Engine-layer overview +
 dependency rule → `../CLAUDE.md`; the cad-domain graph/sketch/stdlib code stays
-in `src/lib/cad/` (its `../../cad/CLAUDE.md`). The render + kernel gotchas below
+in `src/lib/graph/` (its `../../cad/CLAUDE.md`). The render + kernel gotchas below
 are Manifold-specific and load only when you work in this subtree.
 
 ## Rendering
@@ -75,7 +75,7 @@ primitives reach `CS` + `Mesh` via `G.__cadtrain_manifold__.wasm` directly.
 
 In manifold-3d 3.4.1, `extrude(h, nDivisions, 0)` with `nDivisions > 0` AND `twistDegrees === 0` produces a non-manifold mesh — the intermediate slices are IDENTICAL to top + bottom (no morph), so the triangulator emits coincident triangle pairs and rejects with `"Not manifold"`.
 
-**Fix pattern** (used by both `r_extrude` in `src/lib/cad/stdlib/stale/` and `r_weld_extrude` in `src/lib/cad/stdlib/`):
+**Fix pattern** (used by both `r_extrude` in `src/lib/graph/stdlib/stale/` and `r_weld_extrude` in `src/lib/graph/stdlib/`):
 
 ```ts
 const tw = Number(twist ?? 0);

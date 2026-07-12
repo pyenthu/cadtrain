@@ -1,7 +1,7 @@
 # `src/lib/shared/` — cross-domain UI + infrastructure
 
 Components and helpers shared by the routes (`/graph-editor`,
-`/primitives`, `/vocab`, `/fem`, `/forge`) and by `src/lib/cad/*`.
+`/primitives`, `/vocab`, `/fem`, `/forge`) and by `src/lib/graph/*`.
 Domain libs may import from here; this directory must not import from
 domain libs.
 

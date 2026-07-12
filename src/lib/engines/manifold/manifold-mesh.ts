@@ -1003,7 +1003,7 @@ export function sweepAnnular(
 // HANDLES → wrong genus / negative Euler characteristic + a degenerate sliver
 // fan, even though the result is still a closed 2-manifold. (PROVEN not
 // repairable post-hoc: dropping degenerate/sliver tris can't lower the genus;
-// simplify/setTolerance preserve topology by design — see src/lib/cad/CLAUDE.md
+// simplify/setTolerance preserve topology by design — see src/lib/graph/CLAUDE.md
 // "r_sweep DEGENERATE / SLIVER caps".)
 //
 // PREVENTION (never create a coincident cap), NOT removal: extend the SUBTRAHEND

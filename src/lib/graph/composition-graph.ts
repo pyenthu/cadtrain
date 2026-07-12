@@ -16,7 +16,7 @@
  *
  * ─────────────────────────────────────────────────────────────────────────
  * BARREL. This module was split (plan modularize.md P4) into three files —
- * importers keep using `$lib/cad/composition-graph` unchanged:
+ * importers keep using `$lib/graph/composition-graph` unchanged:
  *   • composition-graph-types.ts   — leaf: types + value constructors
  *   • composition-graph-hydrate.ts — newGraph / setViewport / hydrateGraph
  *   • composition-graph-mutate.ts  — mutators + queries + topoOrder

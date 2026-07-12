@@ -12,7 +12,7 @@
     polySockR, polySockZ, polySockRef, sketchSockR, sketchSockZ, sketchSockVal,
     rootOutputSockY, extractParamRefs, warpPathCY, warpPathCX,
   } from './geom';
-  import { exprBlockMember } from '$lib/cad/graph-exprs';
+  import { exprBlockMember } from '$lib/graph/graph-exprs';
   import type { WireRef } from './wire-delete';
   import { spliceWireKey, type SpliceWire } from './wire-splice';
 

@@ -16,7 +16,7 @@ viewer scene + SceneControls only).
 - Three `<T.PointLight>` (`l1`,`l2`,`l3`) at fixed positions near the origin,
   `distance={50}`, intensities 500/500/250. Z-positions are 0 / 0 / −20.
 - Material everywhere is **MeshPhongMaterial** (Phong, NOT physical — physical
-  washes out on Mac GPUs; see `src/lib/cad/CLAUDE.md`).
+  washes out on Mac GPUs; see `src/lib/graph/CLAUDE.md`).
 - A tall stack (e.g. `g_dp_stand`, 3× joint with a gap) extends far along +Z;
   the point lights don't follow it, so the bottom of the stack falls off.
 

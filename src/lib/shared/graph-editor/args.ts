@@ -9,7 +9,7 @@
  * in-component originals for the same inputs.
  */
 import { PROFILE_REGISTRY, type ProfileDef } from '$lib/shared/profiles/profile-presets';
-import type { Graph, NodeId } from '$lib/cad/composition-graph';
+import type { Graph, NodeId } from '$lib/graph/composition-graph';
 
 /** ArgValue → display string. literal→value, param→`p.<name>`, expr→raw. */
 export function argStr(a: any): string {
