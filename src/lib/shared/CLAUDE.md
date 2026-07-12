@@ -5,6 +5,14 @@ Components and helpers shared by the routes (`/graph-editor`,
 Domain libs may import from here; this directory must not import from
 domain libs.
 
+> **⚠ Layering debt** (audit `docs/research/graph-shared-overlap.md`, 2026-07-12):
+> `shared/graph-editor/` is NOT actually cross-domain UI — it is the CAD editor's own
+> glue and imports `$lib/graph/` **77×**, violating the rule above and forming a
+> directory-level import cycle. The fix (`/plan #992`) is to move
+> `shared/graph-editor/` → `graph/editor/` (erases 76 of 77 violations) and move
+> `shared/profiles/profile-presets.ts` into `graph/`. Until then the "must not import
+> from domain libs" rule is aspirational for the `graph-editor/` subtree.
+
 > **⚠ 2026-07-12 — `shared/` was modularized (#16 `6b72b40`) into themed subdirs;
 > the files listed below at the root now live in these:** `viewer/` (PrimitiveDual*,
 > SceneControls, scene-state, warp, vertex-alpha-partition, instance-colors,

@@ -17,4 +17,10 @@ server are the eventual goal. Files: `graph-to-tf` (graph → TF program),
 - The BORE-EXTEND fix for hollow swept tubes (coincident tilted caps → phantom
   handles in the TF *and* Manifold mesh boolean) lives in `tf_examples/execute.ts`;
   documented in `../manifold/CLAUDE.md` (`## Manifold gotchas` → r_sweep).
+- **A wired section formula is evaluated with LIVE params** (`55636f1`):
+  `graph-to-tf`'s `sectionRadiusOf` evaluates a wired ExprDef's `pts` formula
+  (`evalWiredSectionPoints`, reusing `compileImperative`/`compileListFormula`), so
+  editing the section (circle→ellipse) changes the recipe (`op:'sweep'` vs
+  `op:'sweep_section'`) rather than reusing a stale binding-radius. Fail-safe fallback
+  to the binding radius.
 - Engine-layer overview + dependency rule → `../CLAUDE.md`.
