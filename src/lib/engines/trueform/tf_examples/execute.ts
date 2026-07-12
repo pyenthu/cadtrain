@@ -199,6 +199,26 @@ function bakeTransformIntoPoints(mesh: any, pts: Float32Array): Float32Array {
 }
 
 /**
+ * Rebuild a mesh with its LAZY `transformation` baked into the vertex buffer, when
+ * that transform would otherwise be dropped. TF keeps an outer mv/rot/txfmn lazy on
+ * the handle; a following boolean bakes it as a side effect, but a transform that
+ * WRAPS a whole ROOT output has no such boolean — `mv(sectionCut(solid), …)` /
+ * `mv(revolve(solid), …)` — so `tfMeshData` (which reads the RAW LOCAL buffer)
+ * silently loses the move ("mv-after-cutaway no-ops on TF, honoured on Manifold";
+ * Manifold bakes transforms into vertices eagerly). Baking here at the root makes
+ * TF match Manifold. Identity / absent / no real 4×4 (the mock kernel) → the handle
+ * is returned unchanged, so an already-baked mesh is untouched (idempotent).
+ */
+function bakeMeshTransform(t: any, mesh: any): any {
+  const has = typeof mesh?.has_transformation === 'function' ? mesh.has_transformation() : !!mesh?.transformation;
+  if (!has) return mesh;
+  const m = mesh.transformation?.data as ArrayLike<number> | undefined;
+  if (!m || m.length < 16) return mesh;
+  const md = tfMeshData(mesh);
+  return t.mesh(md.faces, bakeTransformIntoPoints(mesh, md.points));
+}
+
+/**
  * Local Z-extent (min/max of a built mesh's own vertex buffer) — the axial size
  * used to stack a MATED container end-to-end. Reads `mesh.points.data` directly
  * (the LOCAL point buffer, before any `.transformation` the mesh carries), so it
@@ -603,9 +623,13 @@ export function executeTfRecipe(
   // resets the singleton on a trap (next ensureTf re-inits a clean kernel) and
   // rethrows a readable reason instead of the opaque "unreachable" + a dead kernel.
   return runTfGuarded(() => {
-    // Build each ROOT output (= a PART) as its OWN mesh first.
+    // Build each ROOT output (= a PART) as its OWN mesh first. Bake any LAZY
+    // transform the output carries (an OUTER mv/rot/txfmn wrapping the whole part,
+    // e.g. `mv(sectionCut(solid), …)`) into the vertex buffer — no downstream
+    // boolean follows it to bake it, and the render reads the raw local buffer, so
+    // it would otherwise be dropped (see bakeMeshTransform).
     const partMeshes = instrs.map((instr) => {
-      const m = buildInstr(t, instr);
+      const m = bakeMeshTransform(t, buildInstr(t, instr));
       try { return t.positivelyOriented(m); } catch { return m; }
     });
 
