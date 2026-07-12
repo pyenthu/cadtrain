@@ -3,7 +3,7 @@
 // /design "Folder tree" hierarchy views. Regenerate with:
 //   bun scripts/gen-folder-tree.mjs      (this file alone)
 //   bun scripts/gen-design-diagrams.mjs  (all three /design snapshots)
-// Stats at generation: 498 files · 109 folders · 100,844 LOC.
+// Stats at generation: 484 files · 123 folders · 114,117 LOC.
 
 export interface FolderNode {
   name: string;
@@ -12,7 +12,7 @@ export interface FolderNode {
   children?: FolderNode[];
 }
 
-export const FOLDER_TREE_STATS = { files: 498, folders: 109, loc: 100844 } as const;
+export const FOLDER_TREE_STATS = { files: 484, folders: 123, loc: 114117 } as const;
 
 export const FOLDER_TREE: FolderNode = {
   "name": "src",
@@ -27,6 +27,17 @@ export const FOLDER_TREE: FolderNode = {
           "path": "src/lib/authoring",
           "children": [
             {
+              "name": "tests",
+              "path": "src/lib/authoring/tests",
+              "children": [
+                {
+                  "name": "rule-translator-graph.test.ts",
+                  "path": "src/lib/authoring/tests/rule-translator-graph.test.ts",
+                  "loc": 100
+                }
+              ]
+            },
+            {
               "name": "compjson-to-profile.ts",
               "path": "src/lib/authoring/compjson-to-profile.ts",
               "loc": 306
@@ -37,11 +48,6 @@ export const FOLDER_TREE: FolderNode = {
               "loc": 167
             },
             {
-              "name": "rule-translator-graph.test.ts",
-              "path": "src/lib/authoring/rule-translator-graph.test.ts",
-              "loc": 100
-            },
-            {
               "name": "rule-translator.ts",
               "path": "src/lib/authoring/rule-translator.ts",
               "loc": 588
@@ -49,721 +55,1039 @@ export const FOLDER_TREE: FolderNode = {
           ]
         },
         {
-          "name": "cad",
-          "path": "src/lib/cad",
+          "name": "engines",
+          "path": "src/lib/engines",
           "children": [
             {
-              "name": "nodes",
-              "path": "src/lib/cad/nodes",
+              "name": "brep",
+              "path": "src/lib/engines/brep",
               "children": [
                 {
-                  "name": "kinds",
-                  "path": "src/lib/cad/nodes/kinds",
+                  "name": "tests",
+                  "path": "src/lib/engines/brep/tests",
                   "children": [
                     {
-                      "name": "call.test.ts",
-                      "path": "src/lib/cad/nodes/kinds/call.test.ts",
-                      "loc": 44
+                      "name": "brep-adapter.test.ts",
+                      "path": "src/lib/engines/brep/tests/brep-adapter.test.ts",
+                      "loc": 70
                     },
                     {
-                      "name": "call.ts",
-                      "path": "src/lib/cad/nodes/kinds/call.ts",
-                      "loc": 32
-                    },
-                    {
-                      "name": "container-stack.test.ts",
-                      "path": "src/lib/cad/nodes/kinds/container-stack.test.ts",
-                      "loc": 78
-                    },
-                    {
-                      "name": "container.ts",
-                      "path": "src/lib/cad/nodes/kinds/container.ts",
-                      "loc": 41
-                    },
-                    {
-                      "name": "cutaway.test.ts",
-                      "path": "src/lib/cad/nodes/kinds/cutaway.test.ts",
-                      "loc": 43
-                    },
-                    {
-                      "name": "cutaway.ts",
-                      "path": "src/lib/cad/nodes/kinds/cutaway.ts",
-                      "loc": 26
-                    },
-                    {
-                      "name": "expr.ts",
-                      "path": "src/lib/cad/nodes/kinds/expr.ts",
-                      "loc": 39
-                    },
-                    {
-                      "name": "index.ts",
-                      "path": "src/lib/cad/nodes/kinds/index.ts",
-                      "loc": 21
-                    },
-                    {
-                      "name": "material.test.ts",
-                      "path": "src/lib/cad/nodes/kinds/material.test.ts",
-                      "loc": 33
-                    },
-                    {
-                      "name": "material.ts",
-                      "path": "src/lib/cad/nodes/kinds/material.ts",
-                      "loc": 19
-                    },
-                    {
-                      "name": "method.test.ts",
-                      "path": "src/lib/cad/nodes/kinds/method.test.ts",
-                      "loc": 33
-                    },
-                    {
-                      "name": "method.ts",
-                      "path": "src/lib/cad/nodes/kinds/method.ts",
-                      "loc": 21
-                    },
-                    {
-                      "name": "mv-rot.test.ts",
-                      "path": "src/lib/cad/nodes/kinds/mv-rot.test.ts",
-                      "loc": 43
-                    },
-                    {
-                      "name": "mv.ts",
-                      "path": "src/lib/cad/nodes/kinds/mv.ts",
-                      "loc": 20
-                    },
-                    {
-                      "name": "parts-map.test.ts",
-                      "path": "src/lib/cad/nodes/kinds/parts-map.test.ts",
-                      "loc": 184
-                    },
-                    {
-                      "name": "parts-map.ts",
-                      "path": "src/lib/cad/nodes/kinds/parts-map.ts",
-                      "loc": 68
-                    },
-                    {
-                      "name": "poly-repeat.ts",
-                      "path": "src/lib/cad/nodes/kinds/poly-repeat.ts",
-                      "loc": 24
-                    },
-                    {
-                      "name": "polygon.test.ts",
-                      "path": "src/lib/cad/nodes/kinds/polygon.test.ts",
-                      "loc": 72
-                    },
-                    {
-                      "name": "polygon.ts",
-                      "path": "src/lib/cad/nodes/kinds/polygon.ts",
-                      "loc": 77
-                    },
-                    {
-                      "name": "repeat.test.ts",
-                      "path": "src/lib/cad/nodes/kinds/repeat.test.ts",
-                      "loc": 65
-                    },
-                    {
-                      "name": "repeat.ts",
-                      "path": "src/lib/cad/nodes/kinds/repeat.ts",
-                      "loc": 106
-                    },
-                    {
-                      "name": "rot.ts",
-                      "path": "src/lib/cad/nodes/kinds/rot.ts",
-                      "loc": 20
-                    },
-                    {
-                      "name": "sketch-expr.test.ts",
-                      "path": "src/lib/cad/nodes/kinds/sketch-expr.test.ts",
-                      "loc": 105
-                    },
-                    {
-                      "name": "sketch-repeat.ts",
-                      "path": "src/lib/cad/nodes/kinds/sketch-repeat.ts",
-                      "loc": 27
-                    },
-                    {
-                      "name": "sketch.ts",
-                      "path": "src/lib/cad/nodes/kinds/sketch.ts",
-                      "loc": 119
-                    },
-                    {
-                      "name": "spline-warp.test.ts",
-                      "path": "src/lib/cad/nodes/kinds/spline-warp.test.ts",
-                      "loc": 53
-                    },
-                    {
-                      "name": "spline.ts",
-                      "path": "src/lib/cad/nodes/kinds/spline.ts",
-                      "loc": 18
-                    },
-                    {
-                      "name": "stack.ts",
-                      "path": "src/lib/cad/nodes/kinds/stack.ts",
-                      "loc": 54
-                    },
-                    {
-                      "name": "txfmn.test.ts",
-                      "path": "src/lib/cad/nodes/kinds/txfmn.test.ts",
+                      "name": "brep-client.test.ts",
+                      "path": "src/lib/engines/brep/tests/brep-client.test.ts",
                       "loc": 55
                     },
                     {
-                      "name": "txfmn.ts",
-                      "path": "src/lib/cad/nodes/kinds/txfmn.ts",
-                      "loc": 31
+                      "name": "brep-coverage.test.ts",
+                      "path": "src/lib/engines/brep/tests/brep-coverage.test.ts",
+                      "loc": 121
                     },
                     {
-                      "name": "warp.ts",
-                      "path": "src/lib/cad/nodes/kinds/warp.ts",
-                      "loc": 68
+                      "name": "brep-normals.test.ts",
+                      "path": "src/lib/engines/brep/tests/brep-normals.test.ts",
+                      "loc": 156
+                    },
+                    {
+                      "name": "brep-occt.test.ts",
+                      "path": "src/lib/engines/brep/tests/brep-occt.test.ts",
+                      "loc": 150
+                    },
+                    {
+                      "name": "brep-warp.test.ts",
+                      "path": "src/lib/engines/brep/tests/brep-warp.test.ts",
+                      "loc": 131
                     }
                   ]
                 },
                 {
-                  "name": "emit-golden.test.ts",
-                  "path": "src/lib/cad/nodes/emit-golden.test.ts",
-                  "loc": 106
+                  "name": "brep-adapter.ts",
+                  "path": "src/lib/engines/brep/brep-adapter.ts",
+                  "loc": 123
+                },
+                {
+                  "name": "brep-audit.ts",
+                  "path": "src/lib/engines/brep/brep-audit.ts",
+                  "loc": 230
+                },
+                {
+                  "name": "brep-client.ts",
+                  "path": "src/lib/engines/brep/brep-client.ts",
+                  "loc": 80
+                },
+                {
+                  "name": "brep-occt.ts",
+                  "path": "src/lib/engines/brep/brep-occt.ts",
+                  "loc": 982
+                }
+              ]
+            },
+            {
+              "name": "manifold",
+              "path": "src/lib/engines/manifold",
+              "children": [
+                {
+                  "name": "tests",
+                  "path": "src/lib/engines/manifold/tests",
+                  "children": [
+                    {
+                      "name": "bake-worker-core.test.ts",
+                      "path": "src/lib/engines/manifold/tests/bake-worker-core.test.ts",
+                      "loc": 131
+                    },
+                    {
+                      "name": "mesh-serial.test.ts",
+                      "path": "src/lib/engines/manifold/tests/mesh-serial.test.ts",
+                      "loc": 42
+                    },
+                    {
+                      "name": "warp-spline.test.ts",
+                      "path": "src/lib/engines/manifold/tests/warp-spline.test.ts",
+                      "loc": 330
+                    }
+                  ]
+                },
+                {
+                  "name": "bake-client.ts",
+                  "path": "src/lib/engines/manifold/bake-client.ts",
+                  "loc": 337
+                },
+                {
+                  "name": "bake-worker-core.ts",
+                  "path": "src/lib/engines/manifold/bake-worker-core.ts",
+                  "loc": 340
+                },
+                {
+                  "name": "bake-worker.ts",
+                  "path": "src/lib/engines/manifold/bake-worker.ts",
+                  "loc": 66
+                },
+                {
+                  "name": "manifold-helpers-meta.ts",
+                  "path": "src/lib/engines/manifold/manifold-helpers-meta.ts",
+                  "loc": 162
+                },
+                {
+                  "name": "manifold-helpers.ts",
+                  "path": "src/lib/engines/manifold/manifold-helpers.ts",
+                  "loc": 916
+                },
+                {
+                  "name": "manifold-mesh.ts",
+                  "path": "src/lib/engines/manifold/manifold-mesh.ts",
+                  "loc": 1196
+                },
+                {
+                  "name": "mesh-serial.ts",
+                  "path": "src/lib/engines/manifold/mesh-serial.ts",
+                  "loc": 173
+                },
+                {
+                  "name": "render-helpers.ts",
+                  "path": "src/lib/engines/manifold/render-helpers.ts",
+                  "loc": 1276
+                },
+                {
+                  "name": "warp-spline.ts",
+                  "path": "src/lib/engines/manifold/warp-spline.ts",
+                  "loc": 711
+                }
+              ]
+            },
+            {
+              "name": "trueform",
+              "path": "src/lib/engines/trueform",
+              "children": [
+                {
+                  "name": "tests",
+                  "path": "src/lib/engines/trueform/tests",
+                  "children": [
+                    {
+                      "name": "graph-to-tf.test.ts",
+                      "path": "src/lib/engines/trueform/tests/graph-to-tf.test.ts",
+                      "loc": 613
+                    },
+                    {
+                      "name": "tf-worker-core.test.ts",
+                      "path": "src/lib/engines/trueform/tests/tf-worker-core.test.ts",
+                      "loc": 135
+                    },
+                    {
+                      "name": "trueform-adapter.test.ts",
+                      "path": "src/lib/engines/trueform/tests/trueform-adapter.test.ts",
+                      "loc": 292
+                    },
+                    {
+                      "name": "trueform-client.test.ts",
+                      "path": "src/lib/engines/trueform/tests/trueform-client.test.ts",
+                      "loc": 253
+                    }
+                  ]
+                },
+                {
+                  "name": "tf_examples",
+                  "path": "src/lib/engines/trueform/tf_examples",
+                  "children": [
+                    {
+                      "name": "tests",
+                      "path": "src/lib/engines/trueform/tf_examples/tests",
+                      "children": [
+                        {
+                          "name": "execute.test.ts",
+                          "path": "src/lib/engines/trueform/tf_examples/tests/execute.test.ts",
+                          "loc": 524
+                        },
+                        {
+                          "name": "extrude.test.ts",
+                          "path": "src/lib/engines/trueform/tf_examples/tests/extrude.test.ts",
+                          "loc": 330
+                        },
+                        {
+                          "name": "revolve.test.ts",
+                          "path": "src/lib/engines/trueform/tf_examples/tests/revolve.test.ts",
+                          "loc": 93
+                        },
+                        {
+                          "name": "sweep-section.test.ts",
+                          "path": "src/lib/engines/trueform/tf_examples/tests/sweep-section.test.ts",
+                          "loc": 187
+                        },
+                        {
+                          "name": "tf-weld.test.ts",
+                          "path": "src/lib/engines/trueform/tf_examples/tests/tf-weld.test.ts",
+                          "loc": 157
+                        },
+                        {
+                          "name": "warp-composite.test.ts",
+                          "path": "src/lib/engines/trueform/tf_examples/tests/warp-composite.test.ts",
+                          "loc": 80
+                        },
+                        {
+                          "name": "warp-densify.test.ts",
+                          "path": "src/lib/engines/trueform/tf_examples/tests/warp-densify.test.ts",
+                          "loc": 151
+                        },
+                        {
+                          "name": "warp-pipeline.test.ts",
+                          "path": "src/lib/engines/trueform/tf_examples/tests/warp-pipeline.test.ts",
+                          "loc": 132
+                        }
+                      ]
+                    },
+                    {
+                      "name": "execute.ts",
+                      "path": "src/lib/engines/trueform/tf_examples/execute.ts",
+                      "loc": 740
+                    },
+                    {
+                      "name": "extrude.ts",
+                      "path": "src/lib/engines/trueform/tf_examples/extrude.ts",
+                      "loc": 155
+                    },
+                    {
+                      "name": "revolve.ts",
+                      "path": "src/lib/engines/trueform/tf_examples/revolve.ts",
+                      "loc": 114
+                    },
+                    {
+                      "name": "sweep-section.ts",
+                      "path": "src/lib/engines/trueform/tf_examples/sweep-section.ts",
+                      "loc": 210
+                    },
+                    {
+                      "name": "test-profiles.ts",
+                      "path": "src/lib/engines/trueform/tf_examples/test-profiles.ts",
+                      "loc": 42
+                    },
+                    {
+                      "name": "tf-weld.ts",
+                      "path": "src/lib/engines/trueform/tf_examples/tf-weld.ts",
+                      "loc": 172
+                    }
+                  ]
+                },
+                {
+                  "name": "crease-normals.ts",
+                  "path": "src/lib/engines/trueform/crease-normals.ts",
+                  "loc": 217
+                },
+                {
+                  "name": "graph-to-tf.ts",
+                  "path": "src/lib/engines/trueform/graph-to-tf.ts",
+                  "loc": 1330
+                },
+                {
+                  "name": "tf-bake-client.ts",
+                  "path": "src/lib/engines/trueform/tf-bake-client.ts",
+                  "loc": 245
+                },
+                {
+                  "name": "tf-worker-core.ts",
+                  "path": "src/lib/engines/trueform/tf-worker-core.ts",
+                  "loc": 127
+                },
+                {
+                  "name": "tf-worker.ts",
+                  "path": "src/lib/engines/trueform/tf-worker.ts",
+                  "loc": 56
+                },
+                {
+                  "name": "trueform-adapter.ts",
+                  "path": "src/lib/engines/trueform/trueform-adapter.ts",
+                  "loc": 196
+                },
+                {
+                  "name": "trueform-client.ts",
+                  "path": "src/lib/engines/trueform/trueform-client.ts",
+                  "loc": 559
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "graph",
+          "path": "src/lib/graph",
+          "children": [
+            {
+              "name": "nodes",
+              "path": "src/lib/graph/nodes",
+              "children": [
+                {
+                  "name": "kinds",
+                  "path": "src/lib/graph/nodes/kinds",
+                  "children": [
+                    {
+                      "name": "tests",
+                      "path": "src/lib/graph/nodes/kinds/tests",
+                      "children": [
+                        {
+                          "name": "call.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/call.test.ts",
+                          "loc": 44
+                        },
+                        {
+                          "name": "container-stack.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/container-stack.test.ts",
+                          "loc": 81
+                        },
+                        {
+                          "name": "cutaway.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/cutaway.test.ts",
+                          "loc": 43
+                        },
+                        {
+                          "name": "material.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/material.test.ts",
+                          "loc": 33
+                        },
+                        {
+                          "name": "method.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/method.test.ts",
+                          "loc": 33
+                        },
+                        {
+                          "name": "mv-rot.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/mv-rot.test.ts",
+                          "loc": 43
+                        },
+                        {
+                          "name": "parts-map.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/parts-map.test.ts",
+                          "loc": 184
+                        },
+                        {
+                          "name": "parts-table.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/parts-table.test.ts",
+                          "loc": 102
+                        },
+                        {
+                          "name": "polygon.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/polygon.test.ts",
+                          "loc": 72
+                        },
+                        {
+                          "name": "repeat.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/repeat.test.ts",
+                          "loc": 65
+                        },
+                        {
+                          "name": "sketch-expr.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/sketch-expr.test.ts",
+                          "loc": 105
+                        },
+                        {
+                          "name": "spline-warp.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/spline-warp.test.ts",
+                          "loc": 66
+                        },
+                        {
+                          "name": "txfmn.test.ts",
+                          "path": "src/lib/graph/nodes/kinds/tests/txfmn.test.ts",
+                          "loc": 55
+                        }
+                      ]
+                    },
+                    {
+                      "name": "call.ts",
+                      "path": "src/lib/graph/nodes/kinds/call.ts",
+                      "loc": 32
+                    },
+                    {
+                      "name": "container.ts",
+                      "path": "src/lib/graph/nodes/kinds/container.ts",
+                      "loc": 44
+                    },
+                    {
+                      "name": "cutaway.ts",
+                      "path": "src/lib/graph/nodes/kinds/cutaway.ts",
+                      "loc": 26
+                    },
+                    {
+                      "name": "expr.ts",
+                      "path": "src/lib/graph/nodes/kinds/expr.ts",
+                      "loc": 39
+                    },
+                    {
+                      "name": "index.ts",
+                      "path": "src/lib/graph/nodes/kinds/index.ts",
+                      "loc": 22
+                    },
+                    {
+                      "name": "material.ts",
+                      "path": "src/lib/graph/nodes/kinds/material.ts",
+                      "loc": 19
+                    },
+                    {
+                      "name": "method.ts",
+                      "path": "src/lib/graph/nodes/kinds/method.ts",
+                      "loc": 21
+                    },
+                    {
+                      "name": "mv.ts",
+                      "path": "src/lib/graph/nodes/kinds/mv.ts",
+                      "loc": 20
+                    },
+                    {
+                      "name": "parts-map.ts",
+                      "path": "src/lib/graph/nodes/kinds/parts-map.ts",
+                      "loc": 68
+                    },
+                    {
+                      "name": "parts-table.ts",
+                      "path": "src/lib/graph/nodes/kinds/parts-table.ts",
+                      "loc": 90
+                    },
+                    {
+                      "name": "poly-repeat.ts",
+                      "path": "src/lib/graph/nodes/kinds/poly-repeat.ts",
+                      "loc": 24
+                    },
+                    {
+                      "name": "polygon.ts",
+                      "path": "src/lib/graph/nodes/kinds/polygon.ts",
+                      "loc": 77
+                    },
+                    {
+                      "name": "repeat.ts",
+                      "path": "src/lib/graph/nodes/kinds/repeat.ts",
+                      "loc": 106
+                    },
+                    {
+                      "name": "rot.ts",
+                      "path": "src/lib/graph/nodes/kinds/rot.ts",
+                      "loc": 20
+                    },
+                    {
+                      "name": "sketch-repeat.ts",
+                      "path": "src/lib/graph/nodes/kinds/sketch-repeat.ts",
+                      "loc": 27
+                    },
+                    {
+                      "name": "sketch.ts",
+                      "path": "src/lib/graph/nodes/kinds/sketch.ts",
+                      "loc": 119
+                    },
+                    {
+                      "name": "spline.ts",
+                      "path": "src/lib/graph/nodes/kinds/spline.ts",
+                      "loc": 18
+                    },
+                    {
+                      "name": "stack.ts",
+                      "path": "src/lib/graph/nodes/kinds/stack.ts",
+                      "loc": 54
+                    },
+                    {
+                      "name": "txfmn.ts",
+                      "path": "src/lib/graph/nodes/kinds/txfmn.ts",
+                      "loc": 31
+                    },
+                    {
+                      "name": "warp.ts",
+                      "path": "src/lib/graph/nodes/kinds/warp.ts",
+                      "loc": 84
+                    }
+                  ]
+                },
+                {
+                  "name": "tests",
+                  "path": "src/lib/graph/nodes/tests",
+                  "children": [
+                    {
+                      "name": "emit-golden.test.ts",
+                      "path": "src/lib/graph/nodes/tests/emit-golden.test.ts",
+                      "loc": 106
+                    }
+                  ]
                 },
                 {
                   "name": "node-kind.ts",
-                  "path": "src/lib/cad/nodes/node-kind.ts",
+                  "path": "src/lib/graph/nodes/node-kind.ts",
                   "loc": 146
                 },
                 {
                   "name": "registry.ts",
-                  "path": "src/lib/cad/nodes/registry.ts",
-                  "loc": 40
+                  "path": "src/lib/graph/nodes/registry.ts",
+                  "loc": 41
                 }
               ]
             },
             {
               "name": "stdlib",
-              "path": "src/lib/cad/stdlib",
+              "path": "src/lib/graph/stdlib",
               "children": [
                 {
                   "name": "stale",
-                  "path": "src/lib/cad/stdlib/stale",
+                  "path": "src/lib/graph/stdlib/stale",
                   "children": [
                     {
                       "name": "r_extrude.ts",
-                      "path": "src/lib/cad/stdlib/stale/r_extrude.ts",
+                      "path": "src/lib/graph/stdlib/stale/r_extrude.ts",
                       "loc": 107
                     }
                   ]
                 },
                 {
+                  "name": "tests",
+                  "path": "src/lib/graph/stdlib/tests",
+                  "children": [
+                    {
+                      "name": "r_revolve.test.ts",
+                      "path": "src/lib/graph/stdlib/tests/r_revolve.test.ts",
+                      "loc": 222
+                    }
+                  ]
+                },
+                {
                   "name": "r_cuboid.ts",
-                  "path": "src/lib/cad/stdlib/r_cuboid.ts",
+                  "path": "src/lib/graph/stdlib/r_cuboid.ts",
                   "loc": 48
                 },
                 {
                   "name": "r_helical_surface.ts",
-                  "path": "src/lib/cad/stdlib/r_helical_surface.ts",
+                  "path": "src/lib/graph/stdlib/r_helical_surface.ts",
                   "loc": 199
                 },
                 {
                   "name": "r_loft.ts",
-                  "path": "src/lib/cad/stdlib/r_loft.ts",
+                  "path": "src/lib/graph/stdlib/r_loft.ts",
                   "loc": 160
                 },
                 {
-                  "name": "r_revolve.test.ts",
-                  "path": "src/lib/cad/stdlib/r_revolve.test.ts",
-                  "loc": 222
-                },
-                {
                   "name": "r_revolve.ts",
-                  "path": "src/lib/cad/stdlib/r_revolve.ts",
+                  "path": "src/lib/graph/stdlib/r_revolve.ts",
                   "loc": 212
                 },
                 {
                   "name": "r_surface.ts",
-                  "path": "src/lib/cad/stdlib/r_surface.ts",
+                  "path": "src/lib/graph/stdlib/r_surface.ts",
                   "loc": 161
                 },
                 {
                   "name": "r_sweep.ts",
-                  "path": "src/lib/cad/stdlib/r_sweep.ts",
+                  "path": "src/lib/graph/stdlib/r_sweep.ts",
                   "loc": 116
                 },
                 {
                   "name": "r_weld_extrude.ts",
-                  "path": "src/lib/cad/stdlib/r_weld_extrude.ts",
+                  "path": "src/lib/graph/stdlib/r_weld_extrude.ts",
                   "loc": 139
                 }
               ]
             },
             {
-              "name": "__spline_bake_verify.test.ts",
-              "path": "src/lib/cad/__spline_bake_verify.test.ts",
-              "loc": 76
-            },
-            {
-              "name": "__spline_closed_verify.test.ts",
-              "path": "src/lib/cad/__spline_closed_verify.test.ts",
-              "loc": 121
-            },
-            {
-              "name": "__spline_plot_flag.test.ts",
-              "path": "src/lib/cad/__spline_plot_flag.test.ts",
-              "loc": 61
-            },
-            {
-              "name": "__spline_pointsexpr_bake.test.ts",
-              "path": "src/lib/cad/__spline_pointsexpr_bake.test.ts",
-              "loc": 64
-            },
-            {
-              "name": "__spline_pointsexpr_verify.test.ts",
-              "path": "src/lib/cad/__spline_pointsexpr_verify.test.ts",
-              "loc": 65
-            },
-            {
-              "name": "annular-sweep.test.ts",
-              "path": "src/lib/cad/annular-sweep.test.ts",
-              "loc": 152
-            },
-            {
-              "name": "bake-client.ts",
-              "path": "src/lib/cad/bake-client.ts",
-              "loc": 254
-            },
-            {
-              "name": "bake-worker-core.test.ts",
-              "path": "src/lib/cad/bake-worker-core.test.ts",
-              "loc": 131
-            },
-            {
-              "name": "bake-worker-core.ts",
-              "path": "src/lib/cad/bake-worker-core.ts",
-              "loc": 301
-            },
-            {
-              "name": "bake-worker.ts",
-              "path": "src/lib/cad/bake-worker.ts",
-              "loc": 66
-            },
-            {
-              "name": "brep-client.test.ts",
-              "path": "src/lib/cad/brep-client.test.ts",
-              "loc": 55
-            },
-            {
-              "name": "brep-client.ts",
-              "path": "src/lib/cad/brep-client.ts",
-              "loc": 80
-            },
-            {
-              "name": "client-bake-color-by-source.test.ts",
-              "path": "src/lib/cad/client-bake-color-by-source.test.ts",
-              "loc": 101
+              "name": "tests",
+              "path": "src/lib/graph/tests",
+              "children": [
+                {
+                  "name": "annular-sweep.test.ts",
+                  "path": "src/lib/graph/tests/annular-sweep.test.ts",
+                  "loc": 152
+                },
+                {
+                  "name": "bake-trap-recovery.test.ts",
+                  "path": "src/lib/graph/tests/bake-trap-recovery.test.ts",
+                  "loc": 42
+                },
+                {
+                  "name": "bore-extend-sweep.test.ts",
+                  "path": "src/lib/graph/tests/bore-extend-sweep.test.ts",
+                  "loc": 227
+                },
+                {
+                  "name": "client-bake-color-by-source.test.ts",
+                  "path": "src/lib/graph/tests/client-bake-color-by-source.test.ts",
+                  "loc": 101
+                },
+                {
+                  "name": "composition-graph.test.ts",
+                  "path": "src/lib/graph/tests/composition-graph.test.ts",
+                  "loc": 702
+                },
+                {
+                  "name": "composition-layout.test.ts",
+                  "path": "src/lib/graph/tests/composition-layout.test.ts",
+                  "loc": 366
+                },
+                {
+                  "name": "composition-material.test.ts",
+                  "path": "src/lib/graph/tests/composition-material.test.ts",
+                  "loc": 126
+                },
+                {
+                  "name": "composition-tree.test.ts",
+                  "path": "src/lib/graph/tests/composition-tree.test.ts",
+                  "loc": 118
+                },
+                {
+                  "name": "crease-normals.test.ts",
+                  "path": "src/lib/graph/tests/crease-normals.test.ts",
+                  "loc": 282
+                },
+                {
+                  "name": "cutaway-node.test.ts",
+                  "path": "src/lib/graph/tests/cutaway-node.test.ts",
+                  "loc": 88
+                },
+                {
+                  "name": "cutaway-perbody-skip.test.ts",
+                  "path": "src/lib/graph/tests/cutaway-perbody-skip.test.ts",
+                  "loc": 67
+                },
+                {
+                  "name": "editor-tools.test.ts",
+                  "path": "src/lib/graph/tests/editor-tools.test.ts",
+                  "loc": 162
+                },
+                {
+                  "name": "engine-cache-bust.test.ts",
+                  "path": "src/lib/graph/tests/engine-cache-bust.test.ts",
+                  "loc": 94
+                },
+                {
+                  "name": "engine-hash.test.ts",
+                  "path": "src/lib/graph/tests/engine-hash.test.ts",
+                  "loc": 114
+                },
+                {
+                  "name": "expr-emit.test.ts",
+                  "path": "src/lib/graph/tests/expr-emit.test.ts",
+                  "loc": 265
+                },
+                {
+                  "name": "expr-imperative.test.ts",
+                  "path": "src/lib/graph/tests/expr-imperative.test.ts",
+                  "loc": 330
+                },
+                {
+                  "name": "expr-list.test.ts",
+                  "path": "src/lib/graph/tests/expr-list.test.ts",
+                  "loc": 239
+                },
+                {
+                  "name": "expr-loops.test.ts",
+                  "path": "src/lib/graph/tests/expr-loops.test.ts",
+                  "loc": 62
+                },
+                {
+                  "name": "expr-multiline.test.ts",
+                  "path": "src/lib/graph/tests/expr-multiline.test.ts",
+                  "loc": 65
+                },
+                {
+                  "name": "expr-node.test.ts",
+                  "path": "src/lib/graph/tests/expr-node.test.ts",
+                  "loc": 142
+                },
+                {
+                  "name": "expr-validate.test.ts",
+                  "path": "src/lib/graph/tests/expr-validate.test.ts",
+                  "loc": 115
+                },
+                {
+                  "name": "glb-client.test.ts",
+                  "path": "src/lib/graph/tests/glb-client.test.ts",
+                  "loc": 65
+                },
+                {
+                  "name": "graph-exprs.test.ts",
+                  "path": "src/lib/graph/tests/graph-exprs.test.ts",
+                  "loc": 168
+                },
+                {
+                  "name": "lazy-place-compiled.test.ts",
+                  "path": "src/lib/graph/tests/lazy-place-compiled.test.ts",
+                  "loc": 54
+                },
+                {
+                  "name": "lazy-place.test.ts",
+                  "path": "src/lib/graph/tests/lazy-place.test.ts",
+                  "loc": 93
+                },
+                {
+                  "name": "manifold-trap.test.ts",
+                  "path": "src/lib/graph/tests/manifold-trap.test.ts",
+                  "loc": 122
+                },
+                {
+                  "name": "param-kind.test.ts",
+                  "path": "src/lib/graph/tests/param-kind.test.ts",
+                  "loc": 147
+                },
+                {
+                  "name": "parts-table-emit.test.ts",
+                  "path": "src/lib/graph/tests/parts-table-emit.test.ts",
+                  "loc": 184
+                },
+                {
+                  "name": "port-suggest.test.ts",
+                  "path": "src/lib/graph/tests/port-suggest.test.ts",
+                  "loc": 99
+                },
+                {
+                  "name": "port-types.test.ts",
+                  "path": "src/lib/graph/tests/port-types.test.ts",
+                  "loc": 125
+                },
+                {
+                  "name": "primitive-sandbox.test.ts",
+                  "path": "src/lib/graph/tests/primitive-sandbox.test.ts",
+                  "loc": 45
+                },
+                {
+                  "name": "primitive-stub.test.ts",
+                  "path": "src/lib/graph/tests/primitive-stub.test.ts",
+                  "loc": 157
+                },
+                {
+                  "name": "render-helpers-parts.test.ts",
+                  "path": "src/lib/graph/tests/render-helpers-parts.test.ts",
+                  "loc": 72
+                },
+                {
+                  "name": "render-material-parity.test.ts",
+                  "path": "src/lib/graph/tests/render-material-parity.test.ts",
+                  "loc": 226
+                },
+                {
+                  "name": "revolve-axial.test.ts",
+                  "path": "src/lib/graph/tests/revolve-axial.test.ts",
+                  "loc": 120
+                },
+                {
+                  "name": "sectioncut-render.test.ts",
+                  "path": "src/lib/graph/tests/sectioncut-render.test.ts",
+                  "loc": 221
+                },
+                {
+                  "name": "sectioncut-warp-axial.test.ts",
+                  "path": "src/lib/graph/tests/sectioncut-warp-axial.test.ts",
+                  "loc": 207
+                },
+                {
+                  "name": "sketch-collayout.test.ts",
+                  "path": "src/lib/graph/tests/sketch-collayout.test.ts",
+                  "loc": 117
+                },
+                {
+                  "name": "sketch-repeat.test.ts",
+                  "path": "src/lib/graph/tests/sketch-repeat.test.ts",
+                  "loc": 224
+                },
+                {
+                  "name": "sketch.test.ts",
+                  "path": "src/lib/graph/tests/sketch.test.ts",
+                  "loc": 330
+                },
+                {
+                  "name": "spline-eval.test.ts",
+                  "path": "src/lib/graph/tests/spline-eval.test.ts",
+                  "loc": 87
+                },
+                {
+                  "name": "spline-resample.test.ts",
+                  "path": "src/lib/graph/tests/spline-resample.test.ts",
+                  "loc": 162
+                },
+                {
+                  "name": "spline-view.test.ts",
+                  "path": "src/lib/graph/tests/spline-view.test.ts",
+                  "loc": 57
+                },
+                {
+                  "name": "stack.test.ts",
+                  "path": "src/lib/graph/tests/stack.test.ts",
+                  "loc": 297
+                },
+                {
+                  "name": "struct-type.test.ts",
+                  "path": "src/lib/graph/tests/struct-type.test.ts",
+                  "loc": 198
+                },
+                {
+                  "name": "subdivide-axial.test.ts",
+                  "path": "src/lib/graph/tests/subdivide-axial.test.ts",
+                  "loc": 185
+                },
+                {
+                  "name": "survey-to-xyz.test.ts",
+                  "path": "src/lib/graph/tests/survey-to-xyz.test.ts",
+                  "loc": 199
+                },
+                {
+                  "name": "sweep-cap-triangulation.test.ts",
+                  "path": "src/lib/graph/tests/sweep-cap-triangulation.test.ts",
+                  "loc": 178
+                },
+                {
+                  "name": "sweep-rmf.test.ts",
+                  "path": "src/lib/graph/tests/sweep-rmf.test.ts",
+                  "loc": 112
+                },
+                {
+                  "name": "sweep-self-intersection.test.ts",
+                  "path": "src/lib/graph/tests/sweep-self-intersection.test.ts",
+                  "loc": 76
+                },
+                {
+                  "name": "tf-wat-emit.test.ts",
+                  "path": "src/lib/graph/tests/tf-wat-emit.test.ts",
+                  "loc": 132
+                },
+                {
+                  "name": "warp-geom.test.ts",
+                  "path": "src/lib/graph/tests/warp-geom.test.ts",
+                  "loc": 48
+                },
+                {
+                  "name": "warp-mesh-js.test.ts",
+                  "path": "src/lib/graph/tests/warp-mesh-js.test.ts",
+                  "loc": 35
+                },
+                {
+                  "name": "warp-node.test.ts",
+                  "path": "src/lib/graph/tests/warp-node.test.ts",
+                  "loc": 132
+                },
+                {
+                  "name": "wire-check.test.ts",
+                  "path": "src/lib/graph/tests/wire-check.test.ts",
+                  "loc": 102
+                }
+              ]
             },
             {
               "name": "composition-bake.ts",
-              "path": "src/lib/cad/composition-bake.ts",
-              "loc": 100
+              "path": "src/lib/graph/composition-bake.ts",
+              "loc": 90
             },
             {
               "name": "composition-emit-profile.ts",
-              "path": "src/lib/cad/composition-emit-profile.ts",
+              "path": "src/lib/graph/composition-emit-profile.ts",
               "loc": 273
             },
             {
               "name": "composition-emit.ts",
-              "path": "src/lib/cad/composition-emit.ts",
-              "loc": 803
+              "path": "src/lib/graph/composition-emit.ts",
+              "loc": 860
             },
             {
               "name": "composition-graph-hydrate.ts",
-              "path": "src/lib/cad/composition-graph-hydrate.ts",
-              "loc": 540
+              "path": "src/lib/graph/composition-graph-hydrate.ts",
+              "loc": 573
             },
             {
               "name": "composition-graph-mutate.ts",
-              "path": "src/lib/cad/composition-graph-mutate.ts",
-              "loc": 2426
+              "path": "src/lib/graph/composition-graph-mutate.ts",
+              "loc": 2551
             },
             {
               "name": "composition-graph-types.ts",
-              "path": "src/lib/cad/composition-graph-types.ts",
-              "loc": 768
-            },
-            {
-              "name": "composition-graph.test.ts",
-              "path": "src/lib/cad/composition-graph.test.ts",
-              "loc": 702
+              "path": "src/lib/graph/composition-graph-types.ts",
+              "loc": 823
             },
             {
               "name": "composition-graph.ts",
-              "path": "src/lib/cad/composition-graph.ts",
+              "path": "src/lib/graph/composition-graph.ts",
               "loc": 28
             },
             {
-              "name": "composition-layout.test.ts",
-              "path": "src/lib/cad/composition-layout.test.ts",
-              "loc": 366
-            },
-            {
               "name": "composition-layout.ts",
-              "path": "src/lib/cad/composition-layout.ts",
+              "path": "src/lib/graph/composition-layout.ts",
               "loc": 475
             },
             {
-              "name": "composition-material.test.ts",
-              "path": "src/lib/cad/composition-material.test.ts",
-              "loc": 126
-            },
-            {
-              "name": "composition-tree.test.ts",
-              "path": "src/lib/cad/composition-tree.test.ts",
-              "loc": 118
-            },
-            {
               "name": "composition-tree.ts",
-              "path": "src/lib/cad/composition-tree.ts",
+              "path": "src/lib/graph/composition-tree.ts",
               "loc": 799
             },
             {
-              "name": "crease-normals.test.ts",
-              "path": "src/lib/cad/crease-normals.test.ts",
-              "loc": 282
-            },
-            {
               "name": "csg-2d.ts",
-              "path": "src/lib/cad/csg-2d.ts",
+              "path": "src/lib/graph/csg-2d.ts",
               "loc": 137
             },
             {
-              "name": "cutaway-node.test.ts",
-              "path": "src/lib/cad/cutaway-node.test.ts",
-              "loc": 88
-            },
-            {
-              "name": "cutaway-perbody-skip.test.ts",
-              "path": "src/lib/cad/cutaway-perbody-skip.test.ts",
-              "loc": 61
-            },
-            {
               "name": "editor-tools-schema.ts",
-              "path": "src/lib/cad/editor-tools-schema.ts",
+              "path": "src/lib/graph/editor-tools-schema.ts",
               "loc": 268
             },
             {
-              "name": "editor-tools.test.ts",
-              "path": "src/lib/cad/editor-tools.test.ts",
-              "loc": 162
-            },
-            {
               "name": "editor-tools.ts",
-              "path": "src/lib/cad/editor-tools.ts",
+              "path": "src/lib/graph/editor-tools.ts",
               "loc": 299
             },
             {
-              "name": "expr-emit.test.ts",
-              "path": "src/lib/cad/expr-emit.test.ts",
-              "loc": 265
-            },
-            {
-              "name": "expr-imperative.test.ts",
-              "path": "src/lib/cad/expr-imperative.test.ts",
-              "loc": 330
+              "name": "engine-hash.ts",
+              "path": "src/lib/graph/engine-hash.ts",
+              "loc": 122
             },
             {
               "name": "expr-imperative.ts",
-              "path": "src/lib/cad/expr-imperative.ts",
+              "path": "src/lib/graph/expr-imperative.ts",
               "loc": 353
             },
             {
-              "name": "expr-list.test.ts",
-              "path": "src/lib/cad/expr-list.test.ts",
-              "loc": 239
-            },
-            {
-              "name": "expr-loops.test.ts",
-              "path": "src/lib/cad/expr-loops.test.ts",
-              "loc": 62
-            },
-            {
               "name": "expr-loops.ts",
-              "path": "src/lib/cad/expr-loops.ts",
+              "path": "src/lib/graph/expr-loops.ts",
               "loc": 105
             },
             {
-              "name": "expr-multiline.test.ts",
-              "path": "src/lib/cad/expr-multiline.test.ts",
-              "loc": 65
-            },
-            {
-              "name": "expr-node.test.ts",
-              "path": "src/lib/cad/expr-node.test.ts",
-              "loc": 142
-            },
-            {
               "name": "expr-schema.ts",
-              "path": "src/lib/cad/expr-schema.ts",
+              "path": "src/lib/graph/expr-schema.ts",
               "loc": 140
             },
             {
-              "name": "expr-validate.test.ts",
-              "path": "src/lib/cad/expr-validate.test.ts",
-              "loc": 115
-            },
-            {
-              "name": "graph-exprs.test.ts",
-              "path": "src/lib/cad/graph-exprs.test.ts",
-              "loc": 168
+              "name": "glb-client.ts",
+              "path": "src/lib/graph/glb-client.ts",
+              "loc": 119
             },
             {
               "name": "graph-exprs.ts",
-              "path": "src/lib/cad/graph-exprs.ts",
+              "path": "src/lib/graph/graph-exprs.ts",
               "loc": 689
             },
             {
-              "name": "graph-to-tf.test.ts",
-              "path": "src/lib/cad/graph-to-tf.test.ts",
-              "loc": 441
-            },
-            {
-              "name": "graph-to-tf.ts",
-              "path": "src/lib/cad/graph-to-tf.ts",
-              "loc": 1033
-            },
-            {
-              "name": "manifold-helpers-meta.ts",
-              "path": "src/lib/cad/manifold-helpers-meta.ts",
-              "loc": 162
-            },
-            {
-              "name": "manifold-helpers.ts",
-              "path": "src/lib/cad/manifold-helpers.ts",
-              "loc": 631
-            },
-            {
-              "name": "manifold-mesh.ts",
-              "path": "src/lib/cad/manifold-mesh.ts",
-              "loc": 962
+              "name": "manifold-trap.ts",
+              "path": "src/lib/graph/manifold-trap.ts",
+              "loc": 52
             },
             {
               "name": "math-lib.ts",
-              "path": "src/lib/cad/math-lib.ts",
+              "path": "src/lib/graph/math-lib.ts",
               "loc": 51
             },
             {
-              "name": "mesh-serial.test.ts",
-              "path": "src/lib/cad/mesh-serial.test.ts",
-              "loc": 42
-            },
-            {
-              "name": "mesh-serial.ts",
-              "path": "src/lib/cad/mesh-serial.ts",
-              "loc": 165
-            },
-            {
               "name": "param-keys.ts",
-              "path": "src/lib/cad/param-keys.ts",
+              "path": "src/lib/graph/param-keys.ts",
               "loc": 101
             },
             {
-              "name": "param-kind.test.ts",
-              "path": "src/lib/cad/param-kind.test.ts",
-              "loc": 147
-            },
-            {
               "name": "part-id.ts",
-              "path": "src/lib/cad/part-id.ts",
+              "path": "src/lib/graph/part-id.ts",
               "loc": 71
             },
             {
               "name": "part-lut-types.ts",
-              "path": "src/lib/cad/part-lut-types.ts",
+              "path": "src/lib/graph/part-lut-types.ts",
               "loc": 27
             },
             {
-              "name": "port-suggest.test.ts",
-              "path": "src/lib/cad/port-suggest.test.ts",
-              "loc": 99
-            },
-            {
               "name": "port-suggest.ts",
-              "path": "src/lib/cad/port-suggest.ts",
+              "path": "src/lib/graph/port-suggest.ts",
               "loc": 203
             },
             {
-              "name": "port-types.test.ts",
-              "path": "src/lib/cad/port-types.test.ts",
-              "loc": 125
-            },
-            {
               "name": "port-types.ts",
-              "path": "src/lib/cad/port-types.ts",
+              "path": "src/lib/graph/port-types.ts",
               "loc": 234
             },
             {
               "name": "primitive-sandbox.ts",
-              "path": "src/lib/cad/primitive-sandbox.ts",
-              "loc": 63
-            },
-            {
-              "name": "primitive-stub.test.ts",
-              "path": "src/lib/cad/primitive-stub.test.ts",
-              "loc": 96
+              "path": "src/lib/graph/primitive-sandbox.ts",
+              "loc": 64
             },
             {
               "name": "primitive-stub.ts",
-              "path": "src/lib/cad/primitive-stub.ts",
+              "path": "src/lib/graph/primitive-stub.ts",
               "loc": 232
             },
             {
               "name": "profile-templates.ts",
-              "path": "src/lib/cad/profile-templates.ts",
+              "path": "src/lib/graph/profile-templates.ts",
               "loc": 489
             },
             {
-              "name": "render-helpers-parts.test.ts",
-              "path": "src/lib/cad/render-helpers-parts.test.ts",
-              "loc": 72
-            },
-            {
-              "name": "render-helpers.ts",
-              "path": "src/lib/cad/render-helpers.ts",
-              "loc": 1115
-            },
-            {
-              "name": "revolve-axial.test.ts",
-              "path": "src/lib/cad/revolve-axial.test.ts",
-              "loc": 120
-            },
-            {
-              "name": "sketch-collayout.test.ts",
-              "path": "src/lib/cad/sketch-collayout.test.ts",
-              "loc": 117
-            },
-            {
               "name": "sketch-layout.ts",
-              "path": "src/lib/cad/sketch-layout.ts",
+              "path": "src/lib/graph/sketch-layout.ts",
               "loc": 109
             },
             {
-              "name": "sketch-repeat.test.ts",
-              "path": "src/lib/cad/sketch-repeat.test.ts",
-              "loc": 224
-            },
-            {
               "name": "sketch-repeat.ts",
-              "path": "src/lib/cad/sketch-repeat.ts",
+              "path": "src/lib/graph/sketch-repeat.ts",
               "loc": 125
             },
             {
-              "name": "sketch.test.ts",
-              "path": "src/lib/cad/sketch.test.ts",
-              "loc": 330
-            },
-            {
               "name": "sketch.ts",
-              "path": "src/lib/cad/sketch.ts",
+              "path": "src/lib/graph/sketch.ts",
               "loc": 280
             },
             {
-              "name": "spline-eval.test.ts",
-              "path": "src/lib/cad/spline-eval.test.ts",
-              "loc": 87
-            },
-            {
               "name": "spline-eval.ts",
-              "path": "src/lib/cad/spline-eval.ts",
+              "path": "src/lib/graph/spline-eval.ts",
               "loc": 87
-            },
-            {
-              "name": "spline-resample.test.ts",
-              "path": "src/lib/cad/spline-resample.test.ts",
-              "loc": 162
             },
             {
               "name": "spline-resample.ts",
-              "path": "src/lib/cad/spline-resample.ts",
+              "path": "src/lib/graph/spline-resample.ts",
               "loc": 173
             },
             {
-              "name": "stack.test.ts",
-              "path": "src/lib/cad/stack.test.ts",
-              "loc": 297
-            },
-            {
-              "name": "struct-type.test.ts",
-              "path": "src/lib/cad/struct-type.test.ts",
-              "loc": 198
+              "name": "spline-view.ts",
+              "path": "src/lib/graph/spline-view.ts",
+              "loc": 84
             },
             {
               "name": "struct-type.ts",
-              "path": "src/lib/cad/struct-type.ts",
+              "path": "src/lib/graph/struct-type.ts",
               "loc": 418
             },
             {
-              "name": "subdivide-axial.test.ts",
-              "path": "src/lib/cad/subdivide-axial.test.ts",
-              "loc": 185
-            },
-            {
-              "name": "sweep-cap-triangulation.test.ts",
-              "path": "src/lib/cad/sweep-cap-triangulation.test.ts",
-              "loc": 178
-            },
-            {
-              "name": "sweep-rmf.test.ts",
-              "path": "src/lib/cad/sweep-rmf.test.ts",
-              "loc": 112
-            },
-            {
-              "name": "sweep-self-intersection.test.ts",
-              "path": "src/lib/cad/sweep-self-intersection.test.ts",
-              "loc": 76
-            },
-            {
-              "name": "tf-wat-emit.test.ts",
-              "path": "src/lib/cad/tf-wat-emit.test.ts",
-              "loc": 132
+              "name": "survey-to-xyz.ts",
+              "path": "src/lib/graph/survey-to-xyz.ts",
+              "loc": 172
             },
             {
               "name": "tf-wat-emit.ts",
-              "path": "src/lib/cad/tf-wat-emit.ts",
+              "path": "src/lib/graph/tf-wat-emit.ts",
               "loc": 166
             },
             {
-              "name": "warp-geom.test.ts",
-              "path": "src/lib/cad/warp-geom.test.ts",
-              "loc": 48
-            },
-            {
               "name": "warp-geom.ts",
-              "path": "src/lib/cad/warp-geom.ts",
+              "path": "src/lib/graph/warp-geom.ts",
               "loc": 39
             },
             {
-              "name": "warp-mesh-js.test.ts",
-              "path": "src/lib/cad/warp-mesh-js.test.ts",
-              "loc": 35
-            },
-            {
-              "name": "warp-node.test.ts",
-              "path": "src/lib/cad/warp-node.test.ts",
-              "loc": 111
-            },
-            {
-              "name": "warp-spline.test.ts",
-              "path": "src/lib/cad/warp-spline.test.ts",
-              "loc": 232
-            },
-            {
-              "name": "warp-spline.ts",
-              "path": "src/lib/cad/warp-spline.ts",
-              "loc": 668
-            },
-            {
-              "name": "wire-check.test.ts",
-              "path": "src/lib/cad/wire-check.test.ts",
-              "loc": 102
-            },
-            {
               "name": "wire-check.ts",
-              "path": "src/lib/cad/wire-check.ts",
+              "path": "src/lib/graph/wire-check.ts",
               "loc": 110
             }
           ]
@@ -773,29 +1097,50 @@ export const FOLDER_TREE: FolderNode = {
           "path": "src/lib/server",
           "children": [
             {
-              "name": "__brep_sweep_spike.test.ts",
-              "path": "src/lib/server/__brep_sweep_spike.test.ts",
-              "loc": 162
+              "name": "tests",
+              "path": "src/lib/server/tests",
+              "children": [
+                {
+                  "name": "bake-cache.test.ts",
+                  "path": "src/lib/server/tests/bake-cache.test.ts",
+                  "loc": 102
+                },
+                {
+                  "name": "dep-inherit.test.ts",
+                  "path": "src/lib/server/tests/dep-inherit.test.ts",
+                  "loc": 41
+                },
+                {
+                  "name": "manifold-guard.test.ts",
+                  "path": "src/lib/server/tests/manifold-guard.test.ts",
+                  "loc": 106
+                },
+                {
+                  "name": "part-colors.test.ts",
+                  "path": "src/lib/server/tests/part-colors.test.ts",
+                  "loc": 169
+                },
+                {
+                  "name": "primitive-paths.test.ts",
+                  "path": "src/lib/server/tests/primitive-paths.test.ts",
+                  "loc": 70
+                },
+                {
+                  "name": "script-compile.test.ts",
+                  "path": "src/lib/server/tests/script-compile.test.ts",
+                  "loc": 183
+                }
+              ]
             },
             {
-              "name": "bake-cache.test.ts",
-              "path": "src/lib/server/bake-cache.test.ts",
-              "loc": 102
+              "name": "anthropic-api.ts",
+              "path": "src/lib/server/anthropic-api.ts",
+              "loc": 20
             },
             {
               "name": "bake-cache.ts",
               "path": "src/lib/server/bake-cache.ts",
-              "loc": 280
-            },
-            {
-              "name": "brep-occt.ts",
-              "path": "src/lib/server/brep-occt.ts",
-              "loc": 607
-            },
-            {
-              "name": "dep-inherit.test.ts",
-              "path": "src/lib/server/dep-inherit.test.ts",
-              "loc": 41
+              "loc": 296
             },
             {
               "name": "manifold-bake.ts",
@@ -803,24 +1148,19 @@ export const FOLDER_TREE: FolderNode = {
               "loc": 541
             },
             {
-              "name": "part-colors.test.ts",
-              "path": "src/lib/server/part-colors.test.ts",
-              "loc": 84
+              "name": "manifold-guard.ts",
+              "path": "src/lib/server/manifold-guard.ts",
+              "loc": 67
             },
             {
               "name": "part-colors.ts",
               "path": "src/lib/server/part-colors.ts",
-              "loc": 354
+              "loc": 404
             },
             {
               "name": "primitive-loader.ts",
               "path": "src/lib/server/primitive-loader.ts",
-              "loc": 939
-            },
-            {
-              "name": "primitive-paths.test.ts",
-              "path": "src/lib/server/primitive-paths.test.ts",
-              "loc": 70
+              "loc": 1033
             },
             {
               "name": "primitive-paths.ts",
@@ -830,7 +1170,7 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "primitives-meta.ts",
               "path": "src/lib/server/primitives-meta.ts",
-              "loc": 190
+              "loc": 201
             },
             {
               "name": "profile-fn.ts",
@@ -866,11 +1206,6 @@ export const FOLDER_TREE: FolderNode = {
               "name": "script-cache.ts",
               "path": "src/lib/server/script-cache.ts",
               "loc": 120
-            },
-            {
-              "name": "script-compile.test.ts",
-              "path": "src/lib/server/script-compile.test.ts",
-              "loc": 183
             },
             {
               "name": "stdlib.ts",
@@ -924,6 +1259,52 @@ export const FOLDER_TREE: FolderNode = {
                   ]
                 },
                 {
+                  "name": "tests",
+                  "path": "src/lib/shared/graph-editor/tests",
+                  "children": [
+                    {
+                      "name": "ge-assist.test.ts",
+                      "path": "src/lib/shared/graph-editor/tests/ge-assist.test.ts",
+                      "loc": 197
+                    },
+                    {
+                      "name": "geom.test.ts",
+                      "path": "src/lib/shared/graph-editor/tests/geom.test.ts",
+                      "loc": 224
+                    },
+                    {
+                      "name": "graph-editor-bake.test.ts",
+                      "path": "src/lib/shared/graph-editor/tests/graph-editor-bake.test.ts",
+                      "loc": 80
+                    },
+                    {
+                      "name": "node-palette.test.ts",
+                      "path": "src/lib/shared/graph-editor/tests/node-palette.test.ts",
+                      "loc": 83
+                    },
+                    {
+                      "name": "popover-clamp.test.ts",
+                      "path": "src/lib/shared/graph-editor/tests/popover-clamp.test.ts",
+                      "loc": 37
+                    },
+                    {
+                      "name": "tf-recipe-timing.test.ts",
+                      "path": "src/lib/shared/graph-editor/tests/tf-recipe-timing.test.ts",
+                      "loc": 70
+                    },
+                    {
+                      "name": "wire-delete.test.ts",
+                      "path": "src/lib/shared/graph-editor/tests/wire-delete.test.ts",
+                      "loc": 60
+                    },
+                    {
+                      "name": "wire-splice.test.ts",
+                      "path": "src/lib/shared/graph-editor/tests/wire-splice.test.ts",
+                      "loc": 116
+                    }
+                  ]
+                },
+                {
                   "name": "AiMenu.svelte",
                   "path": "src/lib/shared/graph-editor/AiMenu.svelte",
                   "loc": 298
@@ -941,7 +1322,7 @@ export const FOLDER_TREE: FolderNode = {
                 {
                   "name": "BakeMenu.svelte",
                   "path": "src/lib/shared/graph-editor/BakeMenu.svelte",
-                  "loc": 106
+                  "loc": 93
                 },
                 {
                   "name": "canvas-interaction.svelte.ts",
@@ -969,34 +1350,19 @@ export const FOLDER_TREE: FolderNode = {
                   "loc": 187
                 },
                 {
-                  "name": "ge-assist.test.ts",
-                  "path": "src/lib/shared/graph-editor/ge-assist.test.ts",
-                  "loc": 197
-                },
-                {
                   "name": "ge-assist.ts",
                   "path": "src/lib/shared/graph-editor/ge-assist.ts",
                   "loc": 235
                 },
                 {
-                  "name": "geom.test.ts",
-                  "path": "src/lib/shared/graph-editor/geom.test.ts",
-                  "loc": 224
-                },
-                {
                   "name": "geom.ts",
                   "path": "src/lib/shared/graph-editor/geom.ts",
-                  "loc": 563
+                  "loc": 574
                 },
                 {
                   "name": "graph-editor-bake.svelte.ts",
                   "path": "src/lib/shared/graph-editor/graph-editor-bake.svelte.ts",
                   "loc": 128
-                },
-                {
-                  "name": "graph-editor-bake.test.ts",
-                  "path": "src/lib/shared/graph-editor/graph-editor-bake.test.ts",
-                  "loc": 80
                 },
                 {
                   "name": "graph-editor-bake.ts",
@@ -1016,17 +1382,12 @@ export const FOLDER_TREE: FolderNode = {
                 {
                   "name": "GraphEditorPane.svelte",
                   "path": "src/lib/shared/graph-editor/GraphEditorPane.svelte",
-                  "loc": 4398
+                  "loc": 4465
                 },
                 {
                   "name": "MaterialEditorPopover.svelte",
                   "path": "src/lib/shared/graph-editor/MaterialEditorPopover.svelte",
                   "loc": 112
-                },
-                {
-                  "name": "node-palette.test.ts",
-                  "path": "src/lib/shared/graph-editor/node-palette.test.ts",
-                  "loc": 83
                 },
                 {
                   "name": "node-palette.ts",
@@ -1036,12 +1397,17 @@ export const FOLDER_TREE: FolderNode = {
                 {
                   "name": "NodeCard.svelte",
                   "path": "src/lib/shared/graph-editor/NodeCard.svelte",
-                  "loc": 2594
+                  "loc": 2589
                 },
                 {
                   "name": "ParamsCard.svelte",
                   "path": "src/lib/shared/graph-editor/ParamsCard.svelte",
                   "loc": 169
+                },
+                {
+                  "name": "PartsTableCard.svelte",
+                  "path": "src/lib/shared/graph-editor/PartsTableCard.svelte",
+                  "loc": 177
                 },
                 {
                   "name": "pointer-capture.ts",
@@ -1057,11 +1423,6 @@ export const FOLDER_TREE: FolderNode = {
                   "name": "PolyPreview.svelte",
                   "path": "src/lib/shared/graph-editor/PolyPreview.svelte",
                   "loc": 443
-                },
-                {
-                  "name": "popover-clamp.test.ts",
-                  "path": "src/lib/shared/graph-editor/popover-clamp.test.ts",
-                  "loc": 37
                 },
                 {
                   "name": "popover-clamp.ts",
@@ -1096,7 +1457,7 @@ export const FOLDER_TREE: FolderNode = {
                 {
                   "name": "RightPane.svelte",
                   "path": "src/lib/shared/graph-editor/RightPane.svelte",
-                  "loc": 786
+                  "loc": 872
                 },
                 {
                   "name": "sketch-state.svelte.ts",
@@ -1121,22 +1482,27 @@ export const FOLDER_TREE: FolderNode = {
                 {
                   "name": "SplineEditorPopup.svelte",
                   "path": "src/lib/shared/graph-editor/SplineEditorPopup.svelte",
-                  "loc": 254
+                  "loc": 225
                 },
                 {
                   "name": "SplineScene.svelte",
                   "path": "src/lib/shared/graph-editor/SplineScene.svelte",
-                  "loc": 283
-                },
-                {
-                  "name": "tf-recipe-timing.test.ts",
-                  "path": "src/lib/shared/graph-editor/tf-recipe-timing.test.ts",
-                  "loc": 70
+                  "loc": 440
                 },
                 {
                   "name": "tf-recipe-timing.ts",
                   "path": "src/lib/shared/graph-editor/tf-recipe-timing.ts",
                   "loc": 53
+                },
+                {
+                  "name": "wire-delete.ts",
+                  "path": "src/lib/shared/graph-editor/wire-delete.ts",
+                  "loc": 90
+                },
+                {
+                  "name": "wire-splice.ts",
+                  "path": "src/lib/shared/graph-editor/wire-splice.ts",
+                  "loc": 130
                 },
                 {
                   "name": "wire-state.svelte.ts",
@@ -1146,315 +1512,243 @@ export const FOLDER_TREE: FolderNode = {
                 {
                   "name": "WireLayer.svelte",
                   "path": "src/lib/shared/graph-editor/WireLayer.svelte",
-                  "loc": 564
+                  "loc": 634
                 }
               ]
             },
             {
-              "name": "tf_examples",
-              "path": "src/lib/shared/tf_examples",
+              "name": "profiles",
+              "path": "src/lib/shared/profiles",
               "children": [
                 {
-                  "name": "execute.test.ts",
-                  "path": "src/lib/shared/tf_examples/execute.test.ts",
-                  "loc": 475
+                  "name": "tests",
+                  "path": "src/lib/shared/profiles/tests",
+                  "children": [
+                    {
+                      "name": "profile-fn-compose.test.ts",
+                      "path": "src/lib/shared/profiles/tests/profile-fn-compose.test.ts",
+                      "loc": 133
+                    },
+                    {
+                      "name": "profile-presets.test.ts",
+                      "path": "src/lib/shared/profiles/tests/profile-presets.test.ts",
+                      "loc": 73
+                    }
+                  ]
                 },
                 {
-                  "name": "execute.ts",
-                  "path": "src/lib/shared/tf_examples/execute.ts",
-                  "loc": 552
+                  "name": "profile-fn-compose.ts",
+                  "path": "src/lib/shared/profiles/profile-fn-compose.ts",
+                  "loc": 294
                 },
                 {
-                  "name": "extrude.test.ts",
-                  "path": "src/lib/shared/tf_examples/extrude.test.ts",
-                  "loc": 330
+                  "name": "profile-presets.ts",
+                  "path": "src/lib/shared/profiles/profile-presets.ts",
+                  "loc": 391
                 },
                 {
-                  "name": "extrude.ts",
-                  "path": "src/lib/shared/tf_examples/extrude.ts",
-                  "loc": 155
+                  "name": "ProfileFn3DCanvas.svelte",
+                  "path": "src/lib/shared/profiles/ProfileFn3DCanvas.svelte",
+                  "loc": 95
                 },
                 {
-                  "name": "revolve.test.ts",
-                  "path": "src/lib/shared/tf_examples/revolve.test.ts",
-                  "loc": 93
+                  "name": "ProfileFnEditor.svelte",
+                  "path": "src/lib/shared/profiles/ProfileFnEditor.svelte",
+                  "loc": 926
                 },
                 {
-                  "name": "revolve.ts",
-                  "path": "src/lib/shared/tf_examples/revolve.ts",
-                  "loc": 114
-                },
-                {
-                  "name": "sweep-section.test.ts",
-                  "path": "src/lib/shared/tf_examples/sweep-section.test.ts",
-                  "loc": 187
-                },
-                {
-                  "name": "sweep-section.ts",
-                  "path": "src/lib/shared/tf_examples/sweep-section.ts",
-                  "loc": 210
-                },
-                {
-                  "name": "tf-weld.test.ts",
-                  "path": "src/lib/shared/tf_examples/tf-weld.test.ts",
-                  "loc": 157
-                },
-                {
-                  "name": "tf-weld.ts",
-                  "path": "src/lib/shared/tf_examples/tf-weld.ts",
-                  "loc": 172
-                },
-                {
-                  "name": "warp-composite.test.ts",
-                  "path": "src/lib/shared/tf_examples/warp-composite.test.ts",
-                  "loc": 80
-                },
-                {
-                  "name": "warp-densify.test.ts",
-                  "path": "src/lib/shared/tf_examples/warp-densify.test.ts",
-                  "loc": 151
-                },
-                {
-                  "name": "warp-pipeline.test.ts",
-                  "path": "src/lib/shared/tf_examples/warp-pipeline.test.ts",
-                  "loc": 132
+                  "name": "ProfilePalette.svelte",
+                  "path": "src/lib/shared/profiles/ProfilePalette.svelte",
+                  "loc": 201
                 }
               ]
             },
             {
-              "name": "_shaft_bisect.test.ts",
-              "path": "src/lib/shared/_shaft_bisect.test.ts",
-              "loc": 144
+              "name": "svg",
+              "path": "src/lib/shared/svg",
+              "children": [
+                {
+                  "name": "tests",
+                  "path": "src/lib/shared/svg/tests",
+                  "children": [
+                    {
+                      "name": "svg-emit.test.ts",
+                      "path": "src/lib/shared/svg/tests/svg-emit.test.ts",
+                      "loc": 318
+                    },
+                    {
+                      "name": "svg-reduce.test.ts",
+                      "path": "src/lib/shared/svg/tests/svg-reduce.test.ts",
+                      "loc": 83
+                    }
+                  ]
+                },
+                {
+                  "name": "CompJsonSilhouette.svelte",
+                  "path": "src/lib/shared/svg/CompJsonSilhouette.svelte",
+                  "loc": 198
+                },
+                {
+                  "name": "PrimitiveSvgView.svelte",
+                  "path": "src/lib/shared/svg/PrimitiveSvgView.svelte",
+                  "loc": 666
+                },
+                {
+                  "name": "svg-camera.ts",
+                  "path": "src/lib/shared/svg/svg-camera.ts",
+                  "loc": 103
+                },
+                {
+                  "name": "svg-emit.ts",
+                  "path": "src/lib/shared/svg/svg-emit.ts",
+                  "loc": 717
+                },
+                {
+                  "name": "svg-reduce.ts",
+                  "path": "src/lib/shared/svg/svg-reduce.ts",
+                  "loc": 131
+                },
+                {
+                  "name": "svg-silhouette.ts",
+                  "path": "src/lib/shared/svg/svg-silhouette.ts",
+                  "loc": 245
+                }
+              ]
             },
             {
-              "name": "anthropic-api.ts",
-              "path": "src/lib/shared/anthropic-api.ts",
-              "loc": 20
+              "name": "types",
+              "path": "src/lib/shared/types",
+              "children": [
+                {
+                  "name": "TypeDefinerPanel.svelte",
+                  "path": "src/lib/shared/types/TypeDefinerPanel.svelte",
+                  "loc": 253
+                },
+                {
+                  "name": "TypeDefinerPopover.svelte",
+                  "path": "src/lib/shared/types/TypeDefinerPopover.svelte",
+                  "loc": 66
+                }
+              ]
             },
             {
-              "name": "brep-adapter.test.ts",
-              "path": "src/lib/shared/brep-adapter.test.ts",
-              "loc": 60
+              "name": "ui",
+              "path": "src/lib/shared/ui",
+              "children": [
+                {
+                  "name": "dragNumber.ts",
+                  "path": "src/lib/shared/ui/dragNumber.ts",
+                  "loc": 81
+                },
+                {
+                  "name": "floating-tip.ts",
+                  "path": "src/lib/shared/ui/floating-tip.ts",
+                  "loc": 92
+                },
+                {
+                  "name": "NavMenu.svelte",
+                  "path": "src/lib/shared/ui/NavMenu.svelte",
+                  "loc": 132
+                },
+                {
+                  "name": "ParamGrid.svelte",
+                  "path": "src/lib/shared/ui/ParamGrid.svelte",
+                  "loc": 210
+                }
+              ]
             },
             {
-              "name": "brep-adapter.ts",
-              "path": "src/lib/shared/brep-adapter.ts",
-              "loc": 61
+              "name": "viewer",
+              "path": "src/lib/shared/viewer",
+              "children": [
+                {
+                  "name": "tests",
+                  "path": "src/lib/shared/viewer/tests",
+                  "children": [
+                    {
+                      "name": "material-preset.test.ts",
+                      "path": "src/lib/shared/viewer/tests/material-preset.test.ts",
+                      "loc": 34
+                    },
+                    {
+                      "name": "material-textures.test.ts",
+                      "path": "src/lib/shared/viewer/tests/material-textures.test.ts",
+                      "loc": 64
+                    },
+                    {
+                      "name": "vertex-alpha-partition.test.ts",
+                      "path": "src/lib/shared/viewer/tests/vertex-alpha-partition.test.ts",
+                      "loc": 82
+                    }
+                  ]
+                },
+                {
+                  "name": "instance-colors.ts",
+                  "path": "src/lib/shared/viewer/instance-colors.ts",
+                  "loc": 72
+                },
+                {
+                  "name": "material-preset.ts",
+                  "path": "src/lib/shared/viewer/material-preset.ts",
+                  "loc": 64
+                },
+                {
+                  "name": "material-textures.ts",
+                  "path": "src/lib/shared/viewer/material-textures.ts",
+                  "loc": 180
+                },
+                {
+                  "name": "part-appearance.ts",
+                  "path": "src/lib/shared/viewer/part-appearance.ts",
+                  "loc": 18
+                },
+                {
+                  "name": "PrimitiveDualCanvas.svelte",
+                  "path": "src/lib/shared/viewer/PrimitiveDualCanvas.svelte",
+                  "loc": 1149
+                },
+                {
+                  "name": "PrimitiveDualScene.svelte",
+                  "path": "src/lib/shared/viewer/PrimitiveDualScene.svelte",
+                  "loc": 1113
+                },
+                {
+                  "name": "scene-state.svelte.ts",
+                  "path": "src/lib/shared/viewer/scene-state.svelte.ts",
+                  "loc": 202
+                },
+                {
+                  "name": "SceneControls.svelte",
+                  "path": "src/lib/shared/viewer/SceneControls.svelte",
+                  "loc": 261
+                },
+                {
+                  "name": "vertex-alpha-partition.ts",
+                  "path": "src/lib/shared/viewer/vertex-alpha-partition.ts",
+                  "loc": 89
+                },
+                {
+                  "name": "warp.ts",
+                  "path": "src/lib/shared/viewer/warp.ts",
+                  "loc": 195
+                }
+              ]
             },
             {
-              "name": "CacheBrowser.svelte",
-              "path": "src/lib/shared/CacheBrowser.svelte",
-              "loc": 444
-            },
-            {
-              "name": "CompJsonSilhouette.svelte",
-              "path": "src/lib/shared/CompJsonSilhouette.svelte",
-              "loc": 198
-            },
-            {
-              "name": "dragNumber.ts",
-              "path": "src/lib/shared/dragNumber.ts",
-              "loc": 81
-            },
-            {
-              "name": "floating-tip.ts",
-              "path": "src/lib/shared/floating-tip.ts",
-              "loc": 92
-            },
-            {
-              "name": "FolderTreeSidebar.svelte",
-              "path": "src/lib/shared/FolderTreeSidebar.svelte",
-              "loc": 365
-            },
-            {
-              "name": "instance-colors.ts",
-              "path": "src/lib/shared/instance-colors.ts",
-              "loc": 72
-            },
-            {
-              "name": "material-preset.test.ts",
-              "path": "src/lib/shared/material-preset.test.ts",
-              "loc": 34
-            },
-            {
-              "name": "material-preset.ts",
-              "path": "src/lib/shared/material-preset.ts",
-              "loc": 64
-            },
-            {
-              "name": "material-textures.test.ts",
-              "path": "src/lib/shared/material-textures.test.ts",
-              "loc": 64
-            },
-            {
-              "name": "material-textures.ts",
-              "path": "src/lib/shared/material-textures.ts",
-              "loc": 180
-            },
-            {
-              "name": "NavMenu.svelte",
-              "path": "src/lib/shared/NavMenu.svelte",
-              "loc": 132
-            },
-            {
-              "name": "ParamGrid.svelte",
-              "path": "src/lib/shared/ParamGrid.svelte",
-              "loc": 210
-            },
-            {
-              "name": "part-appearance.ts",
-              "path": "src/lib/shared/part-appearance.ts",
-              "loc": 18
-            },
-            {
-              "name": "PrimitiveDualCanvas.svelte",
-              "path": "src/lib/shared/PrimitiveDualCanvas.svelte",
-              "loc": 1063
-            },
-            {
-              "name": "PrimitiveDualScene.svelte",
-              "path": "src/lib/shared/PrimitiveDualScene.svelte",
-              "loc": 1110
-            },
-            {
-              "name": "PrimitiveSvgView.svelte",
-              "path": "src/lib/shared/PrimitiveSvgView.svelte",
-              "loc": 587
-            },
-            {
-              "name": "profile-fn-compose.test.ts",
-              "path": "src/lib/shared/profile-fn-compose.test.ts",
-              "loc": 133
-            },
-            {
-              "name": "profile-fn-compose.ts",
-              "path": "src/lib/shared/profile-fn-compose.ts",
-              "loc": 294
-            },
-            {
-              "name": "profile-presets.test.ts",
-              "path": "src/lib/shared/profile-presets.test.ts",
-              "loc": 73
-            },
-            {
-              "name": "profile-presets.ts",
-              "path": "src/lib/shared/profile-presets.ts",
-              "loc": 391
-            },
-            {
-              "name": "ProfileFn3DCanvas.svelte",
-              "path": "src/lib/shared/ProfileFn3DCanvas.svelte",
-              "loc": 95
-            },
-            {
-              "name": "ProfileFnEditor.svelte",
-              "path": "src/lib/shared/ProfileFnEditor.svelte",
-              "loc": 926
-            },
-            {
-              "name": "ProfilePalette.svelte",
-              "path": "src/lib/shared/ProfilePalette.svelte",
-              "loc": 201
-            },
-            {
-              "name": "scene-state.svelte.ts",
-              "path": "src/lib/shared/scene-state.svelte.ts",
-              "loc": 191
-            },
-            {
-              "name": "SceneControls.svelte",
-              "path": "src/lib/shared/SceneControls.svelte",
-              "loc": 235
-            },
-            {
-              "name": "svg-camera.ts",
-              "path": "src/lib/shared/svg-camera.ts",
-              "loc": 103
-            },
-            {
-              "name": "svg-emit.ts",
-              "path": "src/lib/shared/svg-emit.ts",
-              "loc": 469
-            },
-            {
-              "name": "svg-reduce.test.ts",
-              "path": "src/lib/shared/svg-reduce.test.ts",
-              "loc": 83
-            },
-            {
-              "name": "svg-reduce.ts",
-              "path": "src/lib/shared/svg-reduce.ts",
-              "loc": 131
-            },
-            {
-              "name": "tf-bake-client.ts",
-              "path": "src/lib/shared/tf-bake-client.ts",
-              "loc": 241
-            },
-            {
-              "name": "tf-worker-core.test.ts",
-              "path": "src/lib/shared/tf-worker-core.test.ts",
-              "loc": 135
-            },
-            {
-              "name": "tf-worker-core.ts",
-              "path": "src/lib/shared/tf-worker-core.ts",
-              "loc": 141
-            },
-            {
-              "name": "tf-worker.ts",
-              "path": "src/lib/shared/tf-worker.ts",
-              "loc": 56
-            },
-            {
-              "name": "trueform-adapter.test.ts",
-              "path": "src/lib/shared/trueform-adapter.test.ts",
-              "loc": 292
-            },
-            {
-              "name": "trueform-adapter.ts",
-              "path": "src/lib/shared/trueform-adapter.ts",
-              "loc": 384
-            },
-            {
-              "name": "trueform-client.test.ts",
-              "path": "src/lib/shared/trueform-client.test.ts",
-              "loc": 253
-            },
-            {
-              "name": "trueform-client.ts",
-              "path": "src/lib/shared/trueform-client.ts",
-              "loc": 559
-            },
-            {
-              "name": "TypeDefinerPanel.svelte",
-              "path": "src/lib/shared/TypeDefinerPanel.svelte",
-              "loc": 253
-            },
-            {
-              "name": "TypeDefinerPopover.svelte",
-              "path": "src/lib/shared/TypeDefinerPopover.svelte",
-              "loc": 66
-            },
-            {
-              "name": "vertex-alpha-partition.test.ts",
-              "path": "src/lib/shared/vertex-alpha-partition.test.ts",
-              "loc": 82
-            },
-            {
-              "name": "vertex-alpha-partition.ts",
-              "path": "src/lib/shared/vertex-alpha-partition.ts",
-              "loc": 89
-            },
-            {
-              "name": "warp.ts",
-              "path": "src/lib/shared/warp.ts",
-              "loc": 195
-            },
-            {
-              "name": "WellSideNav.svelte",
-              "path": "src/lib/shared/WellSideNav.svelte",
-              "loc": 477
+              "name": "volume",
+              "path": "src/lib/shared/volume",
+              "children": [
+                {
+                  "name": "CacheBrowser.svelte",
+                  "path": "src/lib/shared/volume/CacheBrowser.svelte",
+                  "loc": 444
+                },
+                {
+                  "name": "FolderTreeSidebar.svelte",
+                  "path": "src/lib/shared/volume/FolderTreeSidebar.svelte",
+                  "loc": 365
+                }
+              ]
             }
           ]
         },
@@ -1473,6 +1767,122 @@ export const FOLDER_TREE: FolderNode = {
           "name": "wells",
           "path": "src/lib/wells",
           "children": [
+            {
+              "name": "tests",
+              "path": "src/lib/wells/tests",
+              "children": [
+                {
+                  "name": "_trackB.test.ts",
+                  "path": "src/lib/wells/tests/_trackB.test.ts",
+                  "loc": 98
+                },
+                {
+                  "name": "archetypes.test.ts",
+                  "path": "src/lib/wells/tests/archetypes.test.ts",
+                  "loc": 117
+                },
+                {
+                  "name": "assemble.test.ts",
+                  "path": "src/lib/wells/tests/assemble.test.ts",
+                  "loc": 126
+                },
+                {
+                  "name": "axial-density.test.ts",
+                  "path": "src/lib/wells/tests/axial-density.test.ts",
+                  "loc": 93
+                },
+                {
+                  "name": "registry.test.ts",
+                  "path": "src/lib/wells/tests/registry.test.ts",
+                  "loc": 138
+                },
+                {
+                  "name": "sample-ladder.test.ts",
+                  "path": "src/lib/wells/tests/sample-ladder.test.ts",
+                  "loc": 216
+                },
+                {
+                  "name": "schematic3d.test.ts",
+                  "path": "src/lib/wells/tests/schematic3d.test.ts",
+                  "loc": 340
+                },
+                {
+                  "name": "well-bake-client.test.ts",
+                  "path": "src/lib/wells/tests/well-bake-client.test.ts",
+                  "loc": 153
+                },
+                {
+                  "name": "well-bake-pool.test.ts",
+                  "path": "src/lib/wells/tests/well-bake-pool.test.ts",
+                  "loc": 324
+                },
+                {
+                  "name": "well-edit-core.test.ts",
+                  "path": "src/lib/wells/tests/well-edit-core.test.ts",
+                  "loc": 431
+                },
+                {
+                  "name": "well-edit-intent.test.ts",
+                  "path": "src/lib/wells/tests/well-edit-intent.test.ts",
+                  "loc": 155
+                },
+                {
+                  "name": "well-graph-bake.test.ts",
+                  "path": "src/lib/wells/tests/well-graph-bake.test.ts",
+                  "loc": 84
+                },
+                {
+                  "name": "well-inspector.test.ts",
+                  "path": "src/lib/wells/tests/well-inspector.test.ts",
+                  "loc": 132
+                },
+                {
+                  "name": "well-part-map.test.ts",
+                  "path": "src/lib/wells/tests/well-part-map.test.ts",
+                  "loc": 142
+                },
+                {
+                  "name": "well-tool-rail.test.ts",
+                  "path": "src/lib/wells/tests/well-tool-rail.test.ts",
+                  "loc": 71
+                },
+                {
+                  "name": "wells-bake-coverage.test.ts",
+                  "path": "src/lib/wells/tests/wells-bake-coverage.test.ts",
+                  "loc": 216
+                },
+                {
+                  "name": "wson-2d.test.ts",
+                  "path": "src/lib/wells/tests/wson-2d.test.ts",
+                  "loc": 207
+                },
+                {
+                  "name": "wson-mutate.test.ts",
+                  "path": "src/lib/wells/tests/wson-mutate.test.ts",
+                  "loc": 73
+                },
+                {
+                  "name": "wson-to-graph-coverage.test.ts",
+                  "path": "src/lib/wells/tests/wson-to-graph-coverage.test.ts",
+                  "loc": 104
+                },
+                {
+                  "name": "wson-to-graph.s4-warp.test.ts",
+                  "path": "src/lib/wells/tests/wson-to-graph.s4-warp.test.ts",
+                  "loc": 138
+                },
+                {
+                  "name": "wson-to-graph.test.ts",
+                  "path": "src/lib/wells/tests/wson-to-graph.test.ts",
+                  "loc": 622
+                },
+                {
+                  "name": "wson.test.ts",
+                  "path": "src/lib/wells/tests/wson.test.ts",
+                  "loc": 116
+                }
+              ]
+            },
             {
               "name": "threeD",
               "path": "src/lib/wells/threeD",
@@ -1511,24 +1921,39 @@ export const FOLDER_TREE: FolderNode = {
                 {
                   "name": "manifoldCut.ts",
                   "path": "src/lib/wells/threeD/manifoldCut.ts",
-                  "loc": 510
+                  "loc": 518
                 },
                 {
                   "name": "profile.ts",
                   "path": "src/lib/wells/threeD/profile.ts",
-                  "loc": 140
+                  "loc": 129
+                },
+                {
+                  "name": "wells-bake-worker.ts",
+                  "path": "src/lib/wells/threeD/wells-bake-worker.ts",
+                  "loc": 118
                 }
               ]
             },
             {
-              "name": "assemble.test.ts",
-              "path": "src/lib/wells/assemble.test.ts",
-              "loc": 73
+              "name": "archetypes.ts",
+              "path": "src/lib/wells/archetypes.ts",
+              "loc": 189
             },
             {
               "name": "assemble.ts",
               "path": "src/lib/wells/assemble.ts",
-              "loc": 128
+              "loc": 137
+            },
+            {
+              "name": "axial-density.ts",
+              "path": "src/lib/wells/axial-density.ts",
+              "loc": 92
+            },
+            {
+              "name": "CasingStringsEditor.svelte",
+              "path": "src/lib/wells/CasingStringsEditor.svelte",
+              "loc": 243
             },
             {
               "name": "dtx.ts",
@@ -1536,9 +1961,14 @@ export const FOLDER_TREE: FolderNode = {
               "loc": 95
             },
             {
+              "name": "element-icons.ts",
+              "path": "src/lib/wells/element-icons.ts",
+              "loc": 135
+            },
+            {
               "name": "registry.ts",
               "path": "src/lib/wells/registry.ts",
-              "loc": 81
+              "loc": 234
             },
             {
               "name": "samples.ts",
@@ -1546,9 +1976,64 @@ export const FOLDER_TREE: FolderNode = {
               "loc": 29
             },
             {
-              "name": "schematic3d.test.ts",
-              "path": "src/lib/wells/schematic3d.test.ts",
-              "loc": 340
+              "name": "SurveyEditor.svelte",
+              "path": "src/lib/wells/SurveyEditor.svelte",
+              "loc": 218
+            },
+            {
+              "name": "well-bake-client.ts",
+              "path": "src/lib/wells/well-bake-client.ts",
+              "loc": 159
+            },
+            {
+              "name": "well-bake-pool.ts",
+              "path": "src/lib/wells/well-bake-pool.ts",
+              "loc": 412
+            },
+            {
+              "name": "well-bake-protocol.ts",
+              "path": "src/lib/wells/well-bake-protocol.ts",
+              "loc": 90
+            },
+            {
+              "name": "well-edit-core.ts",
+              "path": "src/lib/wells/well-edit-core.ts",
+              "loc": 277
+            },
+            {
+              "name": "well-edit-intent.ts",
+              "path": "src/lib/wells/well-edit-intent.ts",
+              "loc": 172
+            },
+            {
+              "name": "well-edit-store.svelte.ts",
+              "path": "src/lib/wells/well-edit-store.svelte.ts",
+              "loc": 97
+            },
+            {
+              "name": "well-graph-bake.ts",
+              "path": "src/lib/wells/well-graph-bake.ts",
+              "loc": 178
+            },
+            {
+              "name": "well-inspector.ts",
+              "path": "src/lib/wells/well-inspector.ts",
+              "loc": 271
+            },
+            {
+              "name": "well-part-map.ts",
+              "path": "src/lib/wells/well-part-map.ts",
+              "loc": 125
+            },
+            {
+              "name": "well-tool-rail.ts",
+              "path": "src/lib/wells/well-tool-rail.ts",
+              "loc": 120
+            },
+            {
+              "name": "WellInspectorDock.svelte",
+              "path": "src/lib/wells/WellInspectorDock.svelte",
+              "loc": 504
             },
             {
               "name": "WellScene.svelte",
@@ -1558,12 +2043,17 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "WellSchematic3D.svelte",
               "path": "src/lib/wells/WellSchematic3D.svelte",
-              "loc": 532
+              "loc": 745
             },
             {
-              "name": "wson-2d.test.ts",
-              "path": "src/lib/wells/wson-2d.test.ts",
-              "loc": 207
+              "name": "WellSideNav.svelte",
+              "path": "src/lib/wells/WellSideNav.svelte",
+              "loc": 477
+            },
+            {
+              "name": "WellToolRail.svelte",
+              "path": "src/lib/wells/WellToolRail.svelte",
+              "loc": 339
             },
             {
               "name": "wson-2d.ts",
@@ -1571,24 +2061,19 @@ export const FOLDER_TREE: FolderNode = {
               "loc": 507
             },
             {
-              "name": "wson-mutate.test.ts",
-              "path": "src/lib/wells/wson-mutate.test.ts",
-              "loc": 73
-            },
-            {
               "name": "wson-mutate.ts",
               "path": "src/lib/wells/wson-mutate.ts",
               "loc": 57
             },
             {
-              "name": "wson.test.ts",
-              "path": "src/lib/wells/wson.test.ts",
-              "loc": 54
+              "name": "wson-to-graph.ts",
+              "path": "src/lib/wells/wson-to-graph.ts",
+              "loc": 539
             },
             {
               "name": "wson.ts",
               "path": "src/lib/wells/wson.ts",
-              "loc": 160
+              "loc": 214
             }
           ]
         },
@@ -1773,7 +2258,7 @@ export const FOLDER_TREE: FolderNode = {
                     {
                       "name": "+server.ts",
                       "path": "src/routes/api/primitives/bake-preview/+server.ts",
-                      "loc": 116
+                      "loc": 122
                     }
                   ]
                 },
@@ -1900,7 +2385,7 @@ export const FOLDER_TREE: FolderNode = {
                     {
                       "name": "+server.ts",
                       "path": "src/routes/api/primitives/preview/+server.ts",
-                      "loc": 383
+                      "loc": 419
                     }
                   ]
                 },
@@ -2127,7 +2612,7 @@ export const FOLDER_TREE: FolderNode = {
                     {
                       "name": "+server.ts",
                       "path": "src/routes/api/tf/compile/+server.ts",
-                      "loc": 153
+                      "loc": 203
                     }
                   ]
                 },
@@ -2216,7 +2701,7 @@ export const FOLDER_TREE: FolderNode = {
                     {
                       "name": "+server.ts",
                       "path": "src/routes/api/volume/backup/+server.ts",
-                      "loc": 110
+                      "loc": 112
                     }
                   ]
                 },
@@ -2283,9 +2768,25 @@ export const FOLDER_TREE: FolderNode = {
               ]
             },
             {
+              "name": "tests",
+              "path": "src/routes/design/tests",
+              "children": [
+                {
+                  "name": "api-docs.test.ts",
+                  "path": "src/routes/design/tests/api-docs.test.ts",
+                  "loc": 52
+                }
+              ]
+            },
+            {
               "name": "+page.svelte",
               "path": "src/routes/design/+page.svelte",
               "loc": 878
+            },
+            {
+              "name": "api-docs.ts",
+              "path": "src/routes/design/api-docs.ts",
+              "loc": 1330
             },
             {
               "name": "ArchGraph.svelte",
@@ -2320,7 +2821,7 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "domain-classes.ts",
               "path": "src/routes/design/domain-classes.ts",
-              "loc": 107
+              "loc": 111
             },
             {
               "name": "folder-hierarchy.ts",
@@ -2330,7 +2831,7 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "folder-tree.ts",
               "path": "src/routes/design/folder-tree.ts",
-              "loc": 3101
+              "loc": 3175
             },
             {
               "name": "FolderArc.svelte",
@@ -2370,7 +2871,7 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "gep-modules.ts",
               "path": "src/routes/design/gep-modules.ts",
-              "loc": 202
+              "loc": 210
             },
             {
               "name": "GepModuleGraph.svelte",
@@ -2402,12 +2903,12 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "+page.svelte",
               "path": "src/routes/plan/+page.svelte",
-              "loc": 738
+              "loc": 722
             },
             {
               "name": "details.ts",
               "path": "src/routes/plan/details.ts",
-              "loc": 401
+              "loc": 309
             }
           ]
         },
@@ -2427,6 +2928,17 @@ export const FOLDER_TREE: FolderNode = {
               ]
             },
             {
+              "name": "tests",
+              "path": "src/routes/primitives/tests",
+              "children": [
+                {
+                  "name": "primitives-tree.test.ts",
+                  "path": "src/routes/primitives/tests/primitives-tree.test.ts",
+                  "loc": 139
+                }
+              ]
+            },
+            {
               "name": "types",
               "path": "src/routes/primitives/types",
               "children": [
@@ -2441,11 +2953,6 @@ export const FOLDER_TREE: FolderNode = {
               "name": "+page.svelte",
               "path": "src/routes/primitives/+page.svelte",
               "loc": 2298
-            },
-            {
-              "name": "primitives-tree.test.ts",
-              "path": "src/routes/primitives/primitives-tree.test.ts",
-              "loc": 139
             },
             {
               "name": "primitives-tree.ts",
@@ -2539,14 +3046,30 @@ export const FOLDER_TREE: FolderNode = {
           "path": "src/routes/wells",
           "children": [
             {
-              "name": "+page.svelte",
-              "path": "src/routes/wells/+page.svelte",
-              "loc": 806
+              "name": "tests",
+              "path": "src/routes/wells/tests",
+              "children": [
+                {
+                  "name": "label-layout.test.ts",
+                  "path": "src/routes/wells/tests/label-layout.test.ts",
+                  "loc": 91
+                },
+                {
+                  "name": "workspace-cache.test.ts",
+                  "path": "src/routes/wells/tests/workspace-cache.test.ts",
+                  "loc": 187
+                },
+                {
+                  "name": "wson-summary.test.ts",
+                  "path": "src/routes/wells/tests/wson-summary.test.ts",
+                  "loc": 39
+                }
+              ]
             },
             {
-              "name": "label-layout.test.ts",
-              "path": "src/routes/wells/label-layout.test.ts",
-              "loc": 91
+              "name": "+page.svelte",
+              "path": "src/routes/wells/+page.svelte",
+              "loc": 832
             },
             {
               "name": "label-layout.ts",
@@ -2556,7 +3079,7 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "view-settings.ts",
               "path": "src/routes/wells/view-settings.ts",
-              "loc": 71
+              "loc": 77
             },
             {
               "name": "WellCompPopup.svelte",
@@ -2596,27 +3119,22 @@ export const FOLDER_TREE: FolderNode = {
             {
               "name": "WellViewControls.svelte",
               "path": "src/routes/wells/WellViewControls.svelte",
-              "loc": 253
+              "loc": 258
             },
             {
               "name": "WellViewPlaceholder.svelte",
               "path": "src/routes/wells/WellViewPlaceholder.svelte",
-              "loc": 213
-            },
-            {
-              "name": "workspace-cache.test.ts",
-              "path": "src/routes/wells/workspace-cache.test.ts",
-              "loc": 87
+              "loc": 289
             },
             {
               "name": "workspace-cache.ts",
               "path": "src/routes/wells/workspace-cache.ts",
-              "loc": 256
+              "loc": 316
             },
             {
               "name": "wson-summary.ts",
               "path": "src/routes/wells/wson-summary.ts",
-              "loc": 154
+              "loc": 158
             }
           ]
         },
@@ -2634,375 +3152,6 @@ export const FOLDER_TREE: FolderNode = {
           "name": "+page.svelte",
           "path": "src/routes/+page.svelte",
           "loc": 426
-        }
-      ]
-    },
-    {
-      "name": "volume_backup",
-      "path": "src/volume_backup",
-      "children": [
-        {
-          "name": "archive",
-          "path": "src/volume_backup/archive",
-          "children": [
-            {
-              "name": "legacy_components",
-              "path": "src/volume_backup/archive/legacy_components",
-              "children": [
-                {
-                  "name": "casing_joint_threaded.ts",
-                  "path": "src/volume_backup/archive/legacy_components/casing_joint_threaded.ts",
-                  "loc": 77
-                },
-                {
-                  "name": "extract_52.ts",
-                  "path": "src/volume_backup/archive/legacy_components/extract_52.ts",
-                  "loc": 165
-                },
-                {
-                  "name": "new_tube.ts",
-                  "path": "src/volume_backup/archive/legacy_components/new_tube.ts",
-                  "loc": 16
-                },
-                {
-                  "name": "tubing_joint_threaded.ts",
-                  "path": "src/volume_backup/archive/legacy_components/tubing_joint_threaded.ts",
-                  "loc": 80
-                }
-              ]
-            }
-          ]
-        },
-        {
-          "name": "components",
-          "path": "src/volume_backup/components",
-          "children": [
-            {
-              "name": "test",
-              "path": "src/volume_backup/components/test",
-              "children": [
-                {
-                  "name": "e2e_stub_1779824094286",
-                  "path": "src/volume_backup/components/test/e2e_stub_1779824094286",
-                  "children": [
-                    {
-                      "name": "component.ts",
-                      "path": "src/volume_backup/components/test/e2e_stub_1779824094286/component.ts",
-                      "loc": 17
-                    }
-                  ]
-                },
-                {
-                  "name": "hollow_cylinder",
-                  "path": "src/volume_backup/components/test/hollow_cylinder",
-                  "children": [
-                    {
-                      "name": "component.ts",
-                      "path": "src/volume_backup/components/test/hollow_cylinder/component.ts",
-                      "loc": 27
-                    }
-                  ]
-                },
-                {
-                  "name": "taper",
-                  "path": "src/volume_backup/components/test/taper",
-                  "children": [
-                    {
-                      "name": "component.ts",
-                      "path": "src/volume_backup/components/test/taper/component.ts",
-                      "loc": 29
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "name": "casing_joint_threaded.ts",
-              "path": "src/volume_backup/components/casing_joint_threaded.ts",
-              "loc": 77
-            },
-            {
-              "name": "extract_52.ts",
-              "path": "src/volume_backup/components/extract_52.ts",
-              "loc": 165
-            },
-            {
-              "name": "new_tube.ts",
-              "path": "src/volume_backup/components/new_tube.ts",
-              "loc": 16
-            },
-            {
-              "name": "tubing_joint_threaded.ts",
-              "path": "src/volume_backup/components/tubing_joint_threaded.ts",
-              "loc": 80
-            }
-          ]
-        },
-        {
-          "name": "primitives",
-          "path": "src/volume_backup/primitives",
-          "children": [
-            {
-              "name": "archive",
-              "path": "src/volume_backup/primitives/archive",
-              "children": [
-                {
-                  "name": "dp_newpin.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/dp_newpin.prim.ts",
-                  "loc": 21
-                },
-                {
-                  "name": "e_tube_test.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/e_tube_test.prim.ts",
-                  "loc": 22
-                },
-                {
-                  "name": "profile_extrude_v5.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/profile_extrude_v5.prim.ts",
-                  "loc": 87
-                },
-                {
-                  "name": "r_extrude.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/r_extrude.prim.ts",
-                  "loc": 49
-                },
-                {
-                  "name": "r_revolve.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/r_revolve.prim.ts",
-                  "loc": 34
-                },
-                {
-                  "name": "r_rotate.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/r_rotate.prim.ts",
-                  "loc": 50
-                },
-                {
-                  "name": "t_barrel_scoop.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_barrel_scoop.prim.ts",
-                  "loc": 8
-                },
-                {
-                  "name": "t_bolt_driven.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_bolt_driven.prim.ts",
-                  "loc": 21
-                },
-                {
-                  "name": "t_bolt_hexhead.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_bolt_hexhead.prim.ts",
-                  "loc": 9
-                },
-                {
-                  "name": "t_cup_knob.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_cup_knob.prim.ts",
-                  "loc": 8
-                },
-                {
-                  "name": "t_diamond_bore.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_diamond_bore.prim.ts",
-                  "loc": 8
-                },
-                {
-                  "name": "t_finial.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_finial.prim.ts",
-                  "loc": 9
-                },
-                {
-                  "name": "t_goblet_bored.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_goblet_bored.prim.ts",
-                  "loc": 8
-                },
-                {
-                  "name": "t_goblet_plus_cut.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_goblet_plus_cut.prim.ts",
-                  "loc": 12
-                },
-                {
-                  "name": "t_hex_countersink.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_hex_countersink.prim.ts",
-                  "loc": 9
-                },
-                {
-                  "name": "t_hex_nut.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_hex_nut.prim.ts",
-                  "loc": 8
-                },
-                {
-                  "name": "t_hex_revolve_pocket.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_hex_revolve_pocket.prim.ts",
-                  "loc": 9
-                },
-                {
-                  "name": "t_plus_boss.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_plus_boss.prim.ts",
-                  "loc": 8
-                },
-                {
-                  "name": "t_rounded_hex.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_rounded_hex.prim.ts",
-                  "loc": 9
-                },
-                {
-                  "name": "t_spinner.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_spinner.prim.ts",
-                  "loc": 9
-                },
-                {
-                  "name": "t_star_bore.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_star_bore.prim.ts",
-                  "loc": 8
-                },
-                {
-                  "name": "t_tee_slot.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_tee_slot.prim.ts",
-                  "loc": 8
-                },
-                {
-                  "name": "t_tube_hexcap.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_tube_hexcap.prim.ts",
-                  "loc": 8
-                },
-                {
-                  "name": "t_valve_port.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_valve_port.prim.ts",
-                  "loc": 18
-                },
-                {
-                  "name": "t_vase_clip.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/t_vase_clip.prim.ts",
-                  "loc": 8
-                },
-                {
-                  "name": "warp_along_spline.prim.ts",
-                  "path": "src/volume_backup/primitives/archive/warp_along_spline.prim.ts",
-                  "loc": 125
-                }
-              ]
-            },
-            {
-              "name": "basic",
-              "path": "src/volume_backup/primitives/basic",
-              "children": [
-                {
-                  "name": "dp_box.prim.ts",
-                  "path": "src/volume_backup/primitives/basic/dp_box.prim.ts",
-                  "loc": 19
-                },
-                {
-                  "name": "dp_pin.prim.ts",
-                  "path": "src/volume_backup/primitives/basic/dp_pin.prim.ts",
-                  "loc": 19
-                },
-                {
-                  "name": "r_ball.prim.ts",
-                  "path": "src/volume_backup/primitives/basic/r_ball.prim.ts",
-                  "loc": 26
-                },
-                {
-                  "name": "r_cone.prim.ts",
-                  "path": "src/volume_backup/primitives/basic/r_cone.prim.ts",
-                  "loc": 23
-                },
-                {
-                  "name": "r_cube_ball.prim.ts",
-                  "path": "src/volume_backup/primitives/basic/r_cube_ball.prim.ts",
-                  "loc": 24
-                },
-                {
-                  "name": "r_cube.prim.ts",
-                  "path": "src/volume_backup/primitives/basic/r_cube.prim.ts",
-                  "loc": 36
-                },
-                {
-                  "name": "r_cylinder.prim.ts",
-                  "path": "src/volume_backup/primitives/basic/r_cylinder.prim.ts",
-                  "loc": 38
-                },
-                {
-                  "name": "r_tapered_tube.prim.ts",
-                  "path": "src/volume_backup/primitives/basic/r_tapered_tube.prim.ts",
-                  "loc": 27
-                },
-                {
-                  "name": "r_thread_full.prim.ts",
-                  "path": "src/volume_backup/primitives/basic/r_thread_full.prim.ts",
-                  "loc": 148
-                },
-                {
-                  "name": "r_threads.prim.ts",
-                  "path": "src/volume_backup/primitives/basic/r_threads.prim.ts",
-                  "loc": 194
-                },
-                {
-                  "name": "r_tube.prim.ts",
-                  "path": "src/volume_backup/primitives/basic/r_tube.prim.ts",
-                  "loc": 25
-                }
-              ]
-            },
-            {
-              "name": "completions",
-              "path": "src/volume_backup/primitives/completions",
-              "children": [
-                {
-                  "name": "drill_pipe",
-                  "path": "src/volume_backup/primitives/completions/drill_pipe",
-                  "children": [
-                    {
-                      "name": "dp_pin_test.prim.ts",
-                      "path": "src/volume_backup/primitives/completions/drill_pipe/dp_pin_test.prim.ts",
-                      "loc": 30
-                    }
-                  ]
-                }
-              ]
-            },
-            {
-              "name": "profiles",
-              "path": "src/volume_backup/primitives/profiles",
-              "children": [
-                {
-                  "name": "barrel.prvl.ts",
-                  "path": "src/volume_backup/primitives/profiles/barrel.prvl.ts",
-                  "loc": 47
-                },
-                {
-                  "name": "cone.prvl.ts",
-                  "path": "src/volume_backup/primitives/profiles/cone.prvl.ts",
-                  "loc": 38
-                },
-                {
-                  "name": "cylinder.prvl.ts",
-                  "path": "src/volume_backup/primitives/profiles/cylinder.prvl.ts",
-                  "loc": 40
-                },
-                {
-                  "name": "dp_spec_box.prvl.ts",
-                  "path": "src/volume_backup/primitives/profiles/dp_spec_box.prvl.ts",
-                  "loc": 112
-                },
-                {
-                  "name": "dp_spec_pin.prvl.ts",
-                  "path": "src/volume_backup/primitives/profiles/dp_spec_pin.prvl.ts",
-                  "loc": 117
-                },
-                {
-                  "name": "drill_pipe_box.prvl.ts",
-                  "path": "src/volume_backup/primitives/profiles/drill_pipe_box.prvl.ts",
-                  "loc": 108
-                },
-                {
-                  "name": "tapered_tube.prvl.ts",
-                  "path": "src/volume_backup/primitives/profiles/tapered_tube.prvl.ts",
-                  "loc": 67
-                },
-                {
-                  "name": "tube.prvl.ts",
-                  "path": "src/volume_backup/primitives/profiles/tube.prvl.ts",
-                  "loc": 55
-                }
-              ]
-            }
-          ]
         }
       ]
     },

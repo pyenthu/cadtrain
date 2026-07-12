@@ -44,6 +44,8 @@ export const DOMAIN_CLASS_DIAGRAM = `classDiagram
   namespace SolidProducers {
     class CallNode { +string src; +string alias; +Map~ArgValue~ args }
     class MethodNode { +CsgOp op; +NodeId obj; +NodeId arg }
+    class PartsMapNode { +string src; +ArgValue list; +Map~ArgValue~ argMap }
+    class PartsTableNode { +string src; +string[] columns; +Row[] rows }
   }
 
   namespace ProfileProducers {
@@ -67,13 +69,12 @@ export const DOMAIN_CLASS_DIAGRAM = `classDiagram
     class RepeatNode { +NodeId[] children; +ArgValue count; +RepeatOp op; +string loopVar }
   }
 
-  namespace Appearance {
-    class MaterialNode { +string material; +string colorOuter; +number opacity }
+  namespace Modifiers {
+    class CutawayNode { +NodeId child; +ArgValue az; +ArgValue offset }
   }
 
-  namespace Uncategorized {
-    class CutawayNode { +NodeId id; +string type }
-    class PartsMapNode { +NodeId id; +string type }
+  namespace Appearance {
+    class MaterialNode { +string material; +string colorOuter; +number opacity }
   }
 
   ArgValue <|-- Literal
@@ -82,6 +83,8 @@ export const DOMAIN_CLASS_DIAGRAM = `classDiagram
 
   GraphNode <|-- CallNode
   GraphNode <|-- MethodNode
+  GraphNode <|-- PartsMapNode
+  GraphNode <|-- PartsTableNode
   GraphNode <|-- PolygonNode
   GraphNode <|-- PolyRepeatNode
   GraphNode <|-- SketchNode
@@ -94,9 +97,8 @@ export const DOMAIN_CLASS_DIAGRAM = `classDiagram
   GraphNode <|-- WarpNode
   GraphNode <|-- ContainerNode
   GraphNode <|-- RepeatNode
-  GraphNode <|-- MaterialNode
   GraphNode <|-- CutawayNode
-  GraphNode <|-- PartsMapNode
+  GraphNode <|-- MaterialNode
 
   Graph "1" o-- "*" GraphNode : nodes
   Graph "1" o-- "*" ParamSchema : params
