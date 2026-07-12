@@ -8,7 +8,7 @@ training / pipe / rules code it used to sit beside was archived 2026-06-01
 > `render-helpers`, `manifold-helpers`(+`-meta`), `manifold-mesh`, `warp-spline`,
 > `bake-{client,worker,worker-core}`, `mesh-serial` → `engines/manifold/`;
 > `graph-to-tf` → `engines/trueform/`; `brep-occt`/`brep-client` → `engines/brep/`.
-> This map lists only what STAYED in `cad/`.
+> This map lists only what STAYED here (dir renamed `cad/`→`graph/` 2026-07-12).
 
 **Manifold/render kernel gotchas → `../engines/manifold/CLAUDE.md`; engine layer → `../engines/CLAUDE.md`.**
 
@@ -33,8 +33,10 @@ src/lib/graph/
 ├── math-lib.ts              # math injected into profile-fn + sandbox
 ├── survey-to-xyz.ts         # deviation-survey (MD/inc/azi) → XYZ polyline for warp-along-spline
 ├── manifold-trap.ts         # guards a WASM Manifold trap so it can't poison later bakes (memory manifold_trap_poison)
+├── nodes/                   # node-kind descriptor registry (in-progress modularization of per-kind emit/validate/size): registry.ts (kindOf) + node-kind.ts + kinds/*.ts (call/container/cutaway/expr/material/method/mv/polygon/poly-repeat/repeat/rot/sketch/sketch-repeat/spline/stack/txfmn/warp/parts-map). Golden-tested (nodes/emit-golden.test.ts)
 ├── stdlib/                  # ACTIVE engine primitives (r_cuboid, r_loft, r_weld_extrude, r_revolve) — Rule 21
 │   └── stale/               # DEPRECATED engines (r_extrude — 0 consumers) — still resolvable (origin 'stdstale'); relocated 2026-06-28 from top-level stdstale/
+└── tests/                   # co-located unit tests — the 54 top-level specs grouped here 2026-07-12 (nodes/ + stdlib/ keep their own co-located tests)
 ```
 
 Archived (2026-06-01, in `archive/src/lib/cad/`): `exporter.ts` (SVG
