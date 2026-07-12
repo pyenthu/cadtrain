@@ -524,7 +524,11 @@
   let brepAc: AbortController | null = null;
   async function rebuildBrep(bust = false) {
     const cut = scene.showCutaway || undefined;
-    const body = JSON.stringify({ source: brepSource ?? source ?? '', paramValues: brepParams ?? {}, tolerance: effTol, cut });
+    // Send the part's colours so the server bakes the CUT half-section's
+    // outer/inner vertex colours from the real appearance instead of the legacy
+    // red/grey (#997) — the SAME colorOuter/colorInner the MF + GLB requests send
+    // above. Undefined ⇒ omitted ⇒ brep-occt falls back to red/grey (back-compat).
+    const body = JSON.stringify({ source: brepSource ?? source ?? '', paramValues: brepParams ?? {}, tolerance: effTol, cut, colorOuter, colorInner });
     const key = `brep:${body}`;
     const emit = (data: BrepPreviewResponse, cached: boolean) => {
       if (data.supported === false) {

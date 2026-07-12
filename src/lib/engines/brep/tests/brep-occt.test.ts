@@ -13,6 +13,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { bakeMF, bakeBREP, defaultParamObject } from '../brep-audit';
+import { revolveBrep } from '../brep-occt';
 import { hydrateGraph } from '$lib/graph/composition-graph-hydrate';
 import { emitGraph } from '$lib/graph/composition-emit';
 import sweepTubeDemo from '../../../../../tests/golden/graph/sweep_tube_demo.json';
@@ -145,5 +146,56 @@ export function t_place(p) {
     const { mfVol } = await assertParity('t_place', src);
     // 4³ + 3·1³ = 67 (disjoint boxes fused onto the cube).
     expect(mfVol).toBeGreaterThan(64);
+  });
+});
+
+// ── #997 — CUT half-section honours colorOuter / colorInner ──────────────────
+describe('brep-occt: cut half-section vertex colours (#997)', () => {
+  // A solid cylinder half-section: outer cylindrical wall → colorOuter; the two
+  // exposed cut planes (x=0, y=0) → colorInner. A quarter-cut revolve is the
+  // simplest solid that produces BOTH classes of face.
+  const cyl: [number, number][] = [[0.01, 0], [2, 0], [2, 6], [0.01, 6]];
+
+  // Does the flat colours array contain a vertex ≈ [r,g,b]?
+  const hasColour = (colors: number[] | undefined, rgb: [number, number, number], eps = 0.02): boolean => {
+    if (!colors) return false;
+    for (let i = 0; i + 2 < colors.length; i += 3) {
+      if (Math.abs(colors[i] - rgb[0]) < eps && Math.abs(colors[i + 1] - rgb[1]) < eps && Math.abs(colors[i + 2] - rgb[2]) < eps) return true;
+    }
+    return false;
+  };
+
+  const GREEN: [number, number, number] = [0, 1, 0];        // #00ff00 → colorOuter
+  const BLUE: [number, number, number] = [0, 0, 1];         // #0000ff → colorInner
+  const LEGACY_OUTER: [number, number, number] = [0.8, 0.06, 0.06];  // legacy red
+  const LEGACY_INNER: [number, number, number] = [0.45, 0.45, 0.45]; // legacy grey
+
+  it('explicit colorOuter/colorInner paint the outer + exposed-cut faces', async () => {
+    const mesh = await revolveBrep(cyl, { cut: true, colorOuter: '#00ff00', colorInner: '#0000ff' });
+    expect(mesh.cut, 'must be a cut half-section (per-vertex colours)').toBe(true);
+    expect(mesh.colors && mesh.colors.length, 'cut mesh must emit vertex colours').toBeGreaterThan(0);
+    // Outer skin → colorOuter (green); exposed cut planes / bore → colorInner (blue).
+    expect(hasColour(mesh.colors, GREEN), 'outer faces must use colorOuter (#00ff00)').toBe(true);
+    expect(hasColour(mesh.colors, BLUE), 'exposed cut faces must use colorInner (#0000ff)').toBe(true);
+    // The legacy red/grey must NOT appear — the overrides fully replaced them.
+    expect(hasColour(mesh.colors, LEGACY_OUTER), 'legacy red must be gone when colorOuter is set').toBe(false);
+    expect(hasColour(mesh.colors, LEGACY_INNER), 'legacy grey must be gone when colorInner is set').toBe(false);
+  });
+
+  it('omitting the colours falls back to the legacy red/grey (back-compat)', async () => {
+    const mesh = await revolveBrep(cyl, { cut: true });
+    expect(mesh.cut).toBe(true);
+    expect(hasColour(mesh.colors, LEGACY_OUTER), 'outer faces default to legacy red').toBe(true);
+    expect(hasColour(mesh.colors, LEGACY_INNER), 'cut/bore faces default to legacy grey').toBe(true);
+    // And no stray green/blue leaked in.
+    expect(hasColour(mesh.colors, GREEN)).toBe(false);
+    expect(hasColour(mesh.colors, BLUE)).toBe(false);
+  });
+
+  it('one-sided override: colorInner set, colorOuter omitted → inner custom, outer legacy red', async () => {
+    const mesh = await revolveBrep(cyl, { cut: true, colorInner: '#0000ff' });
+    expect(hasColour(mesh.colors, BLUE), 'inner uses the supplied colorInner').toBe(true);
+    expect(hasColour(mesh.colors, LEGACY_OUTER), 'outer still falls back to legacy red').toBe(true);
+    expect(hasColour(mesh.colors, LEGACY_INNER), 'inner legacy grey replaced by colorInner').toBe(false);
   });
 });

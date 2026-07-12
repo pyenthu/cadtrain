@@ -670,11 +670,12 @@
                shared scene path as MF/TF — PrimitiveDualScene's matPBR =
                materialPreset(material) + the colorOuter fallback arm — with no
                BREP-specific material. metalness/roughness/opacity apply to BOTH
-               the solid + cut arms; base colour applies to the solid arm. NB the
-               CUT half-section's outer-skin colour is baked server-side in
-               brep-occt (red/grey vertex colours) so colorInner is inert on this
-               client path. Smooth vertex normals are a separate concern handled in
-               brep-adapter via crease-normals (#993) — out of scope here. -->
+               the solid + cut arms; base colour applies to the solid arm. The
+               CUT half-section's outer/inner vertex colours are now baked
+               server-side from colorOuter/colorInner (rebuildBrep sends them →
+               brep-occt honours them, red/grey only as fallback — #997). Smooth
+               vertex normals are a separate concern handled in brep-adapter via
+               crease-normals (#993) — out of scope here. -->
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
             args={bake.args ?? paramDefaults}
             source={bake.source}
