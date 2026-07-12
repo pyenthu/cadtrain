@@ -1,15 +1,28 @@
-# `tests/` — vitest unit + Playwright e2e
+# `tests/` — Playwright e2e + golden fixtures
 
-Two layers, both gitignored from the production Docker image.
+This top-level `tests/` dir holds the **Playwright e2e** suite (below) and shared
+**golden fixtures** (`tests/golden/`). Gitignored from the production Docker image.
 
-## Unit tests — vitest (`bun test`)
+## Unit tests — vitest (`bun run test`, NOT `bun test`)
 
-- `src/lib/training/cache.test.ts` — JSONL round-trip, atomic write
-- `src/lib/training/phash.test.ts` — DCT correctness, Hamming distance
-- `src/lib/training/image_diff.test.ts` — SSIM + Sobel edge diff
-- `src/lib/training/retrieval.test.ts` — RAG ranking on synthetic primitives
-- `src/lib/graph/mesh-serial.test.ts` — { full, cutVC } JSON round-trip
-- `src/lib/authoring/compose.test.ts` — pre-existing module-resolution failure, unrelated to the product split
+**Convention (2026-07-12): unit tests live in a per-module `tests/` subdir**, beside
+the module they cover — NOT colocated in the same folder as source, and NOT in one
+central dir. Every `src/lib/**` (and route) module that has tests carries a `tests/`
+subfolder: `engines/brep/tests/`, `engines/manifold/tests/`, `engines/trueform/tests/`
+(+ `tf_examples/tests/`), `wells/tests/`, `server/tests/`, `graph/tests/`,
+`graph/nodes/tests/` (+ `nodes/kinds/tests/`), `shared/{graph-editor,viewer,svg,profiles}/tests/`,
+`routes/{wells,primitives,design}/tests/`. Rationale: source/test separation without
+divorcing a test from its subject — a test reaches its subject via `../<file>` (one
+level up) or the `$lib` alias. When adding a test, drop it in the module's `tests/`
+dir; relative imports to source get one extra `../`. Vitest globs
+`**/*.{test,spec}.ts`, so the subdirs are discovered automatically. Suite: **137 files
+/ 1459 tests, green**.
+
+**Exception — `graph/`:** as `src/lib/graph/` is modularized into abstraction
+subfolders (`sketch/` `sweep/` `survey/` `wire/` `spline/` `profile/` `expr/` …, #995),
+its unit tests consolidate into a **single `graph/tests/`** for the whole module — one
+test folder, NOT a `tests/` per abstraction subfolder (avoids a sprawl of tiny dirs).
+The current `graph/nodes*/tests/` + `graph/stdlib/tests/` fold in then.
 
 ## End-to-end — Playwright (`bun run test:e2e`)
 
