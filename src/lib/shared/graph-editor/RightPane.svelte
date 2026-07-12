@@ -661,13 +661,23 @@
     <div class="ge-glb-body" class:hidden={rightTab !== 'brep'}>
       {#if rightTab === 'brep' && (active ?? true)}
         {#if PrimitiveDualCanvas && bake && typeof bake === 'object' && bake.source}
+          <!-- Forward part APPEARANCE (base colour · MATL metalness/roughness ·
+               opacity + transparent) so the BREP mesh shades through the SAME
+               shared scene path as MF/TF — PrimitiveDualScene's matPBR =
+               materialPreset(material) + the colorOuter fallback arm — with no
+               BREP-specific material. metalness/roughness/opacity apply to BOTH
+               the solid + cut arms; base colour applies to the solid arm. NB the
+               CUT half-section's outer-skin colour is baked server-side in
+               brep-occt (red/grey vertex colours) so colorInner is inert on this
+               client path. Smooth vertex normals are a separate concern handled in
+               brep-adapter via crease-normals (#993) — out of scope here. -->
           <PrimitiveDualCanvas id={exemplarId} name={exemplarId} description=""
             args={bake.args ?? paramDefaults}
             source={bake.source}
             backend="brep"
             brepSource={bake.source}
             brepParams={brepParamValues}
-            opacity={graph.opacity} texture={graph.texture}
+            colorOuter={graph.colorOuter} colorInner={graph.colorInner} opacity={graph.opacity} texture={graph.texture} material={graph.material}
             viewZScale={graph.viewZScale} viewXScale={graph.viewXScale}
             onBakeMeta={(m) => (brepMeta = m)}
             autoScaleOwner={active && rightTab === 'brep'}
