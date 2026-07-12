@@ -126,7 +126,8 @@ src/
 │                        # research/, volume/, plan/, api/  (+layout: NavMenu top-right, pins #app height)
 └── lib/
     ├── shared/          # GraphEditorPane, PrimitiveView, canvases, FloatingPanel, …
-    ├── cad/             # composition-graph/emit/layout/bake, manifold-helpers, stdlib/ (+ stale/)
+    ├── cad/             # composition-graph/emit/layout/bake, sketch, stdlib/ (+ stale/)  (see cad/CLAUDE.md)
+    ├── engines/         # geometry KERNELS carved out of cad/+shared/ (E1 2026-07-12): manifold/ · trueform/ · brep/ (see engines/CLAUDE.md)
     ├── server/          # volume.ts, primitive-paths.ts, primitive-loader.ts, stdlib.ts,
     │                    # bake-cache.ts, rag-corpus.ts, …
     ├── authoring/       # vocabulary → source translators
@@ -149,7 +150,6 @@ Dockerfile + docker-entrypoint.sh + railway.toml
 
 ## Things to know / avoid
 
-- **Never** adapter-static; **never** Python in the production container.
 - **Restart `bun run dev` after editing server modules or large components** — Vite HMR silently skips them; stale dev server = stale geometry, no error (memory `feedback_build_restart_after_significant_change`). **Specific tell:** a `400` from `/api/primitives/preview` on EVERY part — `r_cuboid` → "memory access out of bounds (WASM Manifold core)", others → garbage args — is a corrupted local WASM singleton, NOT bad part data or prod. Note `/preview` + `bake-preview` + `profiles/resolve` are the ONE part of the API that runs **locally** (excluded from `VOLUME_PROXY_PATHS`); `source`/`save`/`list` proxy to the Railway server. So a preview-bake crash is always local → restart `:3333` cleanly from the terminal (NOT the in-app restart button — it wedges the server, memory `source_404_flood_2026-06-13`). Verify prod is fine: `curl -s https://cadtrain.up.railway.app/api/primitives/source?name=g_shaft`.
 - Deleting a dir without removing its Dockerfile `COPY` → Railway silently serves a stale image (memory `dockerfile_stale_copy_freezes_deploy`).
 - Node < 22.12 is too old for Vite 8 — use `bun --bun run vite dev` or newer Node.
