@@ -22,6 +22,9 @@
   // the baked Manifold mesh.
   import { graphToTf } from '$lib/engines/trueform/graph-to-tf';
   import { recipeHasUnsupported as recipeHasUnsupportedLocal, tfServerKey, tfRecipePending as computeTfRecipePending } from './tf-recipe-timing';
+  // Pure MF_CLIENT bake-badge timing math (#987) — sum the worker's per-phase
+  // timings; unit-tested in tests/bake-badge.test.ts.
+  import { sumBakeTimings, type ClientBakeMeta } from './bake-badge';
 
   type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'tf' | 'mfserver';
 
@@ -269,7 +272,7 @@
   // (validateGraphBake), whose only timing is `fetch_total` — which the badge
   // excluded — so it always summed to `fresh · 0 ms`. This carries the actual
   // compile + worker-bake cost from PrimitiveDualCanvas.
-  let clientBakeMeta = $state<{ cached: boolean; compileMs: number; bakeMs: number; phases?: { build?: number; mesh?: number; cutaway?: number; finalize?: number; serialize?: number } } | null>(null);
+  let clientBakeMeta = $state<ClientBakeMeta | null>(null);
   // SVG resolution: 'coarse' (32 segments, DEFAULT — a vector drawing doesn't
   // need 256-facet circles; ~an order of magnitude lighter so it renders fast +
   // stays under the high-poly warning) vs 'high' (full 256). Toggle lives in the
@@ -495,8 +498,9 @@
               </span>
             {:else}
               {@const ph = cm.phases}
+              {@const phaseSum = sumBakeTimings(ph)}
               <span class="ge-cache-badge fresh"
-                title={`fresh worker bake (scriptHash ${bakeMeta.cacheHash ?? '?'}). compile ${Math.round(cm.compileMs)} ms · bake+transfer ${Math.round(cm.bakeMs)} ms${ph ? ` · [build ${Math.round(ph.build ?? 0)} · mesh ${Math.round(ph.mesh ?? 0)} · cut ${Math.round(ph.cutaway ?? 0)} · serialize ${Math.round(ph.serialize ?? 0)}]` : ''}`}>
+                title={`fresh worker bake (scriptHash ${bakeMeta.cacheHash ?? '?'}). compile ${Math.round(cm.compileMs)} ms · bake+transfer ${Math.round(cm.bakeMs)} ms${ph ? ` · phases ${Math.round(phaseSum)} ms [build ${Math.round(ph.build ?? 0)} · mesh ${Math.round(ph.mesh ?? 0)} · cut ${Math.round(ph.cutaway ?? 0)} · finalize ${Math.round(ph.finalize ?? 0)} · serialize ${Math.round(ph.serialize ?? 0)}]` : ''}`}>
                 fresh · ⚙ {Math.round(cm.compileMs)} · 🔨 {Math.round(cm.bakeMs)} ms
               </span>
             {/if}
