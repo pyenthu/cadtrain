@@ -84,6 +84,13 @@ export type TfInstr =
   // intermediate rings, `segments` = perimeter resample. The native analogue of
   // Manifold's CrossSection.extrude — unlocks g_cube/g_spiral/g_star/g_barrel.
   | { op: 'weld_extrude'; profile: ProfilePt[]; length: number; divs: number; twist: number; scaleTop: [number, number]; segments: number; note?: string }
+  // LOFT (r_loft → tfLoftProfile). A 2D section swept down +Z while SCALED by a
+  // smooth SHAPE-ALONG-LENGTH curve (barrel/waist/flare/ogive/scurve) plus a
+  // linear twist — the fat-middle / necked-waist class r_weld_extrude's monotonic
+  // top-scale CANNOT make. `divs` axial rings sample the smooth curve; `segments`
+  // resamples the perimeter. The native analogue of Manifold's r_loft gridPatch
+  // build + BREP's ThruSections loft — unlocks barrel/waist/flare/ogive/scurve.
+  | { op: 'loft'; profile: ProfilePt[]; length: number; divs: number; twist: number; bulge: number; shape: string; segments: number; note?: string }
   | { op: 'box'; w: number; h: number; d: number }
   | { op: 'cylinder'; radius: number; height: number; segments: number }
   | { op: 'sweep'; path: Vec3[]; radius: number; radialSegments: number; capped?: boolean }
@@ -580,11 +587,12 @@ function sectionLoopOf(spline: SplineNode | null): ProfilePt[] | null {
 
 // ─── engine vs composite classification ──────────────────────────────────────
 
-/** Engine `src` ids that have NO TrueForm generator (loft / the STALE plain
- *  extrude) — a Call to one is explicitly UNSUPPORTED (never treated as a
- *  composite). `r_weld_extrude` is NOT here — it now lowers to `weld_extrude`
- *  (tfExtrudeProfile). */
-const NO_TF_ENGINES = new Set(['r_loft', 'r_extrude']);
+/** Engine `src` ids that have NO TrueForm generator (only the STALE plain
+ *  extrude now) — a Call to one is explicitly UNSUPPORTED (never treated as a
+ *  composite). `r_weld_extrude` is NOT here — it lowers to `weld_extrude`
+ *  (tfExtrudeProfile); `r_loft` is NOT here either — it now lowers to `loft`
+ *  (tfLoftProfile). */
+const NO_TF_ENGINES = new Set(['r_extrude']);
 
 /** True when a Call `src` is an ENGINE primitive (handled directly, or explicitly
  *  UNSUPPORTED) rather than a COMPOSITE volume part. Everything NOT an engine is a
@@ -594,6 +602,7 @@ export function isEngineSrc(src: string): boolean {
   return (
     src === 'r_revolve' ||
     src === 'r_weld_extrude' ||
+    src === 'r_loft' ||
     src === 'r_cuboid' ||
     src === 'r_sweep' ||
     /cyl/i.test(src) ||
@@ -755,6 +764,47 @@ function lowerNode(
           segments,
         };
       }
+      if (src === 'r_loft') {
+        // A 2D section swept down +Z while scaled by a smooth shape-along-length
+        // curve (barrel/waist/flare/ogive/scurve) + linear twist. Args mirror
+        // r_loft's signature: profile · length · divs · twist° · bulge · shape ·
+        // segments (r_loft.ts is the source of truth). The section polygon comes
+        // from the SAME __POLY__ sketch/polygon resolver revolve/weld_extrude use;
+        // a literal profile descriptor / bare call falls back to the engine default
+        // ngon — both resolved by the shared, pure profile-preset registry.
+        let profile = resolveProfileArg(args.profile, graph, scope, notes);
+        if (!profile || profile.length < 3) {
+          try {
+            const lit = args.profile && args.profile.kind === 'literal' ? (args.profile as any).value : undefined;
+            if (lit && typeof lit === 'object') profile = resolveProfile(lit) as ProfilePt[];
+            else if (!args.profile) profile = resolveProfile({ kind: 'ngon', params: { n: 24, r: 0.8 } }) as ProfilePt[];
+          } catch { /* leave profile unresolved → UNSUPPORTED below */ }
+        }
+        const length = evalArg(args.length, scope);
+        const divs = evalInt(args.divs, scope, 48);
+        const twist = evalArg(args.twist, scope);
+        const bulge = evalArg(args.bulge, scope);
+        const segments = evalInt(args.segments, scope, 48);
+        // `shape` is a STRING enum literal ('barrel'|…) — read the raw literal
+        // value (evalArg would coerce it to NaN); default 'barrel' (r_loft's).
+        const shapeArg = args.shape;
+        const shape = (shapeArg && shapeArg.kind === 'literal' && typeof (shapeArg as any).value === 'string')
+          ? String((shapeArg as any).value) : 'barrel';
+        if (!profile || profile.length < 3 || !Number.isFinite(length)) {
+          notes.push(`call ${node.id} (r_loft): profile arg was not a resolvable __POLY__/preset section (need ≥ 3 pts) — UNSUPPORTED`);
+          return { op: 'UNSUPPORTED', nodeType: 'call:r_loft', detail: 'section not resolvable' };
+        }
+        return {
+          op: 'loft',
+          profile,
+          length,
+          divs,
+          twist: Number.isFinite(twist) ? twist : 0,
+          bulge: Number.isFinite(bulge) ? bulge : 0,
+          shape,
+          segments,
+        };
+      }
       if (src === 'r_cuboid') {
         return {
           op: 'box',
@@ -825,9 +875,10 @@ function lowerNode(
         return { op: 'cylinder', radius, height, segments };
       }
       if (NO_TF_ENGINES.has(src)) {
-        // r_weld_extrude / r_loft / r_extrude — TrueForm has no linear extrude /
-        // profile-loft (see trueform-api-notes.md § ⛔). Flag it.
-        notes.push(`call ${node.id}: engine '${src}' has no TrueForm equivalent (no extrude/loft in tf) — UNSUPPORTED`);
+        // r_extrude (STALE) — TrueForm has no plain linear extrude generator (see
+        // trueform-api-notes.md § ⛔). r_weld_extrude → weld_extrude and r_loft →
+        // loft are handled above; only the stale extrude remains UNSUPPORTED.
+        notes.push(`call ${node.id}: engine '${src}' has no TrueForm equivalent (no plain extrude in tf) — UNSUPPORTED`);
         return { op: 'UNSUPPORTED', nodeType: `call:${src}`, detail: 'no TF generator for this engine' };
       }
       // Not an engine → a COMPOSITE volume part. Resolve its own graph (via the
@@ -1265,6 +1316,9 @@ function fmtInstr(inst: TfInstr, indent: number): string {
         `${pad}  profile = ${fmtProfile(inst.profile)}`;
     case 'weld_extrude':
       return `${pad}tfExtrudeProfile(length=${fmtNum(inst.length)}, twist=${fmtNum(inst.twist)}°, scaleTop=[${fmtNum(inst.scaleTop[0])}, ${fmtNum(inst.scaleTop[1])}], divs=${inst.divs}, segments=${inst.segments})\n` +
+        `${pad}  section = ${fmtProfile(inst.profile)}`;
+    case 'loft':
+      return `${pad}tfLoftProfile(length=${fmtNum(inst.length)}, shape=${inst.shape}, bulge=${fmtNum(inst.bulge)}, twist=${fmtNum(inst.twist)}°, divs=${inst.divs}, segments=${inst.segments})\n` +
         `${pad}  section = ${fmtProfile(inst.profile)}`;
     case 'box':
       return `${pad}boxMesh(w=${fmtNum(inst.w)}, h=${fmtNum(inst.h)}, d=${fmtNum(inst.d)})`;
