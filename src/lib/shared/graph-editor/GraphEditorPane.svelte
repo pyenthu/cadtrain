@@ -76,6 +76,7 @@
     addWarpPlaceholder,
     addCutawayPlaceholder,
     addPartsMap,
+    addPartsTable,
     addMaterialNode,
     updateMaterialNode,
     resolveEffectiveAppearance,
@@ -1708,6 +1709,9 @@
     const srcs = new Set<string>();
     for (const n of Object.values(graph.nodes)) {
       if (n.type === 'call') srcs.add(n.src);
+      // a parts_table's `src` template drives its COLUMN picker (the template's
+      // meta.params) → fetch its params like a Call's (#38b).
+      else if (n.type === 'parts_table' && n.src) srcs.add(n.src);
     }
     for (const src of srcs) loadExpectedParamsFor(src);
   });
@@ -1819,6 +1823,12 @@
    *  once per row of a list<record> param. Set src + rows + arg→field mappings on
    *  the card; wire its list<geometry> output into a Stack / Output. */
   function dropPartsMap() { closePicker(); graph = addPartsMap(graph).graph; }
+  /** Drop a `parts_table` PRODUCER (#38b) — ONE node, N ROWS of the SAME template
+   *  part (`src`). Columns = the template's params; each row is an independent set
+   *  of per-column values that instantiates its own part instance. The rows render
+   *  SEPARATE (no fusion); leave the node unconsumed to render all rows at the root,
+   *  or wire its aggregate output into a Stack. */
+  function dropPartsTable() { closePicker(); graph = addPartsTable(graph).graph; }
 
   /** Drop a MATERIAL node (G-MAT-CARD) — a floating appearance bundle. Wire its
    *  output into a part's material socket to assign colour/texture/opacity,
@@ -3393,6 +3403,10 @@
         <!-- parts_map: a list<record> param → N part instances (#38 Phase 3). -->
         <button class="ge-pick-item" type="button" onclick={() => { dropPartsMap(); submenuKey = null; }}>
           <span class="ge-pick-icon">⧉</span><span class="ge-pick-name">parts_map</span><span class="ge-pick-hint">list→N parts</span>
+        </button>
+        <!-- parts_table: N inline rows of ONE template part → N instances (#38b). -->
+        <button class="ge-pick-item" type="button" onclick={() => { dropPartsTable(); submenuKey = null; }}>
+          <span class="ge-pick-icon">▤</span><span class="ge-pick-name">parts_table</span><span class="ge-pick-hint">N rows → N parts</span>
         </button>
       </div>
     {/if}

@@ -53,6 +53,12 @@
     addPartsMapArg,
     removePartsMapArg,
     setPartsMapOp,
+    setPartsTableSrc,
+    setPartsTableColumns,
+    addPartsTableRow,
+    duplicatePartsTableRow,
+    removePartsTableRow,
+    setPartsTableCell,
     asLiteral,
     STACK_REF_PARAM,
     type Graph,
@@ -96,6 +102,8 @@
     return { color: structColor(t), label: structLabel(t), isList: t?.kind === 'list' };
   }
   import SketchNodeCard from './SketchNodeCard.svelte';
+  import PartsTableCard from './PartsTableCard.svelte';
+  import { partsTableRowVar } from '$lib/graph/nodes/kinds/parts-table';
   import { DeleteConfirm } from './delete-confirm.svelte';
   import type Popovers from './Popovers.svelte';
   import type { SketchState } from './sketch-state.svelte';
@@ -1835,6 +1843,51 @@
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
                   data-tip="the N part instances (list<geometry>) — wire into a Stack / Output"
                   onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
+              {:else if n.type === 'parts_table'}
+                {@const pt = n as any}
+                <!-- parts_table (#38b) — ONE node, N inline ROWS of the SAME template
+                     part (`src`). Columns = the template's params; each row an
+                     independent instance. Rows render SEPARATE (list producer) — leave
+                     the node unconsumed to render every row at the root, or wire the
+                     aggregate output into a Stack. The table body is the decoupled
+                     PartsTableCard; the top strip is the SVG drag handle + delete. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg parts-table"
+                  width={size.w} height={size.h} rx="6"
+                  data-tip="parts_table: N rows of ONE template part. Set the part id, add columns (its params), then add/edit rows — each row bakes as its own instance."
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <text x="12" y="20" class="ge-node-title">▤ parts_table</text>
+                <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <text role="button" tabindex="-1" x={size.w - 18} y="20" class="ge-node-x"
+                  class:armed={del.isArmed(n.id)}
+                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
+                <foreignObject x="6" y="32" width={size.w - 12} height={size.h - 40}>
+                  <div class="ge-pt-host" xmlns="http://www.w3.org/1999/xhtml">
+                    <PartsTableCard
+                      node={pt}
+                      paramNames={expected.params[pt.src] ?? []}
+                      onSrc={(src) => setGraph(setPartsTableSrc(graph, n.id, src))}
+                      onColumns={(cols) => setGraph(setPartsTableColumns(graph, n.id, cols))}
+                      onAddRow={() => setGraph(addPartsTableRow(graph, n.id))}
+                      onDuplicateRow={(i) => setGraph(duplicatePartsTableRow(graph, n.id, i))}
+                      onRemoveRow={(i) => setGraph(removePartsTableRow(graph, n.id, i))}
+                      onCell={(i, col, val) => setGraph(setPartsTableCell(graph, n.id, i, col, val))}
+                      onRowSocketDown={(_i, ev) => wire.startWire(ev, n.id)}
+                    />
+                  </div>
+                </foreignObject>
+                <!-- OUTPUT — RIGHT edge; the aggregate list<geometry> of every row.
+                     (Per-row individual wiring into geometry inputs needs row-as-node
+                     modeling — the deferred "mixing/matching" work; for now every ◇
+                     starts this same table-level wire.) -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
+                  data-tip="the N row instances (list<geometry>) — wire into a Stack / Output, or leave unconsumed to render at the root"
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
               {/if}
               <!-- ─── Bottom-right corner resize grip ─────────────────────
                    Diagonal handle in the card's bottom-right corner —
@@ -1920,6 +1973,10 @@
   .ge-cut-fld .ge-arg-input { width: 40px; }
   /* parts_map card (#38 Phase 3) — violet, matching the data-driven / list family. */
   .ge-node-bg.parts-map { fill: #f5f3ff; stroke: #6d28d9; stroke-width: 2; }
+  /* parts_table card (#38b) — same violet family; the body is the decoupled
+     PartsTableCard, hosted in a foreignObject that fills the node below the title. */
+  .ge-node-bg.parts-table { fill: #f6f1fe; stroke: #7c3aed; stroke-width: 2; }
+  .ge-pt-host { width: 100%; height: 100%; overflow: auto; }
   .ge-pm { display: flex; flex-direction: column; gap: 3px; font: 10px Arial; overflow: auto; height: 100%; }
   .ge-pm-row { display: flex; align-items: center; gap: 4px; }
   .ge-pm-row > span { width: 30px; color: #6d28d9; font-weight: 600; flex: none; }
