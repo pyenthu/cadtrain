@@ -59,7 +59,7 @@
     type NodeId,
   } from '$lib/cad/composition-graph';
   import { dragNumber } from '$lib/shared/ui/dragNumber';
-  import { PROFILE_REGISTRY } from '$lib/shared/profile-presets';
+  import { PROFILE_REGISTRY } from '$lib/shared/profiles/profile-presets';
   import {
     extractParamRefs,
     polySockR, polySockZ, polySockRef,

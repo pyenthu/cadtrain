@@ -25,7 +25,7 @@
  * revolveProfile / weldAndBuild by name (see primitive-loader.ts +
  * primitive-sandbox.ts), so the function executes identically to a volume part.
  */
-import { resolveProfile } from '$lib/shared/profile-presets';
+import { resolveProfile } from '$lib/shared/profiles/profile-presets';
 import { revolveProfile, weldAndBuild } from '$lib/engines/manifold/manifold-mesh';
 
 export const meta = {

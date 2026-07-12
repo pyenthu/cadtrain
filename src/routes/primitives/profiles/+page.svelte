@@ -9,9 +9,9 @@
    * endpoints, just more screen.
    */
   import { onMount } from 'svelte';
-  import ProfileFnEditor from '$lib/shared/ProfileFnEditor.svelte';
-  import ProfilePalette, { type VolProfile } from '$lib/shared/ProfilePalette.svelte';
-  import { PROFILE_REGISTRY } from '$lib/shared/profile-presets';
+  import ProfileFnEditor from '$lib/shared/profiles/ProfileFnEditor.svelte';
+  import ProfilePalette, { type VolProfile } from '$lib/shared/profiles/ProfilePalette.svelte';
+  import { PROFILE_REGISTRY } from '$lib/shared/profiles/profile-presets';
 
   let set = $state<'revolve' | 'cartesian'>('revolve');
   let volume = $state<VolProfile[]>([]);

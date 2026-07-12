@@ -42,7 +42,7 @@ import type {
   SplineNode,
 } from './composition-graph-types';
 import { STACK_REF_PARAM, resolveEffectiveAppearance } from '$lib/cad/composition-graph-mutate';
-import { resolveProfile } from '$lib/shared/profile-presets';
+import { resolveProfile } from '$lib/shared/profiles/profile-presets';
 import * as mathLib from '$lib/cad/math-lib';
 
 // The bare math names (cos/sin/tau/pi/lerp/…) the profile + poly_repeat sandboxes

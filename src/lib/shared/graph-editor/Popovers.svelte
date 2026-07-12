@@ -38,7 +38,7 @@
     type Graph,
     type NodeId,
   } from '$lib/cad/composition-graph';
-  import { PROFILE_REGISTRY, defaultsFor, type ProfileDef } from '$lib/shared/profile-presets';
+  import { PROFILE_REGISTRY, defaultsFor, type ProfileDef } from '$lib/shared/profiles/profile-presets';
   import { profileProducers, producerLabel, kindsForSet } from './args';
 
   let {

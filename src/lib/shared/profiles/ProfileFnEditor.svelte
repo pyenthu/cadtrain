@@ -13,8 +13,8 @@
    * path) and a fixed RIGHT (actions + preview).
    */
   import type { Pt } from './profile-presets';
-  import { dragNumber } from './ui/dragNumber';
-  import { tipHost } from './ui/floating-tip';
+  import { dragNumber } from '../ui/dragNumber';
+  import { tipHost } from '../ui/floating-tip';
   import ProfileFn3DCanvas from './ProfileFn3DCanvas.svelte';
   // PURE round-trip logic (modularize R9 — extracted to a tested module).
   import {

@@ -11,7 +11,7 @@
  * realm (same posture as component-loader.ts) + import-strip + denylist.
  */
 import { transformSync } from 'esbuild';
-import { pen } from '$lib/shared/profile-presets';
+import { pen } from '$lib/shared/profiles/profile-presets';
 import { evalMetaLiteral, metaLiteralRange } from '$lib/server/primitives-meta';
 import * as mathLib from '$lib/cad/math-lib';
 

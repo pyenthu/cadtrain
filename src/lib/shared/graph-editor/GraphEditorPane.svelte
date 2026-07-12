@@ -203,7 +203,7 @@
     extractGraphFromSource, extractDrawingMdFromSource,
     expected, ingestMeta, loadExpectedParamsFor, isCallDrifted, refreshCallArgs,
   } from './graph-editor-bake.svelte';
-  import { PROFILE_REGISTRY } from '$lib/shared/profile-presets';
+  import { PROFILE_REGISTRY } from '$lib/shared/profiles/profile-presets';
   import {
     argStr, argFrom, argToDraftStr, evalArg, sketchParamScope,
     producerLabel, parseProfileExpr,

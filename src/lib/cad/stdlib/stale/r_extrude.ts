@@ -37,7 +37,7 @@
  * RUNTIME the sandbox strips imports and injects resolveProfile + G (the
  * Manifold wasm bridge) by name (primitive-loader.ts + primitive-sandbox.ts).
  */
-import { resolveProfile } from '$lib/shared/profile-presets';
+import { resolveProfile } from '$lib/shared/profiles/profile-presets';
 
 // Injected by the primitive sandbox; declared only so this module type-checks
 // in src (the `declare` is stripped at transpile — the sandbox binds the real G).

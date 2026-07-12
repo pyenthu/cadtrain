@@ -33,7 +33,7 @@
  * below give real type-checking; at runtime the sandbox strips them and injects
  * `gridPatch` / `weldAndBuild` / `resample` / `resolveProfile` by name.
  */
-import { resolveProfile } from '$lib/shared/profile-presets';
+import { resolveProfile } from '$lib/shared/profiles/profile-presets';
 import { resample } from '$lib/cad/csg-2d';
 import { gridPatch, weldAndBuild, type Patch } from '$lib/engines/manifold/manifold-mesh';
 

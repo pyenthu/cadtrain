@@ -19,7 +19,7 @@ import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, sweepAnnular, boredSweep, loftStations } from '$lib/engines/manifold/manifold-mesh';
 import { resampleSpline } from './spline-resample';
 import { surveyToXYZ } from './survey-to-xyz';
-import { resolveProfile } from '$lib/shared/profile-presets';
+import { resolveProfile } from '$lib/shared/profiles/profile-presets';
 import { warpManifoldAlongSpline } from '$lib/engines/manifold/warp-spline';
 import { cs, extrude_csg, ext, resample } from './csg-2d';
 import { compileSketch } from './sketch';
