@@ -191,6 +191,26 @@ export function warpValidity(m: any, genusBefore?: number): { volume: number; ge
 
 // ── warp ──────────────────────────────────────────────────────────────────────
 
+/** Largest |Δz| over every triangle edge of a Manifold. A small value means the
+ *  walls are already finely sampled along Z (a revolve / welded half-section), so
+ *  `refine` before a warp would only bloat — used to gate the adaptive skip. */
+function maxAxialEdgeSpan(m: any): number {
+  const mesh = m.getMesh();
+  const vp = mesh.vertProperties as Float32Array;
+  const tv = mesh.triVerts as Uint32Array;
+  const np = mesh.numProp ?? 3;
+  const z = (i: number) => vp[i * np + 2];
+  let max = 0;
+  for (let t = 0; t < tv.length; t += 3) {
+    const a = tv[t], b = tv[t + 1], c = tv[t + 2];
+    const d0 = Math.abs(z(a) - z(b)), d1 = Math.abs(z(b) - z(c)), d2 = Math.abs(z(c) - z(a));
+    if (d0 > max) max = d0;
+    if (d1 > max) max = d1;
+    if (d2 > max) max = d2;
+  }
+  return max;
+}
+
 /**
  * Bend a built Manifold so its z-extent follows the spline. Each vertex's z
  * maps to an arc-length station; its (x, y) become offsets on the local frame
@@ -226,12 +246,22 @@ export function warpManifoldAlongSpline(
   let mm = m;
   let refN = Math.max(0, Math.floor(opts.refine ?? 0));
   // Adaptive subdivision: refine ONLY exists to bend flat walls as arcs rather
-  // than chords. An already-dense mesh (threads, revolves) bends smoothly as-is,
-  // and refine(n) = n²× its (already large) triangle count would be very slow —
-  // plus the downstream cutaway CSG balloons. So skip refine when the mesh is
-  // already dense; keep it for sparse flat-walled parts (blocks, L-brackets).
+  // than chords. An already-dense mesh (threads, revolves, welded half-sections)
+  // bends smoothly as-is, and refine(n) = n²× its triangle count would be very
+  // slow — plus the downstream cutaway CSG balloons. So skip refine when the mesh
+  // is already dense; keep it for sparse flat-walled parts (blocks, L-brackets).
+  //
+  // The proxy is the mesh's largest AXIAL edge span, not its triangle count: a
+  // clean welded half-section (the Track A sectionCut rebuild) carries fine z-rings
+  // yet only ~1000 tris, so the old `numTri > 1200` gate misfired and let
+  // `refine(40)` explode it ~1600× (→ the WASM heap trap). If no triangle edge
+  // spans more than a fraction of the part's z-extent, the walls are already
+  // finely sampled → refine is a no-op-but-catastrophic → skip it.
   if (refN > 1) {
-    try { if ((mm.numTri?.() ?? 0) > 1200) refN = 0; } catch { /* keep refN */ }
+    try {
+      const dense = (mm.numTri?.() ?? 0) > 1200 || maxAxialEdgeSpan(mm) <= zLen / 8;
+      if (dense) refN = 0;
+    } catch { /* keep refN */ }
   }
   if (refN > 1) { try { mm = mm.refine(refN); } catch { /* leave un-refined */ } }
 

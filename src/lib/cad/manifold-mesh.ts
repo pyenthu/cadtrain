@@ -169,7 +169,11 @@ export function subdivideProfileAxial(
  * this 2026-05-20: a normal-based check passed while the solids were
  * inverted; the volume sign caught it.)
  */
-export function revolveProfile(profile: [number, number][], segments: number): Patch {
+export function revolveProfile(
+  profile: [number, number][],
+  segments: number,
+  arc?: { startDeg: number; sweepDeg: number } | null,
+): Patch {
   // BUILD-TIME axial densification (Rule 25): insert collinear interior points
   // along long-Z edges so a later Manifold.warp bends the side walls as a smooth
   // sine, not faceted chords. Geometrically identical (points on the straight
@@ -180,6 +184,22 @@ export function revolveProfile(profile: [number, number][], segments: number): P
   // so the pane "seg" + draft-seg actually coarsen welded revolves.
   let segN = Math.max(3, Math.floor(segments));
   if (_circSegCap != null) segN = Math.max(3, Math.min(segN, _circSegCap));
+
+  // ── ANGULAR-SPAN (arc) MODE — the half-section builder (Track A fix) ─────────
+  // When `arc` is supplied with a sweep < 360°, revolve the profile through ONLY
+  // the retained arc [startDeg, startDeg+sweepDeg] and emit the two FLAT RADIAL
+  // cap faces at build time (the revolve analog of the annular/bore cap). This
+  // replaces `sectionCut`'s full-revolve → subtract(wedge) → refine, whose 3D
+  // boolean SHREDS the planar cut faces into hundreds of slivers + full-height
+  // spanning triangles (5188 tris/357 slivers on w_deviated_casing → ~1088/0
+  // here). The caps reuse the SAME (r,z) profile verts as the wall end-rings, so
+  // weldAndBuild stitches everything into one watertight half-section — no
+  // boolean, no post-hoc mesh surgery. See sectionCut() in manifold-helpers.ts.
+  const sweep = arc ? Number(arc.sweepDeg) : 360;
+  if (arc && sweep > 0 && sweep < 360) {
+    return revolveArcPatch(prof, segN, Number(arc.startDeg), sweep);
+  }
+
   const dT = (2 * Math.PI) / segN;
   const EPS = 1e-9;
   const verts: number[] = [];
@@ -212,6 +232,110 @@ export function revolveProfile(profile: [number, number][], segments: number): P
       }
     }
   }
+  return { verts: new Float32Array(verts), tris: new Uint32Array(tris) };
+}
+
+/**
+ * Split a CLOSED lathe profile loop (already densified) into its two z-monotone
+ * radial columns — the ascending (`up`) and descending (`down`) walls, joined by
+ * the flat top/bottom cap edges. Returns both columns in ASCENDING-z order.
+ * Returns null when the loop is not a simple up-then-down lathe silhouette (a
+ * groove / re-entrant profile), so the caller falls back to earClip2D.
+ */
+function splitLatheColumns(loop: [number, number][]): { up: [number, number][]; down: [number, number][] } | null {
+  const n = loop.length;
+  if (n < 4) return null;
+  const EZ = 1e-9;
+  const dir = (a: number, b: number): number => {
+    const d = loop[b][1] - loop[a][1];
+    return d > EZ ? 1 : d < -EZ ? -1 : 0;
+  };
+  // Find where an ascending run STARTS (this edge up, previous edge not up).
+  let s = -1;
+  for (let i = 0; i < n; i++) {
+    if (dir(i, (i + 1) % n) === 1 && dir((i - 1 + n) % n, i) !== 1) { s = i; break; }
+  }
+  if (s < 0) return null;
+  // Collect the ascending run.
+  const upIdx: number[] = [s];
+  let i = s, guard = n + 4;
+  while (dir(i, (i + 1) % n) === 1 && guard-- > 0) { i = (i + 1) % n; upIdx.push(i); }
+  // Skip the flat top edge(s).
+  guard = n + 4;
+  while (dir(i, (i + 1) % n) === 0 && guard-- > 0) i = (i + 1) % n;
+  // Collect the descending run.
+  const downIdx: number[] = [i];
+  guard = n + 4;
+  while (dir(i, (i + 1) % n) === -1 && guard-- > 0) { i = (i + 1) % n; downIdx.push(i); }
+  // Only a single up-run + single down-run is a simple silhouette; anything left
+  // over (another direction change before we return to the start) is re-entrant.
+  const up = upIdx.map((k) => loop[k]);
+  const down = downIdx.map((k) => loop[k]).reverse(); // → ascending z
+  return { up, down };
+}
+
+/**
+ * Arc revolve of a CLOSED (r,z) profile loop through [startDeg, startDeg+sweepDeg]
+ * with two flat radial cap faces (the cut planes). Walls revolve exactly like the
+ * full 360° path but WITHOUT the wrap-around seam; the two azimuthal ends are then
+ * closed by strip-triangulating the profile's two z-columns (clean, well-shaped —
+ * the cut faces inherit the wall's z-rings so a later warp bends them smoothly).
+ * Falls back to earClip2D caps for a re-entrant profile splitLatheColumns rejects.
+ */
+function revolveArcPatch(prof: [number, number][], segN: number, startDeg: number, sweepDeg: number): Patch {
+  const start = (startDeg * Math.PI) / 180;
+  const sweep = (sweepDeg * Math.PI) / 180;
+  const segArc = Math.max(1, Math.round((segN * sweepDeg) / 360));
+  const dT = sweep / segArc;
+  const EPS = 1e-9;
+  const verts: number[] = [];
+  const tris: number[] = [];
+  const push = (r: number, z: number, theta: number): number => {
+    verts.push(r * Math.cos(theta), r * Math.sin(theta), z);
+    return verts.length / 3 - 1;
+  };
+  const M = prof.length;
+  // Lateral surface (walls + horizontal caps), NO seam wrap.
+  for (let k = 0; k < M; k++) {
+    const [r0, z0] = prof[k];
+    const [r1, z1] = prof[(k + 1) % M];
+    const r0z = r0 < EPS, r1z = r1 < EPS;
+    if (r0z && r1z) continue;
+    for (let sgm = 0; sgm < segArc; sgm++) {
+      const ta = start + sgm * dT;
+      const tb = start + (sgm + 1) * dT;
+      const a0 = push(r0, z0, ta), a1 = push(r0, z0, tb);
+      const b0 = push(r1, z1, ta), b1 = push(r1, z1, tb);
+      if (r0z) tris.push(a0, b1, b0);
+      else if (r1z) tris.push(a0, a1, b0);
+      else { tris.push(a0, b1, b0); tris.push(a0, a1, b1); }
+    }
+  }
+  // Two flat radial cap faces at theta=start and theta=start+sweep.
+  const cols = splitLatheColumns(prof);
+  const capStrip = (theta: number, reverse: boolean): boolean => {
+    if (!cols) return false;
+    const { up, down } = cols;
+    const n = Math.min(up.length, down.length);
+    if (n < 2 || up.length !== down.length) return false;
+    const uc: number[] = [], dc: number[] = [];
+    for (let j = 0; j < n; j++) { const [r, z] = up[j]; verts.push(r * Math.cos(theta), r * Math.sin(theta), z); uc.push(verts.length / 3 - 1); }
+    for (let j = 0; j < n; j++) { const [r, z] = down[j]; verts.push(r * Math.cos(theta), r * Math.sin(theta), z); dc.push(verts.length / 3 - 1); }
+    for (let j = 0; j < n - 1; j++) {
+      const u0 = uc[j], u1 = uc[j + 1], d0 = dc[j], d1 = dc[j + 1];
+      if (reverse) { tris.push(u0, d1, u1); tris.push(u0, d0, d1); }
+      else { tris.push(u0, u1, d1); tris.push(u0, d1, d0); }
+    }
+    return true;
+  };
+  const capEarClip = (theta: number, reverse: boolean) => {
+    const base = verts.length / 3;
+    for (const [r, z] of prof) verts.push(r * Math.cos(theta), r * Math.sin(theta), z);
+    const t = earClip2D(prof) ?? [];
+    for (const [a, b, c] of t) { if (reverse) tris.push(base + a, base + c, base + b); else tris.push(base + a, base + b, base + c); }
+  };
+  if (!capStrip(start, false)) capEarClip(start, false);
+  if (!capStrip(start + sweep, true)) capEarClip(start + sweep, true);
   return { verts: new Float32Array(verts), tris: new Uint32Array(tris) };
 }
 

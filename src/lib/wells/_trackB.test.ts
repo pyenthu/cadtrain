@@ -88,6 +88,10 @@ describe('Track B — MF bake stays bounded (fix in effect)', () => {
     const out = await runCompiledManifold(script, {}, { parts: lut, cutaway: true });
     expect(out.parts?.length).toBe(14);
     const worst = Math.max(...(out.parts ?? []).map((p: any) => p.geo?.positions?.length ?? 0));
-    expect(worst).toBeLessThan(1_000_000);
+    // Arc-revolve half-section (Track A fix) trades the wedge's slivers for clean
+    // flat cut-face rings — at the extreme DEFAULT 1.5 span (this fallback path,
+    // NOT the derived-span production path above) that is a little more geometry,
+    // still bounded: completes in ~24 s, no OOM/SIGKILL. Derived span stays < 1M.
+    expect(worst).toBeLessThan(1_500_000);
   }, 180000);
 });

@@ -87,16 +87,17 @@ describe('S4 warp — half-sectioned bw_casing bends smoothly, no bridging trian
     expect(maxLateral).toBeGreaterThan(1);
   });
 
-  it('REGRESSION WITNESS — dial OFF reintroduces full-height spanning edges', () => {
-    // Dense body, then cut with the dial off → the post-subtract refine is
-    // skipped and the boolean retriangulates the cut faces into full-height tris.
+  it('CLEAN BY CONSTRUCTION — dial OFF carries NO full-height spanning edge (arc revolve, not wedge)', () => {
+    // Old bug: the wedge SUBTRACT retriangulated the cut faces into full-height
+    // edges, needing a post-subtract refine. The arc revolve never creates them,
+    // so even dial-OFF (no refine) the cut carries zero spanning edges.
     setAxialMaxZSpan(DIAL);
     const body = casing();
     setAxialMaxZSpan(null);
     const cutUnrefined = sectionCut(body, { az: 180 });
     const { over, max } = edgeSpan(cutUnrefined, 10);
-    expect(over).toBeGreaterThan(0);
-    expect(max).toBeGreaterThan(H * 0.9);
+    expect(over).toBe(0);
+    expect(max).toBeLessThan(H * 0.5);
   });
 
   it('#64 FIX — dial ON → ZERO edges with Δz > 5 on the 40-long casing, before AND after the warp', () => {

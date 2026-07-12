@@ -15,7 +15,8 @@ import Module from 'manifold-3d';
 // Build-time axial (Z) densification for smooth warp — shared with the welded
 // revolve path (revolveProfile). manifold-mesh imports nothing from here (it
 // reads the wasm singleton off globalThis), so this import is acyclic.
-import { subdivideProfileAxial, getAxialMaxZSpan, getAxialMaxSegPerEdge } from './manifold-mesh';
+import { subdivideProfileAxial, getAxialMaxZSpan, getAxialMaxSegPerEdge, revolveProfile, weldAndBuild } from './manifold-mesh';
+import { triSourceIds } from './part-id';
 // Trap detection lives in `manifold-trap.ts` — no `manifold-3d` import there, so
 // the MAIN-THREAD bake-client can use it without pulling the WASM module in.
 export { isManifoldFatalTrap, describeManifoldError } from './manifold-trap';
@@ -643,6 +644,217 @@ export function sectionCut(solid: any, opts?: { az?: number; offset?: number }):
   if (!(az > 0)) return solid;                    // az <= 0 → no cut
   if (!G.__cadtrain_manifold__.M) return solid;   // no kernel → passthrough
   if (az >= 360) return empty();                  // full removal guard
+
+  // ── FAST CLEAN PATH — rebuild the retained half as an ANGULAR-SPAN REVOLVE ──
+  // For a surface-of-revolution solid (the r_revolve family + bw_* casings) the
+  // wedge-subtract path below (a 3D mesh boolean) shreds the planar cut faces
+  // into hundreds of slivers + full-height spanning triangles (Track A: 5188
+  // tris / 357 slivers on w_deviated_casing vs TrueForm's 1042). Instead, read
+  // the (r,z) silhouette straight off the solid's mesh and REVOLVE it through the
+  // RETAINED arc [offset+az, offset+360] with flat radial cap faces — a
+  // watertight half-section, no boolean, ~1088 tris / 0 slivers. Guarded by a
+  // volume + genus check against the analytic retained fraction; ANY mismatch or
+  // failure (an extrude/mesh part, an off-axis or deviated revolve, a re-entrant
+  // profile) falls through to the exact wedge subtract, unchanged.
+  try {
+    const rev = revolveSectionCut(solid, az, offset);
+    if (rev) return rev;
+  } catch { /* fall through to the wedge subtract */ }
+
+  return sectionCutWedge(solid, az, offset);
+}
+
+/** Reconstruct the (r,z) silhouette of a Z-axis surface-of-revolution from its
+ *  mesh (per-z rmin/rmax about the origin) and rebuild the RETAINED arc as a
+ *  clean welded half-section. Returns null when the solid isn't a clean revolve
+ *  (volume/genus/bbox don't match the analytic retained fraction). */
+function revolveSectionCut(solid: any, az: number, offset: number): any {
+  const mesh = solid.getMesh();
+  const vp = mesh.vertProperties as Float32Array;
+  const np = mesh.numProp || 3;
+  if (!vp || vp.length < 4 * np) return null;
+
+  // Bucket verts by z (rounded), tracking rmin/rmax and the azimuth spread that
+  // confirms a full 360° ring (a real revolve) at each level.
+  const EZ = 1e-4;
+  const levels = new Map<number, { z: number; rmin: number; rmax: number; az: Set<number> }>();
+  let globalRmin = Infinity;
+  for (let i = 0; i < vp.length; i += np) {
+    const x = vp[i], y = vp[i + 1], z = vp[i + 2];
+    const r = Math.hypot(x, y);
+    if (r < globalRmin) globalRmin = r;
+    const key = Math.round(z / EZ);
+    let L = levels.get(key);
+    if (!L) { L = { z, rmin: r, rmax: r, az: new Set() }; levels.set(key, L); }
+    else { if (r < L.rmin) L.rmin = r; if (r > L.rmax) L.rmax = r; }
+    if (r > 1e-3) L.az.add(Math.round(Math.atan2(y, x) * 12 / Math.PI)); // ~15° buckets
+  }
+  let arr = [...levels.values()].sort((a, b) => a.z - b.z);
+  if (arr.length < 2) return null;
+
+  // Circumferential resolution = the densest ring's azimuth-bucket count.
+  let segments = 0;
+  for (const L of arr) if (L.az.size > segments) segments = L.az.size;
+  segments = Math.max(3, Math.round(segments));
+
+  // AXIAL ring cap (mirrors TrueForm's station cap + Track B's AXIAL_REFINE_CAP):
+  // the rebuilt half inherits one z-ring per source level, so a km-scale tubular
+  // (a 3.5 km casing at 1.5 m spacing ≈ 2300 rings) would explode. This is AXIAL
+  // thinning only — NEVER a radial `refine` — so the circumferential grid is
+  // untouched and the walls still bend smoothly. Uniform stride, endpoints kept.
+  if (arr.length > AXIAL_REFINE_CAP) {
+    const step = (arr.length - 1) / (AXIAL_REFINE_CAP - 1);
+    const thin: typeof arr = [];
+    for (let i = 0; i < AXIAL_REFINE_CAP; i++) thin.push(arr[Math.round(i * step)]);
+    if (thin[thin.length - 1] !== arr[arr.length - 1]) thin.push(arr[arr.length - 1]);
+    arr = thin;
+  }
+
+  const annular = globalRmin > 1e-3;
+  // Two z-matched columns: outer wall (rmax) + inner wall (rmin) or the axis.
+  const outer: [number, number][] = arr.map((L) => [L.rmax, L.z]);
+  const inner: [number, number][] = arr.map((L) => [annular ? L.rmin : 0, L.z]);
+  // Closed lathe loop: up the outer wall, back down the inner wall.
+  const loop: [number, number][] = [...outer, ...inner.slice().reverse()];
+
+  const startDeg = offset + az;      // retained arc runs from the far side of the cut
+  const sweepDeg = 360 - az;         // …around to the near side (0 < sweep < 360)
+  const arcSolid = weldAndBuild([revolveProfile(loop, segments, { startDeg, sweepDeg })]);
+  if (!arcSolid) return null;
+
+  // ── VALIDATE the rebuild is the same SHAPE, only a cleaner mesh ─────────────
+  const fullVol = Math.abs(solid.volume());
+  const wantVol = fullVol * (sweepDeg / 360);
+  const gotVol = Math.abs(arcSolid.volume());
+  if (!(wantVol > 0)) return null;
+  if (Math.abs(gotVol - wantVol) > wantVol * 0.03) return null; // shape mismatch
+  const g = arcSolid.genus();
+  if (!Number.isFinite(g) || g < 0 || g > 4) return null;       // sanity
+  // Radial + axial extent must match (guards off-axis / deviated / non-revolve).
+  const bbF = solid.boundingBox(), bbA = arcSolid.boundingBox();
+  const zeq = (a: number, b: number) => Math.abs(a - b) <= 1e-2 * (1 + Math.abs(a));
+  if (!zeq(bbF.min[2], bbA.min[2]) || !zeq(bbF.max[2], bbA.max[2])) return null;
+
+  // COLOR-BY-SOURCE — transfer the original's outer/inner (bore) part ids onto the
+  // rebuilt half so the cutaway keeps its red-outer / grey-bore reveal (the wedge
+  // subtract preserved these via runOriginalID; a fresh weldAndBuild loses them).
+  // Best-effort: any failure returns the untagged half, which still renders (its
+  // fresh id buckets into the body — see buildSourceParts).
+  try {
+    const { outerId, innerId } = captureRevolveIds(solid);
+    if (outerId != null) {
+      const tagged = retagRevolveHalf(arcSolid, outerId, innerId);
+      if (tagged) return tagged;
+    }
+  } catch { /* keep the untagged half */ }
+  return arcSolid;
+}
+
+/** Classify a triangle of a Z-axis surface of revolution by its outward normal:
+ *  'outer' (radial-out wall or a ±Z cap = outer body), 'inner' (radial-in bore
+ *  wall), or 'cut' (a tangential flat cut face). */
+function classifyRevTri(
+  ax: number, ay: number, az: number,
+  bx: number, by: number, bz: number,
+  cx: number, cy: number, cz: number,
+): 'outer' | 'inner' | 'cut' {
+  const ux = bx - ax, uy = by - ay, uz = bz - az;
+  const vx = cx - ax, vy = cy - ay, vz = cz - az;
+  let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+  const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
+  if (Math.abs(nz) > 0.7) return 'outer';            // top/bottom cap → outer body
+  const mx = (ax + bx + cx) / 3, my = (ay + by + cy) / 3;
+  const rr = Math.hypot(mx, my) || 1;
+  const nr = (nx * mx + ny * my) / rr;               // normal · radial direction
+  if (nr > 0.4) return 'outer';
+  if (nr < -0.4) return 'inner';
+  return 'cut';                                      // tangential → the flat cut plane
+}
+
+/** Read the dominant part id of the outer walls and of the inner (bore) walls of
+ *  a Z-axis surface-of-revolution solid, so the rebuilt half can inherit them. */
+function captureRevolveIds(solid: any): { outerId: number | null; innerId: number | null } {
+  const mesh = solid.getMesh();
+  const vp = mesh.vertProperties as Float32Array;
+  const tv = mesh.triVerts as Uint32Array;
+  const np = mesh.numProp || 3;
+  const ids = triSourceIds(mesh);
+  const tally = (m: Map<number, number>, id: number) => m.set(id, (m.get(id) ?? 0) + 1);
+  const outer = new Map<number, number>(), inner = new Map<number, number>();
+  for (let t = 0; t < tv.length / 3; t++) {
+    const a = tv[t * 3], b = tv[t * 3 + 1], c = tv[t * 3 + 2];
+    const cls = classifyRevTri(
+      vp[a * np], vp[a * np + 1], vp[a * np + 2],
+      vp[b * np], vp[b * np + 1], vp[b * np + 2],
+      vp[c * np], vp[c * np + 1], vp[c * np + 2],
+    );
+    if (cls === 'outer') tally(outer, ids[t]);
+    else if (cls === 'inner') tally(inner, ids[t]);
+  }
+  const mode = (m: Map<number, number>): number | null => {
+    let best: number | null = null, bn = -1;
+    for (const [id, n] of m) if (n > bn) { bn = n; best = id; }
+    return best;
+  };
+  return { outerId: mode(outer), innerId: mode(inner) };
+}
+
+/** Re-stamp a rebuilt revolve half-section: outer walls + caps → `outerId`, bore
+ *  walls → `innerId`, the two flat cut faces → the mesh's own fresh id (unknown to
+ *  the LUT → buckets into the body, exactly like the wedge subtract's cut faces).
+ *  Reorders triangles into per-id runs (runOriginalID/runIndex). Returns null on
+ *  any failure so the caller keeps the untagged half. */
+function retagRevolveHalf(arc: any, outerId: number, innerId: number | null): any {
+  const wasm = G.__cadtrain_manifold__?.wasm;
+  const Manifold = wasm?.Manifold, MeshC = wasm?.Mesh;
+  if (!Manifold || !MeshC) return null;
+  const mesh = arc.getMesh();
+  const vp = mesh.vertProperties as Float32Array;
+  const tv = mesh.triVerts as Uint32Array;
+  const np = mesh.numProp || 3;
+  const cutId = triSourceIds(mesh)[0] >>> 0;         // the fresh weld id → body bucket
+  const nt = tv.length / 3;
+  const groups = new Map<number, number[]>();        // id → triangle indices
+  for (let t = 0; t < nt; t++) {
+    const a = tv[t * 3], b = tv[t * 3 + 1], c = tv[t * 3 + 2];
+    const cls = classifyRevTri(
+      vp[a * np], vp[a * np + 1], vp[a * np + 2],
+      vp[b * np], vp[b * np + 1], vp[b * np + 2],
+      vp[c * np], vp[c * np + 1], vp[c * np + 2],
+    );
+    const id = (cls === 'outer' ? outerId : cls === 'inner' ? (innerId ?? outerId) : cutId) >>> 0;
+    let g = groups.get(id); if (!g) { g = []; groups.set(id, g); }
+    g.push(t);
+  }
+  // Positions as a tight numProp-3 buffer.
+  const nv = vp.length / np;
+  const pos = new Float32Array(nv * 3);
+  for (let i = 0; i < nv; i++) { pos[i * 3] = vp[i * np]; pos[i * 3 + 1] = vp[i * np + 1]; pos[i * 3 + 2] = vp[i * np + 2]; }
+  const newTv = new Uint32Array(tv.length);
+  const runIndex: number[] = [0];
+  const runOriginalID: number[] = [];
+  let off = 0;
+  for (const [id, tris] of groups) {
+    for (const t of tris) { newTv[off] = tv[t * 3]; newTv[off + 1] = tv[t * 3 + 1]; newTv[off + 2] = tv[t * 3 + 2]; off += 3; }
+    runIndex.push(off);
+    runOriginalID.push(id >>> 0);
+  }
+  const m = new Manifold(new MeshC({
+    numProp: 3,
+    vertProperties: pos,
+    triVerts: newTv,
+    runIndex: new Uint32Array(runIndex),
+    runOriginalID: new Uint32Array(runOriginalID),
+  }));
+  // Sanity — a bad runs table can yield an empty/invalid solid; reject it.
+  if (!(Math.abs(m.volume()) > 0) || !Number.isFinite(m.genus())) return null;
+  return m;
+}
+
+/** The original half-section: subtract an authored angular WEDGE from the solid.
+ *  Kept as the fallback for non-revolve geometry (extrude/mesh parts) and for any
+ *  case revolveSectionCut can't validate. */
+function sectionCutWedge(solid: any, az: number, offset: number): any {
   const bb = solid.boundingBox();
   const MARGIN = 20;
   const R = Math.max(

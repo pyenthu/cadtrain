@@ -61,65 +61,61 @@ function assertValidSolid(m: any) {
   expect(Number.isFinite(m.genus())).toBe(true);
 }
 
-describe('sectionCut — golden (dial OFF): byte-identical to the bare pre-fix wedge', () => {
-  it('dial OFF → same vert count + volume as the explicit bare-extrude subtract', () => {
+describe('sectionCut — clean arc half-section (Track A fix): same shape, lighter mesh', () => {
+  it('dial OFF → clean arc half-section: ~half volume, genus 0, lighter mesh than the wedge', () => {
+    // Track A fix: a surface-of-revolution cut is rebuilt as an ANGULAR-SPAN
+    // revolve, not a wedge subtract. Same removed-half SHAPE (genus 0, ~half the
+    // body) with a far cleaner mesh. The arc facets the curved wall so its volume
+    // is within a few % of the true half — deliberately NOT byte-identical to the
+    // wedge; that difference IS the point (no boolean shred).
     setAxialMaxZSpan(null);
-    const body = revolve(CONTOUR);          // coarse body (no warp)
+    const body = revolve(CONTOUR);          // coarse solid cylinder (no warp)
     const viaFn = sectionCut(body, { az: 180 });
     const viaBare = bareSectionCut(body, 180);
     expect(getAxialMaxZSpan()).toBe(null);  // dial genuinely off
-    expect(viaFn.numVert()).toBe(viaBare.numVert());
-    expect(viaFn.volume()).toBeCloseTo(viaBare.volume(), 6);
+    expect(viaFn.genus()).toBe(0);
+    const half = body.volume() / 2;
+    expect(Math.abs(viaFn.volume() - half) / half).toBeLessThan(0.03);
+    // …and a lighter mesh (the wedge boolean shredded the cut faces into slivers).
+    expect(viaFn.numTri()).toBeLessThan(viaBare.numTri());
   });
 });
 
 describe('sectionCut — fix (dial ON): cut faces densify + warp stays manifold', () => {
-  it('dial ON → sectionCut adds z-rings to the cut faces (more verts than bare)', () => {
-    // Build the body ONCE with the warp dial active (dense body, mirrors a real
-    // warped bake). Then cut it two ways to isolate the WEDGE densification:
-    //   bare  = pre-fix wedge  (dial turned off only for the cut call)
-    //   dense = post-fix wedge (dial on → refineToLength)
+  it('body built with the warp dial ON → its arc half-section inherits the axial rings', () => {
+    // The density now lives in the revolve PROFILE (built under the dial) and the
+    // arc half-section inherits it — NOT a cut-time boolean refine. So a dial-ON
+    // BODY yields a denser cut than a dial-OFF body.
+    setAxialMaxZSpan(null);
+    const cutCoarse = sectionCut(revolve(CONTOUR), { az: 180 });
     setAxialMaxZSpan(1.5);
-    const body = revolve(CONTOUR);
-
-    setAxialMaxZSpan(null);                  // pre-fix: bare wedge
-    const cutBare = sectionCut(body, { az: 180 });
-    setAxialMaxZSpan(1.5);                   // post-fix: refined wedge
-    const cutDense = sectionCut(body, { az: 180 });
+    const cutDense = sectionCut(revolve(CONTOUR), { az: 180 });
 
     // eslint-disable-next-line no-console
-    console.log(`[sectionCut warp axial] cut verts  bare=${cutBare.numVert()}  dense=${cutDense.numVert()}`);
+    console.log(`[sectionCut warp axial] cut verts  coarse=${cutCoarse.numVert()}  dense=${cutDense.numVert()}`);
 
-    assertValidSolid(cutBare);
+    assertValidSolid(cutCoarse);
     assertValidSolid(cutDense);
-    // The fix's whole point: the cut faces gained axial rings.
-    expect(cutDense.numVert()).toBeGreaterThan(cutBare.numVert());
-    // Same solid geometry (subtracting a densified-but-identical wedge shape).
-    expect(cutDense.volume()).toBeCloseTo(cutBare.volume(), 3);
+    expect(cutDense.numVert()).toBeGreaterThan(cutCoarse.numVert());
+    expect(cutDense.volume()).toBeCloseTo(cutCoarse.volume(), 1);
   });
 
-  it('after warp along a curved spline, the densified section stays manifold + denser', () => {
-    setAxialMaxZSpan(1.5);
-    const body = revolve(CONTOUR);
-
+  it('after warp along a curved spline, the dense-body section stays manifold + denser', () => {
     setAxialMaxZSpan(null);
-    const cutBare = sectionCut(body, { az: 180 });
+    const cutCoarse = sectionCut(revolve(CONTOUR), { az: 180 });
     setAxialMaxZSpan(1.5);
-    const cutDense = sectionCut(body, { az: 180 });
+    const cutDense = sectionCut(revolve(CONTOUR), { az: 180 });
 
     // Planar curved spline spanning the part's z-extent (0..H).
     const spline: [number, number][] = [[0, -5], [3, 5], [0, 15], [-3, 25]];
-    const warpBare = warpManifoldAlongSpline(cutBare, spline, { validate: true });
+    const warpCoarse = warpManifoldAlongSpline(cutCoarse, spline, { validate: true });
     const warpDense = warpManifoldAlongSpline(cutDense, spline, { validate: true });
 
-    // eslint-disable-next-line no-console
-    console.log(`[sectionCut warp axial] warped verts  bare=${warpBare.numVert()}  dense=${warpDense.numVert()}`);
-
     // Both bake to valid solids (no "Not manifold" from the extrude-nDiv bug).
-    assertValidSolid(warpBare);
+    assertValidSolid(warpCoarse);
     assertValidSolid(warpDense);
-    // Densified cut faces survive the warp → still more verts than the bare case.
-    expect(warpDense.numVert()).toBeGreaterThan(warpBare.numVert());
+    // The dense-body cut faces survive the warp → more verts than the coarse case.
+    expect(warpDense.numVert()).toBeGreaterThan(warpCoarse.numVert());
   });
 });
 
@@ -168,15 +164,17 @@ describe('#64 sectionCut + warp — no spanning edges survive the cut', () => {
     expect(max).toBeLessThanOrEqual(DIAL);
   });
 
-  it('the SUBTRACT is what reintroduces full-height edges (regression witness)', () => {
-    // Dense body, then cut with the dial off → post-subtract refine skipped.
+  it('arc half-section is clean by CONSTRUCTION — no spanning edge even with the dial OFF', () => {
+    // The old wedge SUBTRACT retriangulated the cut faces into full-height edges,
+    // needing a post-subtract refine. The arc revolve never creates them, so even
+    // dial-OFF (no refine) the cut carries zero spanning edges. (Was the bug: 208
+    // spanning edges, max Δz 40.)
     setAxialMaxZSpan(DIAL);
-    const body = casing();
+    const body = casing();          // dense-profile hollow tube
     setAxialMaxZSpan(null);
-    const cutUnrefined = sectionCut(body, { az: 180 });
-    // The boolean retriangulated the cut faces into full-height triangles.
-    expect(edgeSpan(cutUnrefined, 10).over).toBeGreaterThan(0);
-    expect(edgeSpan(cutUnrefined, 10).max).toBeGreaterThan(H * 0.9);
+    const cut = sectionCut(body, { az: 180 });
+    expect(edgeSpan(cut, 10).over).toBe(0);
+    expect(edgeSpan(cut, 10).max).toBeLessThan(H * 0.5);
   });
 
   it('dial ON → cut faces carry no spanning edge, before OR after the warp', () => {
