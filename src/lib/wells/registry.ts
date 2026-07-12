@@ -106,7 +106,12 @@ const EXACT: Record<string, { partId: string; category: WellCompCategory }> = {
   DRILL_PIPE_STAND: { partId: 'g_dp_stand', category: 'drillpipe' },
 };
 
-/** Category prefix fallback when the exact key is unknown. */
+/** Category prefix fallback when the exact key is unknown. Keys are the SVTC
+ *  catalogue's `CATEGORY` part of `CATEGORY.NAME`; several are MULTI-WORD
+ *  (`FLOW_CONTROL`, `ARTIFICIAL_LIFT`, `DRILL_PIPE`). `normaliseKey` collapses the
+ *  `CATEGORY.NAME` dot into an underscore, so the category boundary is NOT the
+ *  first `_` — matching must be by whole-prefix `startsWith`, not `split('_')[0]`
+ *  (which reads `FLOW` / `ARTIFICIAL` / `DRILL` and can never reach these). */
 const CATEGORY: Record<string, { partId: string; category: WellCompCategory }> = {
   PACKERS: { partId: 'g_packer_baker_permanent', category: 'packer' },
   FLOW_CONTROL: { partId: 'g_nipple_r_landing', category: 'nipple' },
@@ -115,10 +120,29 @@ const CATEGORY: Record<string, { partId: string; category: WellCompCategory }> =
   TBGHANGER: { partId: 'g_tbghanger', category: 'hanger' },
 };
 
+/** CATEGORY prefixes, LONGEST first, so a more specific prefix wins over a
+ *  shorter one (defensive — none currently nest, but a future `DRILL_PIPE` vs
+ *  `DRILL_PIPE_HW` must resolve to the more specific). */
+const CATEGORY_PREFIXES = Object.keys(CATEGORY).sort((a, b) => b.length - a.length);
+
 const GENERIC = { partId: 'g_tube', category: 'tubing' as WellCompCategory };
 
 export function normaliseKey(key: string): string {
   return String(key ?? '').trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+}
+
+/** The category-prefix fallback: match the WHOLE `CATEGORY` prefix of a normalised
+ *  key (`FLOW_CONTROL_NIPPLE_XYZ` → `FLOW_CONTROL`), longest-prefix-first. Returns
+ *  `undefined` when no category owns the key (e.g. `MISC.*`, `liner_hanger_red`) so
+ *  those still fall through to the generic tube. Fixes #42j: the old
+ *  `CATEGORY[k.split('_')[0]]` left the three multi-word categories as dead code,
+ *  so an unknown `FLOW_CONTROL.*` / `ARTIFICIAL_LIFT.*` / `DRILL_PIPE.*` silently
+ *  degraded to `g_tube` instead of its category default. */
+export function categoryFallback(k: string): { partId: string; category: WellCompCategory } | undefined {
+  for (const p of CATEGORY_PREFIXES) {
+    if (k === p || k.startsWith(p + '_')) return CATEGORY[p];
+  }
+  return undefined;
 }
 
 /** Resolve a completion to a cadtrain part + bake params. Params map OD (in) →
@@ -126,7 +150,7 @@ export function normaliseKey(key: string): string {
  *  /api/primitives/source); length (m→in or kept) → `length`. */
 export function resolveComponent(c: Completion, lengthM: number): ResolvedComponent {
   const k = normaliseKey(c.tool_comp);
-  const hit = EXACT[k] ?? CATEGORY[k.split('_')[0]];
+  const hit = EXACT[k] ?? categoryFallback(k);
   const base = hit ?? GENERIC;
   const params: Record<string, number | string> = { ...(c.params ?? {}) };
   if (c.od != null) params.od = c.od;

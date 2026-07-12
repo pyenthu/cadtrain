@@ -152,11 +152,16 @@ const CACHE = findScriptCache();
 
 // The saved well ASSEMBLIES + the last well PREVIEW the dev server has compiled +
 // cached (dep-resolved). Nature is recorded so the coverage matrix is legible.
-const WELL_CASES: { id: string; nature: string; expectSeparate: boolean }[] = [
+const WELL_CASES: { id: string; nature: string; expectSeparate: boolean; minParts?: number }[] = [
   { id: 'w_multi_string', nature: 'straight 3-string cased hole', expectSeparate: true },
   { id: 'w_multi_string_dev', nature: 'deviated 3-string (warped)', expectSeparate: true },
   { id: 'w_wells_preview', nature: 'full completion well preview (warped)', expectSeparate: true },
   { id: 'w_deviated_casing', nature: 'deviated single casing', expectSeparate: false },
+  // #42e SAMPLE-LADDER rungs, baked from their dep-resolved cached scripts: the
+  // ladder's translate→emit is pinned in sample-ladder.test.ts; here it BAKES to
+  // the expected count of SEPARATE positive-volume parts (never one fused shell).
+  { id: 'w_sample_10_three_telescoping_open_holes', nature: 'ladder rung 2 — 3 telescoping open holes', expectSeparate: true, minParts: 3 },
+  { id: 'w_sample_1_vertical_land_producer', nature: 'ladder rung 3 — vertical multi-string + completion', expectSeparate: true, minParts: 9 },
 ];
 
 describe.skipIf(!CACHE)('PART B — dep-resolved well graphs bake to SEPARATE positive-volume parts', () => {
@@ -166,7 +171,7 @@ describe.skipIf(!CACHE)('PART B — dep-resolved well graphs bake to SEPARATE po
     expect(CACHE).toBeTruthy();
   });
 
-  for (const { id, nature, expectSeparate } of WELL_CASES) {
+  for (const { id, nature, expectSeparate, minParts } of WELL_CASES) {
     const script = CACHE ? newestLazyScript(CACHE, id) : null;
 
     it.skipIf(!script)(`${id} (${nature}) bakes to valid geometry, not a fused shell`, () => {
@@ -180,7 +185,9 @@ describe.skipIf(!CACHE)('PART B — dep-resolved well graphs bake to SEPARATE po
         // warped elements, kept apart so composing them can't collapse the well
         // to the outer open hole. Each element must be real, positive-volume solid.
         expect(parts, 'a multi-element well must expose separate _parts').not.toBeNull();
-        expect(parts!.length).toBeGreaterThanOrEqual(2);
+        // A ladder rung pins its exact minimum (one _part per WSON element);
+        // the seeded fixtures just require "more than one" (never a fused shell).
+        expect(parts!.length).toBeGreaterThanOrEqual(minParts ?? 2);
         for (let i = 0; i < parts!.length; i++) {
           const vol = parts![i].volume();
           const tris = parts![i].getMesh().triVerts.length / 3;

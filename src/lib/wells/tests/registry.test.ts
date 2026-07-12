@@ -13,7 +13,7 @@
  * regressing from matched → generic.
  */
 import { describe, it, expect } from 'vitest';
-import { resolveComponent, normaliseKey } from '../registry';
+import { resolveComponent, normaliseKey, categoryFallback } from '../registry';
 
 /** tool_comp → the `bw_*`-adjacent `g_*` part it must resolve to. */
 const MATCHED: Array<[string, string]> = [
@@ -72,5 +72,66 @@ describe('registry — coverage of the 10-well corpus', () => {
     const r = resolveComponent(row('MISC.SOMETHING_UNKNOWN') as never, 30);
     expect(r.matched).toBe(false);
     expect(r.partId).toBe('g_tube');
+  });
+});
+
+// ─── #42j — the MULTI-WORD CATEGORY fallback (was dead code) ──────────────────
+//
+// BUG (fixed): `resolveComponent` used `CATEGORY[k.split('_')[0]]`. `normaliseKey`
+// collapses the SVTC `CATEGORY.NAME` dot into `_`, so for a two-word category the
+// first `_`-segment is only HALF the prefix (`FLOW_CONTROL_NIPPLE_R` → `FLOW`).
+// `CATEGORY` has no `FLOW` / `ARTIFICIAL` / `DRILL` key, so an UNKNOWN member of
+// FLOW_CONTROL / ARTIFICIAL_LIFT / DRILL_PIPE silently degraded to the generic
+// `g_tube` instead of its category default — three of the five CATEGORY entries
+// were unreachable. `categoryFallback` now matches the WHOLE prefix.
+describe('categoryFallback — the multi-word category safety net (#42j)', () => {
+  it('the OLD split-on-first-underscore key misses every multi-word category', () => {
+    // The precise shape of the bug, pinned so a regression to `split('_')[0]`
+    // is caught: the first segment is not a CATEGORY key for these three.
+    for (const code of ['FLOW_CONTROL_NIPPLE_X', 'ARTIFICIAL_LIFT_Y', 'DRILL_PIPE_Z']) {
+      expect(['FLOW_CONTROL', 'ARTIFICIAL_LIFT', 'DRILL_PIPE']).not.toContain(code.split('_')[0]);
+    }
+  });
+
+  it('an UNKNOWN member of each multi-word category resolves to that category default', () => {
+    // None of these keys is in EXACT, so only the category net can rescue them.
+    const cases: Array<[string, string, string]> = [
+      // code (not in EXACT)                    → partId               category
+      ['FLOW_CONTROL.NIPPLE_MADE_UP', 'g_nipple_r_landing', 'nipple'],
+      ['ARTIFICIAL_LIFT.NEW_LIFT_TOOL', 'g_gas_lift_mandrel', 'mandrel'],
+      ['DRILL_PIPE.HEAVY_WEIGHT', 'g_dp_joint', 'drillpipe'],
+    ];
+    for (const [code, partId, category] of cases) {
+      const r = resolveComponent(row(code) as never, 30);
+      expect(r.matched, `${code} still fell through to the generic tube`).toBe(true);
+      expect(r.partId, code).toBe(partId);
+      expect(r.category, code).toBe(category);
+    }
+  });
+
+  it('single-word categories keep working (PACKERS, TBGHANGER)', () => {
+    expect(resolveComponent(row('PACKERS.SOME_NEW_PACKER') as never, 30)).toMatchObject({
+      matched: true, partId: 'g_packer_baker_permanent', category: 'packer',
+    });
+    // TBGHANGER is itself the whole key (no NAME part) — startsWith(prefix) hits it.
+    expect(resolveComponent(row('tbgHanger') as never, 30)).toMatchObject({
+      matched: true, partId: 'g_tbghanger', category: 'hanger',
+    });
+  });
+
+  it('does NOT over-reach: MISC.* and orphan keys still go generic (matched:false)', () => {
+    // The fix must not accidentally rescue keys no category owns — those are a
+    // genuine, surfaced gap (matched:false), not a silent g_tube.
+    expect(categoryFallback(normaliseKey('MISC.SOMETHING_UNKNOWN'))).toBeUndefined();
+    expect(categoryFallback(normaliseKey('liner_hanger_red'))).toBeUndefined();
+    expect(resolveComponent(row('MISC.SOMETHING_UNKNOWN') as never, 30).matched).toBe(false);
+    expect(resolveComponent(row('liner_hanger_red') as never, 30).matched).toBe(false);
+  });
+
+  it('categoryFallback matches the whole prefix, longest-first', () => {
+    expect(categoryFallback('FLOW_CONTROL_NIPPLE_R')?.category).toBe('nipple');
+    expect(categoryFallback('ARTIFICIAL_LIFT_GAS_LIFT_MANDREL')?.category).toBe('mandrel');
+    expect(categoryFallback('FLOW')).toBeUndefined();        // half a prefix ≠ a match
+    expect(categoryFallback('FLOW_CONTROL')?.category).toBe('nipple'); // the bare prefix does
   });
 });
