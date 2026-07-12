@@ -39,11 +39,14 @@ import type {
   PolygonNode,
   SketchNode,
   ExprNode,
+  ExprDef,
   SplineNode,
 } from './composition-graph-types';
 import { STACK_REF_PARAM, resolveEffectiveAppearance } from '$lib/graph/composition-graph-mutate';
 import { resolveProfile } from '$lib/shared/profiles/profile-presets';
 import * as mathLib from '$lib/graph/math-lib';
+import { orderExprDef, compileListFormula } from '$lib/graph/graph-exprs';
+import { isImperative, compileImperative } from '$lib/graph/expr-imperative';
 
 // The bare math names (cos/sin/tau/pi/lerp/…) the profile + poly_repeat sandboxes
 // inject, so an expanded loop expr like `R * cos(theta)` evaluates the same way
@@ -391,23 +394,147 @@ export function resampleCatmullRom(ctrl: Vec3[], samples: number, closed = false
   return out;
 }
 
+/** Mean radius of a 2D loop about its xy-centroid IF it is roughly circular
+ *  (max deviation ≤ 10% of the mean), else null. Shared by both the wired-def
+ *  and literal-ring section paths so "is this a tube?" is decided one way. */
+function circularRadius(pts: ProfilePt[]): number | null {
+  if (!Array.isArray(pts) || pts.length < 3) return null;
+  let cx = 0, cy = 0;
+  for (const p of pts) { cx += p[0]; cy += p[1]; }
+  cx /= pts.length; cy /= pts.length;
+  const radii = pts.map((p) => Math.hypot(p[0] - cx, p[1] - cy));
+  const mean = radii.reduce((a, b) => a + b, 0) / radii.length;
+  const maxDev = Math.max(...radii.map((r) => Math.abs(r - mean)));
+  return (mean > 0 && maxDev <= mean * 0.1) ? mean : null;
+}
+
+/** Evaluate ONE named output of an `ExprDef` with concrete param values, reusing
+ *  the SAME formula compilers the emit path uses (`compileImperative` for the
+ *  imperative accumulator form, else `compileListFormula`) — never a hand-rolled
+ *  interpreter. Walks `orderExprDef` (params → consts → vars → outputs), building
+ *  a running local scope: each param's value comes from the instance `bindings`
+ *  (resolved through `scope`/`evalArg`) else its `default` else 0; each formula
+ *  is compiled to JS and run with the math library + the locals declared so far.
+ *  `rad`/`deg`/… math helpers whose name a def local shadows are DROPPED from the
+ *  math scope (the local wins — matching JS shadowing — and duplicate params in a
+ *  strict `new Function` would otherwise throw). Throws on any compile/eval
+ *  failure; the caller catches + falls back. */
+function evalExprDefOutput(
+  def: ExprDef,
+  outName: string,
+  bindings: Record<string, ArgValue>,
+  scope: Record<string, number>,
+): unknown {
+  const names: string[] = [];
+  const values: unknown[] = [];
+  const run = (js: string): unknown => {
+    // Drop any math name a local shadows so the Function param list has no dup.
+    const mNames = MATH_NAMES.filter((n) => !names.includes(n));
+    const mVals = mNames.map((n) => MATH_VALUES[MATH_NAMES.indexOf(n)]);
+    // eslint-disable-next-line no-new-func
+    const fn = new Function(...mNames, ...names, `"use strict"; return (${js});`);
+    return fn(...mVals, ...values);
+  };
+  const evalFormula = (formula: string): unknown => {
+    const compiled = isImperative(formula) ? compileImperative(formula) : compileListFormula(formula);
+    if (!compiled.ok) throw new Error(compiled.error);
+    return run(compiled.js);
+  };
+  let result: unknown;
+  let found = false;
+  for (const item of orderExprDef(def).order) {
+    if (item.section === 'param') {
+      const p = item.param;
+      const bound = bindings[p.name];
+      const v = bound != null ? evalArg(bound, scope) : (p.default != null ? Number(p.default) : 0);
+      names.push(p.name); values.push(Number.isFinite(v) ? v : 0);
+    } else if (item.section === 'const') {
+      names.push(item.konst.name); values.push(Number(item.konst.value));
+    } else if (item.section === 'var') {
+      names.push(item.vardef.name); values.push(evalFormula(item.vardef.formula));
+    } else {
+      const out = item.output;
+      const val = evalFormula(out.formula);
+      names.push(out.name); values.push(val);
+      if (out.name === outName) { result = val; found = true; }
+    }
+  }
+  if (!found) throw new Error(`output '${outName}' not declared`);
+  return result;
+}
+
+/** A sweep SECTION spline WIRED to an expr def's list output → its CONCRETE 2D
+ *  loop `[[x,y]…]`, EVALUATED with the live params. This is what makes editing
+ *  the section def's `pts` FORMULA refresh the TF bake: previously the section
+ *  recipe was derived from the def's `rad` BINDING alone, so a formula edit that
+ *  kept `rad` (circle→ellipse, `rad*cos`→`2*rad*cos`) produced an IDENTICAL tube.
+ *  Returns null (caller falls back to the binding radius / stale literal points)
+ *  when the spline is not wired to a resolvable def, the def won't compile, or
+ *  the output isn't ≥ 3 finite `[x,y]` points. Never throws. */
+function evalWiredSectionPoints(
+  spline: SplineNode | null,
+  graph: Graph,
+  scope: Record<string, number>,
+  notes: string[],
+): ProfilePt[] | null {
+  if (!spline || !spline.pointsExpr || spline.pointsExpr.kind !== 'expr') return null;
+  const srcExpr = spline.pointsExpr.expr; // `_x_<exprNodeId>_<outputName>`
+  let inst: ExprNode | null = null;
+  let outName = '';
+  for (const n of Object.values(graph.nodes)) {
+    if (!n || n.type !== 'expr') continue;
+    const prefix = `_x_${n.id}_`;
+    if (srcExpr.startsWith(prefix)) { inst = n as ExprNode; outName = srcExpr.slice(prefix.length); break; }
+  }
+  if (!inst) return null;
+  const def = (graph.exprDefs ?? []).find((d) => d.id === inst!.defId);
+  if (!def) return null;
+  try {
+    const raw = evalExprDefOutput(def, outName, inst.bindings ?? {}, scope);
+    if (!Array.isArray(raw)) return null;
+    const loop: ProfilePt[] = [];
+    for (const p of raw) {
+      const x = Number((p as any)?.[0]);
+      const y = Number((p as any)?.[1]);
+      if (Number.isFinite(x) && Number.isFinite(y)) loop.push([x, y]);
+    }
+    return loop.length >= 3 ? loop : null;
+  } catch (e: any) {
+    notes.push(`sweep section ${spline.id}: def '${inst.defId}' output '${outName}' failed to evaluate (${e?.message ?? e}) — falling back to binding/literal`);
+    return null;
+  }
+}
+
 /** Resolve a sweep SECTION spline → its circular radius (`tubeMesh` takes ONE
- *  scalar radius). Two shapes are supported:
- *   1. a spline WIRED to a circle expr (`pointsExpr` → an `ExprNode` with a
- *      `rad`/`radius`/`r` param binding) — the `sweep_tube_demo` pattern; the
- *      binding is evaluated in `scope`.
+ *  scalar radius). Three shapes are supported, in priority order:
+ *   0. `wiredPts` — the section def's OUTPUT evaluated with live params
+ *      (`evalWiredSectionPoints`). Circular within tolerance ⇒ its mean radius;
+ *      NON-circular ⇒ null so the caller lowers to `sweep_section` with the real
+ *      loop. This is what makes a `pts` FORMULA edit refresh the recipe.
+ *   1. a spline WIRED to a circle expr whose def couldn't be evaluated → the
+ *      FAIL-SAFE: read its `rad`/`radius`/`r` param binding (the previous
+ *      behaviour, so parts that bake today still do).
  *   2. a spline with LITERAL points roughly equidistant (≤10% dev) from their
  *      xy-centroid → the mean radius.
- *  A non-circular / unresolvable section → null (caller keeps it UNSUPPORTED). */
+ *  A non-circular / unresolvable section → null. */
 function sectionRadiusOf(
   spline: SplineNode | null,
   graph: Graph,
   scope: Record<string, number>,
   notes: string[],
+  wiredPts: ProfilePt[] | null,
 ): number | null {
   if (!spline) return null;
-  // (1) wired from a circle expr → read its radius param binding.
+  // (0)/(1) wired from an expr def.
   if (spline.pointsExpr && spline.pointsExpr.kind === 'expr') {
+    // (0) prefer the EVALUATED def output — respects the live `pts` formula.
+    if (wiredPts && wiredPts.length >= 3) {
+      const r = circularRadius(wiredPts);
+      if (r != null) return r;
+      notes.push(`sweep section ${spline.id}: wired def points are non-circular — lowering to sweep_section (arbitrary loop)`);
+      return null;
+    }
+    // (1) FAIL-SAFE: the def wasn't evaluable → read the circle expr's radius binding.
     const srcExpr = spline.pointsExpr.expr;
     for (const n of Object.values(graph.nodes)) {
       if (!n || n.type !== 'expr' || !srcExpr.startsWith(`_x_${n.id}_`)) continue;
@@ -424,14 +551,9 @@ function sectionRadiusOf(
   // (2) literal ring — mean radius from the xy-centroid, if roughly circular.
   const pts = spline.points;
   if (Array.isArray(pts) && pts.length >= 3) {
-    let cx = 0, cy = 0;
-    for (const p of pts) { cx += p[0]; cy += p[1]; }
-    cx /= pts.length; cy /= pts.length;
-    const radii = pts.map((p) => Math.hypot(p[0] - cx, p[1] - cy));
-    const mean = radii.reduce((a, b) => a + b, 0) / radii.length;
-    const maxDev = Math.max(...radii.map((r) => Math.abs(r - mean)));
-    if (mean > 0 && maxDev <= mean * 0.1) return mean;
-    notes.push(`sweep section ${spline.id}: literal points not circular (rad dev ${((maxDev / (mean || 1)) * 100).toFixed(0)}%) — no scalar radius, UNSUPPORTED`);
+    const r = circularRadius(pts.map((p) => [p[0], p[1]] as ProfilePt));
+    if (r != null) return r;
+    notes.push(`sweep section ${spline.id}: literal points not circular — no scalar radius, using sweep_section`);
     return null;
   }
   return null;
@@ -663,16 +785,23 @@ function lowerNode(
         // An OPTIONAL NURBS/Taubin relax pass (#51) — set via a `smooth` arg
         // (literal `true` / 'taubin' / 'laplacian'); absent ⇒ off.
         const smooth = tfSmoothFromArg(args.smooth);
-        // (1) CIRCULAR section → the tubeMesh fast path (byte-identical, unchanged).
-        const radius = sectionRadiusOf(secSpline, graph, scope, notes);
+        // The section's CONCRETE 2D loop, EVALUATED from a wired circle/expr def
+        // with the LIVE params (so editing the def's `pts` FORMULA refreshes the
+        // TF bake — previously the recipe came from the def's `rad` BINDING alone,
+        // so a formula edit that kept `rad` produced an identical tube). Null ⇒
+        // not wired to a resolvable def / eval failed → fall back below.
+        const wiredSection = evalWiredSectionPoints(secSpline, graph, scope, notes);
+        // (1) CIRCULAR section → the tubeMesh fast path (byte-identical for the
+        //     circular case: circle(rad) evaluates to points of radius ~rad).
+        const radius = sectionRadiusOf(secSpline, graph, scope, notes, wiredSection);
         if (radius != null) {
           const radialSegments = Math.max(3, evalInt(secSpline?.samples, scope, 32));
           return { op: 'sweep', path, radius, radialSegments, capped };
         }
-        // (2) NON-circular literal section → transport the real 2D loop along the
-        //     path's RMF frames (tfSweepSection), matching Manifold's sweepAlongPath
-        //     — previously this whole case was UNSUPPORTED (native-only: TF blanks with this reason).
-        const section = sectionLoopOf(secSpline);
+        // (2) NON-circular section → transport the real 2D loop along the path's
+        //     RMF frames (tfSweepSection), matching Manifold's sweepAlongPath.
+        //     Prefer the LIVE evaluated wired loop; else the literal control points.
+        const section = (wiredSection && wiredSection.length >= 3) ? wiredSection : sectionLoopOf(secSpline);
         if (section) {
           return {
             op: 'sweep_section',
