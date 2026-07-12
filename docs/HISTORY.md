@@ -8,6 +8,19 @@ The roadmap source of truth is `/plan` (root CLAUDE.md Rule 19).
 
 ---
 
+**Shipped 2026-07-12 (pushed, `4d59da1`..`39757ed`):** **Engine self-heal · overnight parity batch · wells edit core · BREP smooth normals.**
+* **WASM self-heal, both kernels** (`4d59da1`) — a poison trap now respawns the worker (client) / resets the singleton (server) instead of cascading misleading "X is not the culprit" errors into every later bake. TF + Manifold trap predicates pinned (`manifold-trap.ts`, `tf-bake-client.ts`).
+* **Track B — horizontal-well MF OOM cap** (`305085f`) — `AXIAL_REFINE_CAP=256` bounds total axial rings in `sectionCut` so a 3500 m casing at the default 1.5 span completes instead of hanging.
+* **Overnight parity batch** (`edc8e69`) — 6 green branches: api-docs generator; meta brace-walker (a `{` in `drawingMd` no longer bakes to empty); wells sample-corpus + archetype registry; **TF no-union** (stop fusing top-level parts — fixes the `w_multi_string` coincident-face trap; both exact kernels fuse it fine, TF alone doesn't); wells mount plan; **BREP #4 parity** (degenerate-profile robustness → 83/101 parts).
+* **Wells mutation core** (`39757ed`, #42b-B) — headless WSON-as-source `WellEditCore` (session-batched undo, in-place restore preserves doc identity) + pure `layerForPartId`/`kindToArrayKey`/`addElementIntent`/part-id→inspector maps.
+* **E5 — BREP smooth normals** (`39757ed`) — OCCT's flat per-face normals routed through crease-aware corner normals (`bw_hanger`: 42/42 faceted → smooth walls, hard chamfer preserved); TF + BREP now share `crease-normals.ts`.
+
+**Committed, HELD on branches (not yet merged/pushed):**
+* **MF warp excess-triangle fix** (`185b5c7`, branch `fix/mf-warp-triangles`) — `sectionCut` builds the half-section as a clean angular-span revolve, not full-revolve → wedge-subtract → refine. `w_deviated_casing` **5188 → 1088 tris**, 0 slivers, volume/genus preserved, survives the warp (matches TF). Visually confirmed on `:3333`. Follow-up (TODO): re-do the profile reconstruction the elegant "section-before-transform" way (thread the profile, mirror TF's `densifyRevolveTree`) instead of recovering it from the baked mesh.
+* **BREP-native warp sweep** (E4 spike, branch `worktree-agent-a5dc3020`) — deviated parts sweep curved via `MakePipeShell` (section-before-sweep); `w_deviated_casing` **2232 tris, vol == MF oracle**. `/plan` #988 tracks wiring it into the pipeline.
+
+Detail: `scratchpad/overnight-status.md` + the session-handoff memory.
+
 **Shipped 2026-06-10/11 (pushed, `e0ff295`..`86fb9b2`):** **GraphEditorPane polygon + loop overhaul (#155–#157).**
 * **`PolyRepeatNode` as a separate node type** with its own card on the canvas (Params · Bindings · Loop sections). Polygons embed loops via `{kind:'repeat-ref', sourceId}` entries that interleave with literal vertices in any order; each ref splices N points at its row position. Hydrate auto-migrates legacy inline `{kind:'repeat'}` entries to the new shape — pre-#157 files round-trip without data loss.
 * **`NPts` auto-injected** as a const at the top of every loop arrow body so users can write `theta = i*tau/NPts` or `i/NPts` (0..1 fraction) directly. Bindings emit AFTER `NPts` so they can reference it; bindings cascade left-to-right per-iteration.
