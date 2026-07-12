@@ -21,8 +21,8 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as helpers from '$lib/cad/manifold-helpers';
-import { brepFromSource } from '$lib/server/brep-occt';
-import { defaultParamObject } from '$lib/server/brep-audit';
+import { brepFromSource } from '$lib/engines/brep/brep-occt';
+import { defaultParamObject } from '$lib/engines/brep/brep-audit';
 import { creaseAwareCornerNormals } from '$lib/shared/crease-normals';
 
 // BREP injects the stdlib engines directly, but pass a stdlib fetch anyway so a

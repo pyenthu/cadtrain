@@ -38,8 +38,8 @@ import { runCompiledManifold } from './bake-worker-core';
 import { deserializeComponentResult } from './mesh-serial';
 import { graphToTf } from './graph-to-tf';
 import type { Graph } from './composition-graph-types';
-import { brepResponseToGeo } from '$lib/shared/brep-adapter';
-import { brepFromSource } from '$lib/server/brep-occt';
+import { brepResponseToGeo } from '$lib/engines/brep/brep-adapter';
+import { brepFromSource } from '$lib/engines/brep/brep-occt';
 
 // ── shared multi-material fixture ────────────────────────────────────────────
 // Two engine-backed leaves (r_cuboid, so BOTH MF and BREP can bake them) with

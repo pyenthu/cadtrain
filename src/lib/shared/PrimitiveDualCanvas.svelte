@@ -14,7 +14,7 @@
   import { WebGLRenderer } from 'three';
   import { deserializeComponentResult } from '$lib/cad/mesh-serial';
   import { bakeClient, isCancelled } from '$lib/cad/bake-client';
-  import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/shared/brep-adapter';
+  import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/engines/brep/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 
   let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, material = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, onBakeTimings = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfActual = false, tfRecipe = undefined, tfPending = false }: {

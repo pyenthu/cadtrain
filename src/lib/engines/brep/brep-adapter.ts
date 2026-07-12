@@ -29,7 +29,7 @@
  * always carries colours; a solid bake never does).
  */
 import * as THREE from 'three';
-import { creaseAwareCornerNormals, DEFAULT_CREASE_ANGLE } from './crease-normals';
+import { creaseAwareCornerNormals, DEFAULT_CREASE_ANGLE } from '$lib/shared/crease-normals';
 
 export interface BrepPreviewResponse {
   supported?: boolean;

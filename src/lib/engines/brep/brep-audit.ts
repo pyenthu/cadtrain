@@ -17,7 +17,7 @@ import * as helpers from '$lib/cad/manifold-helpers';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
 import { paramKeysOf } from '$lib/cad/param-keys';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';
-import { brepFromSource } from '$lib/server/brep-occt';
+import { brepFromSource } from '$lib/engines/brep/brep-occt';
 
 export interface MeshStats {
   volume: number;

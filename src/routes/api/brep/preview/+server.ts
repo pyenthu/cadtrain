@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { revolveBrep, brepFromSource } from '$lib/server/brep-occt';
+import { revolveBrep, brepFromSource } from '$lib/engines/brep/brep-occt';
 
 // POST /api/brep/preview — server-side OpenCascade (OCCT) BREP render.
 // Two input shapes:
