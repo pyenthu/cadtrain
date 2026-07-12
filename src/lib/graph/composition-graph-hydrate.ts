@@ -322,6 +322,30 @@ export function hydrateGraph(serialised: any): Graph {
     migratedNodes[id] = n;
   }
 
+  // PARTS-TABLE cards (#38b) — defensive normalisation so a hand-edited / partial
+  // file always has a well-formed shape: a string `src`, a `columns` array of
+  // strings, and a `rows` array of objects whose values are ArgValues (bad cells
+  // repaired to a literal 0 so an unwired table still emits `src({ … })` rather
+  // than crashing). Idempotent; absent/legacy files have no parts_table nodes ⇒
+  // no-op.
+  for (const id of Object.keys(migratedNodes)) {
+    const n = migratedNodes[id] as any;
+    if (n?.type !== 'parts_table') continue;
+    if (typeof n.src !== 'string') n.src = String(n.src ?? '');
+    n.columns = Array.isArray(n.columns) ? n.columns.filter((c: any) => typeof c === 'string') : [];
+    const isArg = (v: any) => v && (v.kind === 'literal' || v.kind === 'param' || v.kind === 'expr');
+    n.rows = Array.isArray(n.rows)
+      ? n.rows.map((row: any) => {
+          const out: Record<string, any> = {};
+          if (row && typeof row === 'object') {
+            for (const [k, v] of Object.entries(row)) out[k] = isArg(v) ? v : { kind: 'literal', value: 0 };
+          }
+          return out;
+        })
+      : [];
+    migratedNodes[id] = n;
+  }
+
   // Transforms are SEPARATE mv / rot cards (2026-07-01). The old fold that
   // migrated mv/rot → a unified `txfmn` (xform) card was REMOVED — it re-ran on
   // every load, so a saved mv reappeared as an xform card. mv/rot now stay as

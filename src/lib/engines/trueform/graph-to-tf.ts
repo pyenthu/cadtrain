@@ -1070,6 +1070,55 @@ function lowerNode(
       return { op: 'union', children };
     }
 
+    case 'parts_table': {
+      // The #38b PARTS-TABLE card — N inline ROWS of the SAME template `src`, each
+      // a set of per-column ArgValues. Native lowering mirrors parts_map: evaluate
+      // each row's cells → a numeric arg map, lower each as a synthetic Call to
+      // `src` (reusing the full engine/composite path), then UNION the N instances
+      // (rows render SEPARATE — no mating). Rows are inline so they always resolve.
+      const pt = node as any;
+      const psrc = pt.src as string;
+      if (!psrc || typeof psrc !== 'string') {
+        notes.push(`parts_table ${node.id}: no template src selected — UNSUPPORTED`);
+        return { op: 'UNSUPPORTED', nodeType: 'parts_table', detail: 'no src' };
+      }
+      const cols: string[] = Array.isArray(pt.columns) ? pt.columns : [];
+      const rows: any[] = Array.isArray(pt.rows) ? pt.rows : [];
+      if (rows.length === 0) {
+        notes.push(`parts_table ${node.id}: no rows — UNSUPPORTED`);
+        return { op: 'UNSUPPORTED', nodeType: 'parts_table', detail: 'no rows' };
+      }
+      const evalCell = (v: ArgValue | undefined, i: number): number => {
+        if (!v) return NaN;
+        if (v.kind === 'literal') return Number((v as any).value);
+        if (v.kind === 'param') return Number(scope[(v as any).param]);
+        if (v.kind === 'expr') {
+          try {
+            // eslint-disable-next-line no-new-func
+            const fn = new Function('p', 'Math', 'i', `"use strict"; return (${(v as any).expr});`);
+            return Number(fn(scope, Math, i));
+          } catch { return NaN; }
+        }
+        return NaN;
+      };
+      const ptChildren: TfInstr[] = rows.map((row, i) => {
+        const litArgs: Record<string, ArgValue> = {};
+        // Column order first (deterministic), then any extra keys — mirrors the
+        // emit's orderedRowKeys so TF and Manifold instantiate the same columns.
+        const keys = [
+          ...cols.filter((c) => Object.prototype.hasOwnProperty.call(row ?? {}, c)),
+          ...Object.keys(row ?? {}).filter((k) => !cols.includes(k)),
+        ];
+        for (const k of keys) {
+          const n = evalCell((row ?? {})[k], i);
+          litArgs[k] = { kind: 'literal', value: Number.isFinite(n) ? n : 0 } as ArgValue;
+        }
+        const synth = { id: `${node.id}__row${i}`, type: 'call', src: psrc, args: litArgs };
+        return lowerNode(synth as any, graph, scope, notes, resolve, seen, depth);
+      });
+      return { op: 'union', children: ptChildren };
+    }
+
     case 'polygon':
       return { op: 'profile', profile: resolvePolygon(node as PolygonNode, graph, scope, notes) };
 

@@ -9,7 +9,7 @@
  */
 import type { GraphNode } from '../composition-graph-types';
 import type { NodeKind } from './node-kind';
-import { CallKind, MethodKind, TxfmnKind, MaterialKind, MvKind, RotKind, SplineKind, WarpKind, CutawayKind, ContainerKind, StackKind, RepeatKind, PolygonKind, PolyRepeatKind, SketchKind, SketchRepeatKind, ExprKind, PartsMapKind } from './kinds';
+import { CallKind, MethodKind, TxfmnKind, MaterialKind, MvKind, RotKind, SplineKind, WarpKind, CutawayKind, ContainerKind, StackKind, RepeatKind, PolygonKind, PolyRepeatKind, SketchKind, SketchRepeatKind, ExprKind, PartsMapKind, PartsTableKind } from './kinds';
 
 const KINDS: Partial<Record<GraphNode['type'], NodeKind>> = {
   call: CallKind as NodeKind,
@@ -33,6 +33,7 @@ const KINDS: Partial<Record<GraphNode['type'], NodeKind>> = {
   sketch_repeat: SketchRepeatKind as NodeKind,
   expr: ExprKind as NodeKind,
   parts_map: PartsMapKind as NodeKind,
+  parts_table: PartsTableKind as NodeKind,
 };
 
 /** undefined for not-yet-migrated kinds → the call-site keeps its legacy arm. */

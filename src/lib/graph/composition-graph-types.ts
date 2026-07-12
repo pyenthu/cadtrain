@@ -606,7 +606,34 @@ export type PartsMapNode = {
   op?: 'list' | 'stack' | 'place';
 };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode | CutawayNode | MaterialNode | PartsMapNode;
+/** PartsTableNode — the #38b PARTS-TABLE card. ONE node holds N ROWS of the SAME
+ *  template part (`src`); the COLUMNS are the part's params; each ROW is an
+ *  independent set of per-column ArgValues (literal | expr | param). Unlike
+ *  `parts_map` — which maps a `list<record>` PARAM through ONE shared arg-map to a
+ *  single `Array.from(...)` list socket — a parts_table authors the rows INLINE on
+ *  the node and emits N SEPARATE Call instructions, each bound to its OWN stable-
+ *  named output const (`partsTableRowVar(id, i)` — its own output socket, wireable
+ *  individually). The rows ALWAYS render SEPARATE (a LIST PRODUCER whose aggregate
+ *  spreads into the root → the loader autoPlaces each as its own `_parts` body,
+ *  NO compose / NO fusion). Builds ON the `parts_map` list-producer machinery.
+ *
+ *   emit → prelude `const <rowVar_i> = <src>({ …row_i });` per row (emitPartsTable-
+ *          Blocks) + aggregate `[<rowVar_0>, …, <rowVar_N>]` (PartsTableKind).
+ *   `src` is added to `meta.uses` so the loader fetches the template. */
+export type PartsTableNode = {
+  id: NodeId;
+  type: 'parts_table';
+  /** The template part id instantiated once per row (the SAME part every row). */
+  src: string;
+  /** Ordered column names — the template part's params surfaced as columns. Emit
+   *  walks these for a deterministic per-row arg order. */
+  columns: string[];
+  /** The N rows. Each row maps a column name → its ArgValue for that instance;
+   *  a column absent from a row falls through to the template's own default. */
+  rows: Array<Record<string, ArgValue>>;
+};
+
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode | CutawayNode | MaterialNode | PartsMapNode | PartsTableNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 

@@ -49,6 +49,7 @@ import { isImperative, compileImperative } from './expr-imperative';
 import { inferStructure } from './struct-type';
 import { kindOf } from './nodes/registry';
 import type { EmitCtx } from './nodes/node-kind';
+import { partsTableRowVar, orderedRowKeys } from './nodes/kinds/parts-table';
 
 export interface EmitOptions {
   /** The assembly id (becomes meta.id + the export function name). */
@@ -291,6 +292,9 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     // A parts_map INSTANTIATES its `src` part per row (#38) — it's a dependency
     // exactly like a Call's src, so the loader fetches the template part.
     if (n.type === 'parts_map' && n.src) usesSet.add(n.src);
+    // A parts_table (#38b) instantiates its `src` template ONCE PER ROW — same
+    // dependency wiring, so the loader fetches the template part.
+    if (n.type === 'parts_table' && n.src) usesSet.add(n.src);
   }
   for (const i of graph.imports) usesSet.add(i);
 
@@ -341,6 +345,17 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   // lines emit, rewrite the sentinel to the polygon's actual varName so
   // the generated body is valid JS.
   let bodyText = lines.join('\n');
+
+  // ── Parts-table row-instance prelude (#38b) ────────────────────────────
+  // Prepend the N per-row Call consts ABOVE the aggregate const (which lives in
+  // the main body). Placed FIRST (innermost) so a later prepend — calc-expr /
+  // spline / expr-block — lands ABOVE it, letting a row cell reference those
+  // outputs. ABSENT ⇒ [] ⇒ byte-identical to today.
+  const partsTableBlockLines = emitPartsTableBlocks(graph);
+  if (partsTableBlockLines.length > 0) {
+    const block = partsTableBlockLines.map((l) => `  ${l}`).join('\n');
+    bodyText = `${block}\n${bodyText}`;
+  }
 
   // ── Calculated-expression block (B.6 / id 914) ─────────────────────────
   // When the graph declares `exprs`, prepend the topo-ordered
@@ -580,6 +595,38 @@ export function emitSplineBlocks(graph: Graph): string[] {
   return lines;
 }
 
+// ─── Parts-table row-instance prelude (#38b) ────────────────────────────────
+//
+// Each `parts_table` node lowers to N prelude consts — ONE Call PER ROW —
+//   const _pt_<id>_0 = <src>({ …row0 });
+//   const _pt_<id>_1 = <src>({ …row1 });
+// each bound to `partsTableRowVar(id, i)` (its OWN output socket, wireable
+// individually). PartsTableKind.emitExpr then emits the AGGREGATE `[_pt_<id>_0,
+// …]` (marked a LIST PRODUCER) so the root returns it and the loader autoPlaces
+// each row as a SEPARATE `_parts` body (no compose / no fusion). The consts are
+// prepended ABOVE the aggregate const (JS const TDZ satisfied). ABSENT ⇒ no
+// parts_table nodes ⇒ no prelude ⇒ byte-identical to today.
+
+/** The PRELUDE `const` lines for every parts_table node — the N per-row Call
+ *  instructions (empty when there are none — the byte-identical guarantee). Each
+ *  row emits its columns in the node's declared `columns` order (deterministic);
+ *  a column absent from a row is omitted so the template's own default carries. */
+export function emitPartsTableBlocks(graph: Graph): string[] {
+  const lines: string[] = [];
+  for (const node of Object.values(graph.nodes)) {
+    if (!node || node.type !== 'parts_table') continue;
+    const rows = Array.isArray(node.rows) ? node.rows : [];
+    rows.forEach((row, i) => {
+      const args: Record<string, ArgValue> = {};
+      for (const k of orderedRowKeys(node, row ?? {})) args[k] = (row ?? {})[k]!;
+      // Object-style call through the shared emitter — the SAME `src({ … })` shape
+      // a Call / parts_map lambda produces (the loader's __adapt shim handles it).
+      lines.push(`const ${partsTableRowVar(node.id, i)} = ${emitCallExpr(node.src, args, graph.nodes)};`);
+    });
+  }
+  return lines;
+}
+
 /** The `spline` node whose OUTPUT the given `path` ArgValue references, or null.
  *  A wired path arg is `{kind:'expr', expr:'_x_<splineId>_path'}` (exactly
  *  `exprBlockMember(splineId,'path')`); we match that against every spline node.
@@ -656,6 +703,10 @@ function computeListProducers(graph: Graph): Set<NodeId> {
     // A parts_map with op:'list' (its DEFAULT) emits a bare `Array.from(...)` of
     // N part instances (#38) — a parent Stack `...`-spreads it just like a Repeat.
     if (n.type === 'parts_map' && ((n as any).op ?? 'list') === 'list') set.add(n.id);
+    // A parts_table (#38b) ALWAYS emits a bare array `[row0, row1, …]` of N part
+    // instances that render SEPARATE — the parent Stack / root `...`-spreads it so
+    // each row stays its OWN body (no compose → no fusion), exactly like above.
+    if (n.type === 'parts_table') set.add(n.id);
     // A multi-input warp (#36b) emits `[warpSpline(a,…), warpSpline(b,…)]` — a bare
     // array of per-part warps; the parent Stack / root `...`-spreads it so each
     // warped part stays a SEPARATE body (no compose → no fusion).
@@ -715,6 +766,7 @@ function assignVarNames(graph: Graph, order: NodeId[]): Map<NodeId, string> {
         node.type === 'warp'    ? 'warp_obj' :
         node.type === 'cutaway' ? 'cut_obj' :
         node.type === 'parts_map' ? 'parts' :
+        node.type === 'parts_table' ? 'table' :
                                    'rot_obj';
       counters[prefix] = (counters[prefix] ?? 0) + 1;
       name = `_${prefix}_${counters[prefix]}`;

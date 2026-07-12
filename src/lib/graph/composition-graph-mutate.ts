@@ -16,6 +16,7 @@ import type {
   ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem, SplineNode, WarpNode, CutawayNode,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph, MaterialNode, PartAppearance,
   PartsMapNode,
+  PartsTableNode,
 } from './composition-graph-types';
 import { newNodeId, asLiteral, asParam, asExpr } from './composition-graph-types';
 
@@ -190,6 +191,15 @@ export function collectEdges(graph: Graph): Edge[] {
       // each be wired to a param.
       if (node.az?.kind === 'param')     edges.push({ from: `p.${node.az.param}`,     to: `${node.id}.az` });
       if (node.offset?.kind === 'param') edges.push({ from: `p.${node.offset.param}`, to: `${node.id}.offset` });
+    } else if (node.type === 'parts_table') {
+      // Any CELL of the table can be wired to a param — surface each so the orphan
+      // check (slotsForParam) catches a param that's only used by a table cell
+      // (else deleting it would silently break the table's emit). #38b.
+      (node.rows ?? []).forEach((row, i) => {
+        for (const [col, v] of Object.entries(row ?? {})) {
+          if (v?.kind === 'param') edges.push({ from: `p.${v.param}`, to: `${node.id}.rows.${i}.${col}` });
+        }
+      });
     }
   }
   return edges;
@@ -1676,6 +1686,93 @@ export function removePartsMapArg(graph: Graph, id: NodeId, key: string): Graph 
 /** Combine mode for the N instances (list = bare array spread by a Stack). */
 export function setPartsMapOp(graph: Graph, id: NodeId, op: 'list' | 'stack' | 'place'): Graph {
   return updatePartsMap(graph, id, (n) => ({ ...n, op }));
+}
+
+// ─── parts_table (#38b — the inline N-row PARTS-TABLE card) ──────────────────
+/** Drop an UNWIRED parts_table: no template, no columns, no rows. The user then
+ *  picks the template part (`src`), which surfaces its params as COLUMNS, and adds
+ *  ROWS (each row = per-column ArgValues). Emits N separate `src({ … })` Call
+ *  consts that render SEPARATE (a list producer — no compose / no fusion). */
+export function addPartsTable(graph: Graph, parentId?: NodeId): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const node: PartsTableNode = { id, type: 'parts_table', src: '', columns: [], rows: [] };
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
+  return { graph: finalize(appendChild(next, parentId ?? graph.root, id)), id };
+}
+export function addPartsTablePlaceholder(graph: Graph, parentId?: NodeId) {
+  return addPartsTable(graph, parentId);
+}
+
+function updatePartsTable(graph: Graph, id: NodeId, fn: (n: PartsTableNode) => PartsTableNode): Graph {
+  const node = graph.nodes[id];
+  if (!node || node.type !== 'parts_table') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: fn(node as PartsTableNode) } });
+}
+/** Set the TEMPLATE part instantiated once per row. */
+export function setPartsTableSrc(graph: Graph, id: NodeId, src: string): Graph {
+  return updatePartsTable(graph, id, (n) => ({ ...n, src }));
+}
+/** Replace the COLUMN set (the template params surfaced as columns). Prunes any
+ *  cell whose column was dropped so a stale value can't linger in a row. */
+export function setPartsTableColumns(graph: Graph, id: NodeId, columns: string[]): Graph {
+  const cols = columns.filter((c) => typeof c === 'string' && c.trim() !== '');
+  return updatePartsTable(graph, id, (n) => ({
+    ...n,
+    columns: cols,
+    rows: (n.rows ?? []).map((row) => {
+      const out: Record<string, ArgValue> = {};
+      for (const c of cols) if (Object.prototype.hasOwnProperty.call(row, c)) out[c] = row[c]!;
+      return out;
+    }),
+  }));
+}
+/** Append ONE row. `values` fills columns present in it (missing columns fall
+ *  through to the template's default); anything not in `columns` is ignored. */
+export function addPartsTableRow(graph: Graph, id: NodeId, values: Record<string, ArgValue> = {}): Graph {
+  return updatePartsTable(graph, id, (n) => {
+    const row: Record<string, ArgValue> = {};
+    for (const c of n.columns ?? []) if (Object.prototype.hasOwnProperty.call(values, c)) row[c] = values[c]!;
+    return { ...n, rows: [...(n.rows ?? []), row] };
+  });
+}
+/** DUPLICATE row `idx` (append a copy) — the common "add another string like this
+ *  one" gesture. No-op on an out-of-range index. */
+export function duplicatePartsTableRow(graph: Graph, id: NodeId, idx: number): Graph {
+  return updatePartsTable(graph, id, (n) => {
+    const rows = n.rows ?? [];
+    if (idx < 0 || idx >= rows.length) return n;
+    return { ...n, rows: [...rows, { ...rows[idx]! }] };
+  });
+}
+/** Remove row `idx`. No-op on an out-of-range index. */
+export function removePartsTableRow(graph: Graph, id: NodeId, idx: number): Graph {
+  return updatePartsTable(graph, id, (n) => {
+    const rows = n.rows ?? [];
+    if (idx < 0 || idx >= rows.length) return n;
+    return { ...n, rows: rows.filter((_, i) => i !== idx) };
+  });
+}
+/** Set / clear ONE cell (row `idx`, column `col`). A literal `value` (number/
+ *  string/bool) OR an `{expr}` string; passing null CLEARS the cell (back to the
+ *  template default). Adds `col` to `columns` if it's new. */
+export function setPartsTableCell(
+  graph: Graph, id: NodeId, idx: number, col: string,
+  value: { expr: string } | number | string | boolean | null,
+): Graph {
+  const c = (col || '').trim();
+  if (!c) return graph;
+  return updatePartsTable(graph, id, (n) => {
+    const rows = (n.rows ?? []).slice();
+    if (idx < 0 || idx >= rows.length) return n;
+    const row = { ...rows[idx]! };
+    if (value === null) delete row[c];
+    else if (typeof value === 'object') row[c] = asExpr(value.expr);
+    else row[c] = asLiteral(value);
+    rows[idx] = row;
+    const columns = (n.columns ?? []).includes(c) ? n.columns : [...(n.columns ?? []), c];
+    return { ...n, columns, rows };
+  });
 }
 
 /** Immutable update of one def by id (no-op if the id is unknown). */
