@@ -7,7 +7,7 @@
   Extracted from vocab/+page.svelte (R8).
 -->
 <script lang="ts">
-  import ParamGrid from '$lib/shared/ParamGrid.svelte';
+  import ParamGrid from '$lib/shared/ui/ParamGrid.svelte';
 
   let {
     entry,

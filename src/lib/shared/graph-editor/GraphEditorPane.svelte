@@ -148,7 +148,7 @@
   import PolyPreview from './PolyPreview.svelte';
   import { ProfilePreviewState } from './profile-preview-state.svelte';
   import ProfilePreview from './ProfilePreview.svelte';
-  import { dragNumber } from '$lib/shared/dragNumber';
+  import { dragNumber } from '$lib/shared/ui/dragNumber';
   import RightPane from './RightPane.svelte';
   import WireLayer from './WireLayer.svelte';
   import { unwireGraph, describeWireRef, type WireRef } from './wire-delete';
