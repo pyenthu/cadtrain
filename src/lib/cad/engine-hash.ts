@@ -37,10 +37,10 @@
  *  automatically for a module NOT listed here) when a new such module appears.
  *  `stdlib/**` covers both the active engines and `stdlib/stale/`. */
 const ENGINE_GLOBS = [
-  '/src/lib/cad/manifold-helpers.ts',
-  '/src/lib/cad/manifold-mesh.ts',
-  '/src/lib/cad/warp-spline.ts',
-  '/src/lib/cad/render-helpers.ts',
+  '/src/lib/engines/manifold/manifold-helpers.ts',
+  '/src/lib/engines/manifold/manifold-mesh.ts',
+  '/src/lib/engines/manifold/warp-spline.ts',
+  '/src/lib/engines/manifold/render-helpers.ts',
   // Injected into the bake sandbox by name, so a change to its minimum-curvature
   // math moves baked geometry without moving any part's source or scriptHash.
   '/src/lib/cad/survey-to-xyz.ts',
@@ -55,10 +55,10 @@ const ENGINE_GLOBS = [
  *  analysable (it cannot read them from the `ENGINE_GLOBS` const above). */
 export const ENGINE_SOURCES = import.meta.glob(
   [
-    '/src/lib/cad/manifold-helpers.ts',
-    '/src/lib/cad/manifold-mesh.ts',
-    '/src/lib/cad/warp-spline.ts',
-    '/src/lib/cad/render-helpers.ts',
+    '/src/lib/engines/manifold/manifold-helpers.ts',
+    '/src/lib/engines/manifold/manifold-mesh.ts',
+    '/src/lib/engines/manifold/warp-spline.ts',
+    '/src/lib/engines/manifold/render-helpers.ts',
     '/src/lib/cad/survey-to-xyz.ts',
     '/src/lib/cad/stdlib/**/*.ts',
     '!/src/lib/cad/stdlib/**/*.test.ts',

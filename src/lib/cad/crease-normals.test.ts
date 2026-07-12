@@ -13,9 +13,9 @@
  *   • end-to-end: a straight-Z sweep's rendered `full` normals are radial.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initManifold } from './manifold-helpers';
-import { sweepAlongPath } from './manifold-mesh';
-import { creaseAwareCornerNormals, finalizeManifold } from './render-helpers';
+import { initManifold } from '$lib/engines/manifold/manifold-helpers';
+import { sweepAlongPath } from '$lib/engines/manifold/manifold-mesh';
+import { creaseAwareCornerNormals, finalizeManifold } from '$lib/engines/manifold/render-helpers';
 
 /** Regular n-gon prism (radius R, height H along +Z) as ONE indexed mesh:
  *  side band + top/bottom cap fans. Returns deduped positions + triangles. */

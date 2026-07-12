@@ -9,7 +9,7 @@
  * must not do it for a well), and reading `_parts` never triggers it.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initManifold, cyl, mv, place } from './manifold-helpers';
+import { initManifold, cyl, mv, place } from '$lib/engines/manifold/manifold-helpers';
 import { buildPrimitiveGeom } from '$lib/server/primitive-loader';
 
 beforeAll(async () => { await initManifold(); }, 120_000);

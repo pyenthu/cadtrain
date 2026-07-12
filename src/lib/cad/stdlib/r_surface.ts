@@ -55,8 +55,8 @@
  * for type-checking only; at RUNTIME the sandbox strips them and injects
  * gridPatch / weldAndBuild by name (primitive-sandbox.ts).
  */
-import { gridPatch, weldAndBuild } from '$lib/cad/manifold-mesh';
-import type { Patch } from '$lib/cad/manifold-mesh';
+import { gridPatch, weldAndBuild } from '$lib/engines/manifold/manifold-mesh';
+import type { Patch } from '$lib/engines/manifold/manifold-mesh';
 
 export const meta = {
   id: 'r_surface',

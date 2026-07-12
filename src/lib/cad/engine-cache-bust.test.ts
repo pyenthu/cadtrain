@@ -17,7 +17,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { hashBakeKey } from '$lib/server/bake-cache';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';
-import { bakeCacheKey } from './bake-worker-core';
+import { bakeCacheKey } from '$lib/engines/manifold/bake-worker-core';
 import { ENGINE_HASH } from './engine-hash';
 
 // A real leaf engine (no meta.uses) so compile needs no dep fetch.

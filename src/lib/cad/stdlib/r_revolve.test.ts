@@ -13,8 +13,8 @@
  * radius (does not collapse to a top+bottom-only chord).
  */
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import { initManifold } from '../manifold-helpers';
-import { setAxialMaxZSpan } from '../manifold-mesh';
+import { initManifold } from '$lib/engines/manifold/manifold-helpers';
+import { setAxialMaxZSpan } from '$lib/engines/manifold/manifold-mesh';
 import { r_revolve } from './r_revolve';
 
 beforeAll(async () => {

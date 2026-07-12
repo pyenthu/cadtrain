@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { planAxialStations, subdivideAxialAdaptive, warpMeshJS } from './warp-spline';
+import { planAxialStations, subdivideAxialAdaptive, warpMeshJS } from '$lib/engines/manifold/warp-spline';
 
 type V3 = [number, number, number];
 

@@ -11,8 +11,8 @@
  * volume as the subtract. Plan: docs/plans/annular-csg2d-section-sweep.md.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initManifold } from './manifold-helpers';
-import { sweepAnnular, sweepAlongPath } from './manifold-mesh';
+import { initManifold } from '$lib/engines/manifold/manifold-helpers';
+import { sweepAnnular, sweepAlongPath } from '$lib/engines/manifold/manifold-mesh';
 import { resampleSpline } from './spline-resample';
 
 type V2 = [number, number];

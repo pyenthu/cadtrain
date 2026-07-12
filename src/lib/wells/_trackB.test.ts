@@ -23,8 +23,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import * as helpers from '$lib/cad/manifold-helpers';
-import { runCompiledManifold } from '$lib/cad/bake-worker-core';
+import * as helpers from '$lib/engines/manifold/manifold-helpers';
+import { runCompiledManifold } from '$lib/engines/manifold/bake-worker-core';
 import { parseWson, type Wson } from './wson';
 import { wsonToGraph } from './wson-to-graph';
 import { wellBakeSpec, wellMaxRadius } from './well-graph-bake';

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { warpMeshJS } from './warp-spline';
+import { warpMeshJS } from '$lib/engines/manifold/warp-spline';
 
 const unit = (v: number[]) => Math.hypot(v[0], v[1], v[2]);
 

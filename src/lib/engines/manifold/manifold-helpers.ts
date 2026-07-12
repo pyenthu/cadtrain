@@ -16,10 +16,10 @@ import Module from 'manifold-3d';
 // revolve path (revolveProfile). manifold-mesh imports nothing from here (it
 // reads the wasm singleton off globalThis), so this import is acyclic.
 import { subdivideProfileAxial, getAxialMaxZSpan, getAxialMaxSegPerEdge, revolveProfile, weldAndBuild } from './manifold-mesh';
-import { triSourceIds } from './part-id';
+import { triSourceIds } from '$lib/cad/part-id';
 // Trap detection lives in `manifold-trap.ts` — no `manifold-3d` import there, so
 // the MAIN-THREAD bake-client can use it without pulling the WASM module in.
-export { isManifoldFatalTrap, describeManifoldError } from './manifold-trap';
+export { isManifoldFatalTrap, describeManifoldError } from '$lib/cad/manifold-trap';
 
 // CIRCULAR_SEGMENTS_DEFAULT — used when nothing overrides.
 // CIRCULAR_SEGMENTS_COMPOSE — temporarily set by compose.ts via

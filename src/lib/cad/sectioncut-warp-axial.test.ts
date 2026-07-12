@@ -16,9 +16,9 @@
  * "Not manifold" bug). Dial off (no warp) → bare extrude → byte-identical golden.
  */
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import { initManifold, revolve, sectionCut, M, CS } from './manifold-helpers';
-import { setAxialMaxZSpan, getAxialMaxZSpan } from './manifold-mesh';
-import { warpManifoldAlongSpline } from './warp-spline';
+import { initManifold, revolve, sectionCut, M, CS } from '$lib/engines/manifold/manifold-helpers';
+import { setAxialMaxZSpan, getAxialMaxZSpan } from '$lib/engines/manifold/manifold-mesh';
+import { warpManifoldAlongSpline } from '$lib/engines/manifold/warp-spline';
 import { r_revolve } from './stdlib/r_revolve';
 
 beforeAll(async () => {

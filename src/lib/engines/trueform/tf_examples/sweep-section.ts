@@ -40,7 +40,7 @@
  */
 import { buildWeldGrid, type V3 } from './tf-weld';
 import type { FlatMesh } from '../trueform-client';
-import { sweepFrames, type SweepFrame } from '$lib/cad/manifold-mesh';
+import { sweepFrames, type SweepFrame } from '$lib/engines/manifold/manifold-mesh';
 
 /** A 2D section point `[x, y]` (the swept cross-section, in the frame's XY plane). */
 export type Pt2 = readonly [number, number];

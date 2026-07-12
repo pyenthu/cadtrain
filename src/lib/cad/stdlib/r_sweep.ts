@@ -66,7 +66,7 @@
  * sweepAlongPath by name (primitive-sandbox.ts), exactly like r_surface's
  * gridPatch/weldAndBuild.
  */
-import { sweepAlongPath, type Section2D } from '$lib/cad/manifold-mesh';
+import { sweepAlongPath, type Section2D } from '$lib/engines/manifold/manifold-mesh';
 
 export const meta = {
   id: 'r_sweep',

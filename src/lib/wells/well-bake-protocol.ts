@@ -15,7 +15,7 @@
  * worker envelope never has to change to add it.
  */
 
-import type { SerializedGeometry } from '$lib/cad/mesh-serial';
+import type { SerializedGeometry } from '$lib/engines/manifold/mesh-serial';
 
 /** A cloneable survey — the worker rebuilds a `WellDirection` from this (min-
  *  curvature is cheap, pure JS) rather than receiving the un-cloneable

@@ -34,8 +34,8 @@
 import { describe, it, expect } from 'vitest';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';
 import { analyzeParts, resolveDepColors } from '$lib/server/part-colors';
-import { runCompiledManifold } from './bake-worker-core';
-import { deserializeComponentResult } from './mesh-serial';
+import { runCompiledManifold } from '$lib/engines/manifold/bake-worker-core';
+import { deserializeComponentResult } from '$lib/engines/manifold/mesh-serial';
 import { graphToTf } from '$lib/engines/trueform/graph-to-tf';
 import type { Graph } from './composition-graph-types';
 import { brepResponseToGeo } from '$lib/engines/brep/brep-adapter';

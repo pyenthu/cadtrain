@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import * as helpers from '$lib/cad/manifold-helpers';
+import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { withManifoldTrapGuard } from '$lib/server/manifold-guard';
 import { buildPrimitiveGeom } from '$lib/server/primitive-loader';
 import { buildGlbBytes, DEFAULT_OUTER_HEX, DEFAULT_INNER_HEX, type ColorOverride } from '$lib/server/manifold-bake';

@@ -28,7 +28,7 @@
  */
 
 import * as THREE from 'three';
-import { serializeGeometry } from '$lib/cad/mesh-serial';
+import { serializeGeometry } from '$lib/engines/manifold/mesh-serial';
 import { initManifold, cutTube, cutCylinder, cutSphere } from './manifoldCut';
 import { buildWellDirection, type WellDirection } from './index';
 import type {

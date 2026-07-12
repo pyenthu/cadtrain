@@ -13,7 +13,7 @@
  *     part's mesh volume — matching BREP's makeCompound (separate shells).
  *   - Single-solid parts compare directly.
  */
-import * as helpers from '$lib/cad/manifold-helpers';
+import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
 import { paramKeysOf } from '$lib/cad/param-keys';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';

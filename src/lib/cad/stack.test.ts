@@ -11,10 +11,10 @@
  *      and serialiseGraph round-trips the param.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initManifold, stack, zMin, zMax, zLen, M } from './manifold-helpers';
+import { initManifold, stack, zMin, zMax, zLen, M } from '$lib/engines/manifold/manifold-helpers';
 import { emitGraph } from './composition-emit';
 import { hydrateGraph, addStackRef, removeParam, hasStackRef, STACK_REF_PARAM, newGraph, setStackChildRef, setStackChildCount, addCall, asLiteral, asParam } from './composition-graph';
-import { withStackRef } from './manifold-helpers';
+import { withStackRef } from '$lib/engines/manifold/manifold-helpers';
 
 beforeAll(async () => {
   await initManifold();

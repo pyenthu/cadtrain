@@ -28,8 +28,8 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { resolve, join, dirname } from 'node:path';
 import { parseWson, isDeviated, type Wson } from './wson';
 import { wellBakeSpec } from './well-graph-bake';
-import * as helpers from '$lib/cad/manifold-helpers';
-import { runCompiledManifold } from '$lib/cad/bake-worker-core';
+import * as helpers from '$lib/engines/manifold/manifold-helpers';
+import { runCompiledManifold } from '$lib/engines/manifold/bake-worker-core';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
 
 // ─────────────────────────────────────────────────────────────────────────────

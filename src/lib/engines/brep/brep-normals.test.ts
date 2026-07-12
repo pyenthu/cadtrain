@@ -20,7 +20,7 @@
  *   • the wall↔bottom-cap rim (>60° dihedral) stays SPLIT (hard) — not blurred.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import * as helpers from '$lib/cad/manifold-helpers';
+import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { brepFromSource } from '$lib/engines/brep/brep-occt';
 import { defaultParamObject } from '$lib/engines/brep/brep-audit';
 import { creaseAwareCornerNormals } from '$lib/engines/trueform/crease-normals';

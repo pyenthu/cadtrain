@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { isManifoldFatalTrap, describeManifoldError } from './manifold-trap';
-import { initManifold, resetManifold, cyl } from './manifold-helpers';
+import { initManifold, resetManifold, cyl } from '$lib/engines/manifold/manifold-helpers';
 
 describe('isManifoldFatalTrap', () => {
   it('recognises an ALREADY-poisoned singleton', () => {

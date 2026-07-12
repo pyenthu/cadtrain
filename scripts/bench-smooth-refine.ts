@@ -10,8 +10,8 @@
  * Run:  bun scripts/bench-smooth-refine.ts
  * Not part of the vitest suite (it's a manual prototype harness).
  */
-import { initManifold } from '../src/lib/cad/manifold-helpers';
-import { revolveProfile, weldAndBuild } from '../src/lib/cad/manifold-mesh';
+import { initManifold } from '../src/lib/engines/manifold/manifold-helpers';
+import { revolveProfile, weldAndBuild } from '../src/lib/engines/manifold/manifold-mesh';
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 

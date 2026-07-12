@@ -49,7 +49,7 @@
   import {
     deserializeComponentResult,
     type SerializedComponentResult,
-  } from '$lib/cad/mesh-serial';
+  } from '$lib/engines/manifold/mesh-serial';
   import { buildSvgCamera } from '$lib/shared/svg-camera';
   import { projectScene, shadeAndEmit, type ProjectedScene, type ProjectEntry } from '$lib/shared/svg-emit';
 

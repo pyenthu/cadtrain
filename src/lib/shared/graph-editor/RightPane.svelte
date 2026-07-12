@@ -260,7 +260,7 @@
   // transparency. The server already serializes them; dropping them here was the
   // root cause of the SVG ignoring per-part opacity (same class as the earlier
   // bake-client drop).
-  let svgMeshJson = $state<import('$lib/cad/mesh-serial').SerializedComponentResult | null>(null);
+  let svgMeshJson = $state<import('$lib/engines/manifold/mesh-serial').SerializedComponentResult | null>(null);
   let svgMeshKey = $state<string>('');
   let svgMeshBusy = $state(false);
 

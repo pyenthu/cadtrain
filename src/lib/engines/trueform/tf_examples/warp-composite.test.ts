@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildRevolveMesh } from './revolve';
 import { isRevolveTree, densifyRevolveTree } from './execute';
-import { subdivideAxialAdaptive, type Pt3 } from '$lib/cad/warp-spline';
+import { subdivideAxialAdaptive, type Pt3 } from '$lib/engines/manifold/warp-spline';
 
 /**
  * REGRESSION guard for TODO #39 — the TF-warp complex-assembly regression.

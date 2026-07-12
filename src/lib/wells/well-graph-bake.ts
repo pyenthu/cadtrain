@@ -149,7 +149,7 @@ export async function bakeWell(
     throw new Error(`well compile unsupported: ${compiled?.reason ?? 'unknown reason'}`);
   }
 
-  const { bakeClient, isCancelled } = await import('$lib/cad/bake-client');
+  const { bakeClient, isCancelled } = await import('$lib/engines/manifold/bake-client');
   const result = await bakeClient.run({
     script: compiled.script,
     scriptHash: compiled.scriptHash,

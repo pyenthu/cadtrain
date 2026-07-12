@@ -9,8 +9,8 @@
  * consecutive frames stay COHERENT (no roll) and a straight-Z path is well-posed.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initManifold } from './manifold-helpers';
-import { sweepFrames, sweepAlongPath, type SweepFrame } from './manifold-mesh';
+import { initManifold } from '$lib/engines/manifold/manifold-helpers';
+import { sweepFrames, sweepAlongPath, type SweepFrame } from '$lib/engines/manifold/manifold-mesh';
 
 type V3 = [number, number, number];
 const dot = (a: V3, b: V3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];

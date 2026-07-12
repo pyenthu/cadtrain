@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { error } from '@sveltejs/kit';
 import { withManifoldTrapGuard, trapText } from './manifold-guard';
-import { initManifold, cyl } from '$lib/cad/manifold-helpers';
+import { initManifold, cyl } from '$lib/engines/manifold/manifold-helpers';
 
 const G = globalThis as any;
 const poison = () => { G.__cadtrain_manifold__.wasm = null; G.__cadtrain_manifold__.M = null; };

@@ -4,7 +4,7 @@
  * PORTED from SVTC `src/lib/apps/wson/threeD/manifoldCut.js` (the CROWN JEWEL).
  * Two adaptations for cadtrain:
  *   1. `initManifold()` delegates to cadtrain's SHARED Manifold singleton
- *      (`$lib/cad/manifold-helpers` → `globalThis.__cadtrain_manifold__`) so
+ *      (`$lib/engines/manifold/manifold-helpers` → `globalThis.__cadtrain_manifold__`) so
  *      every Manifold built here shares one WASM Module + one prototype chain
  *      with the rest of cadtrain's geometry core (Rule 17 / manifold-helpers).
  *      We do NOT spin up a second `manifold-3d` Module.
@@ -26,7 +26,7 @@
  */
 
 import * as THREE from 'three';
-import { initManifold as cadInitManifold } from '$lib/cad/manifold-helpers';
+import { initManifold as cadInitManifold } from '$lib/engines/manifold/manifold-helpers';
 // Vite emits manifold.wasm as a build asset + rewrites this to its served (same-
 // origin) URL — the CORP-clean URL Emscripten's locateFile needs under COEP.
 import manifoldWasmUrl from 'manifold-3d/manifold.wasm?url';

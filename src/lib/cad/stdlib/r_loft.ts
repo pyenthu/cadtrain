@@ -35,7 +35,7 @@
  */
 import { resolveProfile } from '$lib/shared/profile-presets';
 import { resample } from '$lib/cad/csg-2d';
-import { gridPatch, weldAndBuild, type Patch } from '$lib/cad/manifold-mesh';
+import { gridPatch, weldAndBuild, type Patch } from '$lib/engines/manifold/manifold-mesh';
 
 export const meta = {
   id: 'r_loft',

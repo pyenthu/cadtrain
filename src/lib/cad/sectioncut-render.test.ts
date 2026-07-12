@@ -20,13 +20,13 @@
  * `colorBySourceGeo` + TF) instead of dropping it, in BOTH full and cut modes.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initManifold, cyl, tube, sectionCut, tagManifold } from './manifold-helpers';
-import { finalizeManifold } from './render-helpers';
+import { initManifold, cyl, tube, sectionCut, tagManifold } from '$lib/engines/manifold/manifold-helpers';
+import { finalizeManifold } from '$lib/engines/manifold/render-helpers';
 import { triSourceIds, partHashId, SECTION_ID } from './part-id';
 import type { PartColorLUT } from './part-lut-types';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';
 import { analyzeParts, resolveDepColors } from '$lib/server/part-colors';
-import { runCompiledManifold } from './bake-worker-core';
+import { runCompiledManifold } from '$lib/engines/manifold/bake-worker-core';
 
 beforeAll(async () => {
   await initManifold();

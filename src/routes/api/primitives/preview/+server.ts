@@ -1,12 +1,12 @@
 import { json, error } from '@sveltejs/kit';
-import * as helpers from '$lib/cad/manifold-helpers';
+import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { withManifoldTrapGuard } from '$lib/server/manifold-guard';
 import { isManifoldFatalTrap } from '$lib/cad/manifold-trap';
-import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from '$lib/cad/manifold-mesh';
+import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from '$lib/engines/manifold/manifold-mesh';
 import { buildPrimitiveGeom, hashDepSources } from '$lib/server/primitive-loader';
-import { finalizeManifold, lazyPartsOf } from '$lib/cad/render-helpers';
-import { serializeComponentResult } from '$lib/cad/mesh-serial';
-import { coerceSmooth } from '$lib/cad/bake-worker-core';
+import { finalizeManifold, lazyPartsOf } from '$lib/engines/manifold/render-helpers';
+import { serializeComponentResult } from '$lib/engines/manifold/mesh-serial';
+import { coerceSmooth } from '$lib/engines/manifold/bake-worker-core';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 import { analyzeParts, resolveDepColors } from '$lib/server/part-colors';
 import { hashBakeKey, readBakeCache, writeBakeCache, type BakeCacheOptions } from '$lib/server/bake-cache';

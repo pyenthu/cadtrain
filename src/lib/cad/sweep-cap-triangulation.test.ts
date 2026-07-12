@@ -11,8 +11,8 @@
  * and total exactly the section area.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initManifold } from './manifold-helpers';
-import { earClip2D, fanCap3D, sweepAlongPath } from './manifold-mesh';
+import { initManifold } from '$lib/engines/manifold/manifold-helpers';
+import { earClip2D, fanCap3D, sweepAlongPath } from '$lib/engines/manifold/manifold-mesh';
 
 type V2 = [number, number];
 type V3 = [number, number, number];

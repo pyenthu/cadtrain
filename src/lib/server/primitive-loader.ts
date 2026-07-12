@@ -26,7 +26,7 @@
 import { createHash } from 'node:crypto';
 import { transformSync } from 'esbuild';
 import { ENGINE_HASH } from '$lib/cad/engine-hash';
-import * as helpers from '$lib/cad/manifold-helpers';
+import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
 import { compileProfileBuild } from './profile-fn';
 import { recognizeComposite } from './recognize-composite';

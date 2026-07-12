@@ -20,7 +20,7 @@ import { join } from 'path';
 // reference that the component geom functions (cyl, tube, mv) close over
 // gets populated. A second-init (private to this module) would leave
 // the helpers' M as null and the geom would throw when called.
-import { initManifold, getCutBox, tagManifold } from '../cad/manifold-helpers';
+import { initManifold, getCutBox, tagManifold } from '$lib/engines/manifold/manifold-helpers';
 import { SECTION_ID, triSourceIds } from '../cad/part-id';
 
 const STATIC_DIR = join(process.cwd(), 'static', 'components');

@@ -25,7 +25,7 @@
 
 import * as helpers from './manifold-helpers';
 import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from './manifold-mesh';
-import { SANDBOX_ARG_NAMES, sandboxArgValues } from './primitive-sandbox';
+import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/cad/primitive-sandbox';
 import { finalizeManifold, type RenderMaterial, type PartColorLUT } from './render-helpers';
 import { serializeComponentResult, type SerializedComponentResult, type SerializedGeometry } from './mesh-serial';
 

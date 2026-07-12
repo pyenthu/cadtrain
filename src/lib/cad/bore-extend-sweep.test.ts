@@ -20,7 +20,7 @@
  * Degenerate/sliver counts are asserted as a SECONDARY signal only.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import { initManifold } from './manifold-helpers';
+import { initManifold } from '$lib/engines/manifold/manifold-helpers';
 import {
   sweepAlongPath,
   sweepAnnular,
@@ -28,7 +28,7 @@ import {
   extendPathEnds,
   getBoreExtFactor,
   setBoreExtFactor,
-} from './manifold-mesh';
+} from '$lib/engines/manifold/manifold-mesh';
 import { resampleSpline } from './spline-resample';
 
 type V2 = [number, number];

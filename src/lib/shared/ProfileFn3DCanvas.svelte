@@ -10,7 +10,7 @@
   import { onMount } from 'svelte';
   import { Canvas } from '@threlte/core';
   import { WebGLRenderer } from 'three';
-  import { deserializeComponentResult } from '$lib/cad/mesh-serial';
+  import { deserializeComponentResult } from '$lib/engines/manifold/mesh-serial';
 
   type Pt = [number, number];
   let { points, set, depth = 2 }: { points: Pt[]; set: 'revolve' | 'cartesian'; depth?: number } = $props();

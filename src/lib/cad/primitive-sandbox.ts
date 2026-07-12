@@ -15,12 +15,12 @@
  * capFan/weldAndBuild from manifold-mesh.ts) + `M` (Manifold module
  * proxy), `G` (globalThis, for `G.__cadtrain_manifold__.wasm`), `Math`.
  */
-import * as helpers from './manifold-helpers';
-import { gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, sweepAnnular, boredSweep, loftStations } from './manifold-mesh';
+import * as helpers from '$lib/engines/manifold/manifold-helpers';
+import { gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, sweepAnnular, boredSweep, loftStations } from '$lib/engines/manifold/manifold-mesh';
 import { resampleSpline } from './spline-resample';
 import { surveyToXYZ } from './survey-to-xyz';
 import { resolveProfile } from '$lib/shared/profile-presets';
-import { warpManifoldAlongSpline } from './warp-spline';
+import { warpManifoldAlongSpline } from '$lib/engines/manifold/warp-spline';
 import { cs, extrude_csg, ext, resample } from './csg-2d';
 import { compileSketch } from './sketch';
 import * as mathLib from './math-lib';

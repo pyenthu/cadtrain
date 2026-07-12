@@ -6,8 +6,8 @@
  * (a true circle → all ≈ R; a wavy reconstruction → dips well below R).
  *   bun scripts/test-gyroid-and-smooth.ts
  */
-import { initManifold, M } from '../src/lib/cad/manifold-helpers';
-import { revolveProfile, weldAndBuild } from '../src/lib/cad/manifold-mesh';
+import { initManifold, M } from '../src/lib/engines/manifold/manifold-helpers';
+import { revolveProfile, weldAndBuild } from '../src/lib/engines/manifold/manifold-mesh';
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 

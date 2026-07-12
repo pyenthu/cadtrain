@@ -21,7 +21,7 @@
  * RUNTIME the sandbox strips imports and injects the helpers by name; the
  * primitive executes identically to a volume part.
  */
-import { M } from '$lib/cad/manifold-helpers';
+import { M } from '$lib/engines/manifold/manifold-helpers';
 
 export const meta = {
   id: 'r_cuboid',

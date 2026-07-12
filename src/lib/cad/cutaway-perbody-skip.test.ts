@@ -6,9 +6,9 @@
  * cross-section — only a genuinely huge SINGLE connected body may skip.
  */
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import * as helpers from './manifold-helpers';
-import { cyl, mv, place, setCircularSegmentCount, getCircularSegmentCount } from './manifold-helpers';
-import { finalizeManifold } from './render-helpers';
+import * as helpers from '$lib/engines/manifold/manifold-helpers';
+import { cyl, mv, place, setCircularSegmentCount, getCircularSegmentCount } from '$lib/engines/manifold/manifold-helpers';
+import { finalizeManifold } from '$lib/engines/manifold/render-helpers';
 
 function nVerts(g: any): number {
   const a = g?.getAttribute?.('position');

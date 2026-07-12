@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';
 import { analyzeParts, resolveDepColors } from '$lib/server/part-colors';
-import { runCompiledManifold } from './bake-worker-core';
-import { deserializeComponentResult } from './mesh-serial';
+import { runCompiledManifold } from '$lib/engines/manifold/bake-worker-core';
+import { deserializeComponentResult } from '$lib/engines/manifold/mesh-serial';
 
 const sources: Record<string, string> = {
   t86_red: `export const meta = { id:'t86_red', name:'red', params:{ r:{value:2}, h:{value:4} }, colorOuter:'#cc0000', colorInner:'#661111' };\nexport function t86_red(r, h){ return cyl(h, r); }`,

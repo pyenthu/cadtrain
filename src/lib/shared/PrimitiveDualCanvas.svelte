@@ -12,8 +12,8 @@
   import { onMount, onDestroy } from 'svelte';
   import { Canvas } from '@threlte/core';
   import { WebGLRenderer } from 'three';
-  import { deserializeComponentResult } from '$lib/cad/mesh-serial';
-  import { bakeClient, isCancelled } from '$lib/cad/bake-client';
+  import { deserializeComponentResult } from '$lib/engines/manifold/mesh-serial';
+  import { bakeClient, isCancelled } from '$lib/engines/manifold/bake-client';
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/engines/brep/brep-adapter';
   import { scene } from '$lib/shared/scene-state.svelte';
 

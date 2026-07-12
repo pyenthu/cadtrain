@@ -22,9 +22,9 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import { initManifold, sectionCut } from '$lib/cad/manifold-helpers';
-import { setAxialMaxZSpan } from '$lib/cad/manifold-mesh';
-import { warpManifoldAlongSpline } from '$lib/cad/warp-spline';
+import { initManifold, sectionCut } from '$lib/engines/manifold/manifold-helpers';
+import { setAxialMaxZSpan } from '$lib/engines/manifold/manifold-mesh';
+import { warpManifoldAlongSpline } from '$lib/engines/manifold/warp-spline';
 import { r_revolve } from '$lib/cad/stdlib/r_revolve';
 import { buildTrajectory } from './assemble';
 import { parseWson, type Wson } from './wson';

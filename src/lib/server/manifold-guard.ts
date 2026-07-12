@@ -21,7 +21,7 @@
  */
 import { error, type HttpError } from '@sveltejs/kit';
 import { isManifoldFatalTrap, describeManifoldError } from '$lib/cad/manifold-trap';
-import { resetManifold } from '$lib/cad/manifold-helpers';
+import { resetManifold } from '$lib/engines/manifold/manifold-helpers';
 
 /** SvelteKit's `error()` produces `{ status, body: { message } }`. */
 function isHttpError(e: unknown): e is HttpError {

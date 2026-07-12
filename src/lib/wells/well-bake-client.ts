@@ -31,7 +31,7 @@
  */
 
 import * as THREE from 'three';
-import { deserializeGeometry, type SerializedGeometry } from '$lib/cad/mesh-serial';
+import { deserializeGeometry, type SerializedGeometry } from '$lib/engines/manifold/mesh-serial';
 import {
   WellBakePool, WELL_BAKE_CANCELLED, type WellBakeJobSpec, type WellBakeReply,
 } from './well-bake-pool';

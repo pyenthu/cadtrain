@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildRevolveMesh, type ProfilePoint } from './revolve';
-import { densifyProfileAxial, warpMeshJS, type Pt3 } from '$lib/cad/warp-spline';
+import { densifyProfileAxial, warpMeshJS, type Pt3 } from '$lib/engines/manifold/warp-spline';
 
 /**
  * REGRESSION guard for the TF WARP triangulation fix (execute.ts `case 'warp'`,

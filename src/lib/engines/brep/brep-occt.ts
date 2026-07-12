@@ -245,7 +245,7 @@ export async function brepFromSource(
   const replicad: any = await import('replicad');
   const { compileSketch } = await import('$lib/cad/sketch');
   const { resampleSpline } = await import('$lib/cad/spline-resample');
-  const { splineSampler, spline3DFrames } = await import('$lib/cad/warp-spline');
+  const { splineSampler, spline3DFrames } = await import('$lib/engines/manifold/warp-spline');
   const { resolveProfile } = await import('$lib/shared/profile-presets');
   const {
     draw, makeBaseBox, makeCompound, drawPolysides,

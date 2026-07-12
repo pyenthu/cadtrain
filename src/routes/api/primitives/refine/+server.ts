@@ -35,7 +35,7 @@ import type { RequestHandler } from './$types';
 import { env } from '$env/dynamic/private';
 import { createAnthropicClient } from '$lib/shared/anthropic-api';
 import { checkRateLimit } from '$lib/rate_limit';
-import { discoverHelpers, discoverOperators } from '$lib/cad/manifold-helpers-meta';
+import { discoverHelpers, discoverOperators } from '$lib/engines/manifold/manifold-helpers-meta';
 import { extractMetaFromSource, extractFunctionName } from '$lib/server/primitives-meta';
 
 const MAX_SOURCE_BYTES = 256 * 1024;

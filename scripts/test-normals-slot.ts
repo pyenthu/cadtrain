@@ -4,8 +4,8 @@
  *   bun scripts/test-normals-slot.ts
  */
 import { createRequire } from 'module';
-import { initManifold } from '../src/lib/cad/manifold-helpers';
-import { revolveProfile, weldAndBuild } from '../src/lib/cad/manifold-mesh';
+import { initManifold } from '../src/lib/engines/manifold/manifold-helpers';
+import { revolveProfile, weldAndBuild } from '../src/lib/engines/manifold/manifold-mesh';
 
 function ver() {
   try { return createRequire(import.meta.url)('manifold-3d/package.json').version; }

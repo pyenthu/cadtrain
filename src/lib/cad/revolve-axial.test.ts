@@ -12,14 +12,14 @@
  *      gained interior-z rings (the thing that makes warp smooth).
  */
 import { describe, it, expect, beforeAll, afterEach } from 'vitest';
-import { initManifold } from './manifold-helpers';
+import { initManifold } from '$lib/engines/manifold/manifold-helpers';
 import {
   revolveProfile,
   weldAndBuild,
   subdivideProfileAxial,
   setAxialMaxZSpan,
   getAxialMaxZSpan,
-} from './manifold-mesh';
+} from '$lib/engines/manifold/manifold-mesh';
 
 beforeAll(async () => {
   await initManifold();

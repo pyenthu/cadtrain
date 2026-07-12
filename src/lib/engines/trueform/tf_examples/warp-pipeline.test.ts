@@ -6,7 +6,7 @@ import {
   warpMeshJS,
   splineSampler,
   type Pt2,
-} from '$lib/cad/warp-spline';
+} from '$lib/engines/manifold/warp-spline';
 
 /**
  * PURE pipeline guard for the TF WARP fix (execute.ts `case 'warp'`). No WASM: the

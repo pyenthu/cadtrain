@@ -11,7 +11,7 @@
  * place/sectionCut lost) these fail.
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import * as helpers from '$lib/cad/manifold-helpers';
+import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { bakeMF, bakeBREP, defaultParamObject } from './brep-audit';
 
 // The inline parts below only depend on the stdlib engines. The MF compiler

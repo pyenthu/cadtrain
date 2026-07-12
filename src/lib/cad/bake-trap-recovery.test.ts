@@ -6,7 +6,7 @@
  * job whose worker just died. That is pure, and it is what these tests pin.
  */
 import { describe, it, expect } from 'vitest';
-import { planTrapRecovery, MAX_TRAP_RETRIES } from './bake-client';
+import { planTrapRecovery, MAX_TRAP_RETRIES } from '$lib/engines/manifold/bake-client';
 
 describe('planTrapRecovery', () => {
   it('retries a fresh job once — a clean worker is a clean Manifold module', () => {

@@ -26,7 +26,7 @@
  * primitive-sandbox.ts), so the function executes identically to a volume part.
  */
 import { resolveProfile } from '$lib/shared/profile-presets';
-import { revolveProfile, weldAndBuild } from '$lib/cad/manifold-mesh';
+import { revolveProfile, weldAndBuild } from '$lib/engines/manifold/manifold-mesh';
 
 export const meta = {
   id: 'r_revolve',

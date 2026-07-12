@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';
 import { analyzeParts, resolveDepColors } from '$lib/server/part-colors';
-import { runCompiledManifold } from './bake-worker-core';
+import { runCompiledManifold } from '$lib/engines/manifold/bake-worker-core';
 
 // #86 — end-to-end proof that the CLIENT-exec bake (compile → runCompiledManifold)
 // tints each subpart in its OWN authored colour, matching the server /preview

@@ -9,7 +9,7 @@
  * (bbox curves far past a straight tube's radial extent).
  */
 import { describe, it, expect, beforeAll } from 'vitest';
-import * as helpers from '$lib/cad/manifold-helpers';
+import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { bakeMF, bakeBREP, meshStats, defaultParamObject } from './brep-audit';
 import { brepFromSource } from './brep-occt';
 

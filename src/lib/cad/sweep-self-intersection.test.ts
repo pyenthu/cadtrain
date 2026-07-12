@@ -10,7 +10,7 @@
  * See memory todo_sweep_self_intersection_check.
  */
 import { describe, it, expect } from 'vitest';
-import { sectionSelfIntersects } from './manifold-mesh';
+import { sectionSelfIntersects } from '$lib/engines/manifold/manifold-mesh';
 
 type V2 = [number, number];
 
