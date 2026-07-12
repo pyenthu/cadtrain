@@ -13,6 +13,9 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { bakeMF, bakeBREP, defaultParamObject } from './brep-audit';
+import { hydrateGraph } from '$lib/graph/composition-graph-hydrate';
+import { emitGraph } from '$lib/graph/composition-emit';
+import sweepTubeDemo from '../../../../tests/golden/graph/sweep_tube_demo.json';
 
 // The inline parts below only depend on the stdlib engines. The MF compiler
 // (compilePrimitiveScript) inlines engine deps through the fetchFn, so serve
@@ -114,6 +117,21 @@ export function t_degen(p) {
 }`;
     const { brepVol } = await assertParity('t_degen', src);
     expect(brepVol, 't_degen: coincident-vertex revolve must bake a positive solid').toBeGreaterThan(0);
+  });
+
+  it('r_sweep — resampled-spline tube: MakePipeShell throws, rail-loft recovers at parity', async () => {
+    // sweep_tube_demo sweeps a circle down a NEARLY-STRAIGHT resampled spline
+    // (max ~5° turn/segment, no fold). Manifold bakes it fine, but OCCT's
+    // BRepOffsetAPI_MakePipeShell throws a Standard_Failure on that spine — which
+    // failed the WHOLE BREP build (the "flicker": the tab showed a stale/partial
+    // mesh). The fix keeps MakePipeShell as primary and, ONLY on its throw,
+    // recovers by lofting the section through per-station RMF frames
+    // (ThruSections). This pins that the golden now bakes a valid solid at parity
+    // with the Manifold oracle instead of failing.
+    const graph = hydrateGraph(sweepTubeDemo as any);
+    const { source } = emitGraph(graph, { id: 'sweep_tube_demo' });
+    const { brepVol } = await assertParity('sweep_tube_demo', source, 0.06);
+    expect(brepVol, 'sweep_tube_demo: BREP must build a real solid (was a throw)').toBeGreaterThan(6);
   });
 
   it('place + fold — A.add(place([…])) unions a repeated part (combineBool)', async () => {

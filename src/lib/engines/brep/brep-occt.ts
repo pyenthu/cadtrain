@@ -249,8 +249,9 @@ export async function brepFromSource(
   const { resolveProfile } = await import('$lib/shared/profiles/profile-presets');
   const {
     draw, makeBaseBox, makeCompound, drawPolysides,
-    assembleWire, makeLine, genericSweep,
+    assembleWire, makeLine, genericSweep, loft,
   } = replicad;
+  const { sweepFrames } = await import('$lib/engines/manifold/manifold-mesh');
 
   const m = source.match(/export\s+function\s+\w+\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
   if (!m) return null;
@@ -494,6 +495,27 @@ export async function brepFromSource(
   };
   const asPath = (p: any): number[][] =>
     (typeof p === 'string' ? JSON.parse(p) : p).map((q: any) => [Number(q[0]) || 0, Number(q[1]) || 0, Number(q[2]) || 0]);
+  // The ORIGINAL transport sweep (MakePipeShell) — kept as fallback for closed
+  // loops + any loft failure. Polyline (not BSpline) spine is deliberate:
+  // makeBSplineApproximation over near-cusp arc-length samples sends MakePipeShell
+  // into an effectively-infinite build; a polyline builds fast and rides the SAME
+  // points the Manifold sweep does.
+  const sweepPipeShell = (pathPts: number[][], sec: number[][], closedPath: boolean) => {
+    const spinePath = closedPath ? [...pathPts, pathPts[0]] : pathPts;
+    const spineEdges: any[] = [];
+    for (let i = 0; i < spinePath.length - 1; i++) spineEdges.push(makeLine(spinePath[i], spinePath[i + 1]));
+    const spineWire = assembleWire(spineEdges);
+    const t = V.norm(V.sub(pathPts[1], pathPts[0]));
+    let up = Math.abs(t[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0];
+    const side = V.norm(V.cross(t, up));
+    up = V.norm(V.cross(side, t));
+    const P0 = pathPts[0];
+    const pt3 = (a: number, b: number) => [P0[0] + side[0] * a + up[0] * b, P0[1] + side[1] * a + up[1] * b, P0[2] + side[2] * a + up[2] * b];
+    const edges: any[] = [];
+    for (let i = 0; i < sec.length; i++) edges.push(makeLine(pt3(sec[i][0], sec[i][1]), pt3(sec[(i + 1) % sec.length][0], sec[(i + 1) % sec.length][1])));
+    return genericSweep(assembleWire(edges), spineWire, { forceProfileSpineOthogonality: true });
+  };
+
   const sweepOcct = (path: number[][], section2d: any[], closedPath: boolean) => {
     const pathPts = asPath(path);
     if (pathPts.length < 2) throw new Error('r_sweep: path needs ≥2 points');
@@ -501,39 +523,39 @@ export async function brepFromSource(
       .map((s: any) => [Number(s[0]) || 0, Number(s[1]) || 0]);
     if (sec.length < 3) throw new Error('r_sweep: section needs ≥3 points');
 
-    // Spine: a POLYLINE wire through the (already arc-length-resampled) path
-    // points — NOT a BSpline approximation. makeBSplineApproximation over
-    // near-cusp arc-length samples (a straight run into a sharp bend, e.g. the
-    // sweep_tube_demo path) produces a curve that sends OCCT's
-    // BRepOffsetAPI_MakePipeShell into a pathological / effectively-infinite
-    // build (observed: >4 min at 99% CPU, never returns). A polyline spine
-    // builds in ~1ms, sweeps in ~300ms, and is byte-for-byte the same path the
-    // Manifold sweep rides — identical fidelity, no approximation risk.
-    const spinePath = closedPath ? [...pathPts, pathPts[0]] : pathPts;
-    const spineEdges: any[] = [];
-    for (let i = 0; i < spinePath.length - 1; i++) spineEdges.push(makeLine(spinePath[i], spinePath[i + 1]));
-    const spineWire = assembleWire(spineEdges);
+    // RAIL-MAJOR loft — place the section at EACH path station on a rotation-
+    // minimizing frame (sweepFrames: the SAME frames the Manifold sweep rides) and
+    // loft (ThruSections) through the ring stack. Used ONLY as the recovery for a
+    // MakePipeShell throw (below).
+    const railLoft = () => {
+      const frames = sweepFrames(pathPts as any, { closedPath: false });
+      const rings = frames.map((f: any) => {
+        const w = (a: number, b: number) => [f.o[0] + f.side[0] * a + f.up[0] * b, f.o[1] + f.side[1] * a + f.up[1] * b, f.o[2] + f.side[2] * a + f.up[2] * b];
+        const edges: any[] = [];
+        for (let i = 0; i < sec.length; i++) edges.push(makeLine(w(sec[i][0], sec[i][1]), w(sec[(i + 1) % sec.length][0], sec[(i + 1) % sec.length][1])));
+        return assembleWire(edges);
+      });
+      return loft(rings, { ruled: true });
+    };
 
-    // Stable start frame ⟂ the start tangent (mirrors sweepFrames' seed).
-    const t = V.norm(V.sub(pathPts[1], pathPts[0]));
-    let up = Math.abs(t[2]) < 0.9 ? [0, 0, 1] : [0, 1, 0];
-    const side = V.norm(V.cross(t, up));
-    up = V.norm(V.cross(side, t));
-    const P0 = pathPts[0];
-    const pt3 = (a: number, b: number) => [
-      P0[0] + side[0] * a + up[0] * b,
-      P0[1] + side[1] * a + up[1] * b,
-      P0[2] + side[2] * a + up[2] * b,
-    ];
-    // Closed polyline profile wire in that plane (faceted, like the Manifold wall).
-    const edges: any[] = [];
-    for (let i = 0; i < sec.length; i++) {
-      const a = pt3(sec[i][0], sec[i][1]);
-      const b = pt3(sec[(i + 1) % sec.length][0], sec[(i + 1) % sec.length][1]);
-      edges.push(makeLine(a, b));
+    // MakePipeShell FIRST — it produces exact swept surfaces and is clean for the
+    // smooth open sweeps that matter (arcs, S-curves). It only THROWS a
+    // Standard_Failure on some resampled splines (e.g. sweep_tube_demo, a nearly-
+    // straight micro-wiggly spine that MF bakes fine). On that throw ONLY, recover
+    // with the rail loft, which bakes those cases at exact volume parity. Loft is
+    // NOT the primary: ThruSections overshoots through rings on an S-curve → a
+    // self-overlapping solid (20-33% volume error), whereas MakePipeShell sweeps
+    // those clean. The throw does not corrupt the heap for the immediate retry
+    // (verified: loft-after-throw → parity 0.0%); if the loft ALSO throws, re-throw
+    // the original error so the executor's outer handler resets OCCT + reports it.
+    if (closedPath !== true) {
+      try { return wrap(sweepPipeShell(pathPts, sec, false)); }
+      catch (ePipe) {
+        try { return wrap(railLoft()); }
+        catch { throw ePipe; }
+      }
     }
-    const profileWire = assembleWire(edges);
-    return wrap(genericSweep(profileWire, spineWire, { forceProfileSpineOthogonality: true }));
+    return wrap(sweepPipeShell(pathPts, sec, closedPath));
   };
   const r_sweep = (a: any, section?: any, closedPath?: any) => {
     if (a && a.path !== undefined) return sweepOcct(a.path, a.section, a.closedPath === true);
