@@ -712,7 +712,16 @@
   // On Threlte's on-demand render loop, mutating the RectAreaLight object
   // directly (below) doesn't invalidate a frame — so changes wouldn't show
   // live. invalidate() requests a re-render after each update.
-  const { invalidate, size } = useThrelte();
+  const { invalidate, size, renderer } = useThrelte();
+
+  // Tone-mapping EXPOSURE — Threlte applies AgX tone mapping at exposure 1.0 by
+  // default, which reads dim (esp. on long/deviated parts). Drive it from the
+  // Brightness knob (scene.exposure) so parts lift globally, with no re-bake.
+  $effect(() => {
+    if (!renderer) return;
+    (renderer as any).toneMappingExposure = scene.exposure;
+    invalidate();
+  });
 
   // Live-mesh material ref — the ◐ Auto/Smooth/Flat toggle flips flatShading IN
   // PLACE (no mesh remount / no re-bake). flatShading is a shader-recompile prop,
@@ -948,7 +957,7 @@
      back to the CSS (the prior dev-white / prod-black mismatch). -->
 <T.Color args={['#ffffff']} attach="background" />
 <!-- Ambient fill so the side the directional light doesn't reach isn't black. -->
-<T.AmbientLight intensity={0.45} />
+<T.AmbientLight intensity={scene.ambientIntensity} />
 
 <!-- SOLE light (user pref 2026-06-14): a DIRECTIONAL light projecting PERPENDICULAR
      to the Z (drilling) axis, so the whole length is lit evenly (parallel rays,

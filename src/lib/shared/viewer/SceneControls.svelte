@@ -91,6 +91,28 @@
         <button class="sv-mini" type="button" title="Reset to opaque" onclick={() => (scene.xrayOpacity = 1)}>reset</button>
       {/if}
     </div>
+    <!-- Lighting (VIEW-ONLY, live, no re-bake). Bright = renderer tone-mapping
+         exposure (a global lift over Threlte's dim AgX default); Amb = ambient
+         fill (rescues a deviated part's shadow side); Key = the directional
+         light intensity. -->
+    <div class="sv-row sv-light" title="Brightness — tone-mapping exposure (global lift)">
+      <span class="sv-label">Bright</span>
+      <input class="sv-range" type="range" min="0.6" max="2.5" step="0.05" bind:value={scene.exposure} />
+      <span class="sv-sub-val">{scene.exposure.toFixed(2)}</span>
+      {#if scene.exposure !== 1.35}<button class="sv-mini" type="button" title="Reset" onclick={() => (scene.exposure = 1.35)}>reset</button>{/if}
+    </div>
+    <div class="sv-row sv-light" title="Ambient fill — lifts faces the key light doesn't reach (helps long/deviated parts)">
+      <span class="sv-label">Amb</span>
+      <input class="sv-range" type="range" min="0" max="1.5" step="0.05" bind:value={scene.ambientIntensity} />
+      <span class="sv-sub-val">{scene.ambientIntensity.toFixed(2)}</span>
+      {#if scene.ambientIntensity !== 0.7}<button class="sv-mini" type="button" title="Reset" onclick={() => (scene.ambientIntensity = 0.7)}>reset</button>{/if}
+    </div>
+    <div class="sv-row sv-light" title="Key light — the directional light intensity">
+      <span class="sv-label">Key</span>
+      <input class="sv-range" type="range" min="0" max="3" step="0.05" bind:value={scene.zDirIntensity} />
+      <span class="sv-sub-val">{scene.zDirIntensity.toFixed(2)}</span>
+      {#if scene.zDirIntensity !== 1.3}<button class="sv-mini" type="button" title="Reset" onclick={() => (scene.zDirIntensity = 1.3)}>reset</button>{/if}
+    </div>
     <!-- Smooth-shading: render-time flatShading flip (free, no re-bake).
          Auto = the per-part heuristic (curved engines smooth, cubes/hex flat);
          Smooth / Flat force it. Crease = the BUILD-TIME minSharpAngle baked into
@@ -185,6 +207,10 @@
   /* X-ray opacity row */
   .sv-xray { gap: 6px; margin-top: 2px; }
   .sv-xray .sv-range { flex: 1; min-width: 0; accent-color: #cc2222; height: 14px; }
+  /* Lighting rows (brightness / ambient / key) */
+  .sv-light { gap: 6px; margin-top: 2px; }
+  .sv-light .sv-label { width: 38px; }
+  .sv-light .sv-range { flex: 1; min-width: 0; accent-color: #cc2222; height: 14px; }
   .sv-sub-val { min-width: 30px; text-align: right; opacity: 0.8; font-variant-numeric: tabular-nums; }
   .sv-mini { padding: 1px 6px; background: rgba(255,255,255,0.1); color: #ddd; border: 1px solid rgba(255,255,255,0.2); border-radius: 3px; cursor: pointer; font: 10px Arial; }
   .sv-mini:hover { background: rgba(255,255,255,0.2); color: #fff; }
