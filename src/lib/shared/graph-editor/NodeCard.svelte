@@ -43,6 +43,7 @@
     removeSketchOp,
     removeNode,
     removeMaterialNode,
+    resolveEffectiveAppearance,
     setSplinePlot,
     removeWarpChild,
     setCutawayAz,
@@ -146,6 +147,7 @@
     openExprDefEditor,
     onOpenSplineEditor,
     onOpenMaterialEditor,
+    onOpenPartMaterial,
     setHoverVertex,
     clearHoverVertex,
     openPolyPreview,
@@ -199,6 +201,10 @@
     /** Open the material-editor popover for a material node (G-MAT-CARD). Optional
      *  so callers that don't wire material editing still type-check. */
     onOpenMaterialEditor?: (ev: PointerEvent, id: string) => void;
+    /** Open the per-PART appearance popover (colour/material/opacity) for a Call
+     *  node, anchored to its material swatch chip. (#66/#982 — material moved
+     *  off the PROPERTIES table onto the card.) */
+    onOpenPartMaterial?: (ev: PointerEvent, id: string) => void;
     setHoverVertex: (polyId: string, idx: number) => void;
     clearHoverVertex: (polyId: string, idx: number) => void;
     openPolyPreview: (ev: PointerEvent, polyId: string) => void;
@@ -293,6 +299,21 @@
                   data-tip={matBound ? 'material: wired — drop another material to reassign (delete the material node to unwire)' : 'material: wire a ◑ material node here to set this part’s colour · texture · opacity'}
                   onpointerup={(ev) => wire.endWireOnMaterial(ev, n.id)}/>
                 {#if matBound}<text x="9" y="20" class="ge-mat-bound" style="pointer-events:none">◑</text>{/if}
+                <!-- Material swatch CHIP → per-part appearance popover (colour ·
+                     finish · opacity), #66/#982. The ◑ socket at the left edge is
+                     the wire hookup; this chip is the quick per-part override.
+                     Filled with the part's EFFECTIVE outside colour so the card
+                     previews its own colour. Hidden when the host doesn't wire the
+                     popover (e.g. /vocab embed). -->
+                {#if onOpenPartMaterial}
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <rect role="button" tabindex="-1" class="ge-mat-swatch"
+                    x={size.w - 78} y="9" width="14" height="14" rx="3"
+                    fill={(resolveEffectiveAppearance(graph, n.id) as any)?.colorOuter ?? (graph as any).colorOuter ?? '#cc2222'}
+                    class:bound={matBound}
+                    data-tip={matBound ? 'material: WIRED to a ◑ node — click to edit this part’s colour · finish · opacity override' : 'material: this part’s colour · finish · opacity (click) — or wire a ◑ material node into the left socket'}
+                    onpointerdown={(ev) => { ev.stopPropagation(); onOpenPartMaterial(ev, n.id); }}/>
+                {/if}
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
                 <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
                   <div class="ge-args" xmlns="http://www.w3.org/1999/xhtml">
@@ -2019,6 +2040,11 @@
   .ge-mat-badge { stroke: #555; stroke-width: 0.75; cursor: pointer; }
   .ge-mat-del { font-size: 13px; }
   .ge-sock.out.material-out { fill: #10b981; stroke: #059669; stroke-width: 2; }
+  /* Material swatch chip on the Call card (#66/#982) — the per-part colour/finish/
+     opacity trigger. Filled with the part's effective outside colour. */
+  .ge-mat-swatch { stroke: #94a3b8; stroke-width: 1; cursor: pointer; }
+  .ge-mat-swatch:hover { stroke: #0369a1; stroke-width: 2; }
+  .ge-mat-swatch.bound { stroke: #059669; stroke-width: 2; }
   .ge-sock.in.material-in { fill: #fff; stroke: #10b981; stroke-width: 1.5; }
   .ge-sock.in.material-in.wired { fill: #10b981; stroke: #059669; stroke-width: 2; }
   .ge-mat-bound { font-size: 9px; fill: #fff; }

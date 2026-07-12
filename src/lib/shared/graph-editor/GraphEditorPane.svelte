@@ -103,10 +103,6 @@
     setParamSchema,
     addStackRef,
     hasStackRef,
-    setPartColorOuter,
-    setPartColorInner,
-    setPartMaterial,
-    setPartOpacity,
     setPartAppearance,
     setStackChildRef,
     setStackChildCount,
@@ -325,6 +321,21 @@
   /** Patch a material node's appearance (sparse; null/'none' clears). */
   function patchMaterial(patch: any) {
     if (matPop) graph = updateMaterialNode(graph, matPop.id, patch);
+  }
+
+  // Per-PART appearance popover (#66/#982) — a Call card's material swatch chip
+  // opens this to edit THAT part's colour/material/opacity override, anchored to
+  // the chip. Reuses MaterialEditorPopover (showName=false, part label as title);
+  // distinct from matPop, which edits a material NODE's bundle.
+  let partMatPop = $state<{ anchor: { x: number; y: number }; id: string; label: string } | null>(null);
+  let partMatAppearance = $derived.by<any>(() =>
+    partMatPop ? resolveEffectiveAppearance(graph, partMatPop.id) : null,
+  );
+  function openPartMaterial(ev: PointerEvent, id: string) {
+    const r = (ev.currentTarget as Element).getBoundingClientRect();
+    const n = graph.nodes[id] as any;
+    const label = n?.type === 'call' ? (n.alias || n.src) : 'part';
+    partMatPop = { anchor: { x: r.right + 8, y: r.top }, id, label };
   }
   // Wire-delete popover — click a connection in WireLayer → open a small "delete
   // connection" menu at the click; confirming unwires exactly that target slot.
@@ -1385,13 +1396,11 @@
   $effect(() => {
     if (typeof localStorage !== 'undefined') localStorage.setItem('ge-left-tab', leftTab);
   });
-  // Properties-tab body height — grows with the per-part table (#13): a
-  // z-offset row + table header + (Default + N parts) rows. Computed off the
-  // Output's child count directly to avoid declaration-order coupling.
-  const propsBodyH = $derived.by(() => {
-    const nRows = partsForProps.length + 1; // + the "Default" row
-    return 64 + nRows * 22 + CARD_PAD * 2 + 5;
-  });
+  // Properties-tab body height — now JUST the z-offset row. The per-part material
+  // table moved onto the node cards (#66/#982: each Call card has a material
+  // swatch chip → popover + the ◑ wire hookup), so the body is a single compact
+  // row instead of growing with the part count.
+  const propsBodyH = 40 + CARD_PAD * 2;
   // Params card top — pinned directly under the tab header. CONSTANT now (was
   // derived off the stacked Properties card): the param rows / output sockets /
   // param→arg wires ALL derive from CARD_Y0, so they follow this single source.
@@ -2398,42 +2407,11 @@
     if (!cur) return;
     graph = setParamSchema(g, STACK_REF_PARAM, { ...cur, default: v });
   }
-  function onPartColorOuter(hex: string | null) { graph = setPartColorOuter(graph, hex); }
-  function onPartColorInner(hex: string | null) { graph = setPartColorInner(graph, hex); }
-  function onPartMaterial(mat: string | null) { graph = setPartMaterial(graph, mat); }
-  /** Part-level render OPACITY (0–1). null/≥1 clears (opaque). */
-  function onPartOpacity(value: number | null) { graph = setPartOpacity(graph, value); }
-  /** Per-part appearance patch (OUT/IN colour + material + opacity), keyed by part id. */
-  function onPartAppearance(id: string, patch: { colorOuter?: string | null; colorInner?: string | null; material?: string | null; opacity?: number | null }) {
-    graph = setPartAppearance(graph, id, patch);
-  }
-  /** The LEAF parts of the Output (A/B/C…) shown as rows in the PROPERTIES
-   *  table. Recurses through containers (list/stack/group) and repeats so the
-   *  actual Call parts surface (not the wrapping Stack). Labelled by Call alias;
-   *  deduped by node id. */
-  const partsForProps = $derived.by(() => {
-    const out: { id: string; label: string; appearance: any }[] = [];
-    const seen = new Set<string>();
-    const visit = (id: string) => {
-      const n = graph.nodes[id] as any;
-      if (!n || seen.has(id)) return;
-      seen.add(id);
-      if (n.type === 'list' || n.type === 'stack' || n.type === 'group' || n.type === 'repeat') {
-        for (const c of (n.children ?? [])) visit(c);
-        return;
-      }
-      // Only 3D geometry producers are PARTS — polygon/sketch/poly_repeat are
-      // 2D profile producers (consumed by a Call via __POLY__), not parts.
-      if (n.type !== 'call' && n.type !== 'method') return;
-      const label = n.type === 'call' ? (n.alias || n.src) : `${n.op}(…)`;
-      // A wired material node (G-MAT-CARD) resolves ahead of the per-part
-      // partAppearance override, so the table reflects what's wired.
-      out.push({ id, label, appearance: resolveEffectiveAppearance(graph, id) });
-    };
-    visit(graph.root);
-    return out;
-  });
-  // Default swatch colours + material list moved into PropertiesCard.svelte (Phase D).
+  // Per-part appearance (colour/material/opacity) is now edited on each Call
+  // card via the material swatch chip → openPartMaterial popover (#66/#982),
+  // which calls setPartAppearance/resolveEffectiveAppearance directly. The old
+  // graph-level default handlers (onPartColorOuter/…) + the partsForProps table
+  // feed are gone with the PROPERTIES appearance table.
   function onRemoveParam(name: string) {
     if (name === STACK_REF_PARAM) return; // reserved — no trash button anyway
     const r = removeParam(graph, name);
@@ -2751,6 +2729,16 @@
       onClose={() => (matPop = null)} />
   {/if}
 
+  {#if partMatPop && partMatAppearance}
+    <MaterialEditorPopover
+      node={partMatAppearance}
+      anchor={partMatPop.anchor}
+      showName={false}
+      title={`◑ ${partMatPop.label}`}
+      onPatch={(p) => (graph = setPartAppearance(graph, partMatPop!.id, p))}
+      onClose={() => (partMatPop = null)} />
+  {/if}
+
   {#if wireDelPop}
     <!-- click-a-connection → delete popover (fixed at the click point). A full-
          viewport backdrop closes it on any outside click / on scroll. -->
@@ -2909,6 +2897,7 @@
               {openExprDefEditor}
               onOpenSplineEditor={spline.openSplineEditor}
               onOpenMaterialEditor={openMaterialEditor}
+              onOpenPartMaterial={openPartMaterial}
               {setHoverVertex}
               {clearHoverVertex}
               openPolyPreview={polyUI.openPolyPreview}
@@ -2955,13 +2944,7 @@
             x={PROPS_X0} y={PROPS_Y0 + TAB_HEADER_H} w={PROPS_W} h={propsBodyH}
             {graph}
             {zOffsetVal}
-            parts={partsForProps}
-            onZOffset={onZOffset}
-            onColorOuter={onPartColorOuter}
-            onColorInner={onPartColorInner}
-            onMaterial={onPartMaterial}
-            onOpacity={onPartOpacity}
-            onPartAppearance={onPartAppearance} />
+            onZOffset={onZOffset} />
         {/if}
 
         {#if leftTab === 'params'}

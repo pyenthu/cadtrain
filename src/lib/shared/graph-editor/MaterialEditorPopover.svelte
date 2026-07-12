@@ -11,11 +11,18 @@
     anchor,
     onPatch,
     onClose,
+    showName = true,
+    title = '◑ material',
   }: {
     node: { name?: string; colorOuter?: string; colorInner?: string; material?: string; opacity?: number; texture?: string };
     anchor: { x: number; y: number };
     onPatch: (patch: any) => void;
     onClose: () => void;
+    /** Hide the `name` row when editing a PART's appearance (a part has no name,
+     *  only a colour/material bundle) vs a material NODE (which is named). */
+    showName?: boolean;
+    /** Header label — `◑ material` for a material node, the part label for a part. */
+    title?: string;
   } = $props();
 
   const MATERIALS = ['none', 'steel', 'aluminum', 'titanium', 'brass'];
@@ -39,15 +46,17 @@
 <div class="ge-mat-pop" style={`left:${anchor.x}px; top:${anchor.y}px`}
      onpointerdown={(e) => e.stopPropagation()}>
   <div class="ge-mat-head">
-    <span>◑ material</span>
+    <span>{title}</span>
     <button type="button" class="ge-mat-x" onclick={onClose} aria-label="Close">×</button>
   </div>
 
-  <label class="ge-mat-row">
-    <span>name</span>
-    <input class="ge-mat-name" type="text" value={node.name ?? ''}
-      onchange={(e) => onPatch({ name: (e.currentTarget as HTMLInputElement).value })}/>
-  </label>
+  {#if showName}
+    <label class="ge-mat-row">
+      <span>name</span>
+      <input class="ge-mat-name" type="text" value={node.name ?? ''}
+        onchange={(e) => onPatch({ name: (e.currentTarget as HTMLInputElement).value })}/>
+    </label>
+  {/if}
 
   <div class="ge-mat-row">
     <span>colour</span>
