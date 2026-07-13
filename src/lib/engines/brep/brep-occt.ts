@@ -812,6 +812,13 @@ export async function brepFromSource(
     return { outer, inner, z0, z1 };
   };
   const warpSpline = (solidArg: any, path: any, opts?: any): any => {
+    // A LIST input (a parts_table aggregate — or any list of solids — wired as the
+    // warp's single child) inlines to a JS ARRAY here. A JS array has no `.mesh`, so
+    // the guard below used to return it UNWARPED — the "BREP doesn't warp the
+    // multi-part, only individual parts" bug (2026-07-13; mirrors the MF warpSpline
+    // array fix). Map the warp over each member so every element bends along the
+    // spline; each stays tagged (carryTag) so color-by-source survives.
+    if (Array.isArray(solidArg)) return solidArg.map((el) => warpSpline(el, path, opts));
     const solid = unwrap(solidArg);
     if (!solid || typeof solid.mesh !== 'function' || !Array.isArray(path) || path.length < 2) return solidArg;
 
