@@ -226,6 +226,15 @@ export function warpManifoldAlongSpline(
   cp: Pt2[] | Pt3[],
   opts: { refine?: number; stretch?: boolean; validate?: boolean; originZ?: number; xDiaScale?: number; yScale?: number } = {},
 ): any {
+  // A LIST input maps the warp over each member. A single-child warp whose child
+  // is a list producer (a parts_table aggregate, a repeat/parts_map, or any node
+  // emitting a bare `[...]`) inlines to a JS ARRAY here — and a JS array has no
+  // `.boundingBox()`, so the guard below used to `catch` and return it UNWARPED
+  // (the "parts_table → warp doesn't warp in the MF tab, but TF/BREP do" bug,
+  // 2026-07-13 — TF/BREP walk the graph per-child so they never saw the array).
+  // Recurse so every part bends along the spline; the result stays a list (the
+  // loader spreads it into separate _parts — no fusion).
+  if (Array.isArray(m)) return m.map((el) => warpManifoldAlongSpline(el, cp, opts));
   if (!m || !Array.isArray(cp) || cp.length < 2) return m;
   let bb: any;
   try { bb = m.boundingBox(); } catch { return m; }

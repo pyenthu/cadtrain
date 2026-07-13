@@ -713,6 +713,24 @@ function computeListProducers(graph: Graph): Set<NodeId> {
     if (n.type === 'warp' && Array.isArray((n as any).children) && (n as any).children.length > 1) set.add(n.id);
     // (Future: bare list nodes that aren't the root list, group containers, etc.)
   }
+  // PROPAGATE through a SINGLE-child warp: `warpSpline(listChild, path)` maps the
+  // warp over the list (see warpManifoldAlongSpline's array guard), so its runtime
+  // value is ALSO a bare array. Mark it a producer so a downstream Stack / the root
+  // SPREADS it (…) instead of nesting `[[…], …]` (which the loader would re-fuse).
+  // Fixpoint so it's independent of node iteration order (a warp whose child is a
+  // warp-of-a-list-producer, etc.). Only touches graphs with warp-of-a-list — a new
+  // pattern with no existing golden, so byte-identical for every current part.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const n of Object.values(graph.nodes)) {
+      if (n.type !== 'warp' || set.has(n.id)) continue;
+      const kid = (Array.isArray((n as any).children) && (n as any).children.length === 1)
+        ? (n as any).children[0]
+        : (n as any).child;
+      if (kid && set.has(kid)) { set.add(n.id); changed = true; }
+    }
+  }
   return set;
 }
 

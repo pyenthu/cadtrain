@@ -158,6 +158,26 @@ describe('warpManifoldAlongSpline', () => {
     expect(warpManifoldAlongSpline(m, [[0, 0]] as any)).toBe(m);
   });
 
+  it('maps the warp over an ARRAY input (parts_table → warp; not returned unwarped)', () => {
+    // Regression (2026-07-13): a single-child warp whose child is a list producer
+    // (a parts_table aggregate) inlines to a JS array `[m0, m1]`. Before the fix,
+    // `m.boundingBox()` threw on the array and the catch returned it UNWARPED, so
+    // the MF tab never bent it (TF/BREP walk the graph per-child and did). Now the
+    // array is mapped — each member bends and the result stays an array.
+    const straight: V3[] = [[0, 0, 0], [0, 0, 1], [0, 0, 2]];
+    const arr = [fakeManifold([...straight]), fakeManifold([...straight])];
+    const cp = [[0, 0], [1, 1], [0, 2]];   // a curved planar path
+    const out: any = warpManifoldAlongSpline(arr as any, cp);
+    expect(Array.isArray(out)).toBe(true);
+    expect(out.length).toBe(2);
+    // Each element is a warped Manifold (not the original) and was displaced off
+    // the straight x=0 axis by the bend — proof the array member actually warped.
+    for (const el of out) {
+      expect(el.verts.every((v: V3) => v.every((c) => Number.isFinite(c)))).toBe(true);
+      expect(el.verts.some((v: V3) => Math.abs(v[0]) > 1e-6)).toBe(true);
+    }
+  });
+
   it('planar bend keeps a right-handed straight prism at positive volume', () => {
     // a unit prism straddling z 0..2, centred on x/y
     const verts: V3[] = [];
