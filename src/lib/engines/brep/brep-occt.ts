@@ -20,6 +20,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as mathLib from '$lib/graph/math-lib';
+import type { PartColorLUT } from '$lib/graph/part-lut-types';
 
 // The bare-name math surface a part/assembly body may reference (cos/sin/tau/…
 // PLUS ceil/hypot/sign/clamp/frac/lerp/deg/rad/pi/atan2/…). Mirror the primitive
@@ -136,6 +137,14 @@ export interface MeshOpts {
   cut?: boolean;        // half-section cutaway (remove the y<0 half)
   colorOuter?: string;  // '#rrggbb' for the outer/original skin (cut arm); absent → legacy red
   colorInner?: string;  // '#rrggbb' for the bore + newly-exposed cut faces; absent → legacy grey
+  /** #86 per-part colour-by-source LUT (same shape the Manifold bake consumes).
+   *  When ACTIVE and NOT cutting, brepFromSource meshes each top-level sub-solid
+   *  SEPARATELY and tints its vertices with the part's own LUT colour — so a
+   *  multi-part BREP solid shows each part in its own colour, matching the MF
+   *  tab (color-by-source) instead of one uniform skin. Absent / inactive →
+   *  the legacy single-mesh path (byte-identical). Ignored on the CUT arm
+   *  (which keeps its colorOuter/colorInner half-section behaviour, #997). */
+  partColors?: PartColorLUT;
 }
 
 /** Legacy cut-arm vertex colours — the historical BREP red (outer skin) / grey
@@ -156,6 +165,86 @@ function cutHexToRgb(hex: string | undefined, fallback: [number, number, number]
     parseInt(v.slice(2, 4), 16) / 255,
     parseInt(v.slice(4, 6), 16) / 255,
   ];
+}
+
+/** One meshed top-level sub-solid + its part identity — the input to the pure
+ *  per-part colour assembler. `hashId` is the part's color-by-source key
+ *  (`partHashId(instanceName)`, the SAME id the Manifold relation carries); it
+ *  looks up the part's outer colour in the LUT. `vertices`/`triangles` are the
+ *  raw OCCT mesh arrays (flat xyz + triangle index triples). */
+export interface BrepSubMesh {
+  vertices: number[];
+  triangles: number[];
+  normals?: number[];
+  hashId?: number;
+}
+
+/** The outer '#rrggbb' the BREP full mesh paints a part with — the SAME
+ *  `lut.outer[hashId]` the Manifold `manifoldToGeo` uses, so a part reads the
+ *  same colour across the MF + BREP tabs. Falls back to the LUT body colour,
+ *  then the legacy BREP red, so an un-keyed / un-coloured part is uniform. */
+function partColorRgb(lut: PartColorLUT, hashId: number | undefined): [number, number, number] {
+  const hex = (hashId !== undefined && lut.outer && lut.outer[hashId])
+    ? lut.outer[hashId]
+    : (lut.bodyColor || undefined);
+  return cutHexToRgb(hex, LEGACY_CUT_OUTER);
+}
+
+/**
+ * PURE per-part colour assembler (color-by-source for BREP, #86 "Phase B").
+ *
+ * Concatenates a list of independently-meshed sub-solids into ONE non-indexed
+ * `{ positions, colors, normals }` mesh — the exact shape the BREP tab already
+ * consumes (brep-adapter) — tinting every triangle of a sub-solid with its
+ * part's OWN LUT colour. This mirrors the Manifold color-by-source path (each
+ * part's triangles carry its hashId → LUT colour) but does the split at the
+ * SUB-SOLID boundary the OCCT executor already has, instead of a mesh relation.
+ *
+ * Non-indexed + per-vertex colour (like the cut arm) because a colour is
+ * per-part, not shareable at a shared vertex. `cut:false` so the adapter routes
+ * it to the `full` view (an uncut solid that happens to be coloured). Normals
+ * ride along when EVERY sub-solid supplied them (the adapter recomputes
+ * crease-aware corner normals regardless, so they are advisory). No LUT match
+ * for a part → the uniform fallback colour, so this degrades to one colour
+ * exactly like the legacy single-mesh path.
+ *
+ * Extracted + exported so the colour-assignment seam is unit-testable WITHOUT
+ * OCCT (see brep-part-colors.test.ts).
+ */
+export function assemblePartColorMesh(
+  parts: BrepSubMesh[],
+  lut: PartColorLUT,
+  tolerance = 0.05,
+  ms = 0,
+): BrepMesh {
+  const outPos: number[] = [];
+  const outCol: number[] = [];
+  const outNrm: number[] = [];
+  const haveNormals = parts.length > 0 && parts.every((p) => Array.isArray(p.normals) && p.normals.length > 0);
+  let ntTotal = 0;
+  for (const part of parts) {
+    const verts = part.vertices;
+    const tris = part.triangles;
+    const nrm = part.normals;
+    const [r, g, b] = partColorRgb(lut, part.hashId);
+    const nt = (tris.length / 3) | 0;
+    for (let i = 0; i < nt; i++) {
+      const idx = [tris[i * 3], tris[i * 3 + 1], tris[i * 3 + 2]];
+      for (const vi of idx) {
+        outPos.push(verts[vi * 3], verts[vi * 3 + 1], verts[vi * 3 + 2]);
+        outCol.push(r, g, b);
+        if (haveNormals && nrm) outNrm.push(nrm[vi * 3], nrm[vi * 3 + 1], nrm[vi * 3 + 2]);
+      }
+    }
+    ntTotal += nt;
+  }
+  return {
+    positions: outPos,
+    colors: outCol,
+    normals: haveNormals && outNrm.length ? outNrm : undefined,
+    cut: false,
+    meta: { tris: ntTotal, verts: ntTotal * 3, ms, tolerance },
+  };
 }
 
 /**
@@ -326,6 +415,37 @@ export async function brepFromSource(
   // ── wrapped OCCT solid: Manifold-method names → replicad methods ──────────
   const WRAP = Symbol('occt');
   const unwrap = (v: any) => (v && v[WRAP]) ? v[WRAP] : v;
+
+  // ── per-part color-by-source tag (#86 "Phase B" for BREP) ─────────────────
+  // The Manifold path tags each named instance with `partHashId(name)` and lets
+  // Manifold's mesh relation carry that id through CSG. OCCT has no such
+  // relation, so we do it by hand: `__tag(shape, id)` (spliced into the source
+  // by tagInstanceSources, the SAME rewrite the MF loader uses) records the id
+  // on the underlying OCCT shape, and every executor op that derives a new shape
+  // from a tagged one CARRIES the id forward (carryTag) — so a part survives
+  // mv / rot / warpSpline / sectionCut / booleans and arrives at the top-level
+  // sub-solid list still knowing which part it is. Empty when no LUT is active
+  // (the source carries no `__tag`), in which case carryTag is a pure no-op and
+  // the executor is byte-identical to before.
+  const partTag = new WeakMap<object, number>();
+  const __tag = (x: any, id: number): any => {
+    const u = unwrap(x);
+    if (u && typeof u === 'object') { try { partTag.set(u, Number(id) >>> 0); } catch { /* non-taggable */ } }
+    return x;
+  };
+  // Propagate `src`'s part tag onto a shape `out` derived from it (best-effort —
+  // tagging must never break a build). Returns `out` for inline use.
+  const carryTag = (src: any, out: any): any => {
+    try {
+      const su = unwrap(src);
+      const id = (su && typeof su === 'object') ? partTag.get(su) : undefined;
+      if (id !== undefined) {
+        const ou = unwrap(out);
+        if (ou && typeof ou === 'object' && !partTag.has(ou)) partTag.set(ou, id);
+      }
+    } catch { /* propagation is advisory */ }
+    return out;
+  };
   // Fold a boolean op over an operand that may be a single solid, a wrapped
   // solid, an ARRAY of solids, or a `place(list)` group — mirroring Manifold,
   // where `A.add(place([b,c,d]))` unions A with every element. Without this,
@@ -357,13 +477,16 @@ export async function brepFromSource(
     const proxy: any = new Proxy(shape, {
       get(t, prop) {
         if (prop === WRAP) return t;
-        if (prop === 'add' || prop === 'union') return (o: any) => wrap(combineBool(t, o, 'fuse'));
-        if (prop === 'subtract') return (o: any) => wrap(combineBool(t, o, 'cut'));
-        if (prop === 'intersect') return (o: any) => wrap(combineBool(t, o, 'intersect'));
+        // A boolean result inherits the BASE's part tag (the tool is subtractive
+        // / additive; the surface belongs to the receiver) — matches the MF rule.
+        if (prop === 'add' || prop === 'union') return (o: any) => wrap(carryTag(t, combineBool(t, o, 'fuse')));
+        if (prop === 'subtract') return (o: any) => wrap(carryTag(t, combineBool(t, o, 'cut')));
+        if (prop === 'intersect') return (o: any) => wrap(carryTag(t, combineBool(t, o, 'intersect')));
         const val = (t as any)[prop];
         if (typeof val === 'function') return (...a: any[]) => {
           const r = val.apply(t, a.map(unwrap));
-          return (r && typeof r === 'object' && typeof r.mesh === 'function') ? wrap(r) : r;
+          // A derived shape (clone/translate/rotate/revolve/…) keeps its source's tag.
+          return (r && typeof r === 'object' && typeof r.mesh === 'function') ? wrap(carryTag(t, r)) : r;
         };
         return val;
       },
@@ -745,7 +868,10 @@ export async function brepFromSource(
       // transport that mis-volumes the bend (~8× over) — so outer-sweep-then-subtract-bore
       // it is (both swept with the same orthogonality transport ⇒ coaxial, clean subtract).
       for (const bore of section.inner) result = result.cut(sweepLoop(bore));
-      return wrap(result);
+      // The warped/swept solid IS this part bent onto the trajectory — carry the
+      // part tag so color-by-source survives the warp (the repro part warps every
+      // element). Passthrough returns above keep the original tagged proxy.
+      return wrap(carryTag(solidArg, result));
     } catch {
       return solidArg;                                  // sweep failed → straight fallback, never poison
     }
@@ -758,13 +884,13 @@ export async function brepFromSource(
   // the first call and then uses a deleted handle → "This object has been
   // deleted" (#19). clone() FIRST (non-destructive) so the source survives for
   // the next iteration — same defensive pattern as compoundOf/stackOcct below.
-  const mv = (s: any, v: number[]) => wrap(unwrap(s).clone().translate([v[0] || 0, v[1] || 0, v[2] || 0]));
+  const mv = (s: any, v: number[]) => wrap(carryTag(s, unwrap(s).clone().translate([v[0] || 0, v[1] || 0, v[2] || 0])));
   const rot = (s: any, v: number[]) => {
     let sh = unwrap(s).clone();
     if (v[0]) sh = sh.rotate(v[0], [0, 0, 0], [1, 0, 0]);
     if (v[1]) sh = sh.rotate(v[1], [0, 0, 0], [0, 1, 0]);
     if (v[2]) sh = sh.rotate(v[2], [0, 0, 0], [0, 0, 1]);
-    return wrap(sh);
+    return wrap(carryTag(s, sh));
   };
   // place(a, b, …) or place([a, b, …]) — topological compose. Manifold's place
   // UNIONS overlapping bodies + groups disjoint ones; for BREP we keep the parts
@@ -807,7 +933,7 @@ export async function brepFromSource(
     const wedge = sketchPoly(pts, 'XY').extrude(Math.max(0.01, zlen)).translate([0, 0, z0]);
     const cutRes = s.cut(wedge);
     safeDelete(wedge);   // private throwaway — free the bbox-spanning wedge now (16 of these in a well)
-    return wrap(cutRes);
+    return wrap(carryTag(solid, cutRes));   // the sectioned solid is still this part
   };
   // Stack-ref offset (graded-delta z mate): stash the delta on the underlying
   // OCCT shape so stack() can read it (mirrors Manifold's `_stackRef`).
@@ -883,25 +1009,35 @@ export async function brepFromSource(
     'p', 'sketch', 'r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid', 'r_sweep',
     'resampleSpline', 'resolveProfile', 'sectionCut', 'warpSpline',
     'mv', 'rot', 'place', 'withStackRef', 'stack', 'list', 'group',
+    '__tag',
     ...MATH_NAMES,
   ];
   const baseVals = (p: any) => [
     p, sketch, r_revolve, r_weld_extrude, r_loft, r_extrude, r_cuboid, r_sweep,
     resampleSpline, resolveProfile, sectionCut, warpSpline,
     mv, rot, place, withStackRef, stackOcct, compoundOf, compoundOf,
+    __tag,
     ...MATH_VALUES,
   ];
   function bodyOf(src: string): string | null {
     const mm = src.match(/export\s+function\s+\w+\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
     return mm ? mm[1] : null;
   }
-  function runBody(src: string, pv: any): any {
+  // Run a body and return the FLAT list of top-level output solids (each still
+  // carrying its part tag). The top-level per-part colour path meshes these
+  // separately; runBody (below) compounds them into one solid for the legacy /
+  // dep path.
+  function runBodyRaw(src: string, pv: any): any[] {
     const b = bodyOf(src);
     if (!b) throw new Error('no function body');
     const depNames = Object.keys(depFns);
     const runner = new Function(...NAMES, ...depNames, 'return (function(){' + b + '})();');
     const out = runner(...baseVals(pv), ...depNames.map((n) => depFns[n]));
     const arr: any[] = []; collectShapes(out, arr);
+    return arr;
+  }
+  function runBody(src: string, pv: any): any {
+    const arr = runBodyRaw(src, pv);
     if (arr.length === 0) return null;
     return arr.length === 1 ? arr[0] : makeCompound(arr);
   }
@@ -932,9 +1068,51 @@ export async function brepFromSource(
     };
   }
 
+  // Mesh EACH top-level sub-solid separately + tint it with its part's LUT
+  // colour (color-by-source for BREP). Reads each shape's part tag (set by
+  // __tag, carried through the executor) and frees the meshed intermediate. The
+  // pure concat/colour work lives in assemblePartColorMesh (unit-tested).
+  function meshBrepParts(subSolids: any[], lut: PartColorLUT, t0p: number): BrepMesh {
+    const tol = opts.tolerance ?? 0.05;
+    const ang = opts.angularTolerance ?? 0.3;
+    const subs: BrepSubMesh[] = [];
+    for (const shape of subSolids) {
+      let meshed: any;
+      try { meshed = shape.mesh({ tolerance: tol, angularTolerance: ang }); }
+      catch { safeDelete(shape); continue; }
+      subs.push({
+        vertices: Array.from(meshed.vertices ?? []) as number[],
+        triangles: Array.from(meshed.triangles ?? []) as number[],
+        normals: meshed.normals ? (Array.from(meshed.normals) as number[]) : undefined,
+        hashId: partTag.get(shape),
+      });
+      safeDelete(shape);   // its mesh is captured — free the OCCT solid now
+    }
+    return assemblePartColorMesh(subs, lut, tol, Date.now() - t0p);
+  }
+
+  // Per-part colouring applies to the UNCUT full solid only. The CUT arm keeps
+  // its colorOuter/colorInner half-section behaviour (#997) — untouched.
+  const lut = (opts.partColors && opts.partColors.active && !opts.cut) ? opts.partColors : undefined;
+
   const t0 = Date.now();
   try {
     const mark = tracked.length;
+    if (lut) {
+      // Splice `__tag(instance, partHashId(name))` into the source — the SAME
+      // rewrite the Manifold loader uses — so each top-level instance's OCCT
+      // solid arrives tagged. Then mesh each separately + colour by the LUT.
+      let taggedSource = source;
+      try {
+        const { tagInstanceSources } = await import('$lib/server/primitive-loader');
+        taggedSource = tagInstanceSources(source);
+      } catch { taggedSource = source; }
+      const subSolids = runBodyRaw(taggedSource, paramValues);
+      if (subSolids.length === 0) return null;
+      // Keep the N per-part solids; free every intermediate the build produced.
+      sweepSince(mark, subSolids);
+      return meshBrepParts(subSolids, lut, t0);
+    }
     const solid = runBody(source, paramValues);
     if (!solid) return null;
     // Free the top-level build's dead intermediates (the pre-mv per-part solids)

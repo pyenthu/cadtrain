@@ -44,8 +44,15 @@ import { extractMetaFromSource } from '$lib/server/primitives-meta';
  * local is skipped, and `__tag` is a no-op on non-Manifolds anyway.
  * Returns the source unchanged when recognition isn't position-mapped
  * (type-stripped) → falls back to a single uniform color.
+ *
+ * EXPORTED so the BREP executor (`brep-occt.ts`) can run the SAME tagged source
+ * — its `__tag(shape, hashId)` records the part id on each OCCT solid, giving
+ * BREP color-by-source at PARITY with the Manifold path (one tagging rule, no
+ * drift). The hashIds it splices (`partHashId(instanceName)`) are exactly the
+ * keys `analyzeParts` (part-colors) writes into the LUT, so a tag looks straight
+ * up in `lut.outer`.
  */
-function tagInstanceSources(source: string): string {
+export function tagInstanceSources(source: string): string {
   let rec: any;
   try { rec = recognizeComposite(source); } catch { return source; }
   if (!rec.editable || !Array.isArray(rec.instances) || !rec.instances.length) return source;

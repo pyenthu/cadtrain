@@ -112,11 +112,18 @@ function identityIndex(nVerts: number): Uint32Array {
 /**
  * Map a supported BREP response to the scene `geo` wrapper. A coloured
  * half-section becomes `{ cutVC }`; a plain solid becomes `{ full }`.
+ *
+ * Routes on the EXPLICIT `data.cut` flag, NOT colour presence: an UNCUT
+ * multi-part solid now carries per-part color-by-source colours (#86 BREP), and
+ * keying on colours alone would mis-route that coloured full mesh into `cutVC`
+ * (shown only under the cross-section toggle). `meshBrepSolid`/`meshBrepParts`
+ * always set `cut`, so this is exact; the colour-presence fallback covers any
+ * legacy response without a `cut` field.
  */
 export function brepResponseToGeo(
   data: BrepPreviewResponse,
 ): { full?: THREE.BufferGeometry; cutVC?: THREE.BufferGeometry } {
   const g = brepGeometryFromResponse(data);
-  const isCut = !!g.getAttribute('color');
+  const isCut = data.cut === true || (data.cut === undefined && !!g.getAttribute('color'));
   return isCut ? { cutVC: g } : { full: g };
 }

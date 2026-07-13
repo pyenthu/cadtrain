@@ -13,7 +13,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { bakeMF, bakeBREP, defaultParamObject } from '../brep-audit';
-import { revolveBrep } from '../brep-occt';
+import { revolveBrep, brepFromSource } from '../brep-occt';
+import { analyzeParts } from '$lib/server/part-colors';
 import { hydrateGraph } from '$lib/graph/composition-graph-hydrate';
 import { emitGraph } from '$lib/graph/composition-emit';
 import sweepTubeDemo from '../../../../../tests/golden/graph/sweep_tube_demo.json';
@@ -197,5 +198,67 @@ describe('brep-occt: cut half-section vertex colours (#997)', () => {
     expect(hasColour(mesh.colors, BLUE), 'inner uses the supplied colorInner').toBe(true);
     expect(hasColour(mesh.colors, LEGACY_OUTER), 'outer still falls back to legacy red').toBe(true);
     expect(hasColour(mesh.colors, LEGACY_INNER), 'inner legacy grey replaced by colorInner').toBe(false);
+  });
+});
+
+// END-TO-END color-by-source through the REAL OCCT executor (#86 "Phase B" for
+// BREP). Pins the full seam the pure brep-part-colors.test.ts can't: the source
+// is `tagInstanceSources`-tagged, `__tag` records each instance's hashId on its
+// OCCT solid, `carryTag` carries it through a transform, brepFromSource meshes
+// each top-level sub-solid separately, and each part comes out in its OWN LUT
+// colour — where the pre-fix BREP baked the whole multi-part solid one colour.
+describe('brep-occt: multi-part color-by-source (uncut full solid)', () => {
+  // Two revolves, coloured via meta.instanceColors. A is section-cut and B is
+  // moved AFTER their `const` init (so tagInstanceSources tags them and carryTag
+  // must carry the tag through sectionCut / mv to the returned sub-solids).
+  const src = `export const meta = { id: 'cbs_two', name: 'cbs_two', kind: 'asm', uses: ['r_revolve'], instanceColors: { A: { outer: '#3399ff' }, B: { outer: '#ff9933' } }, params: { od: { default: 4 }, length: { default: 6 } } };
+export function cbs_two(p) {
+  const prof = [[0.01, 0], [p.od/2, 0], [p.od/2, p.length], [0.01, p.length]];
+  const A = r_revolve({ profile: prof, segments: 16 });
+  const B = r_revolve({ profile: prof, segments: 16 });
+  return [ sectionCut(A, { az: 180, offset: 0 }), mv(B, [10, 0, 0]) ];
+}`;
+
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.02;
+  const rgb = (hex: string): [number, number, number] => {
+    const v = hex.replace('#', '');
+    return [parseInt(v.slice(0, 2), 16) / 255, parseInt(v.slice(2, 4), 16) / 255, parseInt(v.slice(4, 6), 16) / 255];
+  };
+  const distinctColours = (colors: number[] | undefined): [number, number, number][] => {
+    const out: [number, number, number][] = [];
+    for (let i = 0; i + 2 < (colors?.length ?? 0); i += 3) {
+      const c: [number, number, number] = [colors![i], colors![i + 1], colors![i + 2]];
+      if (!out.some((o) => near(o[0], c[0]) && near(o[1], c[1]) && near(o[2], c[2]))) out.push(c);
+    }
+    return out;
+  };
+
+  it('meshes each sub-solid separately and tints it with its LUT colour', async () => {
+    const lut = analyzeParts(src);              // the SAME LUT the MF tab computes
+    expect(lut.active).toBe(true);
+    const mesh = await brepFromSource(src, { od: 4, length: 6 }, { partColors: lut }, stdFetch);
+    expect(mesh, 'brepFromSource should produce a mesh').toBeTruthy();
+    expect(mesh!.cut, 'uncut per-part colour path → cut:false → adapter routes to full').toBe(false);
+    expect(mesh!.colors, 'multi-part BREP must carry per-vertex colours').toBeTruthy();
+
+    const colours = distinctColours(mesh!.colors);
+    // TWO parts → TWO distinct colour regions (the bug rendered ONE uniform colour).
+    expect(colours.length, `expected 2 colour regions, got ${colours.length}`).toBe(2);
+    // Each region is exactly a LUT outer entry — BREP == MF colour for the part.
+    const A = rgb('#3399ff'); const B = rgb('#ff9933');
+    const hasA = colours.some((c) => near(c[0], A[0]) && near(c[1], A[1]) && near(c[2], A[2]));
+    const hasB = colours.some((c) => near(c[0], B[0]) && near(c[1], B[1]) && near(c[2], B[2]));
+    expect(hasA, 'part A must be #3399ff').toBe(true);
+    expect(hasB, 'part B must be #ff9933').toBe(true);
+  });
+
+  it('no LUT → the legacy single-mesh path, uncoloured (byte-identical fallback)', async () => {
+    const mesh = await brepFromSource(src, { od: 4, length: 6 }, {}, stdFetch);
+    expect(mesh).toBeTruthy();
+    expect(mesh!.cut).toBe(false);
+    // The uncut legacy path is an INDEXED mesh with NO per-vertex colours — the
+    // scene paints it one uniform material colour (pre-#86 behaviour, unchanged).
+    expect(mesh!.colors, 'no LUT → no per-part colours').toBeFalsy();
+    expect(mesh!.index, 'legacy path stays indexed').toBeTruthy();
   });
 });

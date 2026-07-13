@@ -1,5 +1,19 @@
 import { json, error } from '@sveltejs/kit';
 import { revolveBrep, brepFromSource } from '$lib/engines/brep/brep-occt';
+import { analyzeParts, resolveDepColors, type PartColorLUT } from '$lib/server/part-colors';
+
+/** #86 — the per-part color-by-source LUT for a composite BREP part. Same code
+ *  the /api/primitives/compile endpoint uses (partColorsFor) so BREP colours
+ *  MATCH the Manifold tab exactly. BREP bakes server-side, so we compute the LUT
+ *  HERE (we have the source + fetch) rather than round-tripping it from the
+ *  client the way MF must (its worker bakes on the client). Fully tolerant —
+ *  any failure omits it → the legacy uniform BREP skin. */
+async function partColorsFor(source: string, fetch: typeof globalThis.fetch): Promise<PartColorLUT | undefined> {
+  try {
+    const lut = analyzeParts(source, await resolveDepColors(source, fetch));
+    return lut.active ? lut : undefined;
+  } catch { return undefined; }
+}
 
 // POST /api/brep/preview — server-side OpenCascade (OCCT) BREP render.
 // Two input shapes:
@@ -40,15 +54,23 @@ export const POST = async ({ request, fetch }) => {
     // Part source → full graph→OCCT executor (revolve · extrude · loft · CSG).
     if (typeof source === 'string' && source.trim()) {
       const params = (paramValues && typeof paramValues === 'object') ? paramValues : {};
+      // Per-part colour LUT (color-by-source). The client MAY thread it in the
+      // body (the compiled `partColors`, same shape MF ships); otherwise we
+      // self-compute it from the source. Only the UNCUT full mesh uses it —
+      // brep-occt keeps the cut arm's colorOuter/colorInner intact.
+      const partColors = (body?.partColors && typeof body.partColors === 'object')
+        ? (body.partColors as PartColorLUT)
+        : await partColorsFor(source, fetch);
+      const meshOpts = { ...opts, partColors };
       let mesh;
       try {
-        mesh = await brepFromSource(source, params, opts, fetch);
+        mesh = await brepFromSource(source, params, meshOpts, fetch);
       } catch (cutErr) {
         // The OCCT half-section CUT can throw a raw emscripten exception (a bare
         // numeric pointer) for some swept / boolean solids while the UNCUT solid
         // builds fine. Degrade gracefully: retry without the cut so BREP still
         // renders the solid (no half-section) instead of failing to a number.
-        if (opts.cut) mesh = await brepFromSource(source, params, { ...opts, cut: false }, fetch);
+        if (opts.cut) mesh = await brepFromSource(source, params, { ...meshOpts, cut: false }, fetch);
         else throw cutErr;
       }
       if (!mesh) return json({ supported: false, reason: 'no OCCT-buildable solid in this part (BREP covers revolve / extrude / loft / CSG)' });
