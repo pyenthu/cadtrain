@@ -58,6 +58,9 @@ describe('docs corpus', () => {
     expect(cat('ne-flyde')).toBe('Graph interface');
     expect(cat('cement-annulus-detection')).toBe('Wells');
     expect(cat('svtc-wson-deep-dive')).toBe('Wells');
+    // An EXACT `research-group: Local AI` marker beats the slug heuristic: the
+    // "svtc" token would otherwise route this to Wells (generalised exact-marker override).
+    expect(cat('svtc-ai-system-deep-dive')).toBe('Local AI');
     expect(cat('graph-shared-overlap')).toBe('Architecture');
     expect(cat('findings')).toBe('Findings');
   });

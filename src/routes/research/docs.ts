@@ -183,7 +183,15 @@ export const categoryAbstracts: Record<string, string> = {
  *  (e.g. `svelteflow-for-graph-editor` would otherwise regex into Graph
  *  interface). This is how a doc is retired without moving/deleting the file. */
 function canonicalCategory(slug: string, marker: string | null): string {
-  if (marker && marker.trim().toLowerCase() === 'archive') return 'Archive';
+  // An EXACT research-group marker that NAMES a known category is AUTHORITATIVE
+  // (checked FIRST) — the doc's declared group wins over the slug-token heuristics
+  // below, so e.g. an "svtc"-slugged Local AI doc doesn't fall to the Wells regex.
+  // Generalises the former Archive-only special-case (Archive is in CATEGORY_ORDER).
+  if (marker) {
+    const m = marker.trim().toLowerCase();
+    const exact = CATEGORY_ORDER.find((c) => c.toLowerCase() === m);
+    if (exact) return exact;
+  }
   const hay = `${marker ?? ''} ${slug}`.toLowerCase();
   if (/node editor|graph interface|(^|[^a-z])ne-|svelteflow|blender-fields|\bvpl\b|flyde|node-?red|\bunit\b/.test(hay)) return 'Graph interface';
   if (/\bwells?\b|svtc|wson|wbd|cement|dtx|schematic/.test(hay)) return 'Wells';
