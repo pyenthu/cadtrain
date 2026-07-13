@@ -1,5 +1,5 @@
 import { json, error } from '@sveltejs/kit';
-import { graphToTf, tfRecipeText, isEngineSrc, type TfRecipe, type ResolveComposite } from '$lib/engines/trueform/graph-to-tf';
+import { graphToTf, tfRecipeText, compositeSrcsOf, type TfRecipe, type ResolveComposite } from '$lib/engines/trueform/graph-to-tf';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
 /**
@@ -37,16 +37,13 @@ function numericDefaults(params: any): Record<string, number> {
   return out;
 }
 
-/** Composite Call `src`s referenced directly in a graph (Call nodes whose src is
- *  NOT an engine — those are the sub-parts to fetch + inline). */
-function compositeSrcsOf(graph: any): string[] {
-  const out: string[] = [];
-  for (const n of Object.values(graph?.nodes ?? {})) {
-    const node = n as any;
-    if (node?.type === 'call' && typeof node.src === 'string' && !isEngineSrc(node.src)) out.push(node.src);
-  }
-  return out;
-}
+/** Composite (non-engine) volume-part `src`s referenced directly in a graph — the
+ *  sub-parts to fetch + inline. Enumerates `call`, `parts_map`, AND `parts_table`
+ *  nodes (all three lower a composite via `resolveComposite`); imported from
+ *  `graph-to-tf` so this prefetch stays in lock-step with `lowerNode`. Previously a
+ *  local copy scanned ONLY `call` nodes, so a part referenced solely through a
+ *  parts_table (a well: `bw_cement` / `bw_open_hole` / `bw_casing`) was never
+ *  fetched → stayed UNSUPPORTED on the TF tab. */
 
 type DepEntry = { graph: any; params: Record<string, number> } | null;
 

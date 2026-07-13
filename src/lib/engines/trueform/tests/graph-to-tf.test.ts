@@ -4,7 +4,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { Graph } from '$lib/graph/composition-graph-types';
-import { graphToTf, tfRecipeText, type TfInstr, type ResolveComposite } from '../graph-to-tf';
+import { graphToTf, tfRecipeText, compositeSrcsOf, type TfInstr, type ResolveComposite } from '../graph-to-tf';
 
 /** Minimal graph scaffold — only the fields the translator reads. */
 function mkGraph(nodes: Record<string, any>, root: string, params: Record<string, any> = {}): Graph {
@@ -608,5 +608,91 @@ describe('graphToTf', () => {
     expect((recipe.instrs[0] as any).az).toBe(90);
     expect(recipe.notes.every((n) => !n.includes('UNSUPPORTED'))).toBe(true);
     expect(tfRecipeText(recipe)).toContain('sectionCut(az=90');
+  });
+});
+
+/**
+ * Regression: a COMPOSITE volume part referenced ONLY through a `parts_table`
+ * (or `parts_map`) node — never a bare `call`. This is `w2_multi_part_warp`:
+ * a warp over three `parts_table` nodes (`bw_cement` / `bw_open_hole` /
+ * `bw_casing`), with NO `call` node anywhere. The server dep-prefetch enumerates
+ * composite srcs via `compositeSrcsOf`; it used to scan only `call` nodes, so
+ * those parts were never fetched → `resolveComposite` returned null → the TF tab
+ * blanked with "no native builder for: call:bw_cement". `compositeSrcsOf` now
+ * enumerates call + parts_map + parts_table, and `graphToTf` recurses into the
+ * resolved sub-graph so the revolve-based part builds natively.
+ */
+describe('composite src discovery (parts_table / parts_map)', () => {
+  it('compositeSrcsOf enumerates call + parts_map + parts_table srcs, skipping engines', () => {
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_call', 'n_eng', 'n_tab', 'n_map'] },
+        n_call: { id: 'n_call', type: 'call', src: 'bw_prod_tubing', args: {} },
+        n_eng: { id: 'n_eng', type: 'call', src: 'r_revolve', args: {} },       // engine → excluded
+        n_tab: { id: 'n_tab', type: 'parts_table', src: 'bw_cement', columns: [], rows: [] },
+        n_map: { id: 'n_map', type: 'parts_map', src: 'bw_open_hole', argMap: {} },
+      },
+      'n_root',
+    );
+    const srcs = compositeSrcsOf(g).sort();
+    expect(srcs).toEqual(['bw_cement', 'bw_open_hole', 'bw_prod_tubing']); // r_revolve NOT here
+  });
+
+  it('graphToTf recurses into a parts_table composite → a native recipe, not UNSUPPORTED', () => {
+    // A minimal revolve-based volume part (the shape of bw_open_hole → g_shaft → r_revolve),
+    // resolved by the injected fetcher exactly as the server /api/tf/compile does.
+    const bwPart: Graph = mkGraph(
+      {
+        n_r: { id: 'n_r', type: 'list', children: ['n_shaft'] },
+        n_poly: {
+          id: 'n_poly', type: 'polygon',
+          points: [
+            { kind: 'point', r: { kind: 'literal', value: 0 }, z: { kind: 'literal', value: 0 } },
+            { kind: 'point', r: { kind: 'param', param: 'od' }, z: { kind: 'literal', value: 0 } },
+            { kind: 'point', r: { kind: 'param', param: 'od' }, z: { kind: 'param', param: 'length' } },
+          ],
+        },
+        n_shaft: {
+          id: 'n_shaft', type: 'call', src: 'r_revolve', alias: 'A',
+          args: { profile: { kind: 'expr', expr: '__POLY__n_poly' }, segments: { kind: 'param', param: 'segments' } },
+        },
+      },
+      'n_r',
+      { od: { default: 4 }, length: { default: 30 }, segments: { default: 24 } },
+    );
+    const resolve: ResolveComposite = (id) => (id === 'bw_open_hole' ? { graph: bwPart, params: {} } : null);
+
+    // Parent graph references bw_open_hole ONLY via a parts_table (no call node) — w2 shape.
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_tab'] },
+        n_tab: {
+          id: 'n_tab', type: 'parts_table', src: 'bw_open_hole',
+          columns: ['od', 'length', 'segments'],
+          rows: [
+            { od: { kind: 'literal', value: 8.5 }, length: { kind: 'literal', value: 30 }, segments: { kind: 'literal', value: 12 } },
+            { od: { kind: 'literal', value: 12.25 }, length: { kind: 'literal', value: 50 }, segments: { kind: 'literal', value: 24 } },
+          ],
+        },
+      },
+      'n_root',
+    );
+
+    // WITHOUT a resolver the parts_table's synthetic Call stays UNSUPPORTED (client path).
+    const noResolve = graphToTf(g);
+    expect(JSON.stringify(noResolve.instrs)).toContain('UNSUPPORTED');
+
+    // WITH the resolver (the server path, now that the src is discoverable) it builds natively.
+    const recipe = graphToTf(g, {}, resolve);
+    expect(JSON.stringify(recipe.instrs)).not.toContain('UNSUPPORTED');
+    // parts_table → a union of the two rows, each a revolve (bw_open_hole → r_revolve).
+    const union = recipe.instrs[0] as Extract<TfInstr, { op: 'union' }>;
+    expect(union.op).toBe('union');
+    expect(union.children).toHaveLength(2);
+    expect(union.children.every((c) => (c as any).op === 'revolve')).toBe(true);
+    // The row's `od`/`segments` cells flowed into the sub-part's revolve.
+    expect((union.children[0] as any).segments).toBe(12);
+    expect((union.children[0] as any).profile).toEqual([[0, 0], [8.5, 0], [8.5, 30]]);
+    expect((union.children[1] as any).profile).toEqual([[0, 0], [12.25, 0], [12.25, 50]]);
   });
 });

@@ -610,6 +610,32 @@ export function isEngineSrc(src: string): boolean {
   );
 }
 
+/** Every COMPOSITE (non-engine) volume-part `src` a graph references directly — the
+ *  set of sub-parts the server must PRE-FETCH so the pure, synchronous `graphToTf`
+ *  can inline them via `resolveComposite`.
+ *
+ *  A composite src is carried by THREE node kinds, and `lowerNode` recurses into a
+ *  composite for ALL of them: a `call` node (`.src`), a `parts_map` node (`.src`,
+ *  each row lowered as a synthetic Call), and a `parts_table` node (`.src`, ditto).
+ *  The dep-prefetch MUST enumerate the same three, else a part referenced ONLY
+ *  through a parts_table / parts_map (e.g. `w2_multi_part_warp` → `bw_cement` /
+ *  `bw_open_hole` / `bw_casing`, none of which appear as a bare `call`) is never
+ *  fetched → `resolve` returns null → the Call lowers to UNSUPPORTED and the TF tab
+ *  blanks with "no native builder for: call:bw_cement". Keeping this next to
+ *  `lowerNode` (which consumes the same srcs) is what keeps the two in agreement. */
+export function compositeSrcsOf(graph: Graph | { nodes?: Record<string, unknown> }): string[] {
+  const out: string[] = [];
+  for (const n of Object.values((graph as any)?.nodes ?? {})) {
+    const node = n as any;
+    if (!node) continue;
+    if (node.type === 'call' || node.type === 'parts_map' || node.type === 'parts_table') {
+      const src = node.src;
+      if (typeof src === 'string' && src && !isEngineSrc(src)) out.push(src);
+    }
+  }
+  return out;
+}
+
 // ─── consumed-set (output filtering, mirrors composition-emit) ───────────────
 
 /** Nodes referenced as an INPUT by another node — dropped from the root's
