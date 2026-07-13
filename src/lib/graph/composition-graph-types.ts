@@ -631,7 +631,27 @@ export type PartsTableNode = {
   /** The N rows. Each row maps a column name → its ArgValue for that instance;
    *  a column absent from a row falls through to the template's own default. */
   rows: Array<Record<string, ArgValue>>;
+  /** PER-ROW MATERIAL / COLOUR override (#38d), a sparse array PARALLEL to `rows`
+   *  (index i ↔ row i). Every row shares ONE `src`, so color-by-source alone paints
+   *  them all the SAME colour; a per-row override lets each instance differ. A null
+   *  (or absent) entry means "no override" (that row keeps color-by-source). Emit
+   *  stamps a SET entry into `meta.instanceColors` keyed by the row's own output var
+   *  (`partsTableRowVar`), so each row renders in its override via the existing
+   *  color-by-source LUT. SPARSE + optional → absent on every legacy file (⇒ no
+   *  stamp, byte-identical emit); round-trips wholesale through serialiseGraph /
+   *  hydrateGraph like every other node field. */
+  rowMaterials?: Array<RowMaterial | null>;
 };
+
+/** One parts_table ROW's appearance override (#38d) — all fields SPARSE/optional so
+ *  a bare `{}` means "no override". A slim subset of the part `MaterialNode` /
+ *  `PartAppearance` model: `color` = the outer skin hex (`#rrggbb`), `preset` = the
+ *  PBR material preset name (`steel` | `aluminum` | …, mirroring MaterialNode.material),
+ *  `opacity` = render alpha 0–1 (<1 = see-through). Emit maps these onto a
+ *  `meta.instanceColors` entry (`color→outer`, `preset→material`, `opacity`), the
+ *  exact `{ outer?, material?, opacity? }` shape part-colors.appearanceFromOverride
+ *  reads back. */
+export type RowMaterial = { color?: string; preset?: string; opacity?: number };
 
 export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode | CutawayNode | MaterialNode | PartsMapNode | PartsTableNode;
 

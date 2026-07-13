@@ -49,7 +49,7 @@ import { isImperative, compileImperative } from './expr-imperative';
 import { inferStructure } from './struct-type';
 import { kindOf } from './nodes/registry';
 import type { EmitCtx } from './nodes/node-kind';
-import { partsTableRowVar, orderedRowKeys } from './nodes/kinds/parts-table';
+import { partsTableRowVar, orderedRowKeys, partsTableInstanceColors } from './nodes/kinds/parts-table';
 
 export interface EmitOptions {
   /** The assembly id (becomes meta.id + the export function name). */
@@ -156,7 +156,7 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   // OVERRIDING the part-level Default. resolveEffectiveAppearance folds a wired
   // material node ahead of the manual partAppearance override. Sparse: a graph
   // with no overrides/materials emits nothing → byte-identical to today.
-  const instanceColors: Record<string, { outer?: string; inner?: string; opacity?: number }> = {};
+  const instanceColors: Record<string, { outer?: string; inner?: string; opacity?: number; material?: string }> = {};
   for (const [id, node] of Object.entries(graph.nodes)) {
     if (node?.type !== 'call') continue;
     const vn = varNames.get(id);
@@ -167,6 +167,17 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     if (eff.colorInner) entry.inner = eff.colorInner;
     if (typeof eff.opacity === 'number' && eff.opacity > 0 && eff.opacity < 1) entry.opacity = eff.opacity;
     if (Object.keys(entry).length) instanceColors[vn] = entry;
+  }
+  // #38d — PER-ROW parts_table material overrides. A parts_table's rows are PRELUDE
+  // consts (`partsTableRowVar(id, i)`), NOT Call nodes, so their per-row override is
+  // stamped into the SAME meta.instanceColors LUT here, keyed by that var name (==
+  // the loader's per-row instance name). part-colors.appearanceFromOverride reads
+  // {outer, opacity, material} back, so each row renders in its own colour via the
+  // existing color-by-source path — all rows share one `src` and would otherwise
+  // paint identically. Absent rowMaterials ⇒ an empty map ⇒ byte-identical emit.
+  for (const node of Object.values(graph.nodes)) {
+    if (node?.type !== 'parts_table') continue;
+    Object.assign(instanceColors, partsTableInstanceColors(node));
   }
 
   // OUTPUT FILTERING: a node referenced as input to ANOTHER node (method's

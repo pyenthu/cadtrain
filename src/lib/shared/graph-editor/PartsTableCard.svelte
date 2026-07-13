@@ -15,7 +15,8 @@
   Mirrors docs/plans/refs/parts-table-card.png (PART · OUT · columns · row tools).
 -->
 <script lang="ts">
-  import type { PartsTableNode, ArgValue } from '$lib/graph/composition-graph-types';
+  import type { PartsTableNode, ArgValue, RowMaterial } from '$lib/graph/composition-graph-types';
+  import RowMaterialPopover from './RowMaterialPopover.svelte';
 
   interface Props {
     /** The node being edited. */
@@ -33,6 +34,8 @@
     onRemoveRow?: (idx: number) => void;
     /** Commit ONE cell — a literal value, an `{expr}`, or null to clear it. */
     onCell?: (idx: number, col: string, value: { expr: string } | number | string | boolean | null) => void;
+    /** Set / clear row `idx`'s per-row MATERIAL override (#38d) — null clears it. */
+    onRowMaterial?: (idx: number, material: RowMaterial | null) => void;
     /** Begin wiring FROM row `idx`'s output socket (the parent starts the wire;
      *  the socket's stable name is partsTableRowVar(node.id, idx)). */
     onRowSocketDown?: (idx: number, ev: PointerEvent) => void;
@@ -40,11 +43,31 @@
 
   let {
     node, paramNames = [],
-    onColumns, onAddRow, onDuplicateRow, onRemoveRow, onCell, onRowSocketDown,
+    onColumns, onAddRow, onDuplicateRow, onRemoveRow, onCell, onRowMaterial, onRowSocketDown,
   }: Props = $props();
 
   const columns = $derived(Array.isArray(node.columns) ? node.columns : []);
   const rows = $derived(Array.isArray(node.rows) ? node.rows : []);
+  const rowMaterials = $derived(Array.isArray(node.rowMaterials) ? node.rowMaterials : []);
+
+  /** Row `idx`'s current override (null when unset). */
+  function matOf(idx: number): RowMaterial | null { return rowMaterials[idx] ?? null; }
+  /** The swatch fill for a row — its override colour, else a neutral "unset" grey. */
+  function swatchFill(idx: number): string { return matOf(idx)?.color ?? 'transparent'; }
+  function isMatSet(idx: number): boolean {
+    const m = matOf(idx);
+    return !!m && (!!m.color || !!m.preset || typeof m.opacity === 'number');
+  }
+
+  // SELF-CONTAINED material popover — its open row + screen anchor live HERE (the
+  // card owns it; no state routes through GraphEditorPane, per #38d).
+  let matPopIdx = $state<number | null>(null);
+  let matAnchor = $state<{ x: number; y: number }>({ x: 0, y: 0 });
+  function openMatPop(idx: number, ev: MouseEvent) {
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    matAnchor = { x: r.left, y: r.bottom + 4 };
+    matPopIdx = idx;
+  }
 
   /** Render a cell ArgValue for the input box: a literal shows its raw value; an
    *  expr/param shows the ƒ-style source; an empty cell shows '' (template default). */
@@ -101,8 +124,15 @@
         {#each rows as row, idx (idx)}
           <tr class="pt-row">
             <td class="pt-cell pt-cell-del">
-              <button class="pt-tool pt-del" title="delete row {idx + 1}"
-                onclick={() => onRemoveRow?.(idx)} aria-label="delete row {idx + 1}">🗑</button>
+              <span class="pt-lcluster">
+                <!-- Per-row material / colour override swatch (#38d): all rows share
+                     one template, so this is how a row gets its own colour. -->
+                <button class="pt-swatch" class:pt-swatch-set={isMatSet(idx)}
+                  style={`--sw:${swatchFill(idx)}`} title="row {idx + 1} material / colour"
+                  onclick={(e) => openMatPop(idx, e)} aria-label="row {idx + 1} material"></button>
+                <button class="pt-tool pt-del" title="delete row {idx + 1}"
+                  onclick={() => onRemoveRow?.(idx)} aria-label="delete row {idx + 1}">🗑</button>
+              </span>
             </td>
             {#each columns as col (col)}
               <td class="pt-cell" class:pt-fx={isFx(row?.[col])}>
@@ -133,6 +163,17 @@
   </div>
 </div>
 
+<!-- SELF-CONTAINED per-row material popover (#38d) — mounted here, inside the card,
+     so no popover state routes through GraphEditorPane. -->
+{#if matPopIdx !== null}
+  <RowMaterialPopover
+    material={matOf(matPopIdx)}
+    anchor={matAnchor}
+    onCommit={(m) => onRowMaterial?.(matPopIdx as number, m)}
+    onClose={() => (matPopIdx = null)}
+  />
+{/if}
+
 <style>
   /* The card fills its foreignObject host so the whole table (`.pt-scroll`) takes
      the middle and scrolls in BOTH axes past the node's PT_MAX_H cap (#38b R5).
@@ -157,11 +198,18 @@
   .pt-in:focus { border-color: #8a5cd6; outline: none; }
   .pt-fx .pt-in { color: #6b3fb0; font-style: italic; }
 
-  /* Delete-row trash button — LEFT edge of every row (user 2026-07-13). */
-  .pt-cell-del { width: 1%; text-align: center; }
+  /* Delete-row trash button + material swatch — LEFT edge of every row. */
+  .pt-cell-del { width: 1%; text-align: center; white-space: nowrap; }
+  .pt-lcluster { display: inline-flex; align-items: center; gap: 2px; }
   .pt-tool { border: none; background: none; cursor: pointer; opacity: 0.55; padding: 0 2px; font-size: 11px; }
   .pt-tool:hover { opacity: 1; }
   .pt-del:hover { color: #b3261e; }
+  /* Per-row material / colour swatch (#38d) — a small square left of the trash.
+     Unset (--sw:transparent) reads as a dashed hollow chip; set = its colour fill. */
+  .pt-swatch { width: 13px; height: 13px; padding: 0; border-radius: 3px; cursor: pointer;
+    background: var(--sw, transparent); border: 1px dashed #a98fd8; }
+  .pt-swatch.pt-swatch-set { border-style: solid; border-color: rgba(0,0,0,0.25); }
+  .pt-swatch:hover { outline: 1px solid #7c5fc0; outline-offset: 1px; }
 
   /* Per-row output socket — pinned to the RIGHT edge of the card so it stays at the
      edge even while the columns scroll horizontally (sticky right, user 2026-07-13). */

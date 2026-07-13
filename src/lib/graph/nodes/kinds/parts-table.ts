@@ -23,8 +23,39 @@
  * target ONE row without depending on emit's var-name assignment.
  */
 import type { NodeId } from '../../composition-graph-types';
-import type { PartsTableNode } from '../../composition-graph-types';
+import type { PartsTableNode, RowMaterial } from '../../composition-graph-types';
 import { type NodeKind, type ValidationError, err, checkArg } from '../node-kind';
+
+/** One row's per-instance appearance-override ENTRY — the `{ outer?, opacity?,
+ *  material? }` shape `meta.instanceColors` carries and part-colors.appearanceFrom-
+ *  Override reads back. Maps a RowMaterial (`color→outer`, `preset→material`,
+ *  `opacity`) to only its SET, well-formed fields; an all-empty / null material
+ *  yields null so nothing is stamped (byte-identical). */
+export type RowInstanceColor = { outer?: string; opacity?: number; material?: string };
+export function rowMaterialEntry(mat: RowMaterial | null | undefined): RowInstanceColor | null {
+  if (!mat || typeof mat !== 'object') return null;
+  const entry: RowInstanceColor = {};
+  if (typeof mat.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(mat.color)) entry.outer = mat.color;
+  if (typeof mat.opacity === 'number' && mat.opacity > 0 && mat.opacity < 1) entry.opacity = mat.opacity;
+  if (typeof mat.preset === 'string' && mat.preset && mat.preset !== 'none') entry.material = mat.preset;
+  return Object.keys(entry).length ? entry : null;
+}
+
+/** The `meta.instanceColors` sub-map a parts_table contributes (#38d) — each SET
+ *  row material keyed by the row's OWN output var (`partsTableRowVar(id, i)`, ==
+ *  the loader's per-row instance name), so the color-by-source LUT paints each row
+ *  in its override. EMPTY when no rowMaterials are set → nothing is stamped → the
+ *  emit is byte-identical to a table with no overrides. */
+export function partsTableInstanceColors(node: PartsTableNode): Record<string, RowInstanceColor> {
+  const out: Record<string, RowInstanceColor> = {};
+  const mats = Array.isArray(node.rowMaterials) ? node.rowMaterials : [];
+  const rows = Array.isArray(node.rows) ? node.rows : [];
+  for (let i = 0; i < rows.length; i++) {
+    const entry = rowMaterialEntry(mats[i]);
+    if (entry) out[partsTableRowVar(node.id, i)] = entry;
+  }
+  return out;
+}
 
 /** The stable const name row `idx` of a parts_table `id` binds to — its OWN output
  *  socket. PURE fn of (id, idx): `partsTableRowVar('n_abc', 2)` → `_pt_n_abc_2`.

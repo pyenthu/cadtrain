@@ -16,7 +16,7 @@ import type {
   ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem, SplineNode, WarpNode, CutawayNode,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph, MaterialNode, PartAppearance,
   PartsMapNode,
-  PartsTableNode,
+  PartsTableNode, RowMaterial,
 } from './composition-graph-types';
 import { newNodeId, asLiteral, asParam, asExpr } from './composition-graph-types';
 
@@ -1772,6 +1772,42 @@ export function setPartsTableCell(
     rows[idx] = row;
     const columns = (n.columns ?? []).includes(c) ? n.columns : [...(n.columns ?? []), c];
     return { ...n, columns, rows };
+  });
+}
+/** Coerce a RowMaterial to ONLY its SET, well-formed fields (a `#rrggbb` colour, a
+ *  non-'none' preset, a 0<opacity<1). An all-empty bundle collapses to null so a
+ *  cleared override drops the field rather than persisting an empty object. */
+function normalizeRowMaterial(mat: RowMaterial | null | undefined): RowMaterial | null {
+  if (!mat || typeof mat !== 'object') return null;
+  const out: RowMaterial = {};
+  if (typeof mat.color === 'string' && /^#[0-9a-fA-F]{6}$/.test(mat.color)) out.color = mat.color;
+  if (typeof mat.preset === 'string' && mat.preset && mat.preset !== 'none') out.preset = mat.preset;
+  if (typeof mat.opacity === 'number' && mat.opacity > 0 && mat.opacity < 1) out.opacity = mat.opacity;
+  return Object.keys(out).length ? out : null;
+}
+/** Set / clear ONE row's per-row MATERIAL override (#38d, row `idx`). `material` is
+ *  a sparse `{color?, preset?, opacity?}` bundle; passing null (or an all-empty
+ *  bundle) CLEARS the row back to color-by-source. Stored in `rowMaterials`, an
+ *  array kept PARALLEL to `rows` (index-aligned, padded with nulls); trailing nulls
+ *  are right-trimmed and an all-null array drops the field entirely, so a cleared
+ *  table is byte-identical on emit + serialise. No-op on an out-of-range index. */
+export function setPartsTableRowMaterial(
+  graph: Graph, id: NodeId, idx: number, material: RowMaterial | null,
+): Graph {
+  return updatePartsTable(graph, id, (n) => {
+    const rows = n.rows ?? [];
+    if (idx < 0 || idx >= rows.length) return n;
+    const norm = normalizeRowMaterial(material);
+    const mats = (n.rowMaterials ?? []).slice();
+    while (mats.length <= idx) mats.push(null);   // pad so the array stays index-aligned to rows[]
+    mats[idx] = norm;
+    let end = mats.length;                         // right-trim trailing nulls
+    while (end > 0 && mats[end - 1] == null) end--;
+    if (end === 0) {
+      const { rowMaterials: _drop, ...rest } = n;  // all-null ⇒ drop the field (byte-identical)
+      return rest as PartsTableNode;
+    }
+    return { ...n, rowMaterials: mats.slice(0, end) };
   });
 }
 

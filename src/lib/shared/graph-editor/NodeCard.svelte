@@ -59,6 +59,7 @@
     duplicatePartsTableRow,
     removePartsTableRow,
     setPartsTableCell,
+    setPartsTableRowMaterial,
     asLiteral,
     STACK_REF_PARAM,
     type Graph,
@@ -1927,6 +1928,7 @@
                       onDuplicateRow={(i) => setGraph(duplicatePartsTableRow(graph, n.id, i))}
                       onRemoveRow={(i) => setGraph(removePartsTableRow(graph, n.id, i))}
                       onCell={(i, col, val) => setGraph(setPartsTableCell(graph, n.id, i, col, val))}
+                      onRowMaterial={(i, mat) => setGraph(setPartsTableRowMaterial(graph, n.id, i, mat))}
                       onRowSocketDown={(_i, ev) => wire.startWire(ev, n.id)}
                     />
                   </div>
