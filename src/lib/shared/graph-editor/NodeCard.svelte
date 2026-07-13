@@ -1882,8 +1882,10 @@
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
                 <text x="12" y="20" class="ge-node-title">▤ parts_table</text>
-                <!-- Template-part selector chip → opens the search picker (R2/R3). -->
-                <foreignObject x="108" y="5" width={Math.max(64, size.w - 178)} height="19">
+                <!-- Template-part selector chip → opens the search picker (R2/R3).
+                     Width leaves a clear gap before the right-side multi/×/socket
+                     cluster so the title row never reads cramped. -->
+                <foreignObject x="108" y="5" width={Math.max(56, size.w - 196)} height="19">
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <div class="ge-pt-srcsel" class:empty={!pt.src} xmlns="http://www.w3.org/1999/xhtml"
                     title="Choose the template part to repeat"
@@ -1893,10 +1895,11 @@
                   </div>
                 </foreignObject>
                 <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
-                <!-- "Multi part" label for the title-row aggregate output socket (R4). -->
-                <text x={size.w - 28} y="13" class="ge-pt-multi-label" text-anchor="end">multi</text>
+                <!-- "Multi part" label for the title-row aggregate output socket (R4):
+                     "multi ●" on the upper line, the × stacked below it. -->
+                <text x={size.w - 15} y="13" class="ge-pt-multi-label" text-anchor="end">multi</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 18} y="24" class="ge-node-x"
+                <text role="button" tabindex="-1" x={size.w - 22} y="26" text-anchor="end" class="ge-node-x"
                   class:armed={del.isArmed(n.id)}
                   data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
                   onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
