@@ -343,6 +343,9 @@ export function hydrateGraph(serialised: any): Graph {
           return out;
         })
       : [];
+    // OPTIONAL external data-input (#38c) — a NodeId string; drop a malformed value
+    // so a hand-edited file can't carry a non-string `dataInput` (⇒ inline-rows mode).
+    if (n.dataInput != null && typeof n.dataInput !== 'string') delete n.dataInput;
     migratedNodes[id] = n;
   }
 

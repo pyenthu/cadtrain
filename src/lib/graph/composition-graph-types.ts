@@ -641,6 +641,18 @@ export type PartsTableNode = {
    *  stamp, byte-identical emit); round-trips wholesale through serialiseGraph /
    *  hydrateGraph like every other node field. */
   rowMaterials?: Array<RowMaterial | null>;
+  /** OPTIONAL external DATA-INPUT (#38c) — the NodeId of an upstream LIST-PRODUCER
+   *  (a `list`/`stack`/`group` container, another `parts_table` aggregate, a
+   *  `parts_map`, a `repeat` — any node whose emitted VAR is a runtime list of row
+   *  objects) wired into the table's top-left socket. When SET, the table SOURCES its rows FROM that upstream
+   *  list at RUNTIME (each element → one row): emit lowers to the parts_map pattern
+   *  `Array.from(<upstreamVar>, (s, i) => <src>({ <col>: s.<col>, … }))`, mapping each
+   *  declared `columns` entry to the element's field of the same name — so the inline
+   *  `rows` are IGNORED. When ABSENT (the default / every legacy file) behaviour is
+   *  EXACTLY the inline-rows path (byte-identical emit). SPARSE + optional; the node
+   *  is consumed (inputRefs) so topo-order emits the upstream var first + a downstream
+   *  wire renders + click-deletes like any node→node connection. */
+  dataInput?: NodeId;
 };
 
 /** One parts_table ROW's appearance override (#38d) — all fields SPARSE/optional so

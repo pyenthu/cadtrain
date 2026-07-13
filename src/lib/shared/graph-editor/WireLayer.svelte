@@ -592,6 +592,18 @@
                   <path class="ge-wire-hit" class:splice-target={dragActive && spliceTargetKey === swKey} data-splice={JSON.stringify(sw)} data-splice-key={swKey} onpointerup={drop(sw)} d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit(sw.ref)}/>
                 {/if}
               {/each}
+            {:else if n.type === 'parts_table'}
+              <!-- parts_table external DATA-INPUT wire (#38c) — from the upstream
+                   list-producer's output socket → the table's top-left data socket
+                   (cx=0, cy=16 in the card markup). Click-to-delete unwires it. -->
+              {#if (n as any).dataInput && graph.nodes[(n as any).dataInput]}
+                {@const src = outSock((n as any).dataInput)}
+                {@const pos = nodePos(n.id)}
+                {@const sw = mkWire({ kind: 'parts-table-data', nodeId: n.id }, (n as any).dataInput)}
+                {@const swKey = spliceWireKey(sw)}
+                <path class="ge-wire child" d={bezier(cardObstacles, src.x, src.y, pos.x, pos.y + 16)} fill="none"/>
+                <path class="ge-wire-hit" class:splice-target={dragActive && spliceTargetKey === swKey} data-splice={JSON.stringify(sw)} data-splice-key={swKey} onpointerup={drop(sw)} d={bezier(cardObstacles, src.x, src.y, pos.x, pos.y + 16)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit(sw.ref)}/>
+              {/if}
             {/if}
           {/each}
 

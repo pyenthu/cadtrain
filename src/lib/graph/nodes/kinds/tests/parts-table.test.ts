@@ -84,13 +84,17 @@ describe('PartsTableKind — validate', () => {
 });
 
 describe('PartsTableKind — sockets / size / inputRefs', () => {
-  it('inputRefs is empty — a parts_table consumes params/exprs, not graph nodes', () => {
+  it('inputRefs is empty for an UNWIRED table — inline rows are ArgValues, not graph nodes', () => {
     expect(PartsTableKind.inputRefs(pt())).toEqual([]);
   });
-  it('sockets expose NO wired inputs; the aggregate is value-producing', () => {
-    // The N per-ROW output sockets are drawn by the card itself (SocketSchema
-    // can't express N outputs) — the descriptor only marks value-producing.
-    expect(PartsTableKind.sockets(pt())).toEqual({ inputs: [], output: true });
+  it('inputRefs consumes the upstream list-producer when the data-input is WIRED (#38c)', () => {
+    expect(PartsTableKind.inputRefs(pt({ dataInput: 'src_list' }))).toEqual(['src_list']);
+  });
+  it('sockets expose the optional `data` list-input; the aggregate is value-producing', () => {
+    // ONE list-input slot `data` (#38c, the top-left wire target). The N per-ROW
+    // output sockets are drawn by the card itself (SocketSchema can't express N
+    // outputs) — the descriptor only marks value-producing.
+    expect(PartsTableKind.sockets(pt())).toEqual({ inputs: ['data'], output: true });
   });
   it('size grows 24px per row above the 110 floor', () => {
     // 3 rows → max(110, 64 + 4*24) = 160

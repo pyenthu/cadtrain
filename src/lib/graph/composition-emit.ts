@@ -626,6 +626,10 @@ export function emitPartsTableBlocks(graph: Graph): string[] {
   const lines: string[] = [];
   for (const node of Object.values(graph.nodes)) {
     if (!node || node.type !== 'parts_table') continue;
+    // A WIRED table (#38c) emits its rows as ONE runtime `Array.from(...)` (in
+    // PartsTableKind.emitExpr) — there are NO fixed per-row consts, so the prelude
+    // contributes nothing. Only the INLINE-rows path emits the `_pt_<id>_i` consts.
+    if (node.dataInput) continue;
     const rows = Array.isArray(node.rows) ? node.rows : [];
     rows.forEach((row, i) => {
       const args: Record<string, ArgValue> = {};

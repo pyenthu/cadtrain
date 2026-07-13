@@ -1810,6 +1810,19 @@ export function setPartsTableRowMaterial(
     return { ...n, rowMaterials: mats.slice(0, end) };
   });
 }
+/** Wire / unwire the external DATA-INPUT (#38c). `sourceId` = an upstream LIST-
+ *  producer node whose runtime list feeds the table's rows (each element → one
+ *  row); passing null CLEARS it → the table falls back to its inline `rows`. The
+ *  inline rows/columns are preserved either way (a temporary unwire restores them).
+ *  No-op self-reference guard: a table can't feed itself. */
+export function setPartsTableDataInput(graph: Graph, id: NodeId, sourceId: NodeId | null): Graph {
+  if (sourceId === id) return graph;
+  return updatePartsTable(graph, id, (n) => {
+    if (sourceId) return { ...n, dataInput: sourceId };
+    const { dataInput: _drop, ...rest } = n;   // clear ⇒ drop the field (byte-identical to a never-wired table)
+    return rest as PartsTableNode;
+  });
+}
 
 /** Immutable update of one def by id (no-op if the id is unknown). */
 function mapDef(graph: Graph, defId: NodeId, fn: (d: ExprDef) => ExprDef): Graph {
@@ -2673,6 +2686,11 @@ export function topoOrder(graph: Graph): NodeId[] {
       if (node.child) visit(node.child);
     } else if (node.type === 'repeat') {
       for (const c of node.children ?? []) visit(c);
+    } else if (node.type === 'parts_table') {
+      // A WIRED parts_table (#38c) SOURCES its rows from an upstream list-producer
+      // (dataInput). Visit it FIRST so `const <upstreamVar> = …` emits before the
+      // `Array.from(<upstreamVar>, …)` this table lowers to (TDZ). Unwired ⇒ nothing.
+      if ((node as any).dataInput) visit((node as any).dataInput);
     } else if (node.type === 'call') {
       // A Call arg can carry a `__POLY__<id>` ref to a producer (polygon /
       // sketch) feeding e.g. a revolve's `profile`. Visit those producers

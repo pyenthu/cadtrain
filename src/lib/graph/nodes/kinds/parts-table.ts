@@ -22,9 +22,22 @@
  * node id + row index, exactly like exprBlockMember), so a downstream wire can
  * target ONE row without depending on emit's var-name assignment.
  */
-import type { NodeId } from '../../composition-graph-types';
+import type { NodeId, ArgValue } from '../../composition-graph-types';
 import type { PartsTableNode, RowMaterial } from '../../composition-graph-types';
-import { type NodeKind, type ValidationError, err, checkArg } from '../node-kind';
+import { type NodeKind, type ValidationError, err, checkArg, has } from '../node-kind';
+
+/** The loop-body arg-map for a WIRED parts_table (#38c): each declared column →
+ *  the row object's field of the same name, read off the per-element binding `s`
+ *  (`{kind:'expr', expr:'s.<col>'}`) — the SAME `s.<field>` access parts_map uses.
+ *  Deterministic (declared `columns` order); an empty column set yields `{}` (the
+ *  template's own defaults carry through). Columns are template PARAM names (valid
+ *  identifiers), so dot access is safe. */
+export function partsTableDataArgMap(node: PartsTableNode): Record<string, ArgValue> {
+  const cols = Array.isArray(node.columns) ? node.columns : [];
+  const out: Record<string, ArgValue> = {};
+  for (const col of cols) out[col] = { kind: 'expr', expr: `s.${col}` };
+  return out;
+}
 
 /** One row's per-instance appearance-override ENTRY — the `{ outer?, opacity?,
  *  material? }` shape `meta.instanceColors` carries and part-colors.appearanceFrom-
@@ -48,6 +61,10 @@ export function rowMaterialEntry(mat: RowMaterial | null | undefined): RowInstan
  *  emit is byte-identical to a table with no overrides. */
 export function partsTableInstanceColors(node: PartsTableNode): Record<string, RowInstanceColor> {
   const out: Record<string, RowInstanceColor> = {};
+  // A WIRED table (#38c) has no fixed `partsTableRowVar` consts — its rows come from
+  // the upstream list at runtime — so per-row material overrides don't apply; stamp
+  // nothing (keying by non-existent vars would only add dead entries to meta).
+  if (node.dataInput) return out;
   const mats = Array.isArray(node.rowMaterials) ? node.rowMaterials : [];
   const rows = Array.isArray(node.rows) ? node.rows : [];
   for (let i = 0; i < rows.length; i++) {
@@ -83,7 +100,19 @@ export const PartsTableKind: NodeKind<PartsTableNode> = {
   // they exist ABOVE this array (JS const TDZ satisfied). Marked a list producer
   // in computeListProducers ⇒ the root returns it bare / a Stack `...`-spreads it,
   // and the loader separates each element into its own `_parts` body (no fusion).
-  emitExpr: (node) => {
+  emitExpr: (node, c) => {
+    // WIRED external data-input (#38c): source the rows FROM the upstream list at
+    // runtime — the parts_map lowering. Each declared column maps to the element's
+    // field of the same name (`s.<col>`), and the whole thing is a bare `Array.from`
+    // array (still a LIST PRODUCER, so the root / a parent Stack spreads it). The
+    // upstream var comes via ctx.ref (topo-order guarantees it is emitted first).
+    if (node.dataInput) {
+      const rows = c.ref(node.dataInput, 'dataInput');
+      const call = c.emitCall(node.src, partsTableDataArgMap(node));
+      return `Array.from(${rows}, (s, i) => ${call})`;
+    }
+    // UNWIRED (the default): the AGGREGATE of the N inline per-row output-socket refs
+    // — the actual row Call consts come from the emitPartsTableBlocks PRELUDE.
     const rows = Array.isArray(node.rows) ? node.rows : [];
     return `[${rows.map((_, i) => partsTableRowVar(node.id, i)).join(', ')}]`;
   },
@@ -93,6 +122,12 @@ export const PartsTableKind: NodeKind<PartsTableNode> = {
     // editor greys the card (no template selected yet), exactly like parts_map.
     if (!node.src || typeof node.src !== 'string') {
       errs.push(err(node.id, 'src', String(node.src ?? ''), 'missing-node'));
+    }
+    // A WIRED data-input (#38c) that points at a deleted node is a broken reference —
+    // surface it as a missing-node (slot `dataInput`) so /save + /preview refuse it
+    // before the emitted `Array.from(<undefined>, …)` crashes downstream.
+    if (node.dataInput && !has(g, node.dataInput)) {
+      errs.push(err(node.id, 'dataInput', node.dataInput, 'missing-node'));
     }
     // Every cell ArgValue is missing-param checked (a param whose column/row was
     // deleted surfaces as an orphaned cell), slotted `rows[i].<col>` so the editor
@@ -104,9 +139,12 @@ export const PartsTableKind: NodeKind<PartsTableNode> = {
     });
     return errs;
   },
-  // Rows are INLINE ArgValues (not graph-node inputs), so a parts_table consumes no
-  // node inputs — its aggregate is a root/stack child (same as parts_map).
-  inputRefs: () => [],
+  // Inline rows are ArgValues (not graph-node inputs), so an UNWIRED parts_table
+  // consumes no node inputs — its aggregate is a root/stack child (same as parts_map).
+  // A WIRED table (#38c) CONSUMES its upstream list-producer (`dataInput`): listing it
+  // here marks it consumed (so it is not ALSO a root output) and forces topo-order to
+  // emit the upstream var BEFORE this table's `Array.from(<upstreamVar>, …)`.
+  inputRefs: (node) => (node.dataInput ? [node.dataInput] : []),
   size: (node, ctx) => {
     // GROW-TO-FIT (user chose "grow-to-fit, H-scroll only" 2026-07-13): the card
     // height always fits EVERY row — no vertical scroll — so each row's right-edge
@@ -121,8 +159,10 @@ export const PartsTableKind: NodeKind<PartsTableNode> = {
     const h = typeof savedH === 'number' && savedH > fitH ? savedH : fitH;
     return { w: ctx.width, h };
   },
-  // No wired node INPUTS (rows are inline). The N per-ROW output sockets are
-  // rendered by the card component itself (the generic SocketSchema.output can't
-  // express N outputs); `output: true` marks the node as value-producing.
-  sockets: () => ({ inputs: [], output: true }),
+  // ONE optional list-input slot `data` (#38c) — the top-left socket a wire targets
+  // to source the rows from an upstream list-producer. Always present (it's a drop
+  // target whether wired or not). The N per-ROW output sockets are rendered by the
+  // card component itself (the generic SocketSchema.output can't express N outputs);
+  // `output: true` marks the node as value-producing.
+  sockets: () => ({ inputs: ['data'], output: true }),
 };

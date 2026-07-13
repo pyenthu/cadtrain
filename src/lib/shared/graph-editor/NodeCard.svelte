@@ -1885,7 +1885,17 @@
                 <!-- Just the ▤ marker — "parts_table" is evident + lives in the card
                      tooltip (data-tip on the bg rect), so the title text is dropped
                      and the selector chip takes the title row (user 2026-07-13). -->
-                <text x="10" y="20" class="ge-node-title">▤</text>
+                <text x="14" y="20" class="ge-node-title">▤</text>
+                <!-- External DATA-INPUT socket (#38c) — top-left of the card. Drop an
+                     upstream list-producer's output here to SOURCE the rows FROM that
+                     runtime list (each element → one row) instead of the inline rows;
+                     the columns still map each element's fields to the template's
+                     params. `wired` = a list is bound (the inline rows are ignored). -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock in pt-data-in" class:wired={!!pt.dataInput}
+                  cx="0" cy="16" r="6"
+                  data-tip={pt.dataInput ? 'rows: WIRED to an upstream list — each element becomes a row (delete the wire to go back to inline rows)' : 'rows: wire an upstream list-producer here (a list · another table · a parts_map · a repeat) to feed the table its rows'}
+                  onpointerup={(ev) => wire.endWireOnPartsTableData(ev, n.id)}/>
                 <!-- Template-part selector chip → opens the search picker (R2/R3).
                      Starts right after the ▤ marker + leaves a gap before the
                      right-side multi/×/socket cluster. -->
@@ -2028,6 +2038,10 @@
   /* parts_table card (#38b) — same violet family; the body is the decoupled
      PartsTableCard, hosted in a foreignObject that fills the node below the title. */
   .ge-node-bg.parts-table { fill: #fdfcff; stroke: #7c3aed; stroke-width: 2; }
+  /* External DATA-INPUT socket (#38c) — violet like the card; filled when a list is
+     wired in (rows sourced from the upstream, inline rows ignored). */
+  .ge-sock.in.pt-data-in { fill: #fff; stroke: #7c3aed; stroke-width: 2; }
+  .ge-sock.in.pt-data-in.wired { fill: #7c3aed; stroke: #5b21b6; }
   /* Host is hard-clipped; the card owns its own row-list scroll (R5). */
   .ge-pt-host { width: 100%; height: 100%; overflow: hidden; }
   /* Template-part selector chip on the title row (R2/R3). */

@@ -42,6 +42,7 @@ import {
   setSplinePointsExpr,
   setWarpPath,
   setWarpChildAt,
+  setPartsTableDataInput,
   bindMaterial,
   type Graph,
   type NodeId,
@@ -454,6 +455,22 @@ export class WireState {
     if (!from) return;
     ev.stopPropagation();
     this.#setGraph(setRepeatChildAt(this.#getGraph(), repeatId, idx, (from as any).nodeId));
+    this.from = null; this.mouse = null;
+  };
+
+  /** Drop a wire onto a parts_table's external DATA-INPUT socket (#38c). A plain
+   *  node OUTPUT whose runtime value is a list<record> — a `list`/`stack`/`group`
+   *  container, a `parts_map`, another `parts_table` aggregate, a `repeat` — feeds
+   *  the table's rows (each element → one row); the table then SOURCES its rows from
+   *  it instead of the inline rows. The reference is the source node's emitted VAR,
+   *  so an EXPR-block output (which carries `outName` and lives in a prelude const,
+   *  not a node var) is IGNORED, as are param-chip / material drops. */
+  endWireOnPartsTableData = (ev: PointerEvent, tableId: NodeId) => {
+    ev.stopPropagation();
+    const from = this.from;
+    if (from?.kind === 'out' && from.outName == null && from.nodeId !== tableId) {
+      this.#setGraph(setPartsTableDataInput(this.#getGraph(), tableId, from.nodeId));
+    }
     this.from = null; this.mouse = null;
   };
 }

@@ -20,6 +20,7 @@ import {
   setTransformChild,
   setWarpPath,
   setCallArg,
+  setPartsTableDataInput,
   asLiteral,
   type Graph,
   type NodeId,
@@ -34,6 +35,7 @@ export type WireRef =
   | { kind: 'repeat-child'; nodeId: NodeId; index: number }
   | { kind: 'container-child'; nodeId: NodeId; index: number }
   | { kind: 'material'; partId: NodeId }
+  | { kind: 'parts-table-data'; nodeId: NodeId }           // parts_table external data-input (#38c)
   | { kind: 'call-arg'; nodeId: NodeId; key: string };
 
 /** Apply a wire deletion — clear exactly the slot named by `ref`. Returns a new
@@ -56,6 +58,9 @@ export function unwireGraph(graph: Graph, ref: WireRef): Graph {
       return removeContainerChildAt(graph, ref.nodeId, ref.index);
     case 'material':
       return unbindMaterial(graph, ref.partId);
+    case 'parts-table-data':
+      // Clear the external data-input → the table falls back to its inline rows.
+      return setPartsTableDataInput(graph, ref.nodeId, null);
     case 'call-arg': {
       // Reset the arg to a literal so the Call still bakes: a param wire → that
       // param's default; an expr/node-ref wire → 0. The user re-edits from there.
@@ -95,6 +100,7 @@ export function describeWireRef(graph: Graph, ref: WireRef): string {
     case 'repeat-child': return `part → repeat`;
     case 'container-child': return `output slot`;
     case 'material': return `material → ${nm(ref.partId)}`;
+    case 'parts-table-data': return `rows → ${nm(ref.nodeId)}`;
     case 'call-arg': return `${ref.key} → ${nm(ref.nodeId)}`;
     default: return 'connection';
   }
