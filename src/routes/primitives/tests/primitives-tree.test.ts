@@ -4,6 +4,7 @@ import {
   isMoveTarget,
   topLevelOf,
   ensureFolderPath,
+  insertPartIntoTree,
   nodeAt,
   isPathAtOrUnder,
   folderMoveInto,
@@ -134,5 +135,35 @@ describe('ensureFolderPath', () => {
   });
   it('returns false for an empty path', () => {
     expect(ensureFolderPath(sampleTree(), '')).toBe(false);
+  });
+});
+
+describe('insertPartIntoTree (optimistic create/copy insert)', () => {
+  it('inserts a brand-new part into its create folder', () => {
+    const t = sampleTree();
+    expect(insertPartIntoTree(t, 'g_widget', 'basic')).toBe(true);
+    expect(nodeAt(t, 'basic')!.parts.map((p) => p.id)).toEqual(['g_widget']);
+    expect(nodeAt(t, 'basic')!.parts[0].source).toBe('volume');
+  });
+  it('lands the part in a nested subfolder (the folder it was created in)', () => {
+    const t = sampleTree();
+    expect(insertPartIntoTree(t, 'dp_pin', 'completions/svtc')).toBe(true);
+    expect(nodeAt(t, 'completions/svtc')!.parts.map((p) => p.id)).toEqual(['dp_pin']);
+    // sibling folders untouched
+    expect(nodeAt(t, 'basic')!.parts).toHaveLength(0);
+  });
+  it('dedupes by id — a second insert (e.g. the later /list) is a no-op', () => {
+    const t = sampleTree();
+    expect(insertPartIntoTree(t, 'g_widget', 'basic')).toBe(true);
+    expect(insertPartIntoTree(t, 'g_widget', 'basic')).toBe(false);
+    expect(nodeAt(t, 'basic')!.parts).toHaveLength(1);
+  });
+  it('falls back to the root when the create folder is absent from the tree', () => {
+    const t = sampleTree();
+    expect(insertPartIntoTree(t, 'orphan', 'nope/missing')).toBe(true);
+    expect(t.parts.map((p) => p.id)).toEqual(['orphan']);
+  });
+  it('is a no-op on a null tree', () => {
+    expect(insertPartIntoTree(null, 'x', 'basic')).toBe(false);
   });
 });

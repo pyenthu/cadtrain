@@ -27,7 +27,7 @@
   import {
     type Entry, type FolderNode, MOVE_TARGET_RE,
     tabLabel, subtreeCount, subtreeMatches, sortFolders, nodeAt, findPartDir,
-    isMoveTarget, topLevelOf, ensureFolderPath,
+    isMoveTarget, topLevelOf, ensureFolderPath, insertPartIntoTree,
     folderMoveInto, FOLDER_PROTECTED_ROOTS, resolveDropTargetFolder,
   } from './primitives-tree';
 
@@ -167,11 +167,7 @@
     let changed = false;
     for (const [id, dir] of [...pendingCreated]) {
       if (treeHasId(tree, id)) { pendingCreated.delete(id); changed = true; continue; }
-      const node = nodeAt(tree, dir) ?? tree;
-      if (node && !node.parts.some((p) => p.id === id)) {
-        node.parts = [...node.parts, { id, source: 'volume', name: id, description: '', params: {} } as any];
-        changed = true;
-      }
+      if (insertPartIntoTree(tree, id, dir)) changed = true;
     }
     if (changed) pendingCreated = new Map(pendingCreated);
   }
@@ -601,7 +597,15 @@
         body: JSON.stringify({ id: newId, source: dup, dir: to }),
       });
       if (!r.ok) { alert(`Copy failed (${r.status}): ${(await r.text()).slice(0, 200)}`); return; }
+      // Optimistic: surface the new copy in `to/` NOW. The proxied /list lags
+      // writes by seconds (memory prod_list_staleness), so relying on loadList
+      // alone made a fresh copy invisible until a later refresh/reload. Track it
+      // as pending + merge so a later /list that finally carries it reconciles
+      // (dedupe by id — no double entry). Same mechanism as onPartSaved.
+      pendingCreated.set(newId, to);
+      pendingCreated = new Map(pendingCreated);
       ensureExpanded(to);
+      mergePending();
       await loadList();
     } catch (e: any) {
       alert(`Copy error: ${e?.message ?? e}`);

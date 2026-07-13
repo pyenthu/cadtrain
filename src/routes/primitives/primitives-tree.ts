@@ -188,3 +188,20 @@ export function ensureFolderPath(tree: FolderNode, path: string): boolean {
   }
   return changed;
 }
+
+/** Optimistically insert a brand-new part `id` into the tree, under the folder
+ *  `dir` it was created in (falling back to the root when `dir` isn't in the
+ *  tree yet). The parts analogue of `ensureFolderPath`: the proxied /list lags
+ *  writes by seconds (memory prod_list_staleness), so a just-created OR copied
+ *  part must surface immediately rather than waiting for the refetch to catch
+ *  up. Dedupes by id (returns false, no double, when the part is already
+ *  present) so a later /list that finally includes it reconciles cleanly.
+ *  MUTATES `tree` in place — assigns a fresh `parts` array on the target node,
+ *  so the caller's Svelte deep-proxy reactivity re-renders that folder. */
+export function insertPartIntoTree(tree: FolderNode | null, id: string, dir: string): boolean {
+  if (!tree) return false;
+  const node = nodeAt(tree, dir) ?? tree;
+  if (node.parts.some((p) => p.id === id)) return false;
+  node.parts = [...node.parts, { id, source: 'volume' }];
+  return true;
+}
