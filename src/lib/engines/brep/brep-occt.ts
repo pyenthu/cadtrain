@@ -341,25 +341,31 @@ async function meshBrepSolid(solid: any, opts: MeshOpts, t0: number): Promise<Br
 
 /**
  * Full graph→OCCT executor: run an emitted part body with OpenCascade-backed
- * engines + booleans instead of Manifold, then tessellate. This covers CSG
- * parts (the body chains .add/.subtract/.intersect + mv/rot over multiple
- * engine solids), not just a single revolve.
+ * engines + booleans instead of Manifold. This covers CSG parts (the body
+ * chains .add/.subtract/.intersect + mv/rot over multiple engine solids), not
+ * just a single revolve.
  *
  * Strategy: build a scope where r_revolve/r_extrude/r_weld_extrude/r_loft/
  * r_cuboid return WRAPPED OCCT solids, and the wrapper maps the Manifold method
  * names the body calls onto replicad's: .add→.fuse · .subtract→.cut ·
  * .intersect→.intersect · mv→.translate · rot→.rotate. Anything unmappable
- * throws → the endpoint reports supported:false and the BREP tab shows
+ * throws → the caller reports supported:false and the BREP tab shows
  * "no BREP path", so this never blocks the part.
  *
- * Returns null when no OCCT solid was produced (not a buildable BREP part).
+ * `mode:'mesh'` (what `brepFromSource` exposes) tessellates the composed solid
+ * to the adaptively-meshed BrepMesh the preview endpoint ships; `mode:'solid'`
+ * (what `solidFromSource` exposes for the SVG boundary projector) returns the
+ * RAW composed OCCT solid instead — SAME dep resolution + wrapper + heap
+ * hygiene, only the final production differs. Returns null when no OCCT solid
+ * was produced (not a buildable BREP part).
  */
-export async function brepFromSource(
+async function executeBrep(
   source: string,
-  paramValues: Record<string, number> = {},
-  opts: MeshOpts = {},
-  fetchFn?: typeof fetch,
-): Promise<BrepMesh | null> {
+  paramValues: Record<string, number>,
+  opts: MeshOpts,
+  fetchFn: typeof fetch | undefined,
+  mode: 'mesh' | 'solid',
+): Promise<BrepMesh | any | null> {
   await ensureOC();
   const replicad: any = await import('replicad');
   const { compileSketch } = await import('$lib/graph/sketch');
@@ -1127,6 +1133,12 @@ export async function brepFromSource(
     // whole heap to itself. `solid` is the only survivor kept.
     const kept: any[] = []; collectShapes(solid, kept);
     sweepSince(mark, kept);
+    // The SVG boundary projector wants the exact analytic solid, not a triangle
+    // set — hand back the RAW composed OCCT solid (skip tessellation entirely).
+    // It is the SAME solid meshBrepSolid would otherwise tessellate; the caller
+    // projects it and is responsible for freeing it (brepSolidToSvg reads
+    // .faces/.edges/.boundingBox, so it must outlive this call).
+    if (mode === 'solid') return solid;
     return meshBrepSolid(solid, opts, t0);
   } catch (e: any) {
     const raw = e?.message ?? e;
@@ -1138,6 +1150,40 @@ export async function brepFromSource(
     if (typeof e === 'number' || typeof e === 'bigint' || /^\s*\d+\s*$/.test(String(raw))) resetOC();
     throw new Error('BREP build failed: ' + raw);
   }
+}
+
+/**
+ * Full graph→OCCT executor → adaptively-tessellated BrepMesh (the mesh
+ * `/api/brep/preview` ships). Thin wrapper over the shared `executeBrep` core.
+ */
+export async function brepFromSource(
+  source: string,
+  paramValues: Record<string, number> = {},
+  opts: MeshOpts = {},
+  fetchFn?: typeof fetch,
+): Promise<BrepMesh | null> {
+  return (await executeBrep(source, paramValues, opts, fetchFn, 'mesh')) as BrepMesh | null;
+}
+
+/**
+ * Same executor + dependency resolution as `brepFromSource`, but returns the
+ * RAW composed OCCT solid (a replicad Shape with `.faces`/`.edges`/`.boundingBox`)
+ * instead of a tessellated mesh — the input `brepSolidToSvg` projects to an SVG
+ * boundary. Used by `/api/brep/svg` so the SVG endpoint resolves + executes a
+ * part EXACTLY the way the preview endpoint does, then draws the boundary rather
+ * than meshing it. Returns null when the part has no OCCT-buildable solid.
+ *
+ * The caller owns the returned solid's lifetime — call `solid.delete?.()` once
+ * projected to free the WASM heap (the executor kept it alive past its own
+ * intermediate sweep, so nothing else will).
+ */
+export async function solidFromSource(
+  source: string,
+  paramValues: Record<string, number> = {},
+  opts: MeshOpts = {},
+  fetchFn?: typeof fetch,
+): Promise<any | null> {
+  return executeBrep(source, paramValues, opts, fetchFn, 'solid');
 }
 
 /** Resolve a part/engine source by name. stdlib (local, canonical) first; then
