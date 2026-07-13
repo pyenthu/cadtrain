@@ -77,10 +77,13 @@ export const PartsTableKind: NodeKind<PartsTableNode> = {
   // node inputs — its aggregate is a root/stack child (same as parts_map).
   inputRefs: () => [],
   size: (node, ctx) => {
-    // Header (title + "one <src> per row") + one row per table row + a "+ row"
-    // row — mirrors RepeatKind / PartsMapKind's per-row growth above a 110px floor.
+    // Auto-height: grows one row-height per table row above a 110px floor, but
+    // CAPS at PT_MAX_H (#38b R5) — beyond ~9 rows the card holds its height and
+    // the row list scrolls INTERNALLY (PartsTableCard `.pt-scroll`), so a big
+    // table never runs off the canvas.
+    const PT_MAX_H = 300;
     const rows = Array.isArray(node.rows) ? node.rows.length : 0;
-    return { w: ctx.width, h: Math.max(110, 64 + (rows + 1) * 24) };
+    return { w: ctx.width, h: Math.min(PT_MAX_H, Math.max(110, 64 + (rows + 1) * 24)) };
   },
   // No wired node INPUTS (rows are inline). The N per-ROW output sockets are
   // rendered by the card component itself (the generic SocketSchema.output can't

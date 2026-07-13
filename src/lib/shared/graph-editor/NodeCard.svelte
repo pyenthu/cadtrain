@@ -54,7 +54,6 @@
     addPartsMapArg,
     removePartsMapArg,
     setPartsMapOp,
-    setPartsTableSrc,
     setPartsTableColumns,
     addPartsTableRow,
     duplicatePartsTableRow,
@@ -148,6 +147,7 @@
     onOpenSplineEditor,
     onOpenMaterialEditor,
     onOpenPartMaterial,
+    onOpenPartsSrcPicker,
     setHoverVertex,
     clearHoverVertex,
     openPolyPreview,
@@ -205,6 +205,9 @@
      *  node, anchored to its material swatch chip. (#66/#982 — material moved
      *  off the PROPERTIES table onto the card.) */
     onOpenPartMaterial?: (ev: PointerEvent, id: string) => void;
+    /** Open the template-part SEARCH picker for a parts_table (#38b R3),
+     *  anchored to the selector chip on its title row. */
+    onOpenPartsSrcPicker?: (ev: PointerEvent, id: string) => void;
     setHoverVertex: (polyId: string, idx: number) => void;
     clearHoverVertex: (polyId: string, idx: number) => void;
     openPolyPreview: (ev: PointerEvent, polyId: string) => void;
@@ -1867,22 +1870,33 @@
               {:else if n.type === 'parts_table'}
                 {@const pt = n as any}
                 <!-- parts_table (#38b) — ONE node, N inline ROWS of the SAME template
-                     part (`src`). Columns = the template's params; each row an
-                     independent instance. Rows render SEPARATE (list producer) — leave
-                     the node unconsumed to render every row at the root, or wire the
-                     aggregate output into a Stack. The table body is the decoupled
-                     PartsTableCard; the top strip is the SVG drag handle + delete. -->
+                     part. The TITLE ROW carries the single title (R1), the template
+                     SEARCH-picker chip (R2/R3) and the aggregate "Multi part" output
+                     (R4); the scrollable row table is the decoupled PartsTableCard
+                     below the divider (R5). The top strip is the SVG drag handle. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <rect role="button" tabindex="-1" class="ge-node-bg parts-table"
                   width={size.w} height={size.h} rx="6"
-                  data-tip="parts_table: N rows of ONE template part. Set the part id, add columns (its params), then add/edit rows — each row bakes as its own instance."
+                  data-tip="parts_table: N rows of ONE template part. Pick the template, add columns (its params), then add/edit rows — each row bakes as its own instance."
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
                 <text x="12" y="20" class="ge-node-title">▤ parts_table</text>
+                <!-- Template-part selector chip → opens the search picker (R2/R3). -->
+                <foreignObject x="108" y="5" width={Math.max(64, size.w - 178)} height="19">
+                  <!-- svelte-ignore a11y_no_static_element_interactions -->
+                  <div class="ge-pt-srcsel" class:empty={!pt.src} xmlns="http://www.w3.org/1999/xhtml"
+                    title="Choose the template part to repeat"
+                    onpointerdown={(ev) => { ev.stopPropagation(); onOpenPartsSrcPicker?.(ev as any, n.id); }}>
+                    <span class="ge-pt-srcsel-id">{pt.src || 'select part'}</span>
+                    <span class="ge-pt-srcsel-ic">🔍</span>
+                  </div>
+                </foreignObject>
                 <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
+                <!-- "Multi part" label for the title-row aggregate output socket (R4). -->
+                <text x={size.w - 28} y="13" class="ge-pt-multi-label" text-anchor="end">multi</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 18} y="20" class="ge-node-x"
+                <text role="button" tabindex="-1" x={size.w - 18} y="24" class="ge-node-x"
                   class:armed={del.isArmed(n.id)}
                   data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
                   onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
@@ -1891,7 +1905,6 @@
                     <PartsTableCard
                       node={pt}
                       paramNames={expected.params[pt.src] ?? []}
-                      onSrc={(src) => setGraph(setPartsTableSrc(graph, n.id, src))}
                       onColumns={(cols) => setGraph(setPartsTableColumns(graph, n.id, cols))}
                       onAddRow={() => setGraph(addPartsTableRow(graph, n.id))}
                       onDuplicateRow={(i) => setGraph(duplicatePartsTableRow(graph, n.id, i))}
@@ -1901,13 +1914,12 @@
                     />
                   </div>
                 </foreignObject>
-                <!-- OUTPUT — RIGHT edge; the aggregate list<geometry> of every row.
-                     (Per-row individual wiring into geometry inputs needs row-as-node
-                     modeling — the deferred "mixing/matching" work; for now every ◇
-                     starts this same table-level wire.) -->
+                <!-- OUTPUT — the aggregate "Multi part" list<geometry> on the TITLE ROW
+                     right edge (R4). Per-row ◇ sockets stay wireable; when this is
+                     wired, downstream gets the whole table and supersedes them. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy={size.h / 2} r="6"
-                  data-tip="the N row instances (list<geometry>) — wire into a Stack / Output, or leave unconsumed to render at the root"
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy="16" r="6"
+                  data-tip="Multi part — the whole table as one list<geometry>. Wire into a Stack / Output (supersedes the individual row sockets), or leave unconsumed to render every row at the root."
                   onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
               {/if}
               <!-- ─── Bottom-right corner resize grip ─────────────────────
@@ -1997,7 +2009,21 @@
   /* parts_table card (#38b) — same violet family; the body is the decoupled
      PartsTableCard, hosted in a foreignObject that fills the node below the title. */
   .ge-node-bg.parts-table { fill: #f6f1fe; stroke: #7c3aed; stroke-width: 2; }
-  .ge-pt-host { width: 100%; height: 100%; overflow: auto; }
+  /* Host is hard-clipped; the card owns its own row-list scroll (R5). */
+  .ge-pt-host { width: 100%; height: 100%; overflow: hidden; }
+  /* Template-part selector chip on the title row (R2/R3). */
+  .ge-pt-srcsel {
+    display: flex; align-items: center; justify-content: space-between; gap: 4px;
+    height: 100%; box-sizing: border-box; padding: 0 5px; cursor: pointer;
+    background: #fff; border: 1px solid #c9b6ef; border-radius: 4px;
+    font: 600 10px ui-monospace, monospace; color: #4a2f7a; overflow: hidden;
+  }
+  .ge-pt-srcsel:hover { border-color: #7c3aed; background: #faf7ff; }
+  .ge-pt-srcsel.empty { color: #9a86c0; font-style: italic; }
+  .ge-pt-srcsel-id { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .ge-pt-srcsel-ic { flex: none; font-size: 9px; opacity: 0.7; }
+  /* "multi" label beside the title-row aggregate output socket (R4). */
+  .ge-pt-multi-label { font: 700 8px ui-monospace, monospace; fill: #7c3aed; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.3px; }
   .ge-pm { display: flex; flex-direction: column; gap: 3px; font: 10px Arial; overflow: auto; height: 100%; }
   .ge-pm-row { display: flex; align-items: center; gap: 4px; }
   .ge-pm-row > span { width: 30px; color: #6d28d9; font-weight: 600; flex: none; }

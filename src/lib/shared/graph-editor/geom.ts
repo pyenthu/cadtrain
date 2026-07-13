@@ -454,6 +454,9 @@ export function outputSocketAt(graph: Graph, id: NodeId): { x: number; y: number
   }
   // txfmn is always a standalone card — output on the title-row right edge.
   if (node.type === 'txfmn') return { x: p.x + w, y: p.y + 16 };
+  // parts_table — the aggregate "Multi part" output sits on the TITLE ROW right
+  // edge (#38b R4), not mid-card, so the wire endpoint tracks the title-row socket.
+  if (node.type === 'parts_table') return { x: p.x + w, y: p.y + 16 };
   // Method (compact CSG circle) + every other node type: output on the
   // middle-right edge.
   return { x: p.x + w, y: p.y + h / 2 };

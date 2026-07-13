@@ -23,8 +23,6 @@
     /** Column options = the template part's param names (from its meta.params).
      *  Empty until a `src` is chosen; drives the "add column" picker. */
     paramNames?: string[];
-    /** Set the template part id (the SAME part instantiated per row). */
-    onSrc?: (src: string) => void;
     /** Replace the whole column set (adding surfaces a param as a column). */
     onColumns?: (columns: string[]) => void;
     /** Append a blank row (a new instance of the template). */
@@ -42,7 +40,7 @@
 
   let {
     node, paramNames = [],
-    onSrc, onColumns, onAddRow, onDuplicateRow, onRemoveRow, onCell, onRowSocketDown,
+    onColumns, onAddRow, onDuplicateRow, onRemoveRow, onCell, onRowSocketDown,
   }: Props = $props();
 
   const columns = $derived(Array.isArray(node.columns) ? node.columns : []);
@@ -76,17 +74,9 @@
   const unusedParams = $derived(paramNames.filter((p) => !columns.includes(p)));
 </script>
 
+<!-- No header here — the title + template-part selector live on the NodeCard SVG
+     title row (#38b R1/R2); this card is just the scrollable row table + footer. -->
 <div class="pt-card">
-  <header class="pt-head">
-    <span class="pt-title">▤ parts&nbsp;table</span>
-    <label class="pt-src">
-      <span>part</span>
-      <input
-        class="pt-src-in" value={node.src} placeholder="template id (e.g. g_casing)"
-        onchange={(e) => onSrc?.((e.currentTarget as HTMLInputElement).value.trim())} />
-    </label>
-  </header>
-
   <div class="pt-scroll">
     <table class="pt-table">
       <thead>
@@ -147,13 +137,11 @@
 </div>
 
 <style>
-  .pt-card { display: flex; flex-direction: column; gap: 4px; padding: 6px; font-size: 11px; color: #3a2a55; background: #f6f1fe; border: 1px solid #c9b6ef; border-radius: 8px; min-width: 240px; }
-  .pt-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .pt-title { font-weight: 600; color: #6b3fb0; white-space: nowrap; }
-  .pt-src { display: flex; align-items: center; gap: 4px; }
-  .pt-src span { opacity: 0.7; }
-  .pt-src-in { width: 130px; font-size: 11px; padding: 1px 4px; border: 1px solid #c9b6ef; border-radius: 4px; }
-  .pt-scroll { overflow-x: auto; }
+  /* The card fills its foreignObject host so the row list (`.pt-scroll`) can take
+     the middle and scroll while the footer stays pinned (#38b R5). */
+  .pt-card { display: flex; flex-direction: column; gap: 4px; padding: 6px; box-sizing: border-box; height: 100%; font-size: 11px; color: #3a2a55; background: #f6f1fe; border: 1px solid #c9b6ef; border-radius: 8px; min-width: 240px; }
+  /* Auto-height up to the node's PT_MAX_H cap, then scroll INSIDE (both axes). */
+  .pt-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
   .pt-table { border-collapse: collapse; width: 100%; }
   .pt-th { text-align: left; font-weight: 600; padding: 2px 5px; border-bottom: 1px solid #d9cbf3; white-space: nowrap; }
   .pt-th-out, .pt-th-idx { width: 1%; opacity: 0.6; }

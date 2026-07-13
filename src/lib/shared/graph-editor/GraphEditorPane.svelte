@@ -104,6 +104,7 @@
     addStackRef,
     hasStackRef,
     setPartAppearance,
+    setPartsTableSrc,
     setStackChildRef,
     setStackChildCount,
     STACK_REF_PARAM,
@@ -182,6 +183,7 @@
   import AiMenu from './AiMenu.svelte';
   import SplineEditorPopup from './SplineEditorPopup.svelte';
   import MaterialEditorPopover from './MaterialEditorPopover.svelte';
+  import PartSrcPickerPopover from './PartSrcPickerPopover.svelte';
   import { createAssistSession } from './ge-assist.svelte';
   import { clampToViewport } from './popover-clamp';
   import { releaseImplicitCapture } from './pointer-capture';
@@ -336,6 +338,37 @@
     const n = graph.nodes[id] as any;
     const label = n?.type === 'call' ? (n.alias || n.src) : 'part';
     partMatPop = { anchor: { x: r.right + 8, y: r.top }, id, label };
+  }
+  // parts_table (#38b R3) — the title-row chip opens a SEARCH picker for the
+  // TEMPLATE part; picking sets the node's `src`. Reuses the ＋ Call picker's
+  // loaded id list (pickerSrcs), fetching it on demand if not yet populated.
+  let partsSrcPop = $state<{ anchor: { x: number; y: number }; id: string } | null>(null);
+  async function ensurePickerSrcs() {
+    if (pickerSrcs.length) return;
+    try {
+      const r = await fetch('/api/primitives/list');
+      const d = await r.json() as any;
+      const completions = d.completions && typeof d.completions === 'object' ? d.completions : {};
+      const flat = [
+        ...(Array.isArray(d.basic) ? d.basic : []),
+        ...(Array.isArray(d.stdlib) ? d.stdlib : []),
+        ...(Array.isArray(d.stdstale) ? d.stdstale : []),
+        ...Object.values(completions).flat(),
+      ] as Array<{ id: string; source: string }>;
+      const seen = new Set<string>();
+      const meta: Record<string, { source: string }> = {};
+      const ids: string[] = [];
+      for (const e of flat) {
+        if (!e?.id || seen.has(e.id)) continue;
+        seen.add(e.id); ids.push(e.id); meta[e.id] = { source: e.source };
+      }
+      pickerSrcs = ids; pickerSrcMeta = meta;
+    } catch { /* empty list — chip still opens, shows "loading…" */ }
+  }
+  async function openPartsSrcPicker(ev: PointerEvent, id: string) {
+    const r = (ev.currentTarget as Element).getBoundingClientRect();
+    partsSrcPop = { anchor: { x: r.left, y: r.bottom + 4 }, id };
+    await ensurePickerSrcs();
   }
   // Wire-delete popover — click a connection in WireLayer → open a small "delete
   // connection" menu at the click; confirming unwires exactly that target slot.
@@ -2739,6 +2772,16 @@
       onClose={() => (partMatPop = null)} />
   {/if}
 
+  {#if partsSrcPop}
+    <PartSrcPickerPopover
+      srcs={pickerSrcs}
+      srcMeta={pickerSrcMeta}
+      anchor={partsSrcPop.anchor}
+      current={(graph.nodes[partsSrcPop.id] as any)?.src}
+      onPick={(src) => (graph = setPartsTableSrc(graph, partsSrcPop!.id, src))}
+      onClose={() => (partsSrcPop = null)} />
+  {/if}
+
   {#if wireDelPop}
     <!-- click-a-connection → delete popover (fixed at the click point). A full-
          viewport backdrop closes it on any outside click / on scroll. -->
@@ -2898,6 +2941,7 @@
               onOpenSplineEditor={spline.openSplineEditor}
               onOpenMaterialEditor={openMaterialEditor}
               onOpenPartMaterial={openPartMaterial}
+              onOpenPartsSrcPicker={openPartsSrcPicker}
               {setHoverVertex}
               {clearHoverVertex}
               openPolyPreview={polyUI.openPolyPreview}
