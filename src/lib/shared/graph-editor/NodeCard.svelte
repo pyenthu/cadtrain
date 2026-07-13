@@ -1881,11 +1881,14 @@
                   onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
                   onpointermove={onNodePointerMove}
                   onpointerup={onNodePointerUp}/>
-                <text x="12" y="20" class="ge-node-title">▤ parts_table</text>
+                <!-- Just the ▤ marker — "parts_table" is evident + lives in the card
+                     tooltip (data-tip on the bg rect), so the title text is dropped
+                     and the selector chip takes the title row (user 2026-07-13). -->
+                <text x="10" y="20" class="ge-node-title">▤</text>
                 <!-- Template-part selector chip → opens the search picker (R2/R3).
-                     Width leaves a clear gap before the right-side multi/×/socket
-                     cluster so the title row never reads cramped. -->
-                <foreignObject x="108" y="5" width={Math.max(56, size.w - 196)} height="19">
+                     Starts right after the ▤ marker + leaves a gap before the
+                     right-side multi/×/socket cluster. -->
+                <foreignObject x="26" y="5" width={Math.max(80, size.w - 116)} height="19">
                   <!-- svelte-ignore a11y_no_static_element_interactions -->
                   <div class="ge-pt-srcsel" class:empty={!pt.src} xmlns="http://www.w3.org/1999/xhtml"
                     title="Choose the template part to repeat"
@@ -1895,15 +1898,26 @@
                   </div>
                 </foreignObject>
                 <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
-                <!-- "Multi part" label for the title-row aggregate output socket (R4):
-                     "multi ●" on the upper line, the × stacked below it. -->
-                <text x={size.w - 15} y="13" class="ge-pt-multi-label" text-anchor="end">multi</text>
+                <!-- The title-row aggregate output socket (R4) sits at the right edge;
+                     its role is spelled out in the socket's own tooltip, so no label
+                     text clutters the title row (user 2026-07-13 — "remove MULTI"). -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 22} y="26" text-anchor="end" class="ge-node-x"
-                  class:armed={del.isArmed(n.id)}
+                <!-- Close button — an X icon in a circle, vertically centred on the
+                     title row (aligned with the aggregate socket at cy=16); the
+                     armed state swaps to a green ✓ circle (user 2026-07-13). -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <g class="ge-pt-close" class:armed={del.isArmed(n.id)}
+                  role="button" tabindex="-1" transform="translate({size.w - 22}, 15)"
                   data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
-                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
-                <foreignObject x="6" y="32" width={size.w - 12} height={size.h - 40}>
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>
+                  <circle class="ge-pt-close-bg" cx="0" cy="0" r="8"/>
+                  {#if del.isArmed(n.id)}
+                    <path class="ge-pt-close-mark" d="M -3.5 0 L -1 3 L 4 -3.5"/>
+                  {:else}
+                    <path class="ge-pt-close-mark" d="M -3.2 -3.2 L 3.2 3.2 M 3.2 -3.2 L -3.2 3.2"/>
+                  {/if}
+                </g>
+                <foreignObject x="2" y="30" width={size.w - 4} height={size.h - 33}>
                   <div class="ge-pt-host" xmlns="http://www.w3.org/1999/xhtml">
                     <PartsTableCard
                       node={pt}
@@ -2011,7 +2025,7 @@
   .ge-node-bg.parts-map { fill: #f5f3ff; stroke: #6d28d9; stroke-width: 2; }
   /* parts_table card (#38b) — same violet family; the body is the decoupled
      PartsTableCard, hosted in a foreignObject that fills the node below the title. */
-  .ge-node-bg.parts-table { fill: #f6f1fe; stroke: #7c3aed; stroke-width: 2; }
+  .ge-node-bg.parts-table { fill: #fdfcff; stroke: #7c3aed; stroke-width: 2; }
   /* Host is hard-clipped; the card owns its own row-list scroll (R5). */
   .ge-pt-host { width: 100%; height: 100%; overflow: hidden; }
   /* Template-part selector chip on the title row (R2/R3). */
@@ -2025,8 +2039,6 @@
   .ge-pt-srcsel.empty { color: #9a86c0; font-style: italic; }
   .ge-pt-srcsel-id { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .ge-pt-srcsel-ic { flex: none; font-size: 9px; opacity: 0.7; }
-  /* "multi" label beside the title-row aggregate output socket (R4). */
-  .ge-pt-multi-label { font: 700 8px ui-monospace, monospace; fill: #7c3aed; opacity: 0.75; text-transform: uppercase; letter-spacing: 0.3px; }
   .ge-pm { display: flex; flex-direction: column; gap: 3px; font: 10px Arial; overflow: auto; height: 100%; }
   .ge-pm-row { display: flex; align-items: center; gap: 4px; }
   .ge-pm-row > span { width: 30px; color: #6d28d9; font-weight: 600; flex: none; }
@@ -2141,6 +2153,13 @@
   }
   .ge-node-divider { stroke: #e5e7eb; }
   .ge-node-x { font: 14px Arial; fill: #b91c1c; cursor: pointer; user-select: none; }
+  /* parts_table close button — an X icon in a circle (user 2026-07-13). */
+  .ge-pt-close { cursor: pointer; }
+  .ge-pt-close-bg { fill: #fff; stroke: #e0bcbc; stroke-width: 1; transition: fill 0.1s, stroke 0.1s; }
+  .ge-pt-close:hover .ge-pt-close-bg { fill: #fde8e8; stroke: #b91c1c; }
+  .ge-pt-close-mark { stroke: #b91c1c; stroke-width: 1.7; fill: none; stroke-linecap: round; stroke-linejoin: round; }
+  .ge-pt-close.armed .ge-pt-close-bg { fill: #16a34a; stroke: #16a34a; }
+  .ge-pt-close.armed .ge-pt-close-mark { stroke: #fff; stroke-width: 2; }
   /* Spline card ✎/× — larger glyph = bigger click target on the compact card. */
   .ge-node-x.ge-sp-glyph { font-size: 17px; }
   /* Spline 📈 plot-in-main-bake toggle (TODO #24) — dim when off, full when on. */

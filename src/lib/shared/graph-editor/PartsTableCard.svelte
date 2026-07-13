@@ -81,14 +81,9 @@
     <table class="pt-table">
       <thead>
         <tr>
-          <th class="pt-th pt-th-out">out</th>
-          <th class="pt-th pt-th-idx">#</th>
+          <th class="pt-th pt-th-del"></th>
           {#each columns as col (col)}
-            <th class="pt-th">
-              {col}
-              <button class="pt-col-del" title="remove column {col}"
-                onclick={() => onColumns?.(columns.filter((c) => c !== col))}>×</button>
-            </th>
+            <th class="pt-th">{col}</th>
           {/each}
           <th class="pt-th pt-th-add">
             {#if unusedParams.length}
@@ -99,18 +94,16 @@
               </select>
             {/if}
           </th>
+          <th class="pt-th pt-th-sock"></th>
         </tr>
       </thead>
       <tbody>
         {#each rows as row, idx (idx)}
           <tr class="pt-row">
-            <td class="pt-cell pt-cell-out">
-              <!-- The row's OWN output socket — wireable individually (its stable
-                   name is partsTableRowVar(node.id, idx), computed by the parent). -->
-              <button class="pt-socket" title="output socket — row {idx + 1}"
-                onpointerdown={(e) => onRowSocketDown?.(idx, e)} aria-label="row {idx + 1} output">◇</button>
+            <td class="pt-cell pt-cell-del">
+              <button class="pt-tool pt-del" title="delete row {idx + 1}"
+                onclick={() => onRemoveRow?.(idx)} aria-label="delete row {idx + 1}">🗑</button>
             </td>
-            <td class="pt-cell pt-cell-idx">{idx + 1}</td>
             {#each columns as col (col)}
               <td class="pt-cell" class:pt-fx={isFx(row?.[col])}>
                 <input
@@ -120,45 +113,64 @@
                   onblur={(e) => commitCell(idx, col, (e.currentTarget as HTMLInputElement).value)} />
               </td>
             {/each}
-            <td class="pt-cell pt-cell-tools">
-              <button class="pt-tool" title="duplicate row" onclick={() => onDuplicateRow?.(idx)}>⧉</button>
-              <button class="pt-tool" title="delete row" onclick={() => onRemoveRow?.(idx)}>🗑</button>
+            <td class="pt-cell pt-cell-add"></td>
+            <!-- The row's OWN output socket — pinned to the RIGHT edge of the card
+                 (user 2026-07-13). Its stable wire name is partsTableRowVar(id, idx). -->
+            <td class="pt-cell pt-cell-sock">
+              <button class="pt-socket" title="output socket — row {idx + 1}"
+                onpointerdown={(e) => onRowSocketDown?.(idx, e)} aria-label="row {idx + 1} output">◇</button>
             </td>
           </tr>
         {/each}
+        <!-- Compact add-row: a small + at the bottom of the last row (no footer/count). -->
+        <tr class="pt-addrow">
+          <td class="pt-cell pt-addrow-cell" colspan={columns.length + 3}>
+            <button class="pt-add-mini" title="add a row" onclick={() => onAddRow?.()} aria-label="add a row">＋</button>
+          </td>
+        </tr>
       </tbody>
     </table>
   </div>
-
-  <footer class="pt-foot">
-    <button class="pt-add-row" onclick={() => onAddRow?.()}>＋ row</button>
-    <span class="pt-count">{rows.length} row{rows.length === 1 ? '' : 's'} · renders separate</span>
-  </footer>
 </div>
 
 <style>
-  /* The card fills its foreignObject host so the row list (`.pt-scroll`) can take
-     the middle and scroll while the footer stays pinned (#38b R5). */
-  .pt-card { display: flex; flex-direction: column; gap: 4px; padding: 6px; box-sizing: border-box; height: 100%; font-size: 11px; color: #3a2a55; background: #f6f1fe; border: 1px solid #c9b6ef; border-radius: 8px; min-width: 240px; }
-  /* Auto-height up to the node's PT_MAX_H cap, then scroll INSIDE (both axes). */
-  .pt-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
+  /* The card fills its foreignObject host so the whole table (`.pt-scroll`) takes
+     the middle and scrolls in BOTH axes past the node's PT_MAX_H cap (#38b R5).
+     Lighter ground + slightly bolder text for legibility (user 2026-07-13). */
+  .pt-card { display: flex; flex-direction: column; padding: 0; box-sizing: border-box; height: 100%; font-size: 11px; font-weight: 600; color: #34235a; background: #fdfcff; border: 1.5px solid #6d4fb0; border-radius: 8px; overflow: hidden; min-width: 240px; }
+  /* Grow-to-fit → only the COLUMNS scroll (horizontal); height always fits the
+     rows so there is no vertical scrollbar (user 2026-07-13). */
+  .pt-scroll { flex: 1 1 auto; min-height: 0; overflow-x: auto; overflow-y: hidden; }
+  /* Full GRID outline on every header + data cell, in a DARKER violet so the grid
+     reads clearly; the card's rounded overflow:hidden clips it to soft corners
+     (user 2026-07-13). */
   .pt-table { border-collapse: collapse; width: 100%; }
-  .pt-th { text-align: left; font-weight: 600; padding: 2px 5px; border-bottom: 1px solid #d9cbf3; white-space: nowrap; }
-  .pt-th-out, .pt-th-idx { width: 1%; opacity: 0.6; }
-  .pt-col-del { margin-left: 3px; border: none; background: none; cursor: pointer; opacity: 0.5; }
-  .pt-col-del:hover { opacity: 1; color: #b3261e; }
+  .pt-th { text-align: left; font-weight: 600; padding: 0 4px; border: 1px solid #7c5fc0; white-space: nowrap; }
+  .pt-th-del { width: 1%; }
   .pt-col-add { font-size: 10px; border: 1px dashed #c9b6ef; border-radius: 4px; background: transparent; }
-  .pt-cell { padding: 1px 4px; border-bottom: 1px solid #efe7fb; }
-  .pt-cell-idx { opacity: 0.5; text-align: right; }
-  .pt-in { width: 64px; font-size: 11px; padding: 1px 4px; border: 1px solid transparent; border-radius: 4px; background: #fff; }
+  .pt-cell { padding: 1px 4px; border: 1px solid #a98fd8; }
+  /* Columns size to their FIELD-NAME width (user 2026-07-13): the `th` name is
+     nowrap so it sets the column's natural width; the input FILLS that column
+     (width:100%, min-width:0 lets it shrink to the name) with a small floor so a
+     2-char name like `od` stays typeable. Longer values scroll inside the input. */
+  .pt-in { width: 100%; min-width: 3ch; box-sizing: border-box; font-size: 11px; font-weight: 600; padding: 1px 4px; border: 1px solid transparent; border-radius: 4px; background: #fff; }
   .pt-in:focus { border-color: #8a5cd6; outline: none; }
   .pt-fx .pt-in { color: #6b3fb0; font-style: italic; }
-  .pt-socket { border: none; background: none; cursor: crosshair; color: #b3261e; font-size: 13px; line-height: 1; padding: 0; }
-  .pt-cell-tools { white-space: nowrap; }
-  .pt-tool { border: none; background: none; cursor: pointer; opacity: 0.55; padding: 0 2px; }
+
+  /* Delete-row trash button — LEFT edge of every row (user 2026-07-13). */
+  .pt-cell-del { width: 1%; text-align: center; }
+  .pt-tool { border: none; background: none; cursor: pointer; opacity: 0.55; padding: 0 2px; font-size: 11px; }
   .pt-tool:hover { opacity: 1; }
-  .pt-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-  .pt-add-row { font-size: 11px; padding: 1px 8px; border: 1px solid #c9b6ef; border-radius: 4px; background: #fff; cursor: pointer; }
-  .pt-add-row:hover { background: #efe7fb; }
-  .pt-count { opacity: 0.55; font-size: 10px; }
+  .pt-del:hover { color: #b3261e; }
+
+  /* Per-row output socket — pinned to the RIGHT edge of the card so it stays at the
+     edge even while the columns scroll horizontally (sticky right, user 2026-07-13). */
+  .pt-cell-sock, .pt-th-sock { position: sticky; right: 0; width: 1%; text-align: center; background: #fdfcff; }
+  .pt-socket { border: none; background: none; cursor: crosshair; color: #b3261e; font-size: 13px; line-height: 1; padding: 0; }
+
+  /* Compact add-row — a single small + at the bottom of the last row (replaces the
+     footer button + row-count caption; less wasted vertical space, user 2026-07-13). */
+  .pt-addrow-cell { text-align: left; padding: 2px 4px; border: none; }
+  .pt-add-mini { font-size: 12px; line-height: 1; padding: 0 8px; border: 1px solid #c9b6ef; border-radius: 4px; background: #fff; cursor: pointer; color: #6b3fb0; }
+  .pt-add-mini:hover { background: #efe7fb; }
 </style>

@@ -77,13 +77,18 @@ export const PartsTableKind: NodeKind<PartsTableNode> = {
   // node inputs — its aggregate is a root/stack child (same as parts_map).
   inputRefs: () => [],
   size: (node, ctx) => {
-    // Auto-height: grows one row-height per table row above a 110px floor, but
-    // CAPS at PT_MAX_H (#38b R5) — beyond ~9 rows the card holds its height and
-    // the row list scrolls INTERNALLY (PartsTableCard `.pt-scroll`), so a big
-    // table never runs off the canvas.
-    const PT_MAX_H = 300;
+    // GROW-TO-FIT (user chose "grow-to-fit, H-scroll only" 2026-07-13): the card
+    // height always fits EVERY row — no vertical scroll — so each row's right-edge
+    // output socket stays visible and wire-aligned (a scrolled-off socket would
+    // detach from its wire). Columns scroll HORIZONTALLY instead (`.pt-scroll`).
+    // A manual corner-resize (layout.h) acts only as a FLOOR: the card can be
+    // dragged TALLER (extra pad) but never shorter than its rows (which would clip
+    // a socket). Width comes from ctx.width (nodeSize honors the persisted layout.w).
     const rows = Array.isArray(node.rows) ? node.rows.length : 0;
-    return { w: ctx.width, h: Math.min(PT_MAX_H, Math.max(110, 64 + (rows + 1) * 24)) };
+    const fitH = Math.max(110, 64 + (rows + 1) * 24);
+    const savedH = (ctx as any).layout?.h;
+    const h = typeof savedH === 'number' && savedH > fitH ? savedH : fitH;
+    return { w: ctx.width, h };
   },
   // No wired node INPUTS (rows are inline). The N per-ROW output sockets are
   // rendered by the card component itself (the generic SocketSchema.output can't

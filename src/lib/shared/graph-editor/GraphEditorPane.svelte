@@ -105,6 +105,7 @@
     hasStackRef,
     setPartAppearance,
     setPartsTableSrc,
+    setPartsTableColumns,
     setStackChildRef,
     setStackChildCount,
     STACK_REF_PARAM,
@@ -343,27 +344,35 @@
   // TEMPLATE part; picking sets the node's `src`. Reuses the ＋ Call picker's
   // loaded id list (pickerSrcs), fetching it on demand if not yet populated.
   let partsSrcPop = $state<{ anchor: { x: number; y: number }; id: string } | null>(null);
-  async function ensurePickerSrcs() {
-    if (pickerSrcs.length) return;
+  // Collect EVERY part id from /api/primitives/list — recursively, so parts in
+  // ANY folder/subfolder (basic_well `bw_*`, completion subfolders, …) are found,
+  // not just the flat top-level arrays. A real part entry is any object carrying
+  // BOTH `id` and `source` (folder nodes lack `source`, so they're skipped).
+  async function loadAllPrimIds(): Promise<{ ids: string[]; meta: Record<string, { source: string }> }> {
+    const ids: string[] = [];
+    const meta: Record<string, { source: string }> = {};
+    const seen = new Set<string>();
     try {
       const r = await fetch('/api/primitives/list');
       const d = await r.json() as any;
-      const completions = d.completions && typeof d.completions === 'object' ? d.completions : {};
-      const flat = [
-        ...(Array.isArray(d.basic) ? d.basic : []),
-        ...(Array.isArray(d.stdlib) ? d.stdlib : []),
-        ...(Array.isArray(d.stdstale) ? d.stdstale : []),
-        ...Object.values(completions).flat(),
-      ] as Array<{ id: string; source: string }>;
-      const seen = new Set<string>();
-      const meta: Record<string, { source: string }> = {};
-      const ids: string[] = [];
-      for (const e of flat) {
-        if (!e?.id || seen.has(e.id)) continue;
-        seen.add(e.id); ids.push(e.id); meta[e.id] = { source: e.source };
-      }
-      pickerSrcs = ids; pickerSrcMeta = meta;
-    } catch { /* empty list — chip still opens, shows "loading…" */ }
+      const walk = (v: any) => {
+        if (!v || typeof v !== 'object') return;
+        if (Array.isArray(v)) { for (const e of v) walk(e); return; }
+        if (typeof v.id === 'string' && typeof v.source === 'string' && !seen.has(v.id)) {
+          seen.add(v.id); ids.push(v.id); meta[v.id] = { source: v.source };
+        }
+        for (const val of Object.values(v)) walk(val);
+      };
+      walk(d);
+    } catch { /* empty list — pickers still open, show "loading…" */ }
+    ids.sort();
+    return { ids, meta };
+  }
+  async function ensurePickerSrcs() {
+    // Always refresh from the full recursive scan — an earlier partial load (e.g.
+    // the ＋ picker before this fix populated it) must not hide subfolder parts.
+    const { ids, meta } = await loadAllPrimIds();
+    if (ids.length) { pickerSrcs = ids; pickerSrcMeta = meta; }
   }
   async function openPartsSrcPicker(ev: PointerEvent, id: string) {
     const r = (ev.currentTarget as Element).getBoundingClientRect();
@@ -2778,7 +2787,16 @@
       srcMeta={pickerSrcMeta}
       anchor={partsSrcPop.anchor}
       current={(graph.nodes[partsSrcPop.id] as any)?.src}
-      onPick={(src) => (graph = setPartsTableSrc(graph, partsSrcPop!.id, src))}
+      onPick={async (src) => {
+        const id = partsSrcPop!.id;
+        graph = setPartsTableSrc(graph, id, src);
+        // Auto-form the columns from the picked part's params (#38b) — fetch the
+        // template's meta.params, then set every param as a column so the table
+        // is ready to fill without a manual "+ col" per field.
+        await loadExpectedParamsFor(src);
+        const params = expected.params[src];
+        if (Array.isArray(params) && params.length) graph = setPartsTableColumns(graph, id, params);
+      }}
       onClose={() => (partsSrcPop = null)} />
   {/if}
 

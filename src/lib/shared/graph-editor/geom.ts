@@ -242,6 +242,7 @@ export function cardMinWidth(node: any): number {
   if (node.type === 'spline') return 76;   // min width — inline row (✎ 📈 curve × on ONE row)
   if (node.type === 'warp') return 124;    // compact chip row (×N | ≈ | ⚙ ×) + edge sockets
   if (node.type === 'cutaway') return 150;  // title + solid socket + az/offset
+  if (node.type === 'parts_table') return 300; // title chip + a few auto-formed param columns
   return 130;
 }
 
