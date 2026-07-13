@@ -37,6 +37,7 @@
   import * as THREE from 'three';
   import { onMount } from 'svelte';
   import { scene } from '$lib/shared/viewer/scene-state.svelte';
+  import { computeOrbitTarget } from '$lib/shared/viewer/orbit-target';
   // TEMP warp experiment — mirror ComponentScene/ComponentSceneGlb so the
   // warp toggle works in the combined canvas too (was dropped in the rewrite).
   import { attachWarpShader, subdivideAlongZ } from '$lib/shared/viewer/warp';
@@ -487,6 +488,14 @@
   // --- shared camera / lights (mirror ComponentScene) ---
   const DEFAULT_UP: [number, number, number] = [0, 0, -1];
   let cameraPosition = $derived<[number, number, number]>([scene.cam.x, scene.cam.y, scene.cam.z]);
+  // OrbitControls / camera look-at target — PINNED to the part's vertical (Z /
+  // drilling) axis (x=y=0) at the part's z-centre plus the axial Z-pan, via the
+  // pure `computeOrbitTarget`. Keeping it on-axis stops a tall Z-down part (a
+  // well) drifting off-centre while orbiting; it used `partCenter.y` (the bbox
+  // y-centre), which for a part not symmetric about the axis in Y sat OFF the
+  // axis (TODO #74). Memoised so it changes only when partCenter / zFocus do —
+  // a fresh array per render would churn the OrbitControls prop.
+  let orbitTarget = $derived<[number, number, number]>(computeOrbitTarget(scene.partCenter, scene.zFocus));
   let light1Pos = $derived<[number, number, number]>([scene.l1.x, scene.l1.y, scene.l1.z]);
   let light2Pos = $derived<[number, number, number]>([scene.l2.x, scene.l2.y, scene.l2.z]);
   let light3Pos = $derived<[number, number, number]>([scene.l3.x, scene.l3.y, scene.l3.z]);
@@ -629,15 +638,18 @@
   let meshPos = $derived<[number, number, number]>([0, 0, -sep / 2]);
   let glbPos = $derived<[number, number, number]>([0, 0, sep / 2]);
 
-  // OrbitControls target = combined bbox centre. The two stacked copies are
-  // symmetric about the part's own bbox centre (cz), so the midpoint is just
-  // (0, cy, cz). Without this the target sits at world origin (the TOP of
-  // every Z-down part) and the part hangs below the look-at, off-centre.
+  // Combined visual bbox centre of the stacked mesh+GLB, in post-view-scale
+  // world units. The two copies are symmetric about the part's own bbox centre
+  // (cz), so the midpoint is (0, cy, cz). Consumed by the SVG projection
+  // (svg-camera) as the look-at AND (via z only) by the 3D OrbitControls target
+  // — `computeOrbitTarget` takes ONLY partCenter.z, pinning the 3D look-at to
+  // the vertical axis (x=y=0) so a tall Z-down part stays centred while orbiting
+  // (TODO #74). Without a z-centre the target would sit at world origin (the TOP
+  // of every Z-down part) and the part would hang below the look-at.
   $effect(() => {
     if (!bbox) return;
     // The whole render group is scaled [xScale, xScale, zScale] (view-only), so
-    // the visual centre the OrbitControls target follows is the bbox centre
-    // times that scale.
+    // the visual centre the look-at follows is the bbox centre times that scale.
     const xs = scene.xScale, zs = scene.zScale;
     scene.partCenter = { x: bbox.cx * xs, y: bbox.cy * xs, z: bbox.cz * zs };
     // Visual Z range of the WHOLE stacked composition (mesh + GLB), in world
@@ -939,15 +951,29 @@
 
 {#if scene.cam3dOrtho}
   <T.OrthographicCamera bind:ref={orthoCam} makeDefault position={cameraPosition} up={DEFAULT_UP} near={0.1} far={100000}>
+    <!-- Constrained turntable (TODO #74): target on the vertical (Z) axis;
+         azimuth spins freely AROUND Z, polar TILTS around the screen-horizontal
+         axis (clamped just shy of the poles so the part can't flip / tumble).
+         PAN is OFF — the axial Z-pan slider (scene.zFocus, folded into the
+         target) is the controlled vertical pan, and free pan is exactly what
+         dragged the look-at off-axis. Zoom stays on. -->
     <OrbitControls bind:ref={controls}
-      target={[scene.partCenter.x, scene.partCenter.y, scene.partCenter.z + scene.zFocus]}
-      enableDamping enableZoom enableRotate enablePan />
+      target={orbitTarget}
+      enableDamping enableZoom enableRotate enablePan={false}
+      minPolarAngle={0.0001} maxPolarAngle={Math.PI - 0.0001} />
   </T.OrthographicCamera>
 {:else}
   <T.PerspectiveCamera makeDefault position={cameraPosition} fov={45} up={DEFAULT_UP}>
+    <!-- Constrained turntable (TODO #74): target on the vertical (Z) axis;
+         azimuth spins freely AROUND Z, polar TILTS around the screen-horizontal
+         axis (clamped just shy of the poles so the part can't flip / tumble).
+         PAN is OFF — the axial Z-pan slider (scene.zFocus, folded into the
+         target) is the controlled vertical pan, and free pan is exactly what
+         dragged the look-at off-axis. Zoom stays on. -->
     <OrbitControls bind:ref={controls}
-      target={[scene.partCenter.x, scene.partCenter.y, scene.partCenter.z + scene.zFocus]}
-      enableDamping enableZoom enableRotate enablePan />
+      target={orbitTarget}
+      enableDamping enableZoom enableRotate enablePan={false}
+      minPolarAngle={0.0001} maxPolarAngle={Math.PI - 0.0001} />
   </T.PerspectiveCamera>
 {/if}
 
