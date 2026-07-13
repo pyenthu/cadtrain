@@ -162,11 +162,29 @@ export type TrainingRecordInput =
  *  tests can reference the exact location. */
 export const TRAINING_LOG_REL = 'ai/training-log.jsonl';
 
+/** The FAILURES register — the "wrongResponse" (bad / unresolved) records live in
+ *  their OWN file (mirrors SVTC's `captured.jsonl` vs `unresolved.jsonl` split;
+ *  user 2026-07-13). Keeping failures separate is what lets the fine-tune build
+ *  SUBTRACT them from the captured set. `training-log.jsonl` keeps the good data
+ *  (wellEdit tuples + wellSnapshots); this keeps the flagged failures. */
+export const FAILURES_REL = 'ai/failures.jsonl';
+
 /** The default absolute path — resolved lazily (NOT at import time) so a test
  *  that sets `CADTRAIN_VOLUME_ROOT` still gets the override, and so importing
  *  this module never assumes a volume exists. */
 export function defaultLogPath(): string {
   return volumePath(TRAINING_LOG_REL);
+}
+
+/** Absolute path of the failures register. */
+export function defaultFailuresPath(): string {
+  return volumePath(FAILURES_REL);
+}
+
+/** Which default file a record kind lands in: `wrongResponse` → the failures
+ *  register, everything else (wellEdit / wellSnapshot / pairs) → the training log. */
+export function defaultPathForKind(kind: TrainingRecordKind): string {
+  return kind === 'wrongResponse' ? defaultFailuresPath() : defaultLogPath();
 }
 
 export interface LogFileOpt {
@@ -213,7 +231,9 @@ export async function appendRecord(
   // written, so the log stays intact.
   const line = JSON.stringify(rec) + '\n';
 
-  const path = opt.filePath ?? defaultLogPath();
+  // Route by kind: failures → the failures register, everything else → the log.
+  // An explicit `filePath` (tests) still wins so a temp file is honoured verbatim.
+  const path = opt.filePath ?? defaultPathForKind(rec.kind);
   const dir = dirname(path);
   if (!existsSync(dir)) await mkdir(dir, { recursive: true });
   await appendFile(path, line, 'utf8');
@@ -231,8 +251,7 @@ export interface ListOpt extends LogFileOpt {
  * malformed trailing line is SKIPPED (mirrors rag-query.ts `loadCorpus`) — a
  * crash mid-append never breaks the reader.
  */
-export async function listRecords(opt: ListOpt = {}): Promise<TrainingRecord[]> {
-  const path = opt.filePath ?? defaultLogPath();
+async function readRecordsFrom(path: string, kind?: TrainingRecordKind): Promise<TrainingRecord[]> {
   if (!existsSync(path)) return [];
   let body: string;
   try {
@@ -253,9 +272,24 @@ export async function listRecords(opt: ListOpt = {}): Promise<TrainingRecord[]> 
     } catch {
       /* skip a bad / torn line */
     }
-    if (rec && (!opt.kind || rec.kind === opt.kind)) out.push(rec);
+    if (rec && (!kind || rec.kind === kind)) out.push(rec);
   }
   return out;
+}
+
+export async function listRecords(opt: ListOpt = {}): Promise<TrainingRecord[]> {
+  // Explicit filePath (tests) → read exactly that file. A `wrongResponse` filter
+  // reads the failures register; any other kind reads the training log; NO filter
+  // reads BOTH files and merges (the failures + captured split is transparent to
+  // a caller that just wants "everything").
+  if (opt.filePath) return readRecordsFrom(opt.filePath, opt.kind);
+  if (opt.kind === 'wrongResponse') return readRecordsFrom(defaultFailuresPath(), opt.kind);
+  if (opt.kind) return readRecordsFrom(defaultLogPath(), opt.kind);
+  const [log, fails] = await Promise.all([
+    readRecordsFrom(defaultLogPath()),
+    readRecordsFrom(defaultFailuresPath()),
+  ]);
+  return [...log, ...fails];
 }
 
 /** Count records (optionally by kind) without materialising full objects into

@@ -17,8 +17,25 @@ import {
   diffWell,
   summarizeWellDiff,
   buildWellEditRecord,
+  defaultPathForKind,
+  defaultLogPath,
+  defaultFailuresPath,
+  FAILURES_REL,
+  TRAINING_LOG_REL,
   type WellJson,
 } from './training-log';
+
+describe('failures register — wrongResponse routes to its own file (#SVTC unresolved split)', () => {
+  it('defaultPathForKind sends failures to ai/failures.jsonl, everything else to the log', () => {
+    expect(defaultPathForKind('wrongResponse')).toBe(defaultFailuresPath());
+    expect(defaultFailuresPath().endsWith(FAILURES_REL)).toBe(true);
+    expect(defaultPathForKind('wellEdit')).toBe(defaultLogPath());
+    expect(defaultPathForKind('wellSnapshot')).toBe(defaultLogPath());
+    expect(defaultLogPath().endsWith(TRAINING_LOG_REL)).toBe(true);
+    // The two files are distinct so the fine-tune build can subtract one from the other.
+    expect(defaultFailuresPath()).not.toBe(defaultLogPath());
+  });
+});
 
 const tmpDirs: string[] = [];
 async function tmpLog(): Promise<string> {
