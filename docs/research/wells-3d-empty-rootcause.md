@@ -1,4 +1,13 @@
+<!-- research-group: Archive -->
 # `/wells` 3D renders EMPTY — root cause + fix
+
+> ARCHIVED (2026-07-13): resolved + code being retired. The COEP main-thread
+> `manifold.wasm` block was fixed by serving the wasm with a CORP header (the
+> 2026-07-03 client-bake COOP/COEP regression fix), and `/wells` now defaults to
+> the cheap 2D-SVG view (`WellSchematic2D`/`wson-2d.ts`), so a slow/failed 3D
+> init no longer shows a blank. The analyzed `WellSchematic3D` + `manifoldCut.ts`
+> shell path is itself slated for retirement (#42h — bake the well through the
+> primitives pipeline). Kept as the post-mortem of a closed bug.
 
 **Symptom (confirmed on prod):** `/wells` → 3D → the well is blank/near-empty,
 timing badge reads `7 strings · 0 CSG · 0 tris`. Nothing visible.

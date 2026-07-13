@@ -110,6 +110,7 @@ export const CATEGORY_ORDER = [
   'Wells',
   'Architecture',
   'Findings',
+  'Archive',
 ] as const;
 
 /** One-paragraph top-of-pane overview per category — shown above the doc
@@ -130,26 +131,25 @@ export const categoryAbstracts: Record<string, string> = {
     'only). This cluster tracks the in-browser LLM path: which runtime ' +
     '(web-llm/MLC + XGrammar) and model beat a server round-trip for ' +
     'tool-calling, what synthetic + real training data a fine-tune would take, ' +
-    'and why alternatives (Functionary, a Python recursion harness) don’t fit ' +
-    'a WebGPU-only deployment. All three are conditional-GO spikes, not yet built.',
+    'and why Functionary doesn’t fit a WebGPU-only deployment. Conditional-GO ' +
+    'spikes (#2/#28), not yet built.',
   'Graph interface':
     'GraphEditorPane is the CAD editor’s node-graph canvas — this cluster is ' +
     'the comparative-UI homework behind it: what Blender’s Fields model, ' +
-    'Flyde, Node-RED, Unit, a VPL-design article, and svelte-flow each get ' +
-    'right (subgraph-as-node reuse, typed sockets, palette search) versus what ' +
-    'our bounded, explicit Repeat/composition-graph model already does better. ' +
-    'Feeds the open Repeat-as-subgraph and typed field-socket threads; the ' +
-    'svelte-flow-for-GEP migration question is itself already decided (NO-GO ' +
-    'for the editor, GO for /design).',
+    'Flyde, Node-RED, Unit, and a VPL-design article each get right ' +
+    '(subgraph-as-node reuse, typed sockets, palette search) versus what our ' +
+    'bounded, explicit Repeat/composition-graph model already does better. ' +
+    'Feeds the open Repeat-as-subgraph (#11) and typed field-socket (#13) ' +
+    'threads.',
   Wells:
     '/wells is the WSON → 3D well-schematic engine, still actively being ' +
     'built. This cluster covers the domain model it has to get right — ' +
-    'SVTC’s `.wson` schema and DTX depth-transform, NORSOK-grounded ' +
-    'cement/annulus detection, a commercial Visio stencil’s component ' +
-    'vocabulary — plus root-cause writeups for the empty-3D-render and ' +
-    'slow-cutaway bugs that shaped the current 2D-SVG-default + WellBakePool ' +
-    'architecture, and a TrueForm-native compile verification for the `bw_*` ' +
-    'part library.',
+    'SVTC’s `.wson` schema + DTX depth-transform (the port map behind the ' +
+    'W-A…W-E interface build), NORSOK-grounded cement/annulus detection (the ' +
+    'shipped #996 derivation), a commercial Visio stencil’s component ' +
+    'vocabulary — plus the ewells-vs-cadtrain slow-cutaway root-cause that ' +
+    'shaped the 2D-SVG-default architecture, and a TrueForm-native compile ' +
+    'verification for the `bw_*` part library.',
   Architecture:
     'Cross-cutting audits of the codebase’s own layering: the current ' +
     '(post-K.63) CAD-authoring conventions — why the node-graph canvas won ' +
@@ -162,6 +162,12 @@ export const categoryAbstracts: Record<string, string> = {
     'pHash/CLIP similarity across primitives, and a counter-finding that raw ' +
     'VLM classification (no RAG) actually beats the retrieval-scaffolded ' +
     'pipeline on that domain.',
+  Archive:
+    'Stale research kept for provenance — a doc whose question is now settled: ' +
+    'either superseded by a shipped approach, or a dead-end / rejected ' +
+    'evaluation. Each carries an `ARCHIVED (date): why` note under its title. ' +
+    'Nothing here is a live roadmap item; read it for the reasoning that led ' +
+    'to the current design, not for what to build next.',
 };
 
 /** Map a doc to one canonical category from a hint (an optional
@@ -170,8 +176,14 @@ export const categoryAbstracts: Record<string, string> = {
  *  `webgpu-slm` lands in Local AI (not Geometry) and `wells-tf-verification`
  *  in Wells (not Geometry). Everything unmatched falls to Architecture.
  *  Normalising here (rather than per-file markers) keeps the whole scheme in
- *  one place. */
+ *  one place.
+ *
+ *  `<!-- research-group: Archive -->` is AUTHORITATIVE and checked FIRST — a
+ *  stale doc is archived by its author regardless of what its slug would match
+ *  (e.g. `svelteflow-for-graph-editor` would otherwise regex into Graph
+ *  interface). This is how a doc is retired without moving/deleting the file. */
 function canonicalCategory(slug: string, marker: string | null): string {
+  if (marker && marker.trim().toLowerCase() === 'archive') return 'Archive';
   const hay = `${marker ?? ''} ${slug}`.toLowerCase();
   if (/node editor|graph interface|(^|[^a-z])ne-|svelteflow|blender-fields|\bvpl\b|flyde|node-?red|\bunit\b/.test(hay)) return 'Graph interface';
   if (/\bwells?\b|svtc|wson|wbd|cement|dtx|schematic/.test(hay)) return 'Wells';

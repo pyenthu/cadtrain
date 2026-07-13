@@ -1,4 +1,14 @@
+<!-- research-group: Archive -->
 # Research — should the main graph editor adopt svelte-flow (`@xyflow/svelte`)?
+
+> ARCHIVED (2026-07-13): decision settled both ways. The recommendation —
+> **NO-GO for the editor** (keep the bespoke SVG canvas), **GO for /design** —
+> is fully acted on: `/design` now ships `@xyflow/svelte` (`ArchGraph.svelte`,
+> `nodes/*`), and the editor kept its bespoke canvas. The migration question no
+> longer needs a live doc; kept as the rationale for why GraphEditorPane stays
+> bespoke. Revisit only if the open auto-layout work (`todo_auto_layout`) ever
+> wants a minimap enough to justify the viewport-only slice in "If we ever
+> revisit".
 
 Status: EVALUATION. Created 2026-06-16. Scope: the production CAD editor
 `src/lib/shared/graph-editor/GraphEditorPane.svelte` (8021 lines) + its

@@ -1,4 +1,15 @@
+<!-- research-group: Archive -->
 # Research — A WebGPU small-LM (SLM) as a local backend for the ✨ tool-call editor
+
+> ARCHIVED (2026-07-13): superseded + dead-end premise. Its framing question
+> (port `rlm-minimal`) was answered NO — a category mismatch (Python remote-API
+> recursion harness, not an in-browser SLM). Its useful residue (the web-llm/MLC
+> + XGrammar runtime choice, the model landscape, the risk table, the spike
+> plan) is carried forward and deepened by `web-llm-functionary.md` — which
+> explicitly calls itself "a deeper cut of webgpu-slm.md (which already chose
+> web-llm/MLC + XGrammar)" and re-states this doc's risk/spike sections as
+> "still binding". Read that + `local-fncall-synthetic-data.md` for the live
+> #2/#28 path; this is kept only as the origin of the web-llm decision.
 
 **Status:** research (read-only spike assessment, 2026-06-15)
 **Goal (user's words):** "study https://github.com/alexzhang13/rlm-minimal and

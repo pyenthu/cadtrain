@@ -53,14 +53,26 @@ describe('docs corpus', () => {
     const cat = (slug: string) => bySlug.get(slug)?.category;
     expect(cat('trueform-webgpu')).toBe('Geometry kernels');
     expect(cat('sweep-self-intersection')).toBe('Geometry kernels');
-    expect(cat('webgpu-slm')).toBe('Local AI');
     expect(cat('web-llm-functionary')).toBe('Local AI');
+    expect(cat('local-fncall-synthetic-data')).toBe('Local AI');
     expect(cat('ne-flyde')).toBe('Graph interface');
-    expect(cat('svelteflow-for-graph-editor')).toBe('Graph interface');
     expect(cat('cement-annulus-detection')).toBe('Wells');
     expect(cat('svtc-wson-deep-dive')).toBe('Wells');
     expect(cat('graph-shared-overlap')).toBe('Architecture');
     expect(cat('findings')).toBe('Findings');
+  });
+
+  it('buckets docs marked `research-group: Archive` into Archive, regardless of slug', () => {
+    const cat = (slug: string) => bySlug.get(slug)?.category;
+    // The Archive marker is authoritative — checked before the slug regexes,
+    // so these land in Archive even though their slugs would otherwise match
+    // Local AI (`slm`), Graph interface (`svelteflow`), Wells (`wells`).
+    expect(cat('webgpu-slm')).toBe('Archive');
+    expect(cat('svelteflow-for-graph-editor')).toBe('Archive');
+    expect(cat('wells-3d-empty-rootcause')).toBe('Archive');
+    // Archive is present and last in the ordered category list.
+    expect(categories).toContain('Archive');
+    expect(categories[categories.length - 1]).toBe('Archive');
   });
 
   it('archived docs (brep-io, blender-wasm-webgpu) are no longer listed', () => {
