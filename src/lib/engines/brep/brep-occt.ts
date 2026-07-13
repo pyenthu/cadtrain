@@ -35,7 +35,7 @@ let _ocReady: Promise<void> | null = null;
  *  externalizes node_modules for SSR, so Bun/Node loads it natively — the same
  *  default-export factory the standalone bench used). The .wasm bytes are read
  *  from node_modules and handed in as `wasmBinary` (no fetch/locateFile). */
-async function ensureOC(): Promise<void> {
+export async function ensureOC(): Promise<void> {
   if (_ocReady) return _ocReady;
   _ocReady = (async () => {
     // The emscripten glue references bare __dirname/__filename (Node CJS
