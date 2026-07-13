@@ -149,6 +149,7 @@
   import ProfilePreview from './ProfilePreview.svelte';
   import { dragNumber } from '$lib/shared/ui/dragNumber';
   import RightPane from './RightPane.svelte';
+  import { resolveEmbedConfig, type EmbedConfig } from './embed-config';
   import WireLayer from './WireLayer.svelte';
   import { unwireGraph, describeWireRef, type WireRef } from './wire-delete';
   import { spliceNodeIntoWire, canSplice, spliceWireKey, type SpliceWire } from './wire-splice';
@@ -222,12 +223,17 @@
    *
    *    id     — the primitive to load on mount. When null/undefined the
    *             component opens a fresh default graph (`test_graph_a`).
-   *    embed  — when true the global SvelteKit nav is hidden via the head
+   *    embed  — when truthy the global SvelteKit nav is hidden via the head
    *             style injection below + the inner chrome layout collapses
-   *             so the editor fits inside another page's tab/iframe. */
+   *             so the editor fits inside another page's tab/iframe.
+   *             Pass `true` for the legacy chrome-hide (unchanged), or a
+   *             `Partial<EmbedConfig>` to ALSO turn individual UI surfaces
+   *             on/off (right-pane tabs, engines, toolbar, right pane,
+   *             popover mode) when embedding in another app — see
+   *             ./embed-config.ts. Absent / `false` = the full standalone UI. */
   interface Props {
     id?: string | null;
-    embed?: boolean;
+    embed?: boolean | Partial<EmbedConfig>;
     /** Optional callback to open another primitive id in a new editor
      *  tab — wired by the /primitives parent so clicking a call card's
      *  title navigates to that part's own editor. When unset the click
@@ -287,6 +293,15 @@
    *  nav so the chrome doesn't double-up. The page's own .ge-bar stays
    *  since it hosts Save / + Drop / id input — the in-context controls. */
   let embed = $state<boolean>(!!props.embed);
+  // Resolved feature-flag config for embedding (embed-config.ts). Only an
+  // OBJECT `embed` carries flags; a boolean (or absent) resolves to the full
+  // UI — every tab/engine/surface on — so standalone + legacy `embed={true}`
+  // mounts are byte-for-byte unchanged. Memoised so it's a STABLE reference
+  // (a fresh object each render would re-fire identity-tracked effects — the
+  // "fresh-array props → effect loops" gotcha).
+  const embedCfg = $derived(
+    resolveEmbedConfig(typeof props.embed === 'object' && props.embed ? props.embed : undefined),
+  );
   // Drift detection (Phase 11) — the expected-params cache + loaders moved to
   // graph-editor-bake.svelte.ts (Phase B). `expected.{params,defaults,
   // profileKeys,profileSet}` is the shared singleton cache; isCallDrifted /
@@ -2617,7 +2632,7 @@
   {/if}
 </svelte:head>
 
-<div class="ge-root" class:embed>
+<div class="ge-root" class:embed class:popover={embedCfg.popover}>
   <!-- Title + id input removed (2026-06-09 — redundant with the /primitives
        tab strip showing the part id; the rename / save-as flow surfaces a
        prompt on demand instead of the always-on input). The graph editor
@@ -2649,7 +2664,9 @@
   <!-- Vertical toolbar — primary actions stacked left of the canvas. Each
        button is icon-only with a data-tip; the dark tooltip layer (mounted
        in onMount) renders the labels on hover. Auto-layout + Push apart
-       moved to a canvas-settings popover. -->
+       moved to a canvas-settings popover. Hidden when the embed config turns
+       the toolbar off (host drives the graph via its own controls). -->
+  {#if embedCfg.toolbar}
   <aside class="ge-vrail" bind:this={vrailEl}>
     <!-- Operations: polygon, solids, ops, position, container.
          Pencil icon = "drop a graph operation" — drawing/structural ops. -->
@@ -2742,6 +2759,7 @@
     <button class="ge-vrail-btn reset" type="button" onclick={resetGraph}
       data-tip="Reset the graph to an empty canvas">⟲</button>
   </aside>
+  {/if}
 
   {#if exprMenu}
     <ExpressionsMenu
@@ -3062,6 +3080,9 @@
       {/if}
     </section>
 
+    <!-- Divider + right pane — gated by the embed config (`rightPane:false`
+         gives a canvas-only editor for hosts that render their own preview). -->
+    {#if embedCfg.rightPane}
     <!-- Divider: canvas ↔ right pane -->
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -3078,6 +3099,7 @@
     <RightPane
       {bake} {exemplarId} {paramDefaults} {graph} {hasSolidProducer}
       active={props.active}
+      tabs={embedCfg.tabs}
       autoTf={props.autoTf ?? true}
       splineOverlays={spline.splineOverlays}
       {legacyLoad} {sourceText}
@@ -3101,6 +3123,7 @@
               {hideSvgTip} />
       {/snippet}
     </RightPane>
+    {/if}
   </main>
 
   {#if addParamPop}
@@ -3592,6 +3615,16 @@
   /* Embed mode (`?embed=1`) — page is iframed inside /vocab (or similar).
      Override the 100vh so the iframe parent controls the height. */
   .ge-root.embed { height: 100%; }
+  /* Popover mode (embed config `popover:true`) — float the editor as a
+     bordered, shadowed panel over the host instead of filling the container
+     inline. The host positions the parent; we just give it panel chrome. */
+  .ge-root.popover {
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    box-shadow: 0 12px 40px rgba(15, 23, 42, 0.28);
+    overflow: hidden;
+    background: #fff;
+  }
   .ge-bar { display: flex; align-items: center; gap: 10px; padding: 6px 14px; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
   .ge-bar h1 { font: 700 15px Arial; margin: 0; color: #0c4a6e; }
   .ge-id { padding: 4px 10px; font: 12px ui-monospace, monospace; border: 1px solid #d6d3d1; border-radius: 4px; width: 180px; }

@@ -24,6 +24,7 @@
   import GraphEditorPane from '$lib/shared/graph-editor/GraphEditorPane.svelte';
   import AiMenu from '$lib/shared/graph-editor/AiMenu.svelte';
   import CacheBrowser from '$lib/shared/volume/CacheBrowser.svelte';
+  import { resolveEmbedConfig, parseEmbedFromSearch, type EmbedConfig } from '$lib/shared/graph-editor/embed-config';
   import {
     type Entry, type FolderNode, MOVE_TARGET_RE,
     tabLabel, subtreeCount, subtreeMatches, sortFolders, nodeAt, findPartDir,
@@ -34,6 +35,22 @@
   /** Same regex the server uses for primitive ids — keep them in sync.
    *  Server: src/routes/api/primitives/rename/+server.ts ID_RE. */
   const ID_RE = /^[a-z][a-z0-9_]*$/i;
+
+  // ─── Embed feature-flags (embed-config.ts) ────────────────────────────────
+  // An external host can iframe /primitives?sidebar=0&tabs=…&engines=… to embed
+  // the multi-tab editor with its own chrome. Parse the query once at init
+  // (SSR is off, so `window` exists); `undefined` when no embed param is present
+  // → the sidebar shows + GEP gets the legacy `embed={true}`, i.e. the current
+  // UI unchanged. `embedCfg` is a stable const (the URL doesn't change) so it
+  // won't re-fire identity-tracked effects.
+  const embedPartial: Partial<EmbedConfig> | undefined = (() => {
+    try {
+      return typeof window !== 'undefined'
+        ? parseEmbedFromSearch(new URL(window.location.href).searchParams)
+        : undefined;
+    } catch { return undefined; }
+  })();
+  const embedCfg = resolveEmbedConfig(embedPartial);
 
   // Entry / FolderNode types + the pure tree helpers → ./primitives-tree.
 
@@ -1209,13 +1226,17 @@
      name (with `white-space: nowrap` the min-content is the full
      name), blowing the rail out to 600 px+ when any row had a long id.
      A fixed first track from --rail-w pins it to the resize handle. -->
-<div class="prim-root" class:collapsed={sidebarCollapsed} class:no-tabs={tabs.length === 0} style="--rail-w: {sidebarCollapsed ? 0 : railWidth}px">
+<div class="prim-root" class:collapsed={sidebarCollapsed} class:no-sidebar={!embedCfg.sidebar} class:no-tabs={tabs.length === 0} style="--rail-w: {!embedCfg.sidebar || sidebarCollapsed ? 0 : railWidth}px">
   <!-- Floating expand handle — only when collapsed AND no tabs are open
        (empty state has no tab strip to host the inline ☰). With tabs open the
-       ☰ lives inside the tab strip instead, so it can't overlap a tab. -->
-  {#if sidebarCollapsed && tabs.length === 0}
+       ☰ lives inside the tab strip instead, so it can't overlap a tab.
+       Hidden entirely when the embed config turns the sidebar off. -->
+  {#if embedCfg.sidebar && sidebarCollapsed && tabs.length === 0}
     <button class="prim-rail-expand" type="button" title="Show the primitives sidebar" onclick={toggleSidebar}>☰</button>
   {/if}
+  <!-- Parts-list sidebar + its resize divider — gated by the embed config
+       (`?sidebar=0` lets an external host embed /primitives with its own nav). -->
+  {#if embedCfg.sidebar}
   <aside class="prim-rail">
     <header>
       <h2>Primitives</h2>
@@ -1647,6 +1668,7 @@
     role="separator" aria-label="Resize sidebar"
     onpointerdown={startRailResize}
     ondblclick={() => { railWidth = 240; try { localStorage.setItem('prim-rail-width', '240'); } catch { /* ignore */ } }}></div>
+  {/if}
 
   <main class="prim-main">
     {#if showCache}
@@ -1661,7 +1683,7 @@
       <!-- Tab strip — clicking flips activeKey without unmounting the iframe.
            The iframe stays loaded so flipping back to a tab is instant. -->
       <div class="prim-tabs">
-        {#if sidebarCollapsed}
+        {#if embedCfg.sidebar && sidebarCollapsed}
           <button class="prim-rail-expand inline" type="button" title="Show the primitives sidebar" onclick={toggleSidebar}>☰</button>
         {/if}
         {#each tabs as t (t.key)}
@@ -1690,7 +1712,7 @@
             <!-- active gates the 3D canvas: only the visible tab holds a
                  WebGL context (browser cap ~16). Inactive tabs keep all
                  editor state mounted; their canvas remounts on activate. -->
-            <GraphEditorPane id={t.id} embed={true} onOpenTab={openTab} active={activeKey === t.key} seedGraph={t.seedGraph}
+            <GraphEditorPane id={t.id} embed={embedPartial ?? true} onOpenTab={openTab} active={activeKey === t.key} seedGraph={t.seedGraph}
               createDir={t.createDir}
               onSaved={onPartSaved}
               onGenerated={(id) => renameActiveTab(id)} />
@@ -2183,6 +2205,11 @@
   .prim-root.collapsed .prim-tree-scroll { display: none; }
   /* The strip owns the rail's right border now (the tree pane is gone). */
   .prim-root.collapsed .prim-rail { border-right: none; }
+  /* Embed config `sidebar:false` — the rail + divider aren't rendered, so the
+     three-track grid collapses to a single column the editor fills. Declared
+     AFTER `.collapsed` so it wins when a stale `prim-rail-collapsed` also set
+     that class (same specificity → source order decides). */
+  .prim-root.no-sidebar { grid-template-columns: minmax(0, 1fr); }
   .prim-root.collapsed .prim-tabrail { border-right: 1px solid #e5e7eb; }
   /* » re-expand chip pinned at the top of the collapsed tab strip. */
   .prim-tabrail-expand {
@@ -2237,6 +2264,9 @@
     .prim-root.collapsed .prim-rail { display: none; }
     .prim-rail-expand { display: inline-flex; align-items: center; justify-content: center; }
     .prim-root.collapsed { grid-template-rows: minmax(0, 1fr) !important; }
+    /* Embed config `sidebar:false` in portrait — no rail row; the editor is the
+       lone grid item, so give it a single full-height row/column. */
+    .prim-root.no-sidebar { grid-template-rows: minmax(0, 1fr) !important; grid-template-columns: 1fr !important; }
     /* Nothing open yet → let the sidebar fill the screen (the empty editor
        below would otherwise be wasted white space). Splits once a part opens. */
     .prim-root.no-tabs { grid-template-rows: minmax(0, 1fr) 0 !important; }

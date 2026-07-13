@@ -25,6 +25,8 @@
   // Pure MF_CLIENT bake-badge timing math (#987) — sum the worker's per-phase
   // timings; unit-tested in tests/bake-badge.test.ts.
   import { sumBakeTimings, type ClientBakeMeta } from './bake-badge';
+  // Embed feature-flags: which tabs are available (RightPaneTab === RightTab).
+  import type { RightPaneTab } from './embed-config';
 
   type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'tf' | 'mfserver';
 
@@ -36,6 +38,7 @@
     graph,                         // composition graph (for brepParamValues + colours)
     hasSolidProducer,              // 3D-bake vs 2D-profile bake tab
     active = true,                 // tab/pane visibility gate (props.active in parent)
+    tabs = null,                   // embed config: which tab ids to show (null = ALL)
     legacyLoad = null,             // legacy-load banner state
     sourceText,                    // emitted .asm.ts source
     rebuildStatus = null,
@@ -60,6 +63,11 @@
     graph: any;
     hasSolidProducer: boolean;
     active?: boolean;
+    /** Embed feature-flag: the resolved set of tab ids to show (from
+     *  embed-config.ts). `null`/absent = every tab (byte-for-byte the full UI).
+     *  A restricted list hides the tab buttons not in it; a persisted/active
+     *  tab that's now hidden is clamped to the first visible one. */
+    tabs?: readonly RightPaneTab[] | null;
     /** `false` ⇒ the persisted `ge-right-tab` is never allowed to restore to 'tf'.
      *  The TF tab button stays — the user can still ASK for TF by clicking it —
      *  but a stale localStorage from /primitives must not silently make /wells
@@ -137,6 +145,20 @@
     rightTab = t;
     try { localStorage.setItem('ge-right-tab', t); } catch { /* ignore */ }
   }
+
+  // ─── Embed tab gating ─────────────────────────────────────────────────────
+  // `tabs` (null = full UI) restricts which tab BUTTONS render. `tabOn` is the
+  // per-button gate; when a hidden tab is the active/persisted one, clamp to the
+  // first visible tab so the pane never lands on a tab whose button is gone.
+  // Default (tabs === null) keeps every button + never clamps → unchanged UI.
+  function tabOn(t: RightTab): boolean {
+    return !tabs || tabs.includes(t as RightPaneTab);
+  }
+  $effect(() => {
+    if (tabs && tabs.length > 0 && !tabs.includes(rightTab as RightPaneTab)) {
+      rightTab = tabs[0] as RightTab;
+    }
+  });
 
   // ─── BREP tab — server-side OpenCascade (OCCT) render ──────────────────────
   // Reuses the SHARED PrimitiveDualCanvas chrome (backend="brep"): same canvas,
@@ -388,38 +410,55 @@
      time; both keep their state mounted so switching is instant. -->
 <section class="ge-right-pane">
   <div class="ge-pane-tabs" role="tablist">
+    <!-- Tab buttons are gated by the embed config (`tabOn`); default = all shown. -->
+    {#if tabOn('bake')}
     <button class="ge-pane-tab" class:active={rightTab === 'bake'}
       type="button" role="tab" aria-selected={rightTab === 'bake'}
       data-tip={!hasSolidProducer ? '2D preview — resolved polygon (axis at r=0 for revolve, centered for cartesian)' : 'MF_CLIENT — Manifold, baked in a browser Web Worker. The default, and the only backend on the main canvas.'}
       onclick={() => setRightTab('bake')}>{!hasSolidProducer ? '2D preview' : 'MF_CLIENT'}</button>
+    {/if}
+    {#if tabOn('tf')}
     <button class="ge-pane-tab" class:active={rightTab === 'tf'}
       type="button" role="tab" aria-selected={rightTab === 'tf'}
       data-tip="TF — TrueForm (Polydera) client-side exact-mesh kernel. Runs the WASM boolean/generator kernel on the MAIN THREAD (no worker); from-scratch generators + booleans."
       onclick={() => setRightTab('tf')}>TF</button>
+    {/if}
+    {#if tabOn('source')}
     <button class="ge-pane-tab" class:active={rightTab === 'source'}
       type="button" role="tab" aria-selected={rightTab === 'source'}
       data-tip={`SRC — the emitted ${exemplarId}.asm.ts auto-generated from the graph`}
       onclick={() => setRightTab('source')}>SRC</button>
+    {/if}
+    {#if tabOn('md')}
     <button class="ge-pane-tab" class:active={rightTab === 'md'}
       type="button" role="tab" aria-selected={rightTab === 'md'}
       data-tip="MD — hand-authored drawing-descriptor markdown. Saved as meta.drawingMd."
       onclick={() => setRightTab('md')}>MD{drawingMd ? ` · ${drawingMd.length}c` : ''}</button>
+    {/if}
+    {#if tabOn('svg')}
     <button class="ge-pane-tab" class:active={rightTab === 'svg'}
       type="button" role="tab" aria-selected={rightTab === 'svg'}
       data-tip="SVG — vector render of the baked geometry (downloadable .svg)"
       onclick={() => setRightTab('svg')}>SVG</button>
+    {/if}
+    {#if tabOn('glb')}
     <button class="ge-pane-tab" class:active={rightTab === 'glb'}
       type="button" role="tab" aria-selected={rightTab === 'glb'}
       data-tip="GLB — half-sectioned bake (downloadable). Baked on demand — the bake is slow, so it only runs when you open this tab."
       onclick={() => setRightTab('glb')}>GLB</button>
+    {/if}
+    {#if tabOn('brep')}
     <button class="ge-pane-tab" class:active={rightTab === 'brep'}
       type="button" role="tab" aria-selected={rightTab === 'brep'}
       data-tip="BREP — server-side OpenCascade (OCCT) true-curve render. Adaptive tessellation + exact normals. Revolve · extrude · loft · CSG · composed parts."
       onclick={() => setRightTab('brep')}>BREP</button>
+    {/if}
+    {#if tabOn('mfserver')}
     <button class="ge-pane-tab mfserver" class:active={rightTab === 'mfserver'}
       type="button" role="tab" aria-selected={rightTab === 'mfserver'}
       data-tip="MF_SERVER — the SAME Manifold kernel, baked on the server via /api/primitives/preview. Rare: parity checks + diagnosing a client-bake failure. Manifold is synchronous and Node is single-threaded, so a heavy part here stalls every route until it finishes. Never opens by itself; never restored on reload."
       onclick={() => setRightTab('mfserver')}>MF_SERVER</button>
+    {/if}
   </div>
   <div class="ge-pane-bodies">
     <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
