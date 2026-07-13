@@ -2232,38 +2232,147 @@ function appendChild(graph: Graph, parentId: NodeId, childId: NodeId): Graph {
   return graph;
 }
 
-/** Remove a node and any references to it. Cascade-removes orphaned subtrees. */
+/** A warp's input solids — `children[]` (multi) when present, else the legacy
+ *  single `child` (mirrors WarpKind.warpChildren so the delete scrub stays in
+ *  lockstep with what emit/validate actually read). */
+function warpSolidRefs(n: WarpNode): NodeId[] {
+  if (Array.isArray(n.children) && n.children.length) return n.children.filter(Boolean) as NodeId[];
+  return n.child ? [n.child] : [];
+}
+
+/** True when removing everything in `gone` leaves `n` with NO producer input to
+ *  act on — a transform/section/warp/method whose only solid vanishes is
+ *  meaningless, so it cascade-deletes (the historical mv/rot/warp/cutaway/method
+ *  behaviour, now folded to a FIXPOINT so a chain box→mv→cutaway all goes at
+ *  once). Containers/repeats never orphan — an empty one is legal (the user
+ *  refills it), matching the pre-existing "filter children, keep the node"
+ *  behaviour. */
+function orphanedByRemoval(n: GraphNode, gone: ReadonlySet<NodeId>): boolean {
+  switch (n.type) {
+    case 'mv': case 'rot':
+      return gone.has((n as MvNode | RotNode).child);
+    case 'txfmn': case 'cutaway': {
+      const c = (n as TxfmnNode | CutawayNode).child;
+      return c != null && gone.has(c);
+    }
+    case 'warp': {
+      const kids = warpSolidRefs(n as WarpNode);
+      return kids.length > 0 && kids.every((k) => gone.has(k));
+    }
+    case 'method': {
+      const m = n as MethodNode;
+      return gone.has(m.obj) || gone.has(m.arg);
+    }
+    default:
+      return false;
+  }
+}
+
+/** True when a Call arg's `expr` carries a `__POLY__<id>` producer sentinel
+ *  whose target is in `gone` (a deleted polygon/sketch wired as this Call's
+ *  profile). Same sentinel scan CallKind.inputRefs + emit use. */
+function exprRefsGone(expr: string, gone: ReadonlySet<NodeId>): boolean {
+  const ms = expr.match(/__POLY__(n_[a-z0-9_]+)/gi);
+  return !!ms && ms.some((m) => gone.has(m.slice('__POLY__'.length)));
+}
+
+/** Rewrite `n`, dropping EVERY reference to a node in `gone`, so no dangling id
+ *  can survive into emit (where it throws `missingRef`) or validate (where it
+ *  surfaces as a `missing-node` broken-reference that greys Save). Pure — returns
+ *  a NEW node only when something changed (untouched nodes keep identity). Covers
+ *  every ref-bearing field shape the node kinds declare:
+ *    • `children[]`  — list / stack / group / repeat (+ multi-input warp)
+ *    • child-keyed override maps — stack `childRefs`/`childCounts`, repeat `partModifiers`
+ *    • the legacy scalar warp `child`
+ *    • Call `__POLY__<id>` profile refs
+ *    • polygon `points[]` / sketch `ops[]` `repeat-ref` + `expr-list-ref` sources
+ *  (scalar `child`/`obj`/`arg` on mv/rot/txfmn/cutaway/method never reach here —
+ *  those nodes orphan-cascade in `gone` instead). */
+function scrubNodeRefs(n: GraphNode, gone: ReadonlySet<NodeId>): GraphNode {
+  switch (n.type) {
+    case 'list': case 'stack': case 'group': case 'repeat': {
+      const node = n as ContainerNode | RepeatNode;
+      const kids = node.children ?? [];
+      const filtered = kids.filter((c) => !gone.has(c));
+      const patch: Record<string, unknown> = {};
+      let changed = filtered.length !== kids.length;
+      // Prune the child-keyed override maps of any removed child (dead keys emit
+      // nothing today, but leaving them re-attaches state if the id is reused).
+      for (const key of ['childRefs', 'childCounts', 'partModifiers'] as const) {
+        const map = (node as Record<string, unknown>)[key];
+        if (map && typeof map === 'object') {
+          const entries = Object.entries(map as Record<string, unknown>);
+          const kept = entries.filter(([k]) => !gone.has(k));
+          if (kept.length !== entries.length) { patch[key] = Object.fromEntries(kept); changed = true; }
+        }
+      }
+      return changed ? ({ ...node, children: filtered, ...patch } as GraphNode) : n;
+    }
+    case 'warp': {
+      const node = n as WarpNode;
+      const patch: Record<string, unknown> = {};
+      let changed = false;
+      if (Array.isArray(node.children)) {
+        const filtered = node.children.filter((c) => c && !gone.has(c));
+        if (filtered.length !== node.children.length) { patch.children = filtered; changed = true; }
+      }
+      if (node.child && gone.has(node.child)) { patch.child = null; changed = true; }
+      return changed ? ({ ...node, ...patch } as GraphNode) : n;
+    }
+    case 'call': {
+      const node = n as CallNode;
+      const nextArgs: Record<string, ArgValue> = {};
+      let changed = false;
+      for (const [k, v] of Object.entries(node.args ?? {})) {
+        // Drop a profile arg wired to a deleted producer → the Call reverts to
+        // its import's default (better than a dangling `__POLY__` → ReferenceError).
+        if (v.kind === 'expr' && exprRefsGone(v.expr, gone)) { changed = true; continue; }
+        nextArgs[k] = v;
+      }
+      return changed ? ({ ...node, args: nextArgs } as GraphNode) : n;
+    }
+    case 'polygon': {
+      const node = n as PolygonNode;
+      const pts = node.points ?? [];
+      const filtered = pts.filter((e) =>
+        !(e && ((e as any).kind === 'repeat-ref' || (e as any).kind === 'expr-list-ref') && gone.has((e as any).sourceId)));
+      return filtered.length !== pts.length ? ({ ...node, points: filtered } as GraphNode) : n;
+    }
+    case 'sketch': {
+      const node = n as SketchNode;
+      const ops = (node.ops ?? []) as any[];
+      const filtered = ops.filter((o) =>
+        !(o && (o.op === 'repeat-ref' || o.op === 'expr-list-ref') && gone.has(o.sourceId)));
+      return filtered.length !== ops.length ? ({ ...node, ops: filtered } as GraphNode) : n;
+    }
+    default:
+      return n;
+  }
+}
+
+/** Remove a node AND every reference to it. Cascade-removes orphaned wrappers
+ *  (transitive) and SCRUBS every remaining node's reference fields so the graph
+ *  stays internally consistent — no dangling `children[i]` / scalar `child` /
+ *  profile ref can outlive the delete and throw at bake (`missingRef`) or flag a
+ *  Save-blocking `missing-node` validation error. */
 export function removeNode(graph: Graph, id: NodeId): Graph {
   if (id === graph.root) return graph;     // can't remove the root
-  const next: Record<NodeId, GraphNode> = {};
-  // Drop the target node entirely.
-  for (const [nid, n] of Object.entries(graph.nodes)) {
-    if (nid === id) continue;
-    // Sever references in container children + method obj/arg + mv/rot child.
-    if (n.type === 'list' || n.type === 'stack' || n.type === 'group') {
-      next[nid] = { ...n, children: n.children.filter((c) => c !== id) };
-    } else if (n.type === 'method') {
-      // If we'd orphan the method (obj or arg gone), drop it too.
-      if (n.obj === id || n.arg === id) continue;
-      next[nid] = n;
-    } else if (n.type === 'mv' || n.type === 'rot' || n.type === 'txfmn') {
-      if (n.child === id) continue;
-      next[nid] = n;
-    } else if (n.type === 'warp') {
-      // A warp with its bent solid removed is orphaned — drop it too (mirrors
-      // the mv/rot cascade). A removed spline PATH source only clears the
-      // wired-ref (the warp keeps its literal points), so it isn't cascaded.
-      if (n.child === id) continue;
-      next[nid] = n;
-    } else if (n.type === 'cutaway') {
-      // A cutaway with its sectioned solid removed is orphaned — drop it too
-      // (mirrors the warp cascade). `az`/`offset` are literals/params, not
-      // node refs, so they're never cascaded.
-      if (n.child === id) continue;
-      next[nid] = n;
-    } else {
-      next[nid] = n;
+  if (!Object.prototype.hasOwnProperty.call(graph.nodes, id)) return graph;
+  // 1. Transitive removal set: the target + every wrapper it orphans, to a fixpoint.
+  const gone = new Set<NodeId>([id]);
+  for (;;) {
+    let added = false;
+    for (const [nid, n] of Object.entries(graph.nodes)) {
+      if (nid === graph.root || gone.has(nid)) continue;
+      if (orphanedByRemoval(n, gone)) { gone.add(nid); added = true; }
     }
+    if (!added) break;
+  }
+  // 2. Drop the removal set + scrub every surviving node's refs to it.
+  const next: Record<NodeId, GraphNode> = {};
+  for (const [nid, n] of Object.entries(graph.nodes)) {
+    if (gone.has(nid)) continue;
+    next[nid] = scrubNodeRefs(n, gone);
   }
   return finalize({ ...graph, nodes: next });
 }
