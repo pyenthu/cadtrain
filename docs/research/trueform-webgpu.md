@@ -43,64 +43,31 @@ cross-origin isolation** (COOP `same-origin` + COEP `require-corp`)?
 
 ## 1. Motivation
 
-### 1a. The headline: drop app-wide cross-origin isolation
+**Headline — drop app-wide cross-origin isolation.** `@polydera/trueform@0.9.8`
+is compiled **with Emscripten pthreads** (installed `dist/` glue: `pthread`/
+`PThread` ~110 refs, `wasmMemory shared:true`, `SharedArrayBuffer`; `native.d.ts`
+documents a pthread `workerUrl`). Post-Spectre, `SharedArrayBuffer` requires
+**cross-origin isolation** — the document must send COOP `same-origin` **+** COEP
+`require-corp` to make `self.crossOriginIsolated === true`. cadtrain therefore
+sets both on **every** response (`applyCrossOriginIsolation` in `hooks.server.ts`;
+the dev vite plugin; the `Dockerfile` static wrapper). The cost: **COEP
+`require-corp` blocks every cross-origin subresource without a CORP/CORS opt-in**
+— no CDN fonts/scripts/images/analytics without extra plumbing. **WebGPU needs
+none of this** (a `GPUBuffer` isn't a SAB), so *any* route that drops TrueForm's
+SAB dependency — WGSL rewrite **or** single-threaded recompile — lets us delete
+the headers. That deployment simplification is the real prize; WebGPU is only one
+way to reach it (§5).
 
-`@polydera/trueform@0.9.8` is compiled **with Emscripten pthreads**. Evidence
-from the installed package (`node_modules/@polydera/trueform/dist/`):
+**Secondary:** GPU parallelism (thousands of lanes vs oneTBB's 16 threads, for
+the embarrassingly-parallel ops); one shader language (WGSL) across
+Metal/Vulkan/D3D12, no 29.4 MB WASM download.
 
-- `trueform_wasm.js` glue contains `pthread`/`PThread` (~110 refs), `Worker`
-  (42), `wasmMemory` with `shared:true`, `SharedArrayBuffer`, and
-  `_emscripten_num_logical_cores` — i.e. an Emscripten **PROXY_TO_PTHREAD /
-  pthread-pool** build with a shared-memory heap.
-- `native.d.ts` documents `workerUrl` — "Override URL … used by the **pthread
-  worker**."
-- `trueform-client.ts` header comment: *"DataCloneError: SharedArrayBuffer
-  transfer requires self.crossOriginIsolated … unless the document is served with
-  COOP:same-origin + COEP:require-corp."*
-
-`SharedArrayBuffer` (post-Spectre) is gated behind **cross-origin isolation**:
-the top-level document must send `Cross-Origin-Opener-Policy: same-origin` **and**
-`Cross-Origin-Embedder-Policy: require-corp`, which makes
-`self.crossOriginIsolated === true`. cadtrain therefore sets both headers on
-**every** response (`applyCrossOriginIsolation` in `src/hooks.server.ts`;
-`crossOriginIsolation()` vite plugin in dev; static-asset wrapper per
-`Dockerfile`). The documented cost (comment in `hooks.server.ts`, and
-`/design` architecture note): **COEP `require-corp` blocks every cross-origin
-subresource that doesn't opt in via CORP/CORS** — no CDN fonts, scripts, images,
-analytics, or third-party embeds without extra plumbing.
-
-**WebGPU compute needs none of this.** A `GPUBuffer` is not a
-`SharedArrayBuffer`; WebGPU dispatch requires no cross-origin isolation. So *any*
-route that removes TrueForm's SAB dependency — WGSL rewrite **or** a
-single-threaded recompile — lets us delete the app-wide COOP/COEP headers and
-regain free use of cross-origin subresources. That deployment simplification is
-the real prize; WebGPU is only one of several ways to reach it (§5).
-
-### 1b. Secondary motivators
-
-- **GPU parallelism.** Many TrueForm ops are data-parallel over V/E/F. TrueForm
-  already parallelizes on CPU via oneTBB (16-thread benchmarks). A GPU has
-  thousands of lanes; the *embarrassingly parallel* ops (per-vertex generators,
-  per-face measures, BVH queries) could scale further.
-- **Single-language portability (WGSL).** One shader language runs on
-  Metal/Vulkan/D3D12 via the browser, no per-platform native toolchain, no
-  31 MB WASM download (the current `trueform_wasm.wasm` is **29.4 MB**).
-
-### 1c. Honest downsides of going WebGPU
-
-- **Browser support is now broad but not universal.** As of Nov 2025 WebGPU
-  ships by default in Chrome/Edge (since 113), Firefox (141 Windows / 145 macOS),
-  and Safari 26 (macOS Tahoe / iOS 26). Mobile and Linux remain fragmented
-  (Firefox Linux expected 2026; Firefox Android behind a flag). We'd still need
-  the WASM path as a fallback → **two kernels to maintain**.
-- **No exact arithmetic (§3).** The decisive limitation.
-- **Debugging & tooling.** GPU compute is far harder to debug than WASM;
-  no step-through, limited printf, driver-dependent behavior, non-determinism
-  across GPUs — dangerous for a kernel whose selling point is *exactness*.
-- **License (§5).** A WGSL kernel *derived from* TrueForm's algorithms is a
-  "new work based on the software" under PolyForm Noncommercial — see §5c.
-
----
+**Downsides of WebGPU:** browser support broad-but-not-universal as of Nov 2025
+(Chrome/Edge/Firefox/Safari 26; mobile+Linux fragmented) → still need a WASM
+fallback = **two kernels**; **no exact arithmetic** (§3, the decisive one); GPU
+compute is far harder to debug + non-deterministic across GPUs — dangerous for a
+kernel whose selling point is *exactness*; a WGSL port derived from TrueForm is a
+"new work" under PolyForm Noncommercial (§5c).
 
 ## 2. Per-capability GPU-fit
 
@@ -188,72 +155,36 @@ robust booleans as hard. The exact core should stay on the CPU.
 
 ## 4. Prior art / survey
 
-**GPU exact predicates**
-- **GPredicates** — *"GPU Implementation of Robust and Adaptive Floating-Point
-  Predicates for Computational Geometry"* (IEEE TVCG, 2019). CUDA; f64; fast-check
-  + exact-check kernels with shared-memory compaction. The closest thing to
-  "Shewchuk on the GPU," and it depends on capabilities WGSL lacks.
-  https://ieeexplore.ieee.org/document/8692354
-- Shewchuk, *"Adaptive Precision Floating-Point Arithmetic and Fast Robust
-  Geometric Predicates"* (CMU-CS-96-140). The canonical CPU predicates.
-  https://www.cs.cmu.edu/~quake/robust.html ·
-  https://people.eecs.berkeley.edu/~jrs/papers/robust-predicates.pdf
-- `libigl/libigl-predicates` — practical exact-predicates package (CPU).
-  https://github.com/libigl/libigl-predicates
-- Tinko Bartels et al., *"Fast Floating-Point Filters for Robust Predicates"*
-  (arXiv 2208.00497) — the filter half of the fast/exact split.
-  https://arxiv.org/pdf/2208.00497
+**GPU exact predicates** — **GPredicates** (IEEE TVCG 2019, ieee 8692354): CUDA,
+f64, fast-check + exact-check kernels; the closest to "Shewchuk on the GPU" and it
+needs exactly what WGSL lacks. Foundations: Shewchuk CMU-CS-96-140
+(cs.cmu.edu/~quake/robust.html); `libigl/libigl-predicates` (CPU); Bartels
+arXiv:2208.00497 (the float-filter half).
 
-**Robust mesh booleans / CSG (CPU state of the art — shows the difficulty)**
-- Cherchi et al., *"Interactive and Robust Mesh Booleans"* (arXiv 2205.14151).
-  https://arxiv.org/pdf/2205.14151
-- *"Exact predicates, exact constructions and combinatorics for mesh CSG"*
-  (arXiv 2405.12949) — Weiler model, exact intersection points, CDT with symbolic
-  perturbation. https://arxiv.org/pdf/2405.12949
-- *"Adaptive Mesh Booleans"* (arXiv 1605.01760). https://arxiv.org/pdf/1605.01760
+**Robust CPU mesh booleans (shows the difficulty)** — Cherchi arXiv:2205.14151;
+"Exact predicates, exact constructions and combinatorics for mesh CSG"
+arXiv:2405.12949 (Weiler model, implicit intersection points, CDT + symbolic
+perturbation); "Adaptive Mesh Booleans" arXiv:1605.01760.
 
-**GPU CSG that sidesteps exactness (voxel / SDF)**
-- `bigmat18/cuda-mesh-voxelization` — GPU CSG via **voxelized signed distance
-  fields**, not exact arrangements. Robust-ish but lossy (resolution-bound),
-  not TrueForm-equivalent. https://github.com/bigmat18/cuda-mesh-voxelization
+**GPU that sidesteps exactness / arrangements** — `bigmat18/cuda-mesh-voxelization`
+(voxel-SDF CSG, lossy, not TrueForm-equivalent); `ashwin/gDel3D` (fastest GPU 3D
+Delaunay, CUDA+f64); "3D Constrained Delaunay Refinement on GPU" arXiv:1903.03406.
+All CUDA/f64 — not WGSL-portable.
 
-**GPU Delaunay / arrangements**
-- `ashwin/gDel3D` — fastest 3D Delaunay on GPU (CUDA; incremental insert +
-  flipping + star-splaying; ~6× over sequential; numerically robust via
-  CUDA-side exact checks). https://github.com/ashwin/gDel3D
-- *"Computing 3D Constrained Delaunay Refinement Using the GPU"* (arXiv
-  1903.03406). https://arxiv.org/abs/1903.03406
-  Both are CUDA and lean on f64 — again not directly WGSL-portable.
+**WebGPU compute infra (the friendly 80%)** — **WebRTX** (BVH built on host,
+flattened, **stackless WGSL traversal** — no recursion; the model for porting
+spatial queries/rayCast); `gnikoloff/webgpu-raytracer` (explicit-stack BVH);
+**WgPy** (WebGPU NumPy, arXiv:2503.00279 — precedent for a WGSL NDArray/reduction
+layer).
 
-**WebGPU compute infrastructure (the friendly 80%)**
-- **WebRTX** — ray tracing via WGSL compute: **BVH built on host, flattened to a
-  buffer, stackless traversal in WGSL** (no recursion in WGSL). Directly relevant
-  to porting TrueForm's spatial queries / rayCast.
-  https://github.com/codedhead/webrtx
-- `gnikoloff/webgpu-raytracer` BVH notes — explicit-stack iterative BVH traversal
-  in WGSL. https://deepwiki.com/gnikoloff/webgpu-raytracer/5.3-bvh-acceleration-structure
-- **WgPy** — WebGPU NumPy-like array lib (arXiv 2503.00279) — precedent for a
-  WGSL NDArray/reduction layer mirroring TrueForm's NDArray core.
-  https://arxiv.org/pdf/2503.00279
+**No kernel to reuse** — **Manifold** (cadtrain's primary) parallelizes via Thrust
+with CUDA/OpenMP/**serial** backends; the browser build is the *serial* one (GPU
+story is native CUDA, not WebGPU; reported GPU speedup only ~2×). There is **no
+production WebGPU/WGSL exact-boolean kernel** to adopt.
 
-**Does an existing kernel have a GPU path we could reuse?**
-- **Manifold** (`elalish/manifold`, cadtrain's primary kernel) parallelizes via
-  NVIDIA **Thrust** with **CUDA / OpenMP / serial** backends selectable at build
-  time — i.e. its GPU story is **native CUDA, not WebGPU**; the WASM/browser build
-  is the **serial** backend. So the kernel cadtrain already ships to the browser
-  is *not* GPU-accelerated in-browser, and reported GPU speedup was only ~2×
-  because much of the pipeline isn't GPU-resident. There is **no production
-  WebGPU/WGSL exact-boolean kernel** to adopt. https://github.com/elalish/manifold/wiki/Manifold-Library
-
-**WGSL / WebGPU limits that shape all of the above**
-- WGSL floating scalar is **f32 only**; **atomics are i32/u32 only**; **no
-  recursion**. (https://www.w3.org/TR/WGSL/, webgpu.rocks/wgsl types,
-  gpuweb issue #2512.)
-- WebGPU shipped by default across all major browsers by **Nov 2025**; mobile /
-  Linux still fragmented. https://web.dev/blog/webgpu-supported-major-browsers ·
-  https://caniuse.com/webgpu
-
----
+**WGSL limits shaping all of the above:** f32 only, atomics i32/u32 only, no
+recursion (w3.org/TR/WGSL). WebGPU shipped across major browsers by Nov 2025;
+mobile/Linux fragmented.
 
 ## 5. Recommended path (ranked)
 

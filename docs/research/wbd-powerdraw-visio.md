@@ -82,63 +82,25 @@ drawing.
 Label text itself is reactive — e.g. the OD label rewrites per page unit system:
 `"Tool O.D. ["&IF(ThePage!User.IsMetric,"metric","standard")&"] units"`.
 
-**(b) User cells — `Section N="User"` (derived state + toggles).** Dropdown
-strings are converted to integers and booleans drive everything:
-`User.CasingSize.Value F='LOOKUP(Prop.CasingSize,Prop.CasingSize.Format)'`.
-Boolean feature flags: `ShowCementOut, ShowCementIn, ShowOpenHole, ShowLitho,
-ShowShoe, HideBalloon, HideDepth, IsHorz, IsGlued, IsGroupLock, EnableFreeStretch,
-EnableFreeMove`.
+**(b–f) The "smart" is toggles + variants + stacking, NOT depth-scaling.**
+Dropdown strings → ints via `LOOKUP`; **boolean feature flags** (`ShowCementOut/
+In, ShowOpenHole, ShowLitho, ShowShoe, EnableFreeStretch, …`) gate sub-geometries
+via `NoShow` (one casing master = casing + cement-out/in + openhole + litho + shoe,
+each switchable). The **size dropdown shifts stylized X offsets** (it does NOT
+read a real OD — `X=Width*0.95 + IF(CasingSize=1,0.125,0)…`); `TubingPos` snaps
+PinX to a centre/left/right 0.5" grid. Right-click **Actions** toggle the User
+booleans. **Depth tags are free annotations** (`PinY` is geometric, never
+converted to a depth number) — the diagram is schematic/not-to-scale, tools
+free-stretched by hand.
 
-**(c) Geometry gating — features are sub-geometries switched by `NoShow`.** One
-casing master contains casing + cement-out + cement-in + openhole + litho + shoe,
-each gated:
+**(g) BOM / tally export — the real payoff of "smart".** Every tool emits a
+tab-delimited `ProductDetails` record (`ItemNum, ProductDetails, ToolID, ToolOD,
+ToolHeight, DepthTag`) and the `Insert Product Details` action drops it into an
+auto-generated equipment tally. **The icons are "smart" because they double as a
+structured data source for a tally**, not because the geometry is depth-accurate.
 
-```
-Cell N='NoShow' V='1' F='NOT(Sheet.5!User.ShowOpenHole)'
-Cell N='NoShow' V='1' F='NOT(Sheet.5!User.ShowLitho)'
-```
-
-**(d) Variant dimensioning — the size dropdown shifts geometry X offsets** (it
-does *not* read a real OD in inches; it picks a stylized width):
-
-```
-Cell N='X' F='Width*0.95 + IF(User.CasingSize=1,0.125,0) - IF(User.CasingSize=2,0.065,0)'
-```
-
-`TubingPos` snaps the shape's PinX to centre/left/right and onto a 0.5" grid:
-`MAX(IF(MODULUS(ABS(PinX),0.5)>0.25,CEILING(ABS(PinX),0.5),FLOOR(...)),0)+IF(User.TubingPos=1,-0.1563,0.1563)`.
-
-**(e) Right-click Actions menu** (`Section N="Action"`) toggles the User booleans:
-`Menu="Show Cement Outside of Casing"  Action=SETF(GetRef(User.ShowCementOut),NOT(User.ShowCementOut))`
-— plus Rotate 45/90, Flip X/Y, Show/Hide Balloon, Show/Hide Depth Tag, Edit Tool
-Properties, **Insert Product Details**.
-
-**(f) Depth tags are free annotations, not scaled geometry.** The depth label text
-is just `Sheet.5!Prop.DepthTag & " " & Sheet.5!Prop.Units`. The **Floating Depth
-Tag** is a leader-line + text box you drag to a depth gridline and *type* the
-depth into; its Y position is geometric (`PinY=(BeginY+EndY)/2`) but is **not**
-converted to a depth number. So the diagram is schematic/not-to-scale: a tool is
-*free-stretched* vertically by hand and the depth is annotated, not computed.
-
-**(g) BOM / tally export — the real payoff of "smart".** Every tool builds a
-tab-delimited record:
-
-```
-User.ProductDetails =
-  CHAR(9)&Prop.ItemNum&"."&CHAR(9)&Prop.ProductDetails&CHAR(9)
-  &User.ToolID&CHAR(9)&User.ToolOD&CHAR(9)&User.ToolHeight&CHAR(9)&Prop.DepthTag
-```
-
-and the Action `Insert Product Details` calls
-`CALLTHIS("CTI_ItemInsertAfter","MiscBlocks",TRUE,User.ProductDetails)` to drop a
-row into an auto-generated equipment tally/BOM table. **The icons are "smart"
-because they double as a structured data source for a tally**, not because the
-geometry is depth-accurate.
-
-**(h) Vertical stacking — connection points.** Casing master has two glue points,
-top and bottom, `Type=2` (inward), at `Y=Height*0.998` and `Y=Height*0.003`,
-`X=Width*0.5` (centerline). Tools glue end-to-end down the wellbore centerline;
-`IsGlued`/`EnableFreeMove` gate the snap-to-0.5"-grid logic.
+**(h) Vertical stacking** — two centerline glue points (top `Y=Height*0.998`,
+bottom `Y=Height*0.003`, `X=Width*0.5`) so tools glue end-to-end down the bore.
 
 ### Parametrization vocabulary (extract this)
 `ItemNum · DepthTagTop · DepthTagBottom · ProductDetails · ToolID · ToolOD ·

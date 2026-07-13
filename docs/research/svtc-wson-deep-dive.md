@@ -218,82 +218,43 @@ computeHeaderFields({ wson, srcRaw, tabName })
 
 **Package:** `labella@1.1.4` (`import labella from 'labella'`).
 
-**Feeding labels in.** One `labella.Node(ay, 5, data)` per drawable feature,
-where `ay` is the *warped anchor screen-y* (the label's ideal position) and `5`
-is the node's half-width. `data` carries everything the post-pass + renderer need:
+One `labella.Node(ay, 5, data)` per feature (`ay` = warped anchor screen-y;
+`data` = `signedRadius, md, y0, ax, ay, perpPos/Neg, text, bank`). **Seeding:**
+borehole (OH/CH/cement) → negative signedRadius (left face); completions + perfs
+→ positive (right). **Bank** by warped anchor X vs `centerX` (`dx>=0 ? right :
+left`) — so a deviated well can land both on one side and leaders still never
+cross the bore. **Force** runs once per bank (`{algorithm:'simple',
+nodeSpacing:24, lineSpacing:4, minPos:HEADER_H+5,
+maxPos:HEADER_H+maxDepth*yScale*1.2}`); resolved y = `node.currentPos`. **Rails**
+at furthest anchor ± `RAIL_PAD=14`; a post-pass side-picks `perpPos`/`perpNeg` by
+dotting toward the resolved label; renderer draws one dashed leader
+`anchor→(rail, currentPos)`. **3D reuse:** `labellaTvdDelta =
+(currentPos-y0)/yScale` projects the 2D spread to a TVD delta so
+`WsonAutoAnnotations3D` spaces labels without re-solving.
 
-```js
-new labella.Node(ay, 5, {
-  signedRadius, md, y0: ay, ax, ay,   // ax,ay = leader start (warped anchor)
-  perpPos:[±1,0], perpNeg:[∓1,0],     // candidate leader exit dirs (screen)
-  text, nx:0, ny:0, bank:'right'|'left'
-});
-```
-- **Anchor side seeding:** borehole layers (OH/CH/cement) seed **negative**
-  signedRadius (left face); completions + perfs seed **positive** (right face).
-- **Bank assignment** is by *warped anchor X* vs `centerX`, NOT category:
-  `dx = ax - centerX; bank = dx>=0 ? 'right' : 'left'`. In a vertical well this
-  reproduces the historic bh-left / comp-right split; in a deviated well both can
-  land on one side and leaders still never cross the bore.
-
-**Force config (run once per bank):**
-```js
-const forceOpts = { algorithm: 'simple', nodeSpacing: 24, lineSpacing: 4,
-                    minPos: HEADER_H + 5, maxPos: HEADER_H + maxDepth*yScale*1.2 };
-if (rightNodes.length) new labella.Force(forceOpts).nodes(rightNodes).compute();
-if (leftNodes.length)  new labella.Force(forceOpts).nodes(leftNodes).compute();
-// resolved position is read as node.currentPos
-```
-`nodeSpacing:24` ⇒ ~16 px vertical gap (also enough TVD separation when 3D reuses it).
-
-**Leader rails + de-overlap:** rail X = furthest anchor on each bank + `RAIL_PAD=14`
-(`RIGHT_RAIL = max(ax) + 14`, `LEFT_RAIL = min(ax) - 14`). A **post-labella
-side-pick** chooses each node's perpendicular (`perpPos` vs `perpNeg`) by dotting
-the candidate against the vector to the resolved label position, writing `nx,ny`.
-Renderer draws a single straight dashed leader `anchor(ax,ay) → (rail, currentPos)`.
-
-**3D reuse:** `n.data.labellaTvdDelta = (currentPos - y0) / yScale` projects the
-2D vertical spread back to a world-TVD delta so `WsonAutoAnnotations3D` spaces
-labels along depth without re-solving.
-
-**cadtrain port choice.** cadtrain currently does **NOT** use labella — its
-`WellDepthRuler` does a simpler top-down pixel nudge (`LABEL_GAP=15`, one left
-side-rail). For W-C, either (a) keep the side-rail (cheapest, already works), or
-(b) adopt labella for two-sided banked leaders on the future 2D SVG view (W-D),
-in which case port `computeAnnotations` almost verbatim (it's pure).
+**cadtrain port choice.** cadtrain does **NOT** use labella — `WellDepthRuler`
+does a simpler top-down nudge (`LABEL_GAP=15`, one left side-rail). For W-C keep
+the side-rail (cheapest) OR adopt labella for two-sided banked leaders only if the
+2D SVG view lands (W-D); `computeAnnotations` is pure → ports almost verbatim.
 
 ---
 
 ## 5. Popover / floating-panel pattern
 
-**Component:** SVTC `$lib/components/FloatingPanel` (a titled, draggable panel with
-`{visible, onClose, width|widthCss, x, y}` + a `{#snippet children()}`).
-cadtrain has an equivalent `FloatingPanel` in `src/lib/shared/` (memory
-`floating_panel_z_index`, `feedback_popup_over_inline` — the user prefers popups
-over inline cells).
+Reuse cadtrain's `src/lib/shared/FloatingPanel` (SVTC's equivalent: titled
+draggable `{visible, onClose, width, x, y}` + `{#snippet children()}`; memories
+`floating_panel_z_index`, `feedback_popup_over_inline`). Sub-popovers that must
+escape the panel's `overflow-y-auto` render **`position:fixed`** at document level
+from a captured anchor rect, with `onmousedown` stop-propagation so a click
+doesn't blur the cell (mirrors `tooltip_native_title_for_clipping`).
 
-**Anchoring + escaping clipping.** Editors open at a fixed `x,y`. Sub-popovers
-that must escape the panel's `overflow-y-auto` (inline catalog search, top-mode
-help) are rendered with **`position:fixed`** at document level, positioned from a
-captured anchor rect (`rowSearch.anchor = {left, top}`), with
-`onmousedown={e=>e.stopPropagation()}` so a click inside doesn't blur the cell.
-This mirrors cadtrain's `tooltip_native_title_for_clipping` / accordion-scroll-cap
-learnings.
-
-**How edits reach the model.** Two styles:
-1. **Canvas quick-popups** (`CanvasCompPopup`/`CanvasPerfPopup`) — opened by
-   `ondblclick` on the SVG element (`onOpenComp(i,comp)` / `onOpenPerf(i,perf)`),
-   receive a **reactive proxy copy** of the row; simple fields `bind:value` mutate
-   it directly, length/top use local `draft` state (so `.toFixed()` re-render
-   doesn't kick the caret), and `onSave`/`onDelete` commit through `setSrc`.
-2. **Worksheet cells** (`CompletionsEditor`) — always-editable inputs whose
-   `oninput` calls `api.onCellInput(i, field, e, handler)` → `updateComp` →
-   `setSrc`, so the 2D/3D views update the same frame. Cursor-stable via a
-   `cellDraft[`${i}:field`]` map.
-
-**cadtrain port:** reuse `src/lib/shared/FloatingPanel`. For W-B the natural first
-cut is the popup style (double-click a 3D completion → inspector popover) since
-cadtrain is 3D-first and has no SVG to click yet.
+Edits reach the model two ways, both committing via `setSrc` (2D+3D update the
+same frame): (1) **canvas quick-popups** (`CanvasCompPopup`/`CanvasPerfPopup`,
+`ondblclick`) take a reactive proxy copy, length/top use local `draft` state so
+`.toFixed()` re-render doesn't kick the caret; (2) **worksheet cells**
+(`CompletionsEditor`, `oninput → api.onCellInput → updateComp`), cursor-stable via
+a per-cell `cellDraft` map. **cadtrain W-B first cut:** the popup style (dbl-click
+a 3D completion → inspector), since it's 3D-first with no SVG yet.
 
 ---
 

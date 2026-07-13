@@ -93,41 +93,31 @@ TF-IDF few-shot corpus (#2 §5.1), not for the graph.
   Open Question 1). Few-shot exemplars can still be injected for HARD cases, but the
   standing schema block goes to zero.
 
-### Deploy pipeline (the concrete build step this section adds)
-1. **Fine-tune** (Python, DEV-ONLY — never in the prod container, Rule 1): Unsloth/LoRA on
-   the synthetic+real JSONL (steps 2–5; ~1–3k pairs → ~95% per step 4) → merged HF weights.
-2. **MLC-LLM compile (AOT)**: `mlc_llm convert_weight` + `gen_config` + `compile` → a
-   `.wasm` model library (WebGPU/WGSL kernels via the TVM runtime) + quantized weight
-   shards. This is a REAL, non-trivial build step (weight conversion + kernel config),
-   run offline in the dev/CI toolchain, not at runtime.
-3. **Host the ~350 MB artifacts** statically: an HF model repo OR our own static assets
-   (served by adapter-node; they're immutable, long-cache). First visit downloads once,
-   Cache-Storage keeps them offline after.
-4. **Load in-browser**: `import('@mlc-ai/web-llm')` in the Web Worker (#2 §6 — NEVER the
-   bake/render thread), pass the CUSTOM model URL to `CreateMLCEngine(...)` via an
-   `appConfig.model_list` entry pointing at our hosted `.wasm` + weights.
-5. **Infer + dispatch**: `engine.chat.completions.create({messages, temperature:0,
-   max_tokens:~30})` with the XGrammar CFG → raw call string/object → `dispatchEditorTool`
-   on the live `Graph`. Default OFF behind the same `backend: 'anthropic' | 'webllm'`
-   toggle #2 §6 defines; Anthropic stays default + fallback.
+### Deploy pipeline (the build step this section adds)
+1. **Fine-tune** (Python, DEV-ONLY — never prod, Rule 1): Unsloth/LoRA on the
+   synthetic+real JSONL (~1–3k pairs → ~95%) → merged HF weights.
+2. **MLC-LLM compile (AOT)**: `convert_weight` + `gen_config` + `compile` → a
+   `.wasm` model library (WGSL kernels via TVM) + quantized shards. A real,
+   non-trivial offline build step (weight conversion + kernel config), not runtime.
+3. **Host ~350 MB statically** (HF repo or our own immutable assets); first visit
+   downloads once, Cache-Storage keeps it offline.
+4. **Load** in the Web Worker (`import('@mlc-ai/web-llm')`, NEVER the bake/render
+   thread): a custom-URL `CreateMLCEngine` via `appConfig.model_list`.
+5. **Infer + dispatch**: `chat.completions.create({temperature:0, max_tokens:~30})`
+   + the XGrammar CFG → `dispatchEditorTool` on the live `Graph`. Default OFF
+   behind the `backend: 'anthropic'|'webllm'` toggle; Anthropic stays default.
 
-### Honest realism (this is a conditional-GO spike, not a plan of record)
-- **XGrammar guarantees SYNTAX, not SEMANTICS.** A valid `setCallArg(...)` is not a
-  *correct* one. Picking the right tool + the right `ArgValue` (esp. the `param` vs
-  `literal` vs `expr` choice our schema flags) is exactly where a 0.5B is weakest — and
-  where the #28 dataset (steps 2–5) has to carry the load. No dataset → no accuracy, CFG
-  or not.
-- **MLC compile is a real build step** (step 2) and **hosting ~350 MB of model assets** is
-  a real deploy cost + a bundle/CI concern.
-- **0.5B accuracy is the OPEN RISK** → gate exactly as #2 §9: a `/primitives`-scoped
-  Spike-0 bench, ship opt-in "offline edits (beta)" ONLY if it clears the accuracy bar
-  (#2 sets ≥90% tool / ≥85% args), else shelve as a documented finding. A fine-tuned 0.5B
-  MIGHT clear a scoped single-tool bar that a stock 0.5B can't — that's the bet — but it
-  must be measured, not assumed.
-- **Sequence, unchanged:** the near-term win is **few-shot injection (step 3, no
-  training)** — that lands the accuracy/token benefit with zero fine-tune and zero WebLLM
-  deploy. Fine-tune + MLC compile + in-browser deploy (this section) is the LATER endgame,
-  attempted only after few-shot has proven the dataset and the seam.
+### Honest realism (conditional-GO spike, not a plan of record)
+- **XGrammar guarantees SYNTAX, not SEMANTICS.** The right tool + `param`-vs-
+  `literal`-vs-`expr` choice is where a 0.5B is weakest — the #28 dataset (steps
+  2–5) has to carry it. No dataset → no accuracy, CFG or not.
+- **Real deploy cost:** the MLC compile (step 2) + hosting ~350 MB (bundle/CI).
+- **0.5B accuracy is the OPEN RISK** → gate as #2 §9 (`/primitives` Spike-0 bench;
+  ship opt-in only if ≥90% tool / ≥85% args; else shelve). The bet: a *fine-tuned*
+  0.5B clears a scoped bar a stock 0.5B can't — measure, don't assume.
+- **Sequence:** the near-term win is **few-shot injection (step 3, no training)** —
+  accuracy/token benefit with zero fine-tune/deploy. Fine-tune + MLC compile is the
+  LATER endgame, only after few-shot proves the dataset + seam.
 
 ## Open questions
 - Does compact-TS actually beat our prompt-caching for the CLOUD model? (Likely not — cache already amortizes it.) It matters for the LOCAL model.

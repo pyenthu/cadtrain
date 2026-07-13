@@ -204,24 +204,13 @@ Call chain: `geo.syD` / `dirPath` / `dirSide` (in `WsonApp` geo block) →
 
 ## 4. Ruler / ticks under a non-linear (DTX-warped) axis
 
-Tick **selection** (`WsonApp.svelte` L742-748) is "nice" 1/2/5/10×10ⁿ on the
-**raw** MD range:
-```js
-const raw = maxDepth/8;
-const exp = Math.pow(10, Math.floor(Math.log10(raw||1)));
-const niceInterval = [1,2,5,10].map(m=>m*exp).find(m => maxDepth/m <= 12) ?? raw;
-const rulerTicks = []; for (let d=0; d<=maxDepth; d+=niceInterval) rulerTicks.push(d);
-```
-So ticks are at round real depths (0, 500, 1000, …), aiming for ≤12 ticks.
-
-Tick **placement** is warped: `Wson2DRenderer.svelte` L112-115 positions each
-tick at `y = geo.syD(d)` — i.e. through the **same DTX**. So labels stay
-truthful real-MD numbers while their *spacing* compresses/expands with the
-transform; ticks bunch up in compressed (unmagnified) bands and spread out
-across magnified tool bands. In directional mode the label gets a `↕` suffix to
-warn the axis is MD-along-hole, not TVD. There is **no** separate inverse-DTX
-nice-tick pass; the non-uniform spacing is accepted as the visual signal of
-magnification.
+Tick **selection** = "nice" 1/2/5/10×10ⁿ on the **raw** MD range, ≤12 ticks
+(`WsonApp.svelte` L742-748) → round real depths (0, 500, 1000…). Tick
+**placement** goes through the **same DTX** (`y = geo.syD(d)`,
+`Wson2DRenderer.svelte` L112-115): labels stay truthful real-MD, spacing
+compresses/expands with the transform (bunched in compressed bands, spread across
+magnified tool bands). Directional mode adds a `↕` "MD-along-hole" suffix. No
+inverse-DTX pass — the non-uniform spacing IS the magnification signal.
 
 ---
 

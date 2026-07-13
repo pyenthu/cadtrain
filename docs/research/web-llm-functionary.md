@@ -62,18 +62,15 @@ Default OFF; Anthropic stays default + fallback.
 
 ---
 
-## 2. Why in-browser at all (the requirement)
+## 2. Why in-browser (the requirement)
 
-The org wants edits where **data never leaves the browser**, including the
-prompt/few-shot databases. Anthropic (default) sends `{graphState, messages}` to
-`/api/rag/assist` → Claude. A local SLM backend keeps everything client-side:
-zero API cost, zero network, full privacy, and low latency after warm load
-(30–60 tok/s; a short tool call is a few hundred ms once resident). The fit is
-the high-frequency micro-edit ("add a point", "wire r to OD") — exactly the
-sub-2B sweet spot. cadtrain already runs WebGPU-class WASM (Manifold), so capable
-users are common — but feature-detect and never assume.
-
----
+Data must never leave the browser, including the prompt/few-shot DBs. Anthropic
+(default) POSTs `{graphState, messages}` to `/api/rag/assist`; a local SLM keeps
+everything client-side — zero API cost/network, full privacy, low latency after
+warm load (30–60 tok/s, a short tool call ~few hundred ms). Fit = high-frequency
+micro-edits ("add a point", "wire r to OD"), the sub-2B sweet spot. cadtrain
+already runs WebGPU-class WASM (Manifold), so capable users are common — but
+feature-detect, never assume.
 
 ## 3. WebGPU SLM runtime landscape (re-confirm online — §7)
 
@@ -248,63 +245,43 @@ backend-agnostic. Concretely:
 
 ## 7. What to verify online before building
 
-(No verified internet at authoring time.) Confirm each, then strike:
-- **web-llm:** current `@mlc-ai/web-llm` version (SVTC pins 0.2.82); the exact
+(No verified internet at authoring time — confirm, then strike.)
+- **web-llm** (github.com/mlc-ai/web-llm; SVTC pins 0.2.82): the exact
   `chat.completions.create` field for a JSON **schema** (vs bare `json_object`);
-  whether per-tool grammars / a function-calling helper now ship; current
-  `prebuiltAppConfig` model list + the exact Qwen2.5-1.5B / Llama-3.2-1B MLC ids
-  and their q4 download sizes. (github.com/mlc-ai/web-llm; webllm.mlc.ai/docs)
-- **XGrammar:** current version + that MLC integration exposes JSON-schema
-  constraint from web-llm; XGrammar-2 per-tool grammar status. (blog.mlc.ai
-  2024-11-22; github.com/mlc-ai/xgrammar; arXiv:2411.15100; XGrammar-2 arXiv:2601.04426)
-- **Functionary (MeetKai):** current version + smallest variant + param count;
-  its tool-call prompt format spec; whether ANY MLC/WebGPU build exists; vLLM /
-  llama.cpp grammar-sampling specifics. (github.com/MeetKai/functionary —
-  README, `docs/`, the prompt-template + `tools`/`tool_choice` sections, and any
-  `*-GGUF` / web runtime notes.)
-- **Models:** Qwen2.5-Instruct tool-calling/JSON behavior at 0.5B/1.5B;
-  Llama-3.2-1B-Instruct; WebGPU availability matrix (Chrome/Edge strong;
-  Safari/Firefox improving — feature-detect).
-- **transformers.js v4** WebGPU + structured-generation status (fallback runtime).
-- **wllama** GGUF grammar support in-browser (no-WebGPU fallback).
+  per-tool grammar / function-calling helper; current `prebuiltAppConfig` + the
+  Qwen2.5-1.5B / Llama-3.2-1B MLC ids + q4 sizes.
+- **XGrammar** (arXiv:2411.15100; XGrammar-2 arXiv:2601.04426): MLC exposes
+  JSON-schema constraint from web-llm; per-tool grammar status.
+- **Functionary** (github.com/MeetKai/functionary): current version + smallest
+  variant + param count; prompt-template spec; whether ANY MLC/WebGPU build exists.
+- **Models/runtime:** Qwen2.5-Instruct 0.5B/1.5B tool-calling; Llama-3.2-1B;
+  WebGPU matrix; transformers.js v4 (fallback) + wllama GGUF grammars (no-WebGPU).
 
----
+## 8. Risk / accuracy caveats (binding)
 
-## 8. Honest risk / accuracy caveats (from `webgpu-slm.md`, still binding)
+- **Accuracy is the gate.** Constrained decoding guarantees *valid JSON*, not
+  *correct edits* — a 0.5–1.5B model is unreliable at multi-tool sequences and
+  the `param`-vs-`literal` `ArgValue` choice (the risk our schema flags), *worse*
+  than Anthropic. Bench before believing; **scope to single-tool to win.**
+- **~1–1.5 GB first-load** (cached) + a few-second WebGPU compile → opt-in only.
+- **WebGPU spread + VRAM** — strong Chrome/Edge, spotty Safari/Firefox; 1.5B q4 +
+  KV cache OOMs low-end devices. Feature-detect + gate by device + Anthropic
+  fallback.
+- **Isolate** in a lazy Web Worker (TVM runtime + WGSL kernels); never the default
+  bundle, never the bake/render thread. A second inference path = a second prompt
+  to keep in sync (mitigated by sharing `EDITOR_TOOLS`/`dispatchEditorTool`).
+- **Functionary detour** — do NOT stand it up in-browser (server-side stack);
+  reference its format/idea only.
 
-- **Accuracy is the gate.** Constrained decoding gives *valid JSON*, not
-  *correct edits*. A 0.5–1.5B model is unreliable at multi-tool sequences and at
-  the `param`-vs-`literal` `ArgValue` choice (the exact risk our schema flags) —
-  *worse* than Anthropic. Bench before believing; scope to single-tool to win.
-- **~1–1.5 GB first-load** (cached after) + WebGPU kernel compile (a few
-  seconds). Opt-in only, not default-on.
-- **WebGPU spread + VRAM** — strong on Chrome/Edge, spotty on Safari/Firefox;
-  1.5B q4 + KV cache needs real GPU memory; low-end laptops/phones OOM. Gate by
-  device + feature-detect + Anthropic fallback.
-- **Bundle weight + worker plumbing** — web-llm pulls TVM runtime + WGSL kernels;
-  isolate in a lazy Web Worker; never in the default bundle; never on the
-  bake/render thread.
-- **Maintenance** — a second inference path = a second prompt to keep in sync;
-  mitigated by sharing `EDITOR_TOOLS` + `dispatchEditorTool`, but the local
-  system prompt + the schema lowering need parallel upkeep.
-- **Functionary detour** — do NOT spend time standing up Functionary in-browser;
-  it's a server-side stack. Reference its format/idea only.
+## 9. Spike plan (time-boxed)
 
----
-
-## 9. Spike plan (time-boxed; mirrors `webgpu-slm.md` §4)
-
-- **Spike 0 — bench (½–1 day, no app changes).** A `/primitives`-scoped demo
-  page. Load web-llm + Qwen2.5-1.5B in a worker; feed ~10 canned
-  `{instruction, editorState}` cases; XGrammar-constrain to a 5-tool subset;
-  measure cold load, tok/s, **tool-selection accuracy**, **arg/ArgValue
-  accuracy**. Compare 0.5B vs 1.5B vs 1B.
-- **Spike 1 — wire behind the interface (1 day).** Add `toJsonSchema()`; a
-  `webllm` branch in `createAssistSession` producing the `{calls|text}` shape;
-  feed the existing `dispatchEditorTool`. Default OFF. Unit-test lowering +
-  dispatch. Add the local TF-IDF corpus (`corpus.ts`) + bundled few-shots.
-- **Spike 2 — scoped toolsets (1 day).** Selection-/route-scoped tools to the
-  SLM; re-bench. This is where the small model becomes reliable.
-- **Decision gate.** Ship opt-in "offline edits (beta)" only if Spike-2 clears
-  ≥90% tool + ≥85% args on the canned set. Else shelve as a documented finding;
-  Anthropic path unaffected.
+1. **Spike 0 — bench** (½–1 day, no app changes): a `/primitives`-scoped demo
+   loads web-llm + Qwen2.5-1.5B in a worker, feeds ~10 canned
+   `{instruction, editorState}` cases, XGrammar-constrained to a 5-tool subset;
+   measure cold load, tok/s, tool-selection + arg/ArgValue accuracy (0.5B/1B/1.5B).
+2. **Spike 1 — wire behind the interface** (1 day): `toJsonSchema()`; a `webllm`
+   branch in `createAssistSession` → `{calls|text}` → existing `dispatchEditorTool`;
+   default OFF; local TF-IDF corpus + bundled few-shots.
+3. **Spike 2 — scoped toolsets** (1 day): selection-/route-scoped tools; re-bench.
+4. **Gate:** ship opt-in "offline edits (beta)" only if Spike-2 clears **≥90%
+   tool + ≥85% args**; else shelve as a documented finding. Anthropic unaffected.

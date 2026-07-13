@@ -53,49 +53,30 @@ deriving it via CSG keeps it correct when the casing program changes.
 
 ## Domain grounding
 
-**NORSOK D-010 — Well Barrier Schematic (WBS) & Well Barrier Elements (WBE).** NORSOK
-D-010 ("Well integrity in drilling and well operations", the Norwegian petroleum
-standard) formalizes the **well barrier envelope**: the physical system preventing
-unintended flow from a formation to another formation or the environment, built from a
-**primary** envelope (elements in direct contact with well pressure) and a redundant
-**secondary** envelope. Barriers are drawn on a **Well Barrier Schematic**, a static
-illustration marking every primary and secondary WBE, colour-coded: **primary elements
-blue, secondary red**. **Casing/annular cement is itself a WBE** listed in both
-envelopes across the well lifecycle; its failure is a leak path along or across the
-annulus. NORSOK provides a library of standardized WBEs each with **Element Acceptance
-Criteria (EAC)** — annular cement has its own acceptance table, and each WBE carries
-verification requirements (a commonly-cited figure: a cement barrier ≈ 50 m verified by
-displacement calculation or ≈ 30 m verified by bond logs — see the verification flag
-below).
+**NORSOK D-010 — Well Barrier Schematic (WBS).** Formalizes the **well barrier
+envelope** (primary + redundant secondary systems preventing unintended flow),
+drawn as a WBS marking every Well Barrier Element (WBE) colour-coded **primary
+blue, secondary red**. **Annular cement is itself a WBE** in both envelopes; each
+WBE has **Element Acceptance Criteria** + verification (commonly-cited: ≈50 m by
+displacement calc / ≈30 m by bond log — see verification flag). *Implication:* a
+`bw_cement` carries a **role tag** (primary/secondary/none) for blue/red colouring
+and is an *interval* (shoe → TOC), not just a shape.
 
-*Design implication:* a `bw_cement` element should carry a **role tag**
-(primary / secondary / none) so it can be coloured blue/red like a real WBS, and it is
-defined by an *interval* (shoe → TOC) with a verification status, not just a shape.
+**Annulus A/B/C = radial-outward numbering.** "A" = void between production tubing
+and the innermost casing; "B"/"C" = between successive outer casings — a **radial
+nesting order**, exactly what the algorithm reconstructs. Each is fluid- or
+cement-filled (split at the TOC). **TOC** = shallowest set cement; whether it sits
+above/below the previous shoe determines trapped-fluid presence.
 
-**Annulus A/B/C naming (radial-outward numbering).** The industry names annuli
-sequentially from the inside out: the **"A" annulus** is the void between the production
-tubing and the innermost (production) casing; **"B"** and **"C"** are the voids between
-successive outer casing strings. This is precisely a **radial nesting order** — the same
-ordering the detection algorithm must reconstruct. Each annulus is fluid-filled or
-cement-filled (or split at the TOC). **Top-Of-Cement (TOC)** is the shallowest point of
-set cement in an annulus; whether the TOC sits above or below the previous casing shoe
-determines whether trapped fluid can exist above the cement.
+**Commercial tooling** reasons about A/B-annuli + sustained casing pressure (SCP)
+via cement-bond logs (CBL); schematic tools (StrinGnosis, WellPlan Pro,
+Wellbarrier's Illustration Tool) **auto-derive** TOC + annular fluid from the
+tubular program. The interchange model is **WITSML** (`wbGeometry`, `tubular`,
+`cementJob` carry OD/ID, hole size, cement placement).
 
-**SLB / commercial well-integrity & schematic tooling.** SLB's well-integrity services
-reason explicitly about **A- and B-annuli** and diagnose **sustained casing pressure
-(SCP)** as a barrier breach, evaluating cement-to-casing bond (CBL / ultrasonic) to
-confirm zonal isolation. On the schematic-authoring side, tools already auto-derive the
-annulus/cement picture from the tubular program (StrinGnosis reports its schematic
-"actively updates as the wellbore is defined", showing derived TOC, cross-over depth and
-each annulus's fluid; WellPlan Pro, wellVizion, WellSchematic.com are peers). The
-dedicated NORSOK WBS authoring tool is **Wellbarrier's Illustration Tool** (element
-library + blue/red convention). The interchange data model behind these is **WITSML**,
-whose `wbGeometry`, `tubular`, and `cementJob`/`cementJobDesign` objects carry casing
-OD/ID, hole size, and cement placement so tools can compute annular volume.
-
-*Takeaway:* inputs are `(OD, ID, top, bottom)` tubulars + hole sizes + a cement interval;
-the annulus, its A/B/C identity, and its fill are **derived**, not authored; TOC is the
-axial clip; the output should be classifiable into a barrier envelope.
+*Takeaway:* inputs are `(OD, ID, top, bottom)` tubulars + hole sizes + a cement
+interval; the annulus, its A/B/C identity, and its fill are **derived**, not
+authored; TOC is the axial clip; output is classifiable into a barrier envelope.
 
 ## Detection algorithm (recommended)
 
