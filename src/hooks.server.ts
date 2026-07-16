@@ -78,6 +78,12 @@ const VOLUME_PROXY_PATHS = new Set([
   // key instead of running keyless. (/api/primitives/refine is the opposite:
   // it stays LOCAL on purpose, using the local key.)
   '/api/rag/assist',
+  // WSON well-sample store — list/read/write/delete `.wson` samples on the
+  // volume (`<volume>/wells/samples/`, src/lib/server/well-samples.ts). Single
+  // live store, so a local-dev list/save proxies to prod (which seeds the dir
+  // from the bundled set on first read). The endpoint ALSO self-proxies via
+  // maybeProxy (belt-and-suspenders, like /api/volume).
+  '/api/wells/samples',
 ]);
 
 /** Routes subject to rate limiting (prefix match).
