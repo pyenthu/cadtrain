@@ -78,8 +78,17 @@
   // Manifold render (no node canvas, no toolbar/sidebar, only the bake tab);
   // GRAPH = the full node editor. $derived so switching mode reconfigures the
   // SAME mounted pane (no remount, no double-bake — only the active mode bakes).
+  // Open the full node editor as a LARGE popover from the clean 3D view — pop it
+  // open big, edit the graph, close back to the render. Reset on leaving 3D. When
+  // open, the SAME mounted pane reconfigures to the full editor (edits persist →
+  // the 3D reflects them on close; no second pane, no double-bake).
+  let graphPopover = $state(false);
+  $effect(() => {
+    if (view.viewMode !== '3d') graphPopover = false;
+  });
+
   const editorEmbed: boolean | Partial<EmbedConfig> = $derived(
-    view.viewMode === '3d'
+    view.viewMode === '3d' && !graphPopover
       ? { graphCanvas: false, toolbar: false, sidebar: false, tabs: ['bake'], engines: ['manifold'] }
       : true,
   );
@@ -140,8 +149,17 @@
            Remounts only when the well changes. NO FALLBACK — a well we cannot
            express as a graph surfaces its error (wells skill). -->
       {#if mountedEditor}
-        <div class="wv-surface" class:graph={view.viewMode === 'graph'}
+        {@const inPopover = view.viewMode === '3d' && graphPopover}
+        {#if inPopover}
+          <!-- Dim backdrop behind the large editor popover — click to close. -->
+          <div class="wv-graph-backdrop" role="presentation" onclick={() => (graphPopover = false)}></div>
+        {/if}
+        <div class="wv-surface" class:editor-offset={!inPopover}
+          class:graph-popover={inPopover}
           class:hidden={view.viewMode !== '3d' && view.viewMode !== 'graph'}>
+          {#if inPopover}
+            <button class="wv-graph-close" type="button" title="Close the editor" onclick={() => (graphPopover = false)}>×</button>
+          {/if}
           {#if wellGraph.error}
             <div class="wv-error">
               <div class="wv-error-ic">⚠</div>
@@ -168,7 +186,13 @@
       <!-- Top view/scale bar + left element rail (both mutate `view`). The rail is
            a schematic-layer switch; it has no meaning over the graph canvas. -->
       <WellViewControls settings={view} />
-      {#if view.viewMode !== 'graph'}
+      <!-- Pop the full node editor open LARGE over the clean 3D render. -->
+      {#if view.viewMode === '3d' && !graphPopover}
+        <button class="wv-graph-open" type="button"
+          title="Open the node-graph editor (large popover)"
+          onclick={() => (graphPopover = true)}>✎ edit graph</button>
+      {/if}
+      {#if view.viewMode !== 'graph' && !(view.viewMode === '3d' && graphPopover)}
         <WellElementRail settings={view} {wson} />
       {/if}
     </section>
@@ -208,12 +232,60 @@
     visibility: hidden;
     pointer-events: none;
   }
-  /* The floating view/scale bar overlays the stage's top-left, which is exactly
-     where the graph editor puts its own PARAMS/PROPERTIES tabs. Drop the graph
-     surface below the bar instead of letting the two stack. */
-  .wv-surface.graph {
+  /* The floating view/scale bar + the editor's bake-header chrome both overlay
+     the stage's top-left. Drop the embedded editor surface (3D + GRAPH) below the
+     bar so the two don't stack. */
+  .wv-surface.editor-offset {
     top: 46px;
   }
+  /* Large node-editor popover (opened from the 3D view via ✎): the SAME editor
+     surface floats as a big centered panel over a dim backdrop; × or the backdrop
+     closes it (graphPopover). */
+  .wv-graph-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    z-index: 20;
+  }
+  .wv-surface.graph-popover {
+    inset: 3%;
+    z-index: 21;
+    border-radius: 10px;
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.42);
+    overflow: hidden;
+    background: #fff;
+  }
+  .wv-graph-close {
+    position: absolute;
+    top: 6px;
+    right: 10px;
+    z-index: 22;
+    width: 26px;
+    height: 26px;
+    border: 1px solid #d6d3d1;
+    border-radius: 6px;
+    background: #fff;
+    color: #6b7280;
+    font: 700 16px Arial;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .wv-graph-close:hover { color: #5b21b6; border-color: #c4b5fd; }
+  .wv-graph-open {
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    z-index: 15;
+    padding: 5px 10px;
+    border: 1px solid #c4b5fd;
+    border-radius: 6px;
+    background: #fff;
+    color: #5b21b6;
+    font: 600 12px Arial;
+    cursor: pointer;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
+  }
+  .wv-graph-open:hover { background: #f5f3ff; }
   /* W-G c — schematics read best on white. Flag today tints the 3D backdrop;
      W-D's 2D/SVG track view will render on this same white surface. */
   .wv-stage.white {
