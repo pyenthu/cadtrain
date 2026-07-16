@@ -32,6 +32,7 @@ export type RightPaneTab =
   | 'svg'       // SVG — half-section silhouette
   | 'glb'       // GLB — exported gltf view
   | 'brep'      // BREP — server-side OpenCascade (OCCT) render
+  | 'brepsvg'   // BREP-SVG — server-side OCCT true-boundary (HLR) → SVG projection
   | 'mfserver'; // MF_SERVER — Manifold, server-side (Node) bake
 
 /** The three geometry KERNELS the editor can render a part with. Each maps to
@@ -82,7 +83,7 @@ export interface ResolvedEmbedConfig {
 
 /** Canonical tab display order — the ONLY source of truth for "all tabs". */
 export const ALL_TABS: readonly RightPaneTab[] = [
-  'bake', 'tf', 'source', 'md', 'svg', 'glb', 'brep', 'mfserver',
+  'bake', 'tf', 'source', 'md', 'svg', 'glb', 'brep', 'brepsvg', 'mfserver',
 ];
 
 /** Canonical engine order. */
@@ -93,7 +94,7 @@ export const ALL_ENGINES: readonly EditorEngine[] = ['manifold', 'trueform', 'br
 export const ENGINE_TABS: Record<EditorEngine, readonly RightPaneTab[]> = {
   manifold: ['bake', 'mfserver'],
   trueform: ['tf'],
-  brep: ['brep'],
+  brep: ['brep', 'brepsvg'],
 };
 
 /** Tabs that are NOT tied to any engine — always allowed unless `tabs` excludes them. */

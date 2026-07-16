@@ -28,7 +28,7 @@
   // Embed feature-flags: which tabs are available (RightPaneTab === RightTab).
   import type { RightPaneTab } from './embed-config';
 
-  type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'tf' | 'mfserver';
+  type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'brepsvg' | 'tf' | 'mfserver';
 
   let {
     /* ── INPUT (parent → pane) — pass STABLE references ── */
@@ -138,7 +138,7 @@
       // only thread; a page reload that silently reopened it would bake a whole
       // well on the server and wedge every route. One deliberate click, always.
       if (t === 'mfserver') return;
-      if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg' || t === 'glb' || t === 'brep' || t === 'tf') rightTab = t;
+      if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg' || t === 'glb' || t === 'brep' || t === 'brepsvg' || t === 'tf') rightTab = t;
     } catch { /* localStorage blocked — fine */ }
   });
   function setRightTab(t: RightTab) {
@@ -404,6 +404,68 @@
       finally { svgMeshBusy = false; }
     })();
   });
+
+  // ─── BREP-SVG tab — server-side OCCT true-boundary (HLR) → SVG ─────────────
+  // The vector sibling of the BREP MESH tab: instead of tessellating the OCCT
+  // solid, /api/brep/svg projects its TRUE boundary (silhouette + sharp edges,
+  // hidden-line removed) to an SVG string. We POST the SAME body the BREP mesh
+  // path feeds the canvas — { source: bake.source, paramValues: brepParamValues } —
+  // and render the returned `svg` with {@html} (our own server output).
+  //
+  // Same active-tab-only + content-key discipline as the SVG-mesh and TF fetches
+  // above: fetch ONLY when this tab is the active tab of the active pane, keyed on
+  // { source, params } (the same graph+params identity the BREP mesh canvas keys
+  // its OCCT bake on) so it never refetches on an unrelated re-render, and the
+  // transient bake==='loading' sentinel is IGNORED (we keep the last SVG rather
+  // than blank+refetch every re-bake).
+  let brepSvgStr = $state('');
+  let brepSvgMeta = $state<{ ms: number; mode?: string } | null>(null);
+  let brepSvgSupported = $state(true);
+  let brepSvgReason = $state('');
+  let brepSvgBusy = $state(false);
+  let brepSvgError = $state('');
+  let brepSvgKey = $state('');
+  $effect(() => {
+    if (rightTab !== 'brepsvg' || !(active ?? true)) return;
+    // Only (re)fetch off a real baked solid + non-empty source (mirror the BREP
+    // mesh tab's guard). During 'loading' / no-source, leave the last SVG in place.
+    if (typeof bake !== 'object' || !bake || !bake.source) return;
+    const src = bake.source as string;
+    const params = brepParamValues; // graph.params order ↔ current values
+    const key = JSON.stringify({ s: src, p: params });
+    if (key === brepSvgKey) return; // already have this projection
+    brepSvgKey = key;
+    brepSvgBusy = true;
+    brepSvgError = '';
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch('/api/brep/svg', {
+          method: 'POST', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ source: src, paramValues: params }),
+        });
+        if (!r.ok) { if (!cancelled) { brepSvgError = `HTTP ${r.status}`; brepSvgStr = ''; brepSvgMeta = null; } return; }
+        const data = await r.json();
+        if (cancelled) return;
+        if (data?.supported) {
+          brepSvgStr = data.svg ?? '';
+          brepSvgMeta = data.meta ?? null;
+          brepSvgSupported = true;
+          brepSvgReason = '';
+        } else {
+          brepSvgSupported = false;
+          brepSvgReason = data?.reason ?? 'no BREP-SVG path for this part';
+          brepSvgStr = '';
+          brepSvgMeta = null;
+        }
+      } catch (e: any) {
+        if (!cancelled) { brepSvgError = String(e?.message ?? e); brepSvgStr = ''; brepSvgMeta = null; }
+      } finally {
+        if (!cancelled) brepSvgBusy = false;
+      }
+    })();
+    return () => { cancelled = true; };
+  });
 </script>
 
 <!-- RIGHT pane — tabbed: 3D bake / live source. One tab visible at a
@@ -452,6 +514,12 @@
       type="button" role="tab" aria-selected={rightTab === 'brep'}
       data-tip="BREP — server-side OpenCascade (OCCT) true-curve render. Adaptive tessellation + exact normals. Revolve · extrude · loft · CSG · composed parts."
       onclick={() => setRightTab('brep')}>BREP</button>
+    {/if}
+    {#if tabOn('brepsvg')}
+    <button class="ge-pane-tab" class:active={rightTab === 'brepsvg'}
+      type="button" role="tab" aria-selected={rightTab === 'brepsvg'}
+      data-tip="BREP-SVG — server-side OpenCascade (OCCT) TRUE-boundary projection. Projects the OCCT solid's silhouette + sharp edges (hidden-line removed) to a vector SVG. The boundary sibling of the BREP mesh tab."
+      onclick={() => setRightTab('brepsvg')}>B·SVG</button>
     {/if}
     {#if tabOn('mfserver')}
     <button class="ge-pane-tab mfserver" class:active={rightTab === 'mfserver'}
@@ -742,6 +810,38 @@
         {/if}
       {/if}
     </div>
+    <!-- BREP-SVG tab — server-side OCCT true-boundary (HLR) → SVG projection.
+         The vector sibling of the BREP MESH tab: POSTs the SAME
+         { source, paramValues } to /api/brep/svg and renders the returned SVG
+         string ({@html} — our own server output). Fetched active-tab-only +
+         keyed on source+params (see the brepSvg effect). -->
+    <div class="ge-glb-body" class:hidden={rightTab !== 'brepsvg'}>
+      {#if rightTab === 'brepsvg' && (active ?? true)}
+        {#if !(bake && typeof bake === 'object' && bake.source)}
+          <div class="ge-empty">No source yet — bake the part first.</div>
+        {:else if brepSvgError}
+          <div class="ge-err"><div>BREP-SVG failed: {brepSvgError}</div></div>
+        {:else if brepSvgSupported === false}
+          <!-- No OCCT-buildable solid — mirror the BREP mesh tab's unsupported state. -->
+          <div class="ge-empty">{brepSvgReason || 'no BREP-SVG path for this part'}</div>
+        {:else if brepSvgStr}
+          <div class="ge-brepsvg-scroll">{@html brepSvgStr}</div>
+          <!-- Cache/fresh badge row — mirrors the BREP mesh .ge-bake-meta. -->
+          <div class="ge-bake-meta">
+            {#if brepSvgBusy}
+              <span class="ge-cache-badge fresh" title="Re-projecting the OCCT boundary">projecting…</span>
+            {:else if brepSvgMeta}
+              <span class="ge-cache-badge fresh" title="OCCT true-boundary projection (hidden-line removed)">fresh · {Math.round(brepSvgMeta.ms)} ms OCCT{brepSvgMeta.mode ? ` · ${brepSvgMeta.mode}` : ''}</span>
+            {/if}
+            <span class="ge-bake-meta-spacer"></span>
+          </div>
+        {:else if brepSvgBusy}
+          <div class="ge-empty">Projecting BREP → SVG…</div>
+        {:else}
+          <div class="ge-empty">No geometry to render yet — bake the part first.</div>
+        {/if}
+      {/if}
+    </div>
     <!-- TF tab — TrueForm (Polydera) client-side exact-mesh kernel. Runs the
          WASM boolean/generator kernel on the MAIN THREAD (no worker) in the
          SHARED PrimitiveDualCanvas chrome (backend="tf"). The ~31MB WASM is
@@ -844,6 +944,11 @@
   /* SVG tab — PrimitiveSvgView fills the pane (it manages its own toolbar +
      scroll). Give it a defined height so the renderer's container isn't 0px. */
   .ge-svg-body { min-height: 0; }
+  /* BREP-SVG tab — raw server SVG string ({@html}) centered in a scrollable box.
+     The {@html}-injected <svg> is UNSCOPED, so target it via :global. */
+  .ge-brepsvg-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex;
+    align-items: center; justify-content: center; padding: 12px; background: #fff; }
+  .ge-brepsvg-scroll :global(svg) { max-width: 100%; max-height: 100%; height: auto; }
   /* SRC tab — filename header above the <pre>. Light row, monospace
      filename + a faded hint reminding the user the file is generated. */
   .ge-source-header {

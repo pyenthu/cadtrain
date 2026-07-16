@@ -11,7 +11,7 @@ import {
 describe('resolveEmbedConfig — defaults reproduce the full current UI', () => {
   it('no argument = every surface ON', () => {
     const cfg = resolveEmbedConfig();
-    // All eight right-pane tabs, in canonical order.
+    // All nine right-pane tabs, in canonical order.
     expect(cfg.tabs).toEqual([...ALL_TABS]);
     expect(cfg.engines).toEqual([...ALL_ENGINES]);
     expect(cfg.sidebar).toBe(true);
@@ -31,7 +31,7 @@ describe('resolveEmbedConfig — defaults reproduce the full current UI', () => 
 
   it('the default tab list matches RightPane order exactly', () => {
     expect([...ALL_TABS]).toEqual([
-      'bake', 'tf', 'source', 'md', 'svg', 'glb', 'brep', 'mfserver',
+      'bake', 'tf', 'source', 'md', 'svg', 'glb', 'brep', 'brepsvg', 'mfserver',
     ]);
   });
 });
@@ -102,11 +102,12 @@ describe('engines restriction gates the engine tabs', () => {
   it('a subset of engines removes the other engines and their tabs', () => {
     const cfg = resolveEmbedConfig({ engines: ['manifold'] });
     expect(cfg.engines).toEqual(['manifold']);
-    // manifold owns bake + mfserver; trueform (tf) and brep are gone.
+    // manifold owns bake + mfserver; trueform (tf) and both brep tabs are gone.
     expect(isTabVisible(cfg, 'bake')).toBe(true);
     expect(isTabVisible(cfg, 'mfserver')).toBe(true);
     expect(isTabVisible(cfg, 'tf')).toBe(false);
     expect(isTabVisible(cfg, 'brep')).toBe(false);
+    expect(isTabVisible(cfg, 'brepsvg')).toBe(false);
     // Non-engine tabs are untouched.
     expect(isTabVisible(cfg, 'source')).toBe(true);
     expect(isTabVisible(cfg, 'svg')).toBe(true);
@@ -115,6 +116,16 @@ describe('engines restriction gates the engine tabs', () => {
   it('trueform-only keeps tf, drops bake/mfserver/brep', () => {
     const cfg = resolveEmbedConfig({ engines: ['trueform'] });
     expect(cfg.tabs).toEqual(['tf', 'source', 'md', 'svg', 'glb']);
+  });
+
+  it('brep engine owns BOTH brep tabs (mesh + brepsvg)', () => {
+    const cfg = resolveEmbedConfig({ engines: ['brep'] });
+    // brep owns brep + brepsvg; the manifold/trueform tabs are gone.
+    expect(cfg.tabs).toEqual(['source', 'md', 'svg', 'glb', 'brep', 'brepsvg']);
+    expect(isTabVisible(cfg, 'brep')).toBe(true);
+    expect(isTabVisible(cfg, 'brepsvg')).toBe(true);
+    expect(isTabVisible(cfg, 'bake')).toBe(false);
+    expect(isTabVisible(cfg, 'tf')).toBe(false);
   });
 
   it('engines and tabs intersect (both must allow a tab)', () => {
