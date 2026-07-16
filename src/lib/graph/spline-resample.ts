@@ -138,6 +138,19 @@ export function denseSampleSpline(points: Vec3[], perSeg = 64, closed = false): 
  *                (byte-identical to before).
  * @param perSeg  internal dense-sampling resolution per segment (default 64).
  */
+/** Total arc length of the centripetal Catmull-Rom curve through `points` — the
+ *  SAME curve `resampleSpline` / the bake sample, so the editor's length readout
+ *  matches the swept spine. Sums the chord lengths of a dense sampling; `closed`
+ *  includes the wrap edge (last → first). Returns 0 for < 2 usable points. PURE. */
+export function splineArcLength(points: Vec3[], closed = false, perSeg = 64): number {
+  const dense = denseSampleSpline(points, perSeg, closed);
+  if (dense.length < 2) return 0;
+  const loop = closed ? [...dense, dense[0]!] : dense;
+  let total = 0;
+  for (let i = 1; i < loop.length; i++) total += len(sub(loop[i]!, loop[i - 1]!));
+  return total;
+}
+
 export function resampleSpline(points: Vec3[], samples: number, closed = false, perSeg = 64): Vec3[] {
   const N = Math.max(2, Math.floor(Number(samples) || 2));
   const dense = denseSampleSpline(points, perSeg, closed);

@@ -81,3 +81,62 @@ export function gridFor(maxSpan: number): { size: number; divisions: number } {
   if (divisions % 2 === 1) divisions += 1; // even → a line through the centre
   return { size, divisions };
 }
+
+// ─── snap-to-grid (editor drag aid) ─────────────────────────────────────────
+/** Round `v` to the nearest multiple of `step` (the visible grid cell) — the
+ *  snap-to-grid drag aid. A non-positive / non-finite step returns `v` cleaned to
+ *  3 dp (no snap); a snapped value is also cleaned to 3 dp so stored coords stay
+ *  tidy (matches the free-drag `r3`). PURE — the DATA model is only touched when
+ *  the caller writes the snapped point back. */
+export function snapCoord(v: number, step: number): number {
+  const r3 = (x: number) => Math.round(x * 1000) / 1000;
+  if (!Number.isFinite(step) || step <= 0) return r3(Number(v) || 0);
+  return r3(Math.round((Number(v) || 0) / step) * step);
+}
+
+/** Snap every axis of a point to the grid `step`. */
+export function snapVec3(p: Vec3, step: number): Vec3 {
+  return [snapCoord(p[0], step), snapCoord(p[1], step), snapCoord(p[2], step)];
+}
+
+// ─── import / paste points (bulk control-point entry) ───────────────────────
+/** Parse pasted / imported control points for the editor's bulk-entry box.
+ *  Accepts EITHER a JSON array-of-arrays (`[[x,y,z],[x,y],…]`) or a flat numeric
+ *  array (`[x,y,z,x,y,z,…]`, chunked by 3), OR one point per line / row as comma-
+ *  or whitespace-separated numbers (`0 0 0` ⏎ `3, 1, 0`). Surrounding brackets /
+ *  parens per row are tolerated. 2D `[x,y]` points pad to `z = 0`; short rows and
+ *  non-finite values are dropped. Returns the parsed `Vec3[]` — possibly `[]`; the
+ *  caller decides whether ≥ 2 points is usable. PURE + never throws. */
+export function parsePointsInput(text: string): Vec3[] {
+  const raw = String(text ?? '').trim();
+  if (!raw) return [];
+  const rows: number[][] = [];
+  // 1) JSON first — an array of arrays, or a flat array of numbers.
+  try {
+    const j = JSON.parse(raw);
+    if (Array.isArray(j)) {
+      if (j.length > 0 && j.every((e) => Array.isArray(e))) {
+        for (const e of j) rows.push((e as unknown[]).map((n) => Number(n)));
+      } else if (j.length >= 3 && j.every((e) => typeof e === 'number')) {
+        for (let i = 0; i + 2 < j.length; i += 3) rows.push([Number(j[i]), Number(j[i + 1]), Number(j[i + 2])]);
+      }
+    }
+  } catch { /* not JSON — fall through to per-line parsing */ }
+  // 2) Fallback: one point per line / row (comma- or whitespace-separated).
+  if (rows.length === 0) {
+    for (const line of raw.split(/[\r\n;]+/)) {
+      const nums = line.trim().replace(/[[\]()]/g, '').split(/[\s,]+/).filter(Boolean).map(Number);
+      if (nums.length >= 2) rows.push(nums);
+    }
+  }
+  const out: Vec3[] = [];
+  for (const r of rows) {
+    if (!r || r.length < 2) continue;
+    const x = Number(r[0]);
+    const y = Number(r[1]);
+    const z = r.length >= 3 ? Number(r[2]) : 0;
+    if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+    out.push([x, y, z]);
+  }
+  return out;
+}

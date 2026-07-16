@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { planeAxes, applyPlaneLock, pointsBbox, gridFor } from '../spline-view';
+import { planeAxes, applyPlaneLock, pointsBbox, gridFor, snapCoord, snapVec3, parsePointsInput } from '../spline-view';
 import type { Vec3 } from '../spline-resample';
 
 describe('planeAxes', () => {
@@ -52,5 +52,54 @@ describe('gridFor', () => {
     expect(g.size).toBe(15);
     expect(g.divisions % 2).toBe(0);
     expect(g.divisions).toBeLessThanOrEqual(40);
+  });
+});
+
+describe('snapCoord / snapVec3', () => {
+  it('rounds to the nearest multiple of step', () => {
+    expect(snapCoord(1.2, 0.5)).toBe(1);
+    expect(snapCoord(1.3, 0.5)).toBe(1.5);
+    expect(snapCoord(-1.1, 0.5)).toBe(-1);
+    expect(snapCoord(-1.3, 0.5)).toBe(-1.5);
+    expect(snapCoord(7, 2)).toBe(8);
+  });
+  it('is a no-op (3 dp clean) for a non-positive / non-finite step', () => {
+    expect(snapCoord(1.23456, 0)).toBe(1.235);
+    expect(snapCoord(1.23456, -1)).toBe(1.235);
+    expect(snapCoord(1.23456, NaN)).toBe(1.235);
+  });
+  it('snaps every axis of a Vec3', () => {
+    expect(snapVec3([1.2, 2.7, -0.9], 0.5)).toEqual([1, 2.5, -1]);
+  });
+  it('keeps snapped values clean to 3 dp', () => {
+    // 0.1-step snapping must not leak float noise (0.30000000000000004).
+    expect(snapVec3([0.31, 0.29, 0.16], 0.1)).toEqual([0.3, 0.3, 0.2]);
+  });
+});
+
+describe('parsePointsInput', () => {
+  it('parses a JSON array-of-arrays (3D)', () => {
+    expect(parsePointsInput('[[0,0,0],[3,1,2]]')).toEqual([[0, 0, 0], [3, 1, 2]]);
+  });
+  it('pads JSON 2D points to z=0', () => {
+    expect(parsePointsInput('[[1,2],[3,4]]')).toEqual([[1, 2, 0], [3, 4, 0]]);
+  });
+  it('chunks a flat numeric JSON array by 3', () => {
+    expect(parsePointsInput('[0,0,0,3,1,2]')).toEqual([[0, 0, 0], [3, 1, 2]]);
+  });
+  it('parses one point per line (whitespace or comma separated)', () => {
+    expect(parsePointsInput('0 0 0\n3 1 2')).toEqual([[0, 0, 0], [3, 1, 2]]);
+    expect(parsePointsInput('0,0,0\n3, 1, 2')).toEqual([[0, 0, 0], [3, 1, 2]]);
+  });
+  it('tolerates per-row brackets and blank lines', () => {
+    expect(parsePointsInput('(0, 0, 0)\n\n[3 1 2]\n')).toEqual([[0, 0, 0], [3, 1, 2]]);
+  });
+  it('drops short / non-finite rows', () => {
+    expect(parsePointsInput('0 0 0\nfoo\n5\n3 1 2')).toEqual([[0, 0, 0], [3, 1, 2]]);
+  });
+  it('returns [] for empty / garbage input', () => {
+    expect(parsePointsInput('')).toEqual([]);
+    expect(parsePointsInput('   ')).toEqual([]);
+    expect(parsePointsInput('not points')).toEqual([]);
   });
 });

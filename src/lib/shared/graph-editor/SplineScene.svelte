@@ -25,7 +25,7 @@
   import { OrbitControls, interactivity, HTML } from '@threlte/extras';
   import * as THREE from 'three';
   import { resampleSpline, type Vec3 } from '$lib/graph/spline-resample';
-  import { planeAxes, applyPlaneLock, pointsBbox, gridFor, type SplineView } from '$lib/graph/spline-view';
+  import { planeAxes, applyPlaneLock, pointsBbox, gridFor, snapVec3, type SplineView } from '$lib/graph/spline-view';
 
   let {
     points,
@@ -95,6 +95,12 @@
     return { size: g.size, div: g.divisions, pos: [bb.center[0], bb.center[1], bb.center[2]] as Vec3, rot };
   });
   const axisLen = $derived(Math.max(4, pointsBbox(vecs).span * 0.6));
+
+  // ─── snap-to-grid (⊞) — VIEW-only drag aid. Dragged / appended control points
+  // round to the visible grid cell (gridConf size ÷ divisions) so a path can be
+  // built on clean coords. Never re-writes existing points on toggle. ────────
+  let snap = $state(false);
+  const snapStep = $derived(gridConf.size / Math.max(1, gridConf.div));
 
   // XYZ axes — colored tubes + arrowheads (X red · Y green · Z blue).
   const AXES = $derived([
@@ -167,7 +173,9 @@
     const prev = n > 1 ? points[n - 2]! : ([0, 0, 0] as Vec3);
     let dx = last[0] - prev[0], dy = last[1] - prev[1], dz = last[2] - prev[2];
     if (Math.hypot(dx, dy, dz) < 1e-6) { dx = 3; dy = 0; dz = 0; }
-    onPointsChange([...points, [last[0] + dx, last[1] + dy, last[2] + dz] as Vec3]);
+    let np: Vec3 = [last[0] + dx, last[1] + dy, last[2] + dz];
+    if (snap) np = snapVec3(np, snapStep);
+    onPointsChange([...points, np]);
     selectedIdx = points.length; // the new last index
   }
   /** Remove the selected (or last) control point — keep ≥ 2 for a curve. */
@@ -307,9 +315,10 @@
     ray.setFromCamera(ndc, camera.current);
     if (ray.ray.intersectPlane(plane, hit)) {
       const r3 = (v: number) => Math.round(v * 1000) / 1000;
+      const hv: Vec3 = snap ? snapVec3([hit.x, hit.y, hit.z], snapStep) : [hit.x, hit.y, hit.z];
       const nextPt: Vec3 = dragLockAxis >= 0
-        ? applyPlaneLock(dragOrig, [hit.x, hit.y, hit.z], dragLockAxis as 0 | 1 | 2)
-        : [r3(hit.x), r3(hit.y), r3(hit.z)];
+        ? applyPlaneLock(dragOrig, hv, dragLockAxis as 0 | 1 | 2)
+        : [r3(hv[0]), r3(hv[1]), r3(hv[2])];
       const next = points.map((p, k): Vec3 => (k === draggingIdx ? nextPt : (p as Vec3)));
       onPointsChange(next);
     }
@@ -405,6 +414,8 @@
       <button class="sp-ov-btn" type="button" onclick={addPoint} disabled={wired} title={wired ? 'Points come from a wired expression' : 'Append a control point'}>＋ pt</button>
       <button class="sp-ov-btn" type="button" onclick={removePoint} disabled={wired || points.length <= 2} title="Remove the selected (or last) control point">－ pt</button>
       <button class="sp-ov-btn" class:on={showTable} type="button" onclick={() => onToggleTable?.()} title="Edit X/Y/Z values in a table">⌗ xyz</button>
+      <button class="sp-ov-btn" class:on={snap} type="button" onclick={() => (snap = !snap)} disabled={wired}
+        title={`Snap dragged / appended points to the grid (${snapStep.toFixed(2)} units)`}>⊞ snap</button>
       <button class="sp-ov-btn" class:on={closed} type="button" onclick={() => onClosedChange(!closed)} title="Closed loop — the path wraps last→first (a sweep fed by it auto-follows: closed ⇒ watertight ring, open ⇒ capped tube).">{closed ? '◯ loop' : '⌇ open'}</button>
       {#if onPlotChange}
         <button class="sp-ov-btn" class:on={plot} type="button" onclick={() => onPlotChange?.(!plot)} title="Plot this spline in the main 3D bake (view-only overlay).">📈 plot</button>

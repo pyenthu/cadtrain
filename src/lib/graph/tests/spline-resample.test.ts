@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resampleSpline, denseSampleSpline, type Vec3 } from '../spline-resample';
+import { resampleSpline, denseSampleSpline, splineArcLength, type Vec3 } from '../spline-resample';
 
 /** Chord length between consecutive points of a polyline. */
 function gaps(pts: Vec3[]): number[] {
@@ -157,5 +157,42 @@ describe('resampleSpline — closed loop', () => {
     const dense = denseSampleSpline(SQUARE, 16, true);
     expect(dense.length).toBe(SQUARE.length * 16); // n segments × perSeg, no dup
     expect(dense[0]).toEqual([0, 0, 0]);           // starts at first control pt
+  });
+});
+
+describe('splineArcLength', () => {
+  it('is 0 for < 2 usable points', () => {
+    expect(splineArcLength([])).toBe(0);
+    expect(splineArcLength([[1, 2, 3]])).toBe(0);
+  });
+
+  it('equals the distance for a straight 2-point line', () => {
+    expect(splineArcLength([[0, 0, 0], [3, 4, 0]])).toBeCloseTo(5, 6); // 3-4-5
+  });
+
+  it('matches the summed gaps of a dense resample of the SAME curve', () => {
+    const pts: Vec3[] = [[0, 0, 0], [2, 3, 0], [5, -2, 1], [8, 1, -1]];
+    const out = resampleSpline(pts, 400);
+    let summed = 0;
+    for (let i = 1; i < out.length; i++) {
+      const a = out[i]!;
+      const b = out[i - 1]!;
+      summed += Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
+    }
+    // The N-sample chord sum slightly UNDER-estimates the true arc length; a fine
+    // resample lands within ~1% of splineArcLength's dense measure.
+    expect(Math.abs(summed - splineArcLength(pts)) / splineArcLength(pts)).toBeLessThan(0.01);
+  });
+
+  it('closed loop ≈ the square perimeter (rounded corners, within 20%)', () => {
+    const SQUARE: Vec3[] = [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0]];
+    const total = splineArcLength(SQUARE, true);
+    expect(total).toBeGreaterThan(40 * 0.8);
+    expect(total).toBeLessThan(40 * 1.2);
+  });
+
+  it('a closed loop is longer than the open path for the same points', () => {
+    const SQUARE: Vec3[] = [[0, 0, 0], [10, 0, 0], [10, 10, 0], [0, 10, 0]];
+    expect(splineArcLength(SQUARE, true)).toBeGreaterThan(splineArcLength(SQUARE, false));
   });
 });

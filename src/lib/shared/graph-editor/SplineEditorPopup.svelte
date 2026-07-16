@@ -16,8 +16,8 @@
   import { Canvas } from '@threlte/core';
   import SplineScene from './SplineScene.svelte';
   import { clampDragPos } from './popover-clamp';
-  import type { Vec3 } from '$lib/graph/spline-resample';
-  import type { SplineView } from '$lib/graph/spline-view';
+  import { splineArcLength, type Vec3 } from '$lib/graph/spline-resample';
+  import { parsePointsInput, type SplineView } from '$lib/graph/spline-view';
 
   let {
     pos,
@@ -58,6 +58,51 @@
   } = $props();
 
   let selectedIdx = $state(-1);
+
+  /** Total arc length of the curve through the current control points (the SAME
+   *  centripetal Catmull-Rom the bake samples) — a live readout in the help bar. */
+  const arcLen = $derived.by(() => {
+    try { return splineArcLength(points, closed); } catch { return 0; }
+  });
+
+  /** Remove the selected control point (keyboard Del/Backspace) — keeps ≥ 2 for a
+   *  curve; no-op when wired (points come from an expression). Mirrors the
+   *  in-canvas －pt button but keyed off the current selection. */
+  function removeSelected() {
+    if (wired) return;
+    if (selectedIdx < 0 || selectedIdx >= points.length || points.length <= 2) return;
+    onPointsChange(points.filter((_, k) => k !== selectedIdx));
+    selectedIdx = -1;
+  }
+  function onKeyDown(ev: KeyboardEvent) {
+    const t = ev.target as HTMLElement | null;
+    // Never hijack typing in the XYZ table / paste inputs.
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+    if (ev.key === 'Delete' || ev.key === 'Backspace') {
+      if (wired || selectedIdx < 0 || selectedIdx >= points.length || points.length <= 2) return;
+      ev.preventDefault();
+      removeSelected();
+    }
+  }
+  // Registered once — the handler reads live prop/state at event time (no deps).
+  $effect(() => {
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  });
+
+  // ─── bulk import / paste points (in the XYZ table popover) ─────────────────
+  let pasteOpen = $state(false);
+  let pasteText = $state('');
+  let pasteErr = $state('');
+  function applyPaste() {
+    const parsed = parsePointsInput(pasteText);
+    if (parsed.length < 2) { pasteErr = 'Need ≥ 2 valid points ([x,y,z] per row or JSON).'; return; }
+    onPointsChange(parsed);
+    selectedIdx = -1;
+    pasteOpen = false;
+    pasteText = '';
+    pasteErr = '';
+  }
   /** Active editor view — free 3D orbit or a flat orthographic plane (item a).
    *  Bound to SplineScene; VIEW-only (never touches the points data). */
   let view = $state<SplineView>('free');
@@ -152,8 +197,25 @@
       <div class="ge-sp-table">
         <div class="ge-sp-thead">
           <span class="ge-sp-ttitle">control points</span>
+          {#if !wired}
+            <button class="ge-sp-tpaste" class:on={pasteOpen} type="button"
+              onclick={() => { pasteOpen = !pasteOpen; pasteErr = ''; }}
+              title="Paste / import points — replace all">⎘ paste</button>
+          {/if}
           <button class="ge-sp-tx" type="button" onclick={() => (showTable = false)} title="Close table">×</button>
         </div>
+        {#if pasteOpen && !wired}
+          <div class="ge-sp-paste">
+            <textarea class="ge-sp-pastebox" rows="4" spellcheck="false"
+              placeholder={'[[0,0,0],[3,1,0], …]  — or one point per line:\n0 0 0\n3 1 0'}
+              bind:value={pasteText}></textarea>
+            {#if pasteErr}<div class="ge-sp-pasteerr">{pasteErr}</div>{/if}
+            <div class="ge-sp-pasterow">
+              <button class="ge-sp-pbtn apply" type="button" onclick={applyPaste}>Replace points</button>
+              <button class="ge-sp-pbtn" type="button" onclick={() => { pasteOpen = false; pasteText = ''; pasteErr = ''; }}>Cancel</button>
+            </div>
+          </div>
+        {/if}
         <div class="ge-sp-tscroll">
           <div class="ge-sp-trow head"><span>#</span><span>x</span><span>y</span><span>z</span></div>
           {#each points as p, i (i)}
@@ -174,8 +236,9 @@
     {#if wired}
       ⚡ points from a wired expression (read-only){points.length ? ` — ${points.length} resolved` : ' — none yet'} · green = N baked samples
     {:else}
-      Drag a handle · click the curve to insert · <b>XY/YZ/XZ</b> lock the 3rd axis · green = N baked samples
+      Drag a handle · click the curve to insert · <b>Del</b> removes the selected point · <b>XY/YZ/XZ</b> lock the 3rd axis · green = N baked samples
     {/if}
+    <div class="ge-sp-stat">{points.length} pts · length <b>{arcLen.toFixed(3)}</b>{closed ? ' · loop' : ''}</div>
   </div>
 </div>
 
@@ -202,6 +265,8 @@
   .ge-sp-canvas { position: relative; width: 100%; height: 340px; min-height: 240px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fafafa; overflow: hidden; }
   .ge-sp-help { font: 11px Arial; color: #6b7280; line-height: 1.4; }
   .ge-sp-help b { color: #5b21b6; font-weight: 700; }
+  .ge-sp-stat { margin-top: 2px; font: 700 11px ui-monospace, monospace; color: #4c1d95; }
+  .ge-sp-stat b { color: #4c1d95; }
 
   /* XYZ table popover — floats over the TOP of the canvas (item e). */
   .ge-sp-table {
@@ -213,8 +278,20 @@
   }
   .ge-sp-thead { display: flex; align-items: center; padding: 3px 4px 3px 8px; border-bottom: 1px solid #ede9fe; }
   .ge-sp-ttitle { font: 700 10px Arial; color: #6d28d9; text-transform: uppercase; letter-spacing: 0.03em; }
-  .ge-sp-tx { margin-left: auto; border: none; background: none; cursor: pointer; font: 700 13px Arial; color: #9ca3af; line-height: 1; padding: 0 2px; }
+  .ge-sp-tpaste { margin-left: auto; border: 1px solid #c4b5fd; background: #f5f3ff; cursor: pointer; font: 700 9px Arial; color: #6d28d9; line-height: 1; padding: 2px 5px; border-radius: 3px; text-transform: uppercase; letter-spacing: 0.02em; }
+  .ge-sp-tpaste:hover { background: #ede9fe; }
+  .ge-sp-tpaste.on { background: #a78bfa; color: #fff; border-color: #7c3aed; }
+  .ge-sp-tx { margin-left: 4px; border: none; background: none; cursor: pointer; font: 700 13px Arial; color: #9ca3af; line-height: 1; padding: 0 2px; }
   .ge-sp-tx:hover { color: #5b21b6; }
+  /* Paste / import sub-panel inside the XYZ table popover. */
+  .ge-sp-paste { display: flex; flex-direction: column; gap: 4px; padding: 5px 6px; border-bottom: 1px solid #ede9fe; background: #faf5ff; }
+  .ge-sp-pastebox { width: 100%; box-sizing: border-box; resize: vertical; font: 11px ui-monospace, monospace; border: 1px solid #c4b5fd; border-radius: 4px; padding: 3px 5px; }
+  .ge-sp-pasteerr { font: 10px Arial; color: #b91c1c; }
+  .ge-sp-pasterow { display: flex; gap: 5px; }
+  .ge-sp-pbtn { flex: 1; padding: 3px 6px; font: 600 10px Arial; cursor: pointer; border: 1px solid #d6d3d1; background: #fff; border-radius: 4px; color: #374151; }
+  .ge-sp-pbtn:hover { background: #f5f3ff; }
+  .ge-sp-pbtn.apply { background: #7c3aed; color: #fff; border-color: #6d28d9; }
+  .ge-sp-pbtn.apply:hover { background: #6d28d9; }
   .ge-sp-tscroll { overflow-y: auto; padding: 2px; }
   .ge-sp-trow { display: grid; grid-template-columns: 22px 1fr 1fr 1fr; gap: 3px; align-items: center; padding: 1px 3px; }
   .ge-sp-trow.head { position: sticky; top: 0; background: #f5f3ff; font: 700 10px Arial; color: #6d28d9; text-align: center; }
