@@ -7,30 +7,28 @@
    *     synchronous, NO Manifold CSG. This is the #1 perf lever: opening a tab
    *     no longer triggers the full 3D boolean build (ewells parity — see
    *     `docs/research/wells-perf-ewells-vs-cadtrain.md`).
-   *   • 3D (`WellSchematic3D`) — the Manifold half-section cutaway. LAZY: only
-   *     mounted once the user first switches to 3D (`mounted3D` sticky latch,
-   *     like ewells' `mounted3D`), and kept mounted thereafter so re-selecting
-   *     is instant.
+   *   • 3D + GRAPH (`GraphEditorPane`) — ONE lazily-mounted embedded editor over
+   *     the well's generated composition graph (`wsonToGraph`). The `3d` mode is
+   *     a chrome-free Manifold render (`embed.graphCanvas=false` → only the bake,
+   *     no node canvas); the `graph` mode is the full node editor. Same mounted
+   *     pane, embed reconfigured by mode — no double-bake. A well renders ONLY
+   *     through the CAD graph + engine (wells skill); this replaced the old
+   *     bespoke `WellSchematic3D`/`manifoldCut` THREE path, whose main-thread
+   *     Manifold init was COEP-blocked (memory `wells_empty_3d_wiring_gap`).
    *
    * The control bar (`WellViewControls`) + element rail (`WellElementRail`)
-   * mutate the shared settings, so their layer/scale toggles drive BOTH views.
-   * The 2D view carries its own depth ruler column; the 3D view uses the
-   * overlay `WellDepthRuler`, fed the depth-scale the scene publishes via
-   * `onDepthMap`. Both scales are the SAME formula (`wson-2d.buildRemap` ==
-   * `WellSchematic3D`'s `remap`), so 2D and 3D place depth identically.
+   * mutate the shared settings, so their layer/scale toggles drive the views.
+   * The 2D view carries its own depth ruler column (`remap2d` == the 3D bake's
+   * own metre-depth placement, so 2D and 3D agree on depth).
    */
-  import { Canvas } from '@threlte/core';
-  import WellSchematic3D from '$lib/wells/WellSchematic3D.svelte';
   import WellSchematic2D from './WellSchematic2D.svelte';
   import WellViewControls from './WellViewControls.svelte';
   import WellElementRail from './WellElementRail.svelte';
-  import WellDepthRuler from './WellDepthRuler.svelte';
-  import WellTimingBadge from './WellTimingBadge.svelte';
-  import type { WellBuildTiming } from '$lib/wells/threeD/manifoldCut';
   import { buildRemap, type Wson2DInput } from '$lib/wells/wson-2d';
   import { summarise, type WsonDoc } from './wson-summary';
   import { defaultViewSettings, type WellViewSettings } from './view-settings';
   import GraphEditorPane from '$lib/shared/graph-editor/GraphEditorPane.svelte';
+  import type { EmbedConfig } from '$lib/shared/graph-editor/embed-config';
   import { wsonToGraph } from '$lib/wells/wson-to-graph';
   import type { Wson } from '$lib/wells/wson';
 
@@ -65,20 +63,26 @@
 
   const summary = $derived(summarise(wson));
 
-  // Lazy-mount the 3D scene only once the user first picks it — sticky latch,
-  // so switching away and back is instant (and its camera persists). Until
-  // then, opening a tab does ZERO Manifold work.
-  let mounted3D = $state(false);
+  // ONE lazy-mount latch for the embedded graph editor — it serves BOTH the 3D
+  // view (a chrome-free bake of the well graph via embed.graphCanvas=false) AND
+  // the full-editor GRAPH view. Sticky, so switching modes is instant and the
+  // baked geometry + graph state persist. A well that only ever shows 2D pays
+  // for zero Manifold work. (Replaces the old WellSchematic3D THREE path, whose
+  // main-thread manifoldCut was COEP-blocked — memory wells_empty_3d_wiring_gap.)
+  let mountedEditor = $state(false);
   $effect(() => {
-    if (view.viewMode === '3d') mounted3D = true;
+    if ((view.viewMode === '3d' || view.viewMode === 'graph') && paneActive) mountedEditor = true;
   });
 
-  // Same sticky latch for the graph editor: it's a heavy pane (own 3D canvas),
-  // so a well that never opens GRAPH never pays for it.
-  let mountedGraph = $state(false);
-  $effect(() => {
-    if (view.viewMode === 'graph' && paneActive) mountedGraph = true;
-  });
+  // The embed config the editor mounts with, per view mode: 3D = a clean
+  // Manifold render (no node canvas, no toolbar/sidebar, only the bake tab);
+  // GRAPH = the full node editor. $derived so switching mode reconfigures the
+  // SAME mounted pane (no remount, no double-bake — only the active mode bakes).
+  const editorEmbed: boolean | Partial<EmbedConfig> = $derived(
+    view.viewMode === '3d'
+      ? { graphCanvas: false, toolbar: false, sidebar: false, tabs: ['bake'], engines: ['manifold'] }
+      : true,
+  );
 
   /** The generated assembly's id — deterministic from the well name, so re-opening
    *  the same well targets the same part and GraphEditorPane's first Save lands on
@@ -92,7 +96,7 @@
   /** WSON → composition graph. NO FALLBACK (wells skill): a well we cannot express
    *  as a graph surfaces its error here rather than rendering a stand-in. */
   const wellGraph = $derived.by((): { graph: unknown | null; error: string | null } => {
-    if (!mountedGraph || !wson) return { graph: null, error: null };
+    if (!mountedEditor || !wson) return { graph: null, error: null };
     try {
       return { graph: wsonToGraph(wson as unknown as Wson), error: null };
     } catch (e) {
@@ -107,25 +111,6 @@
     wson ? buildRemap(wson as unknown as Wson2DInput, { dtx: view.dtx, zScale: view.zScale }) : (md: number) => md,
   );
 
-  // Depth-scale published by the 3D view (raw MD → display depth). The 3D
-  // overlay ruler consumes the SAME fn — one source of truth. Identity until
-  // the scene reports (e.g. before Manifold/geometry settles).
-  let remap = $state<(md: number) => number>((md) => md);
-  let rawTd = $state(1000);
-  function onDepthMap(info: { remap: (md: number) => number; rawTd: number; td: number }) {
-    remap = info.remap;
-    rawTd = info.rawTd;
-  }
-
-  // DIAGNOSTIC — per-rebuild 3D build timing for the flash badge. `flashN` bumps
-  // on every rebuild so the badge replays its flash animation (dial changes show
-  // their cost). Only rendered for the 3D view.
-  let build3d = $state<WellBuildTiming | null>(null);
-  let flashN = $state(0);
-  function onBuildTiming(t: WellBuildTiming) {
-    build3d = t;
-    flashN += 1;
-  }
 </script>
 
 <div class="wv">
@@ -145,45 +130,23 @@
         <WellSchematic2D {wson} {view} remap={remap2d} {onUpdateCompletion} {onDeleteCompletion} />
       </div>
 
-      <!-- 3D cutaway — mounted only after first 3D selection. Hidden in 2D. -->
-      {#if mounted3D}
-        <div class="wv-surface" class:hidden={view.viewMode !== '3d'}>
-          <Canvas>
-            <WellSchematic3D
-              wson={wson as any}
-              layers={view.layers}
-              cutaway={view.cutaway}
-              cutAzimuth={view.cutAzimuth}
-              directional={view.directional}
-              dtx={view.dtx}
-              diaScale={view.diaScale}
-              zScale={view.zScale}
-              whiteBg={view.whiteBg}
-              {onDepthMap}
-              {onBuildTiming}
-            />
-          </Canvas>
-          {#if view.showRuler}
-            <!-- 3D overlay ruler (2D carries its own column). -->
-            <WellDepthRuler {wson} {remap} {rawTd} whiteBg={view.whiteBg} leftInset={60} />
-          {/if}
-          <!-- Diagnostic phase-timing flash badge (3D view only). -->
-          <WellTimingBadge timing={build3d} {flashN} />
-        </div>
-      {/if}
-
-      <!-- CAD graph editor on the well's generated graph — mounted only after the
-           first GRAPH selection. `seedGraph` hydrates the in-memory graph, so
-           opening this tab writes NOTHING to the volume; the pane's own Save is
-           what creates `wellPartId` under wells/. Remounts when the well changes
-           (GEP reads seedGraph once, at load). -->
-      {#if mountedGraph}
-        <div class="wv-surface graph" class:hidden={view.viewMode !== 'graph'}>
+      <!-- CAD graph editor — the well's generated graph, baked through the SAME
+           pipeline that bakes every bw_* part (wells skill: a well renders ONLY
+           through the CAD graph + engine). ONE mounted pane serves both views:
+           3D = a chrome-free Manifold render (embed.graphCanvas=false → no node
+           canvas); GRAPH = the full node editor. Shown for either mode, hidden in
+           2D. `seedGraph` hydrates the in-memory graph (opening writes NOTHING to
+           the volume; the pane's own Save creates `wellPartId` under wells/).
+           Remounts only when the well changes. NO FALLBACK — a well we cannot
+           express as a graph surfaces its error (wells skill). -->
+      {#if mountedEditor}
+        <div class="wv-surface" class:graph={view.viewMode === 'graph'}
+          class:hidden={view.viewMode !== '3d' && view.viewMode !== 'graph'}>
           {#if wellGraph.error}
             <div class="wv-error">
               <div class="wv-error-ic">⚠</div>
               <div>
-                <div class="wv-error-title">Cannot express this well as a graph</div>
+                <div class="wv-error-title">Cannot render this well</div>
                 <code class="wv-error-msg">{wellGraph.error}</code>
               </div>
             </div>
@@ -191,8 +154,8 @@
             {#key wellPartId}
               <GraphEditorPane
                 id={wellPartId}
-                embed={true}
-                active={view.viewMode === 'graph' && paneActive}
+                embed={editorEmbed}
+                active={(view.viewMode === '3d' || view.viewMode === 'graph') && paneActive}
                 autoTf={false}
                 seedGraph={wellGraph.graph}
                 createDir="wells"

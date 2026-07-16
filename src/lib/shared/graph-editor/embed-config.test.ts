@@ -17,6 +17,7 @@ describe('resolveEmbedConfig — defaults reproduce the full current UI', () => 
     expect(cfg.sidebar).toBe(true);
     expect(cfg.toolbar).toBe(true);
     expect(cfg.rightPane).toBe(true);
+    expect(cfg.graphCanvas).toBe(true);
     expect(cfg.popover).toBe(false);
     // Every tab is visible under the default config.
     for (const t of ALL_TABS) expect(isTabVisible(cfg, t)).toBe(true);
@@ -59,6 +60,16 @@ describe('each flag off hides exactly that surface', () => {
     expect(cfg.rightPane).toBe(false);
     expect(cfg.sidebar).toBe(true);
     expect(cfg.toolbar).toBe(true);
+    expect(cfg.graphCanvas).toBe(true);
+  });
+
+  it('graphCanvas:false hides only the node canvas (right pane fills)', () => {
+    const cfg = resolveEmbedConfig({ graphCanvas: false });
+    expect(cfg.graphCanvas).toBe(false);
+    expect(cfg.rightPane).toBe(true);
+    expect(cfg.sidebar).toBe(true);
+    expect(cfg.toolbar).toBe(true);
+    expect(cfg.tabs).toEqual([...ALL_TABS]);
   });
 
   it('popover:true enables popover mode only', () => {

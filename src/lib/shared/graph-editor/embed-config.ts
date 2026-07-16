@@ -64,6 +64,12 @@ export interface EmbedConfig {
   /** The whole tabbed right pane (the `<RightPane>` column + its divider).
    *  Default `true`. Off = canvas-only (node graph with no preview column). */
   rightPane?: boolean;
+  /** The node-graph canvas pane (`<section class="ge-canvas-pane">` + the
+   *  canvas↔pane divider). Default `true`. Off = the RIGHT pane fills the whole
+   *  editor — a chrome-free RENDER of the baked graph with no node canvas (the
+   *  inverse of `rightPane:false`). `/wells` uses this for its clean 3D view.
+   *  Turning BOTH `graphCanvas` and `rightPane` off leaves an empty shell. */
+  graphCanvas?: boolean;
   /** Present the editor as a floating popover/panel rather than filling its
    *  container inline. Default `false`. Adds `.ge-root.popover` styling. */
   popover?: boolean;
@@ -78,6 +84,7 @@ export interface ResolvedEmbedConfig {
   sidebar: boolean;
   toolbar: boolean;
   rightPane: boolean;
+  graphCanvas: boolean;
   popover: boolean;
 }
 
@@ -143,6 +150,7 @@ export function resolveEmbedConfig(partial?: Partial<EmbedConfig> | null): Resol
     sidebar: p.sidebar ?? true,
     toolbar: p.toolbar ?? true,
     rightPane: p.rightPane ?? true,
+    graphCanvas: p.graphCanvas ?? true,
     popover: p.popover ?? false,
   };
 }
@@ -175,7 +183,7 @@ function parseCsv(v: string | null): string[] | undefined {
 /**
  * Parse embed flags from a URLSearchParams. Returns `undefined` when no
  * recognized key is present. Recognized keys:
- *   sidebar, toolbar, rightpane|rightPane, popover  → boolean (0/1/true/false/…)
+ *   sidebar, toolbar, rightpane|rightPane, graphcanvas|graphCanvas, popover  → boolean (0/1/true/false/…)
  *   tabs      → comma list of RightPaneTab ids
  *   engines   → comma list of EditorEngine ids
  * Invalid list members are dropped by resolveEmbedConfig; here we only shape.
@@ -190,6 +198,8 @@ export function parseEmbedFromSearch(sp: URLSearchParams): Partial<EmbedConfig> 
   if (toolbar !== undefined) { out.toolbar = toolbar; any = true; }
   const rightPane = parseBool(sp.get('rightpane') ?? sp.get('rightPane'));
   if (rightPane !== undefined) { out.rightPane = rightPane; any = true; }
+  const graphCanvas = parseBool(sp.get('graphcanvas') ?? sp.get('graphCanvas'));
+  if (graphCanvas !== undefined) { out.graphCanvas = graphCanvas; any = true; }
   const popover = parseBool(sp.get('popover'));
   if (popover !== undefined) { out.popover = popover; any = true; }
 

@@ -2883,8 +2883,11 @@
   {/if}
 
   <main class="ge-grid" bind:this={gridEl}
-    style="grid-template-columns: {splitA}% 6px 1fr">
-    <!-- LEFT — graph canvas -->
+    style="grid-template-columns: {embedCfg.graphCanvas ? `${splitA}% 6px 1fr` : '1fr'}">
+    <!-- LEFT — graph canvas. Hidden when embedCfg.graphCanvas is off: the RIGHT
+         pane then fills as a chrome-free render of the baked graph (no node
+         canvas) — /wells' clean 3D view. -->
+    {#if embedCfg.graphCanvas}
     <section class="ge-canvas-pane">
       {#if wire.from && wire.tapConnect}
         <div class="ge-connect-hint">🔗 Tap a target socket to connect · <kbd>Esc</kbd> to cancel</div>
@@ -3079,17 +3082,21 @@
           setGraph={(g) => (graph = g)} onClose={closeRepeatEditor} />
       {/if}
     </section>
+    {/if}
 
     <!-- Divider + right pane — gated by the embed config (`rightPane:false`
          gives a canvas-only editor for hosts that render their own preview). -->
     {#if embedCfg.rightPane}
-    <!-- Divider: canvas ↔ right pane -->
+    <!-- Divider: canvas ↔ right pane — only when the canvas is present to divide
+         FROM (hidden when graphCanvas is off → the right pane fills). -->
+    {#if embedCfg.graphCanvas}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
     <div class="ge-divider" role="separator" tabindex="-1" aria-orientation="vertical"
       onpointerdown={startSplitDrag}
       onpointermove={onSplitMove}
       onpointerup={endSplitDrag}></div>
+    {/if}
 
     <!-- RIGHT pane — tabbed: 3D bake / source / md / svg / glb / brep.
          Extracted to RightPane.svelte (P5/G5). The 2D profile preview stays
