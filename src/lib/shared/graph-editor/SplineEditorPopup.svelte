@@ -17,7 +17,7 @@
   import SplineScene from './SplineScene.svelte';
   import { clampDragPos } from './popover-clamp';
   import { splineArcLength, type Vec3 } from '$lib/graph/spline-resample';
-  import { parsePointsInput, type SplineView } from '$lib/graph/spline-view';
+  import { parsePointsInput, pointsBbox, gridFor, snapVec3, type SplineView } from '$lib/graph/spline-view';
 
   let {
     pos,
@@ -123,6 +123,48 @@
     onPointsChange(next);
   }
 
+  // ─── editor toolbar (DOM overlay OVER the canvas — screen-fixed, unlike a
+  //     Threlte <HTML> overlay which drifts with the orbit) ───────────────────
+  const VIEWS: { k: SplineView; label: string; tip: string }[] = [
+    { k: 'free', label: '3D', tip: 'Free 3D orbit' },
+    { k: 'xy', label: 'XY', tip: 'Flat XY plane — Z locked while dragging' },
+    { k: 'yz', label: 'YZ', tip: 'Flat YZ plane — X locked while dragging' },
+    { k: 'xz', label: 'XZ', tip: 'Flat XZ plane — Y locked while dragging' },
+  ];
+  /** Snap-to-grid drag aid (⊞) — bound into SplineScene (read there during drag). */
+  let snap = $state(false);
+  /** Visible grid cell size (bbox → gridFor) — the round step for snapped adds. */
+  const snapStep = $derived.by(() => {
+    const vs = points.filter((p) => Array.isArray(p) && p.length >= 3);
+    const bb = pointsBbox(vs);
+    const g = gridFor(Math.max(bb.max[0] - bb.min[0], bb.max[2] - bb.min[2]));
+    return g.size / Math.max(1, g.divisions);
+  });
+  /** Append a control point — offset from the last so it's grabbable. */
+  function addPoint() {
+    if (wired) return;
+    const n = points.length;
+    const last = n > 0 ? points[n - 1]! : ([0, 0, 0] as Vec3);
+    const prev = n > 1 ? points[n - 2]! : ([0, 0, 0] as Vec3);
+    let dx = last[0] - prev[0], dy = last[1] - prev[1], dz = last[2] - prev[2];
+    if (Math.hypot(dx, dy, dz) < 1e-6) { dx = 3; dy = 0; dz = 0; }
+    let np: Vec3 = [last[0] + dx, last[1] + dy, last[2] + dz];
+    if (snap) np = snapVec3(np, snapStep);
+    onPointsChange([...points, np]);
+    selectedIdx = points.length; // the new last index
+  }
+  /** Remove the selected (or last) control point — keep ≥ 2 for a curve. */
+  function removePoint() {
+    if (wired || points.length <= 2) return;
+    const idx = selectedIdx >= 0 && selectedIdx < points.length ? selectedIdx : points.length - 1;
+    onPointsChange(points.filter((_, k) => k !== idx));
+    selectedIdx = -1;
+  }
+  function onSamplesInput(ev: Event) {
+    const v = Math.max(2, Math.min(512, Math.round(Number((ev.target as HTMLInputElement).value) || 2)));
+    onSamplesChange(v);
+  }
+
   // ─── drag (header handle) — mirrors AiMenu ────────────────────────────────
   let panelEl = $state<HTMLDivElement | null>(null);
   let dragPos = $state<{ x: number; y: number } | null>(null);
@@ -180,17 +222,42 @@
     <button class="ge-sp-headx" type="button" onclick={onClose} title="Close">×</button>
   </div>
 
-  <!-- 3D scene + IN-CANVAS controls (SplineScene owns the ＋pt/−pt/N/toggles).
-       The XYZ table is a popover ABOVE the canvas (item e). -->
+  <!-- 3D scene + DOM-overlay controls. SplineScene draws only the 3D (handles,
+       curve, grid, axes); the toolbar + XYZ table are screen-fixed DOM overlays
+       ABOVE the canvas (a Threlte <HTML> overlay drifts as the camera orbits). -->
   <div class="ge-sp-canvas">
     <Canvas>
       <SplineScene
-        {points} {samples} {closed} {plot} {wired} {showTable}
+        {points} {samples} {closed}
         interactive={!wired}
-        bind:selectedIdx bind:view
-        {onPointsChange} {onSamplesChange} {onClosedChange} {onPlotChange} {onUnwire}
-        onToggleTable={() => (showTable = !showTable)} />
+        bind:selectedIdx bind:view bind:snap
+        {onPointsChange} />
     </Canvas>
+
+    <!-- view switch — top-left, screen-fixed -->
+    <div class="ge-sp-views">
+      {#each VIEWS as v (v.k)}
+        <button class="ge-sp-obtn" class:on={view === v.k} type="button" title={v.tip} onclick={() => (view = v.k)}>{v.label}</button>
+      {/each}
+    </div>
+    <!-- point / sample controls — bottom bar, screen-fixed -->
+    <div class="ge-sp-bar">
+      <button class="ge-sp-obtn" type="button" onclick={addPoint} disabled={wired} title={wired ? 'Points come from a wired expression' : 'Append a control point'}>＋ pt</button>
+      <button class="ge-sp-obtn" type="button" onclick={removePoint} disabled={wired || points.length <= 2} title="Remove the selected (or last) control point">－ pt</button>
+      <button class="ge-sp-obtn" class:on={showTable} type="button" onclick={() => (showTable = !showTable)} title="Edit X/Y/Z values in a table">⌗ xyz</button>
+      <button class="ge-sp-obtn" class:on={snap} type="button" onclick={() => (snap = !snap)} disabled={wired}
+        title={`Snap dragged points to the grid (${snapStep.toFixed(2)} units)`}>⊞ snap</button>
+      <button class="ge-sp-obtn" class:on={closed} type="button" onclick={() => onClosedChange(!closed)} title="Closed loop — the path wraps last→first (a sweep fed by it auto-follows: closed ⇒ watertight ring, open ⇒ capped tube).">{closed ? '◯ loop' : '⌇ open'}</button>
+      {#if onPlotChange}
+        <button class="ge-sp-obtn" class:on={plot} type="button" onclick={() => onPlotChange?.(!plot)} title="Plot this spline in the main 3D bake (view-only overlay).">📈 plot</button>
+      {/if}
+      {#if wired && onUnwire}
+        <button class="ge-sp-obtn" type="button" onclick={() => onUnwire?.()} title="Detach the wired expression and edit points by hand again">use manual</button>
+      {/if}
+      <label class="ge-sp-n" title="Number of equally-spaced output samples (r_sweep.path resolution)">
+        N <input type="number" min="2" max="512" step="1" value={samples} onchange={onSamplesInput} />
+      </label>
+    </div>
 
     {#if showTable}
       <!-- popover above the canvas — scrollable X/Y/Z table (item e) -->
@@ -261,8 +328,22 @@
   .ge-sp-pin.on { opacity: 1; filter: none; }
   .ge-sp-headx { border: none; background: none; cursor: pointer; font: 700 14px Arial; color: #9ca3af; line-height: 1; padding: 0 2px; }
   .ge-sp-headx:hover { color: #5b21b6; }
-  /* position:relative so the XYZ table popover + in-canvas HTML anchor to it. */
+  /* position:relative so the XYZ table popover + toolbar overlays anchor to it. */
   .ge-sp-canvas { position: relative; width: 100%; height: 340px; min-height: 240px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fafafa; overflow: hidden; }
+  /* Screen-fixed toolbar overlays (NOT Threlte <HTML> — those drift with orbit). */
+  .ge-sp-views { position: absolute; top: 6px; left: 6px; display: flex; gap: 3px; z-index: 4; }
+  .ge-sp-bar { position: absolute; bottom: 6px; left: 6px; right: 6px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; z-index: 4; }
+  .ge-sp-obtn {
+    padding: 3px 8px; font: 600 11px Arial; cursor: pointer; border-radius: 4px;
+    background: rgba(237, 233, 254, 0.92); color: #4c1d95; border: 1px solid #c4b5fd;
+    backdrop-filter: blur(2px);
+  }
+  .ge-sp-obtn:hover:not(:disabled) { background: #ddd6fe; }
+  .ge-sp-obtn:disabled { opacity: 0.5; cursor: default; }
+  .ge-sp-obtn.on { background: #a78bfa; color: #fff; border-color: #7c3aed; }
+  .ge-sp-n { margin-left: auto; display: flex; align-items: center; gap: 4px; font: 600 11px Arial; color: #374151;
+    background: rgba(255, 255, 255, 0.85); padding: 2px 6px; border-radius: 4px; }
+  .ge-sp-n input { width: 54px; padding: 2px 5px; font: 11px ui-monospace, monospace; border: 1px solid #c4b5fd; border-radius: 4px; }
   .ge-sp-help { font: 11px Arial; color: #6b7280; line-height: 1.4; }
   .ge-sp-help b { color: #5b21b6; font-weight: 700; }
   .ge-sp-stat { margin-top: 2px; font: 700 11px ui-monospace, monospace; color: #4c1d95; }

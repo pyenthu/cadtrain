@@ -15,14 +15,18 @@
     • FLAT ORTHOGRAPHIC plane views (XY / YZ / XZ) — a plane view LOCKS the
       out-of-plane axis while dragging (spline-view.ts). The free 3D orbit stays.
     • the grid + axes are sized to the control-point bounding box.
-    • the ＋point / −point buttons + option toggles live IN-CANVAS via <HTML>.
+    • the ＋point / −point buttons + option toggles live in the popup's DOM
+      overlay (SplineEditorPopup) — a Threlte <HTML> overlay is anchored to the
+      projected world-origin and DRIFTS as the camera orbits, so the toolbar is
+      screen-fixed DOM instead. This scene just draws the 3D + reacts to `view`.
 
   NO `three/examples/jsm/*` / `three/addons/*` — Canvas + T + OrbitControls +
-  interactivity + HTML from @threlte/* only (the repo convention).
+  interactivity from @threlte/* only (the repo convention).
 -->
 <script lang="ts">
+  import { untrack } from 'svelte';
   import { T, useThrelte, useTask } from '@threlte/core';
-  import { OrbitControls, interactivity, HTML } from '@threlte/extras';
+  import { OrbitControls, interactivity } from '@threlte/extras';
   import * as THREE from 'three';
   import { resampleSpline, type Vec3 } from '$lib/graph/spline-resample';
   import { planeAxes, applyPlaneLock, pointsBbox, gridFor, snapVec3, type SplineView } from '$lib/graph/spline-view';
@@ -31,52 +35,32 @@
     points,
     samples,
     closed = false,
-    plot = false,
     interactive = true,
-    wired = false,
     selectedIdx = $bindable(-1),
     view = $bindable<SplineView>('free'),
-    showTable = false,
+    snap = $bindable(false),
     onPointsChange,
-    onSamplesChange,
-    onClosedChange,
-    onPlotChange,
-    onUnwire,
-    onToggleTable,
   }: {
     points: Vec3[];
     samples: number;
     /** Loop the curve (last→first). Mirrors the spline node's `closed` flag. */
     closed?: boolean;
-    /** Plot overlay flag (#24) — passed through to the in-canvas toggle. */
-    plot?: boolean;
     /** When false, control points are READ-ONLY (wired expression, #26). */
     interactive?: boolean;
-    /** Points come from a wired expression → disable add/remove/edit. */
-    wired?: boolean;
     /** Currently-selected control point (for remove + highlight). */
     selectedIdx?: number;
-    /** Active editor view — free 3D orbit or a flat orthographic plane. */
+    /** Active editor view — free 3D orbit or a flat orthographic plane. The
+     *  view BUTTONS live in the popup DOM overlay (screen-fixed); the scene just
+     *  REACTS to `view` to (re)frame the orthographic plane camera. */
     view?: SplineView;
-    /** Whether the XYZ table popover is open (drives the in-canvas ⌗ toggle). */
-    showTable?: boolean;
+    /** Snap-to-grid drag aid (⊞). Owned by the popup toolbar; read here in the
+     *  point-drag so dragged points round to the visible grid. */
+    snap?: boolean;
     onPointsChange: (pts: Vec3[]) => void;
-    onSamplesChange: (n: number) => void;
-    onClosedChange: (v: boolean) => void;
-    onPlotChange?: (v: boolean) => void;
-    onUnwire?: () => void;
-    onToggleTable?: () => void;
   } = $props();
 
   interactivity();
   const { camera, renderer, invalidate, size } = useThrelte();
-
-  const VIEWS: { k: SplineView; label: string; tip: string }[] = [
-    { k: 'free', label: '3D', tip: 'Free 3D orbit' },
-    { k: 'xy', label: 'XY', tip: 'Flat XY plane — Z locked while dragging' },
-    { k: 'yz', label: 'YZ', tip: 'Flat YZ plane — X locked while dragging' },
-    { k: 'xz', label: 'XZ', tip: 'Flat XZ plane — Y locked while dragging' },
-  ];
 
   // ─── derived geometry ─────────────────────────────────────────────────────
   const vecs = $derived(points.filter((p) => Array.isArray(p) && p.length >= 3));
@@ -96,10 +80,9 @@
   });
   const axisLen = $derived(Math.max(4, pointsBbox(vecs).span * 0.6));
 
-  // ─── snap-to-grid (⊞) — VIEW-only drag aid. Dragged / appended control points
-  // round to the visible grid cell (gridConf size ÷ divisions) so a path can be
-  // built on clean coords. Never re-writes existing points on toggle. ────────
-  let snap = $state(false);
+  // ─── snap-to-grid (⊞) — VIEW-only drag aid. Dragged control points round to the
+  // visible grid cell (gridConf size ÷ divisions) so a path can be built on clean
+  // coords. `snap` is a prop (owned by the popup toolbar). ────────
   const snapStep = $derived(gridConf.size / Math.max(1, gridConf.div));
 
   // XYZ axes — colored tubes + arrowheads (X red · Y green · Z blue).
@@ -165,31 +148,6 @@
     try { return resampleSpline(vecs as Vec3[], Math.max(2, samples), closed); } catch { return []; }
   });
 
-  // ─── in-canvas controls (moved here from the popup toolbar, item d) ────────
-  /** Append a control point — offset from the last so it's grabbable. */
-  function addPoint() {
-    const n = points.length;
-    const last = n > 0 ? points[n - 1]! : ([0, 0, 0] as Vec3);
-    const prev = n > 1 ? points[n - 2]! : ([0, 0, 0] as Vec3);
-    let dx = last[0] - prev[0], dy = last[1] - prev[1], dz = last[2] - prev[2];
-    if (Math.hypot(dx, dy, dz) < 1e-6) { dx = 3; dy = 0; dz = 0; }
-    let np: Vec3 = [last[0] + dx, last[1] + dy, last[2] + dz];
-    if (snap) np = snapVec3(np, snapStep);
-    onPointsChange([...points, np]);
-    selectedIdx = points.length; // the new last index
-  }
-  /** Remove the selected (or last) control point — keep ≥ 2 for a curve. */
-  function removePoint() {
-    if (points.length <= 2) return;
-    const idx = selectedIdx >= 0 && selectedIdx < points.length ? selectedIdx : points.length - 1;
-    onPointsChange(points.filter((_, k) => k !== idx));
-    selectedIdx = -1;
-  }
-  function onSamplesInput(ev: Event) {
-    const v = Math.max(2, Math.min(512, Math.round(Number((ev.target as HTMLInputElement).value) || 2)));
-    onSamplesChange(v);
-  }
-
   // ─── flat orthographic plane frame (item a) ───────────────────────────────
   // Computed ONCE per view switch (not per drag) from a bbox snapshot, so
   // dragging a point never re-frames / jumps the camera. args are frozen for the
@@ -199,27 +157,32 @@
     pos: Vec3; up: Vec3; center: Vec3; orthoBase: number;
   } | null>(null);
 
-  function setView(v: SplineView) {
-    view = v;
+  // React to `view` (set by the popup toolbar buttons): (re)frame the plane
+  // camera. Only `view` is a tracked dep — the bbox/size snapshot is read
+  // UNTRACKED so dragging a point never re-frames / jumps the camera.
+  $effect(() => {
+    const v = view;
     if (v === 'free') { planeFrame = null; invalidate(); return; }
-    const pa = planeAxes(v)!;
-    const bb = pointsBbox(vecs);
-    const sz = $size;
-    const aspect = sz && sz.height > 0 ? sz.width / sz.height : 1.4;
-    const halfExt = Math.max(bb.span, 2) * 0.7;
-    const halfH = aspect >= 1 ? halfExt : halfExt / aspect;
-    const halfW = aspect >= 1 ? halfExt * aspect : halfExt;
-    const dist = Math.max(bb.span * 4, 50);
-    const pos: Vec3 = [bb.center[0], bb.center[1], bb.center[2]];
-    pos[pa.lockAxis] = bb.center[pa.lockAxis] + dist;
-    const up: Vec3 = [0, 0, 0];
-    up[pa.vAxis] = 1;
-    planeFrame = {
-      args: [-halfW, halfW, halfH, -halfH, 0.01, dist * 4],
-      pos, up, center: [bb.center[0], bb.center[1], bb.center[2]], orthoBase: halfH * 0.05,
-    };
+    untrack(() => {
+      const pa = planeAxes(v)!;
+      const bb = pointsBbox(vecs);
+      const sz = $size;
+      const aspect = sz && sz.height > 0 ? sz.width / sz.height : 1.4;
+      const halfExt = Math.max(bb.span, 2) * 0.7;
+      const halfH = aspect >= 1 ? halfExt : halfExt / aspect;
+      const halfW = aspect >= 1 ? halfExt * aspect : halfExt;
+      const dist = Math.max(bb.span * 4, 50);
+      const pos: Vec3 = [bb.center[0], bb.center[1], bb.center[2]];
+      pos[pa.lockAxis] = bb.center[pa.lockAxis] + dist;
+      const up: Vec3 = [0, 0, 0];
+      up[pa.vAxis] = 1;
+      planeFrame = {
+        args: [-halfW, halfW, halfH, -halfH, 0.01, dist * 4],
+        pos, up, center: [bb.center[0], bb.center[1], bb.center[2]], orthoBase: halfH * 0.05,
+      };
+    });
     invalidate();
-  }
+  });
 
   // ─── zoom-stable handle sizing (item c) ───────────────────────────────────
   // Keep control spheres + sample dots at a ~constant SCREEN size: for the
@@ -401,50 +364,7 @@
   </T.Mesh>
 {/each}
 
-<!-- IN-CANVAS controls (item d) — a full-canvas overlay; only the chips capture
-     pointer events so orbit/drag on empty space is untouched. -->
-<HTML fullscreen pointerEvents="none">
-  <div class="sp-ov">
-    <div class="sp-ov-views">
-      {#each VIEWS as v (v.k)}
-        <button class="sp-ov-btn" class:on={view === v.k} type="button" title={v.tip} onclick={() => setView(v.k)}>{v.label}</button>
-      {/each}
-    </div>
-    <div class="sp-ov-bar">
-      <button class="sp-ov-btn" type="button" onclick={addPoint} disabled={wired} title={wired ? 'Points come from a wired expression' : 'Append a control point'}>＋ pt</button>
-      <button class="sp-ov-btn" type="button" onclick={removePoint} disabled={wired || points.length <= 2} title="Remove the selected (or last) control point">－ pt</button>
-      <button class="sp-ov-btn" class:on={showTable} type="button" onclick={() => onToggleTable?.()} title="Edit X/Y/Z values in a table">⌗ xyz</button>
-      <button class="sp-ov-btn" class:on={snap} type="button" onclick={() => (snap = !snap)} disabled={wired}
-        title={`Snap dragged / appended points to the grid (${snapStep.toFixed(2)} units)`}>⊞ snap</button>
-      <button class="sp-ov-btn" class:on={closed} type="button" onclick={() => onClosedChange(!closed)} title="Closed loop — the path wraps last→first (a sweep fed by it auto-follows: closed ⇒ watertight ring, open ⇒ capped tube).">{closed ? '◯ loop' : '⌇ open'}</button>
-      {#if onPlotChange}
-        <button class="sp-ov-btn" class:on={plot} type="button" onclick={() => onPlotChange?.(!plot)} title="Plot this spline in the main 3D bake (view-only overlay).">📈 plot</button>
-      {/if}
-      {#if wired && onUnwire}
-        <button class="sp-ov-btn" type="button" onclick={() => onUnwire?.()} title="Detach the wired expression and edit points by hand again">use manual</button>
-      {/if}
-      <label class="sp-ov-n" title="Number of equally-spaced output samples (r_sweep.path resolution)">
-        N <input type="number" min="2" max="512" step="1" value={samples} onchange={onSamplesInput} />
-      </label>
-    </div>
-  </div>
-</HTML>
+<!-- The editor CONTROLS (views · ＋pt/−pt · snap · loop · plot · N) live in the
+     popup's DOM overlay (SplineEditorPopup), NOT here: a Threlte <HTML> overlay
+     is anchored to the projected world-origin and drifts as you orbit. -->
 
-<style>
-  /* In-canvas control overlay (Threlte <HTML fullscreen>). The wrapper itself is
-     pointer-events:none (set via the HTML prop); only the chips re-enable it. */
-  .sp-ov { position: absolute; inset: 0; pointer-events: none; font: 12px Arial; }
-  .sp-ov-views { position: absolute; top: 6px; left: 6px; display: flex; gap: 3px; pointer-events: auto; }
-  .sp-ov-bar { position: absolute; bottom: 6px; left: 6px; right: 6px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; pointer-events: auto; }
-  .sp-ov-btn {
-    padding: 3px 8px; font: 600 11px Arial; cursor: pointer; border-radius: 4px;
-    background: rgba(237, 233, 254, 0.92); color: #4c1d95; border: 1px solid #c4b5fd;
-    backdrop-filter: blur(2px);
-  }
-  .sp-ov-btn:hover:not(:disabled) { background: #ddd6fe; }
-  .sp-ov-btn:disabled { opacity: 0.5; cursor: default; }
-  .sp-ov-btn.on { background: #a78bfa; color: #fff; border-color: #7c3aed; }
-  .sp-ov-n { margin-left: auto; display: flex; align-items: center; gap: 4px; font: 600 11px Arial; color: #374151;
-    background: rgba(255, 255, 255, 0.85); padding: 2px 6px; border-radius: 4px; pointer-events: auto; }
-  .sp-ov-n input { width: 54px; padding: 2px 5px; font: 11px ui-monospace, monospace; border: 1px solid #c4b5fd; border-radius: 4px; }
-</style>
