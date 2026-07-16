@@ -424,7 +424,17 @@
   let brepSvgReason = $state('');
   let brepSvgBusy = $state(false);
   let brepSvgError = $state('');
-  let brepSvgKey = $state('');
+  // NON-reactive dedup ref: the fetch effect READS this to skip re-projecting the
+  // same source+params. It must NOT be $state — a reactive read here would make
+  // the effect depend on a key it also WRITES, so setting the key re-runs the
+  // effect, whose cleanup cancels the in-flight fetch → the result is dropped and
+  // the tab hangs on "Projecting…" forever (the B·SVG-blank bug).
+  let brepSvgKey = '';
+  // Fill/shading mode for the projection: 'none' = outline only (hollow — reads
+  // as a wireframe grid on faceted/warped solids), 'silhouette' = flat-filled
+  // solid (keeps clean HLR occlusion), 'lambert' = per-face normal shading.
+  // Default shaded so a solid looks solid, not a hollow grid. Exposed as a toggle.
+  let brepSvgFill = $state<'none' | 'silhouette' | 'lambert'>('lambert');
   $effect(() => {
     if (rightTab !== 'brepsvg' || !(active ?? true)) return;
     // Only (re)fetch off a real baked solid + non-empty source (mirror the BREP
@@ -432,7 +442,8 @@
     if (typeof bake !== 'object' || !bake || !bake.source) return;
     const src = bake.source as string;
     const params = brepParamValues; // graph.params order ↔ current values
-    const key = JSON.stringify({ s: src, p: params });
+    const fill = brepSvgFill; // reactive: switching the fill mode re-projects
+    const key = JSON.stringify({ s: src, p: params, f: fill });
     if (key === brepSvgKey) return; // already have this projection
     brepSvgKey = key;
     brepSvgBusy = true;
@@ -442,7 +453,7 @@
       try {
         const r = await fetch('/api/brep/svg', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ source: src, paramValues: params }),
+          body: JSON.stringify({ source: src, paramValues: params, fill }),
         });
         if (!r.ok) { if (!cancelled) { brepSvgError = `HTTP ${r.status}`; brepSvgStr = ''; brepSvgMeta = null; } return; }
         const data = await r.json();
@@ -834,6 +845,19 @@
               <span class="ge-cache-badge fresh" title="OCCT true-boundary projection (hidden-line removed)">fresh · {Math.round(brepSvgMeta.ms)} ms OCCT{brepSvgMeta.mode ? ` · ${brepSvgMeta.mode}` : ''}</span>
             {/if}
             <span class="ge-bake-meta-spacer"></span>
+            <!-- Fill/shading mode — outline (line-art) · filled (flat silhouette) ·
+                 shaded (per-face lambert). Re-projects on switch (the effect keys on fill). -->
+            <div class="ge-bsvg-fill" role="group" aria-label="BREP-SVG fill mode">
+              <button type="button" class:on={brepSvgFill === 'none'}
+                title="Outline only — true-boundary line-art (hidden-line removed)"
+                onclick={() => (brepSvgFill = 'none')}>outline</button>
+              <button type="button" class:on={brepSvgFill === 'silhouette'}
+                title="Flat-filled silhouette — solid fill, clean HLR edges"
+                onclick={() => (brepSvgFill = 'silhouette')}>filled</button>
+              <button type="button" class:on={brepSvgFill === 'lambert'}
+                title="Shaded — per-face normal (lambert) shading"
+                onclick={() => (brepSvgFill = 'lambert')}>shaded</button>
+            </div>
           </div>
         {:else if brepSvgBusy}
           <div class="ge-empty">Projecting BREP → SVG…</div>
@@ -949,6 +973,14 @@
   .ge-brepsvg-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex;
     align-items: center; justify-content: center; padding: 12px; background: #fff; }
   .ge-brepsvg-scroll :global(svg) { max-width: 100%; max-height: 100%; height: auto; }
+  /* Fill-mode segmented toggle (outline / filled / shaded), right of the badge row. */
+  .ge-bsvg-fill { display: inline-flex; border: 1px solid #d1d5db; border-radius: 5px;
+    overflow: hidden; margin-left: 8px; }
+  .ge-bsvg-fill button { border: none; background: #fff; color: #6b7280; cursor: pointer;
+    font-size: 10px; line-height: 1; padding: 3px 7px; border-right: 1px solid #e5e7eb; }
+  .ge-bsvg-fill button:last-child { border-right: none; }
+  .ge-bsvg-fill button:hover { background: #f3f4f6; }
+  .ge-bsvg-fill button.on { background: #2563eb; color: #fff; }
   /* SRC tab — filename header above the <pre>. Light row, monospace
      filename + a faded hint reminding the user the file is generated. */
   .ge-source-header {
