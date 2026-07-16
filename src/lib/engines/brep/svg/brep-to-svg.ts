@@ -219,7 +219,12 @@ function edgeAssembly(replicad: any, solid: any, opts: BrepSvgOpts): SvgAssembly
   const viewBox: [number, number, number, number] = [minX - margin, minY - margin, (maxX - minX) + 2 * margin, (maxY - minY) + 2 * margin];
   const sw = opts.strokeWidth ?? Math.max(Math.max(viewBox[2], viewBox[3]) * 0.005, 1e-3);
   let body = fills;
-  for (const d of edgePaths) body += `<path d="${d}" fill="none" stroke="${strokeVisible}" stroke-width="${fmt(sw)}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  // `strokeVisible:'none'` suppresses the interior facet-edge grid so a Lambert
+  // fill reads as a clean SHADED solid (adjacent face shades define the form),
+  // not a dark wireframe. Edges are still projected above for the viewBox.
+  if (strokeVisible !== 'none') {
+    for (const d of edgePaths) body += `<path d="${d}" fill="none" stroke="${strokeVisible}" stroke-width="${fmt(sw)}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
   return { viewBox, body, mode: 'edges' };
 }
 

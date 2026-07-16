@@ -443,7 +443,10 @@
     const src = bake.source as string;
     const params = brepParamValues; // graph.params order ↔ current values
     const fill = brepSvgFill; // reactive: switching the fill mode re-projects
-    const key = JSON.stringify({ s: src, p: params, f: fill });
+    // 'shaded' = Lambert face fills with NO facet-edge grid (strokeVisible:'none')
+    // → a clean shaded solid; outline/filled keep the line-art edges.
+    const svgOpts = fill === 'lambert' ? { fill, strokeVisible: 'none' } : { fill };
+    const key = JSON.stringify({ s: src, p: params, o: svgOpts });
     if (key === brepSvgKey) return; // already have this projection
     brepSvgKey = key;
     brepSvgBusy = true;
@@ -453,7 +456,7 @@
       try {
         const r = await fetch('/api/brep/svg', {
           method: 'POST', headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ source: src, paramValues: params, fill }),
+          body: JSON.stringify({ source: src, paramValues: params, ...svgOpts }),
         });
         if (!r.ok) { if (!cancelled) { brepSvgError = `HTTP ${r.status}`; brepSvgStr = ''; brepSvgMeta = null; } return; }
         const data = await r.json();

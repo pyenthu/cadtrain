@@ -112,6 +112,19 @@ describe('/api/brep/svg — part source input', () => {
     expect(['hlr', 'edges']).toContain(data.meta?.mode);
   }, OCCT_TIMEOUT);
 
+  it('fill:"lambert" + strokeVisible:"none" shades faces with NO edge grid', async () => {
+    // The "shaded" B·SVG toggle: per-face Lambert fills, facet-edge grid suppressed.
+    const { data } = await callPost({ source: CSG_SRC, paramValues: { a: 4, b: 2 }, fill: 'lambert', strokeVisible: 'none' });
+    expect(data.supported, `expected supported:true, got ${JSON.stringify(data)}`).toBe(true);
+    assertWellFormedSvg(data.svg);
+    // Lambert always renders via the edge/ortho path.
+    expect(data.svg).toMatch(/data-brep-svg-mode="edges"/);
+    // Shaded face fills present (a hex colour on ≥1 path)…
+    expect(data.svg, 'lambert must fill faces').toMatch(/fill="#[0-9a-f]{6}"/i);
+    // …and the interior facet-edge grid is gone (no stroked boundary edges).
+    expect(data.svg, 'strokeVisible:"none" must drop the edge grid').not.toMatch(/stroke="#111"/);
+  }, OCCT_TIMEOUT);
+
   it('a non-BREP source (no OCCT solid) returns supported:false', async () => {
     // A body that produces nothing OCCT-buildable → runBody yields no solid.
     const src = `export const meta = { id: 't_empty', name: 't_empty', kind: 'asm', uses: [], params: {} };
