@@ -1090,18 +1090,18 @@
       </T.Mesh>
     {:else if full}
       {@const hasVC = !!full?.getAttribute?.('color')}
-      <!-- Geometry is pre-warped server-side; no subdivide / warp shader. -->
+      <!-- Geometry is pre-warped server-side; no subdivide / warp shader.
+           ALWAYS MeshStandard so the PBR material preset (roughness/metalness)
+           is honoured whether the Z rect-light is on or off. The old else-arm
+           used MeshPhong when the Z-light was off — Phong has no roughness/
+           metalness, so it silently dropped the material preset, which is why
+           the TF + BREP tabs (a single vertex-coloured `full` mesh) ignored the
+           material while MF (per-part arm) looked right. -->
       <T.Mesh geometry={full} bind:ref={liveMeshRef}>
-        {#if scene.zRectLight}
-          {#if hasVC}
-            <T.MeshStandardMaterial vertexColors roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
-          {:else}
-            <T.MeshStandardMaterial color={colorOuter ?? matPBR.color ?? '#cc2222'} map={getMaterialTexture(texture)} roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
-          {/if}
-        {:else if hasVC}
-          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
+        {#if hasVC}
+          <T.MeshStandardMaterial vertexColors roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {:else}
-          <T.MeshPhongMaterial color={colorOuter ?? matPBR.color ?? '#cc2222'} map={getMaterialTexture(texture)} specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
+          <T.MeshStandardMaterial color={colorOuter ?? matPBR.color ?? '#cc2222'} map={getMaterialTexture(texture)} roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
         {/if}
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>
