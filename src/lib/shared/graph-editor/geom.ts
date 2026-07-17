@@ -247,14 +247,21 @@ export function cardMinWidth(node: any): number {
 }
 
 // ─── Warp / bend node card geometry (#36) ───────────────────────────────────
-// A SINGLE compact CHIP ROW (like the mv/rot icon chips), h=40: the ×N `solids`
-// socket on the LEFT edge (vertically centred), the `path` socket on the
-// TOP-MIDDLE, the bent solid out the RIGHT edge (centred). WARP_CHILD_CY is the
-// left-socket cy (= card centre); WARP_PATH_CY is the path-socket cy (top edge)
+// A SINGLE compact CHIP ROW (like the mv/rot icon chips), WARP_CARD_H tall: the
+// ×N `solids` socket on the LEFT edge (vertically centred), the `path` socket on
+// the TOP-MIDDLE, the bent solid out the RIGHT edge (centred) — with ⚙ + × on the
+// SAME centre row (no wasted title row). WARP_CHILD_CY is the left-socket cy
+// (= card centre = WARP_CARD_H/2); WARP_PATH_CY is the path-socket cy (top edge)
 // and the path socket's X is the card MIDDLE (size.w/2) — see warpPathCX. These
 // are shared by the NodeCard render AND the WireLayer wire endpoints so they
 // can't drift.
-export const WARP_CHILD_CY = 20;   // `solid` input socket cy — card centre (h/2 of the 40 px chip)
+//
+// NOTE: the registry descriptor `WarpKind.size` still reports the legacy h:40
+// (pinned by nodes/kinds/tests/spline-warp.test.ts); `nodeSize` below OVERRIDES
+// it to WARP_CARD_H so the compact card + every wire/socket consumer (all route
+// through nodeSize) agree on the height.
+export const WARP_CARD_H = 30;               // compact single-row chip height (was 40)
+export const WARP_CHILD_CY = WARP_CARD_H / 2; // `solid` input socket cy — card centre (h/2 of the compact chip)
 export const WARP_PATH_CY = 0;     // `path` input socket cy — TOP edge (X = card middle, see warpPathCX)
 export const WARP_SOLID_DY = 22;   // (legacy) vertical pitch — no longer used; solids fan into one socket
 
@@ -387,6 +394,12 @@ export function nodeSize(graph: Graph, node: any): { w: number; h: number } {
   const savedW = graph.layout[node.id]?.w;
   const baseW = typeof savedW === 'number' ? savedW : cardAutoWidth(graph, node);
   const w = Math.max(cardMinWidth(node), baseW);
+  // Warp: compact SINGLE-ROW chip. The registry descriptor (WarpKind.size) still
+  // reports the legacy h:40 (pinned by spline-warp.test.ts, a file this change
+  // must not touch); override to WARP_CARD_H here so the render AND every wire /
+  // socket / layout consumer — all of which route through nodeSize — agree on the
+  // compact height (WARP_CHILD_CY = WARP_CARD_H/2 keeps the left socket centred).
+  if (node.type === 'warp') return { w, h: WARP_CARD_H };
   // Registry (docs/plans/hierarchical-class-design.md): every node type sizes
   // through its descriptor — byte-identical to the old per-type if-chain
   // (pinned by geom.test.ts), now collapsed away (Phase 2). The graph-dependent

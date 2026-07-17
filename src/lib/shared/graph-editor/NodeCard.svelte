@@ -1740,14 +1740,15 @@
                   cx="0" cy={WARP_CHILD_CY} rx="8" ry="6"
                   data-tip="solids: wire one or MORE built parts to bend along the SAME spline (drop APPENDS another; each warped separately). Remove a solid by clicking its wire → Delete."
                   onpointerup={(ev) => wire.endWireOnWarpSolid(ev, n.id, warpKids.length)}/>
-                <!-- ⚙ options (refine / stretch / validate) → popover — top-right, compact -->
+                <!-- ⚙ options (refine / stretch / validate) → popover — on the CENTRE
+                     row (same baseline as ≈ / ×N), enlarged for an easy target. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 38} y="15" class="ge-container-cog ge-warp-cog"
+                <text role="button" tabindex="-1" x={size.w - 42} y={wcy + 5} class="ge-container-cog ge-warp-cog"
                   data-tip="Warp options — refine · stretch · validate"
                   onpointerdown={(ev) => { ev.stopPropagation(); popovers?.openWarpPop(ev, n.id); }}>⚙</text>
-                <!-- delete × — top-right corner, compact -->
+                <!-- delete × — CENTRE row, clears the right-edge output socket. -->
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <text role="button" tabindex="-1" x={size.w - 20} y="15" class="ge-node-x ge-warp-x"
+                <text role="button" tabindex="-1" x={size.w - 22} y={wcy + 5} class="ge-node-x ge-warp-x"
                   class:armed={del.isArmed(n.id)}
                   data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
                   onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
@@ -2017,7 +2018,7 @@
   /* #31 collapsed Output count badge (×N) next to the single arrow socket. */
   .ge-output-count { fill: #047857; font: 600 10px Arial; pointer-events: none; user-select: none; }
   /* Compact chip ⚙ options + × delete — top-right, sized to fit the 40 px row. */
-  .ge-warp-cog { font-size: 15px; }
+  .ge-warp-cog { font-size: 17px; }
   .ge-warp-x { font-size: 13px; }
   .ge-warp-opts { display: flex; align-items: center; gap: 4px; font: 10px Arial; }
   .ge-warp-refine { display: flex; align-items: center; gap: 2px; color: #0e7490; font-weight: 600; }
