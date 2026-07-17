@@ -142,8 +142,8 @@
     transform: translate(-4px, -50%);
     padding: 5px 9px;
     background: rgba(27, 30, 38, 0.94);
-    border: 1px solid var(--w-border);
-    color: var(--w-text);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    color: #eef0f5;
     border-radius: 5px;
     white-space: nowrap;
     font: 11px Arial, sans-serif;
