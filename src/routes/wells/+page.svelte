@@ -25,7 +25,7 @@
   import WellSideNav, { type LoadedFile, type LoadMeta } from '$lib/wells/WellSideNav.svelte';
   import WellToolbar from './WellToolbar.svelte';
   import WellViewPlaceholder from './WellViewPlaceholder.svelte';
-  import { wsonFiles, parseWsonFile, summarise, type WsonFile, type WsonDoc } from './wson-summary';
+  import { wsonFiles, loadVolumeSamples, parseWsonFile, summarise, type WsonFile, type WsonDoc } from './wson-summary';
   import * as wsCache from './workspace-cache';
   import { defaultViewSettings } from './view-settings';
   import { applyCompletionPatch, removeCompletion, type CompletionPatch } from '$lib/wells/wson-mutate';
@@ -174,8 +174,21 @@
     if (ok) await hydrateFromHandle(dirHandle);
   }
 
+  // ── Volume-backed sample set ────────────────────────────────────────────────
+  // The sidebar Samples section is served from the volume store (GET
+  // /api/wells/samples) so users can add / edit samples live. Seeded with the
+  // bundled `wsonFiles` for instant first paint + offline fallback, then swapped
+  // for the volume set once on mount (one-shot guard → no loop).
+  let sampleFiles = $state<WsonFile[]>(wsonFiles);
+  let volumeSamplesLoaded = false;
+  $effect(() => {
+    if (volumeSamplesLoaded) return;
+    volumeSamplesLoaded = true;
+    loadVolumeSamples().then((f) => { if (f.length) sampleFiles = f; }).catch(() => {});
+  });
+
   // ── Combined lookup: bundled samples + workspace files ──────────────────────
-  const allFiles = $derived<WsonFile[]>([...wsonFiles, ...workspaceFiles]);
+  const allFiles = $derived<WsonFile[]>([...sampleFiles, ...workspaceFiles]);
   function fileById(id: string): WsonFile | undefined {
     return allFiles.find((f) => f.id === id);
   }
@@ -193,7 +206,7 @@
     path: '',
     files: [],
     folders: [
-      { name: 'Samples', path: 'samples', folders: [], files: wsonFiles.map(fileRow) },
+      { name: 'Samples', path: 'samples', folders: [], files: sampleFiles.map(fileRow) },
       ...(workspaceFiles.length
         ? [{ name: 'Workspace', path: 'workspace', folders: [], files: workspaceFiles.map(fileRow) }]
         : []),

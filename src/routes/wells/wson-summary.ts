@@ -124,6 +124,30 @@ export const wsonFiles: WsonFile[] = Object.entries(rawSamples)
   .map(([path, raw]) => parseWsonFile(`${slugOf(path)}.wson`, raw, 'sample'))
   .sort((a, b) => a.slug.localeCompare(b.slug));
 
+/**
+ * Load the sample `.wson` set from the VOLUME store (`GET /api/wells/samples`,
+ * `<volume>/wells/samples/` — Rule 13) so a user can add / edit / customise
+ * samples live, and parse each into a `WsonFile` (the SAME shape as the bundled
+ * `wsonFiles`). The endpoint seeds itself from the bundled set on first read, so
+ * a fresh volume is never blank. Falls back to bundled `wsonFiles` when the
+ * endpoint is unreachable or returns nothing — /wells always has data.
+ */
+export async function loadVolumeSamples(fetchFn: typeof fetch = fetch): Promise<WsonFile[]> {
+  try {
+    const res = await fetchFn('/api/wells/samples');
+    if (!res.ok) throw new Error(`GET /api/wells/samples → ${res.status}`);
+    const data = (await res.json()) as { samples?: Array<{ name?: string; slug?: string; text?: string }> };
+    const rows = Array.isArray(data?.samples) ? data.samples : [];
+    const files = rows
+      .filter((f) => typeof f?.text === 'string')
+      .map((f) => parseWsonFile(f.name || `${f.slug ?? 'sample'}.wson`, f.text as string, 'sample'))
+      .sort((a, b) => a.slug.localeCompare(b.slug));
+    return files.length ? files : wsonFiles;
+  } catch {
+    return wsonFiles;
+  }
+}
+
 /** A `.wson` is deviated when any survey station has a non-zero deviation. */
 function isDeviated(doc: WsonDoc): boolean {
   const prof = doc.profile ?? [];
