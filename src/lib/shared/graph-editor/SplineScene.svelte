@@ -40,6 +40,7 @@
     view = $bindable<SplineView>('free'),
     snap = $bindable(false),
     zPan = $bindable(0),
+    hPan = $bindable(0),
     onPointsChange,
   }: {
     points: Vec3[];
@@ -62,6 +63,12 @@
      *  screen axis in those views); ignored in free/xy. Reset to 0 on view
      *  switch. Owned by the popup toolbar (bound). */
     zPan?: number;
+    /** Horizontal pan of the FLAT plane views (yz/xz) — the popup's h-scroller
+     *  slider. Pans the orthographic camera LEFT/RIGHT along the IN-PLANE
+     *  horizontal axis (world Y in yz, world X in xz — `planeAxes(view).uAxis`);
+     *  ignored in free/xy. Reset to 0 on view switch. Owned by the popup toolbar
+     *  (bound). Symmetric to zPan for following deviated wells sideways. */
+    hPan?: number;
     onPointsChange: (pts: Vec3[]) => void;
   } = $props();
 
@@ -168,10 +175,12 @@
   // UNTRACKED so dragging a point never re-frames / jumps the camera.
   $effect(() => {
     const v = view;
-    // Reset the vertical z-pan on every view switch. This effect tracks ONLY
-    // `view` (the bbox/size snapshot below is read UNTRACKED), and it does not
-    // READ zPan, so writing it here can't self-trigger a loop.
+    // Reset the vertical z-pan + horizontal h-pan on every view switch. This
+    // effect tracks ONLY `view` (the bbox/size snapshot below is read
+    // UNTRACKED), and it does not READ zPan/hPan, so writing them here can't
+    // self-trigger a loop.
     zPan = 0;
+    hPan = 0;
     if (v === 'free') { planeFrame = null; invalidate(); return; }
     untrack(() => {
       const pa = planeAxes(v)!;
@@ -194,19 +203,28 @@
     invalidate();
   });
 
-  // ─── vertical z-scroller (plane-view pan) ─────────────────────────────────
+  // ─── plane-view scrollers (vertical z-pan + horizontal h-pan) ─────────────
   // The robust pan with OrbitControls(enableRotate=false): keep `position` at
-  // the static planeFrame.pos and move ONLY the `target` by `zPan` along world
-  // Z. OrbitControls preserves its spherical position→target offset, so the
-  // camera is carried by the SAME delta → a clean vertical pan, no rotation.
-  // Only yz/xz have Z as the vertical SCREEN axis (up=[0,0,1]); xy locks Z
-  // (out of plane) and free is the orbit — no z-pan there. Panning along Z is
-  // IN-PLANE for yz/xz, so the along-view (lockAxis) distance to the geometry
-  // is unchanged → the near/far clip planes are never crossed.
+  // the static planeFrame.pos and move ONLY the `target` by zPan/hPan.
+  // OrbitControls preserves its spherical position→target offset, so the
+  // camera is carried by the SAME delta → a clean pan, no rotation.
+  //   • zPan → world Z (index 2), the vertical SCREEN axis in yz/xz.
+  //   • hPan → the IN-PLANE horizontal axis `planeAxes(view).uAxis`
+  //     (world Y for yz, world X for xz).
+  // Only yz/xz apply the scrollers (up=[0,0,1], Z vertical); xy locks Z (out of
+  // plane) and free is the orbit — no pan there. BOTH offsets are IN-PLANE for
+  // yz/xz, so the along-view (lockAxis) distance to the geometry is unchanged →
+  // the near/far clip planes are never crossed. Build a FRESH array so we never
+  // mutate planeFrame.center.
   const planeTarget = $derived.by<Vec3>(() => {
     const c: Vec3 = planeFrame ? planeFrame.center : [0, 0, 0];
-    const dz = view === 'yz' || view === 'xz' ? zPan : 0;
-    return [c[0], c[1], c[2] + dz];
+    const t: Vec3 = [c[0], c[1], c[2]];
+    if (view === 'yz' || view === 'xz') {
+      t[2] += zPan;                 // vertical (world Z)
+      const pa = planeAxes(view)!;
+      t[pa.uAxis] += hPan;          // horizontal (Y for yz, X for xz)
+    }
+    return t;
   });
 
   // ─── zoom-stable handle sizing (item c) ───────────────────────────────────

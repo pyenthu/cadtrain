@@ -137,11 +137,24 @@
    *  the z-scroller slider (shown only in yz/xz). SplineScene resets it to 0 on
    *  every view switch. */
   let zPan = $state(0);
+  /** Horizontal pan of the FLAT plane views — bound into SplineScene, driven by
+   *  the h-scroller slider (shown only in yz/xz). Pans along the in-plane
+   *  horizontal axis (Y for yz, X for xz). SplineScene resets it to 0 on every
+   *  view switch. */
+  let hPan = $state(0);
   /** Point-cloud Z extent → the z-scroller travel (±zExtent, centred at 0). */
   const zExtent = $derived.by(() => {
     const vs = points.filter((p) => Array.isArray(p) && p.length >= 3);
     const bb = pointsBbox(vs);
     return Math.max(bb.max[2] - bb.min[2], 1);
+  });
+  /** Point-cloud extent along the CURRENT view's horizontal axis → the
+   *  h-scroller travel (±hExtent, centred at 0). yz → Y span, xz → X span. */
+  const hExtent = $derived.by(() => {
+    const vs = points.filter((p) => Array.isArray(p) && p.length >= 3);
+    const bb = pointsBbox(vs);
+    const span = view === 'yz' ? bb.max[1] - bb.min[1] : bb.max[0] - bb.min[0];
+    return Math.max(span, 1);
   });
   /** Visible grid cell size (bbox → gridFor) — the round step for snapped adds. */
   const snapStep = $derived.by(() => {
@@ -240,7 +253,7 @@
       <SplineScene
         {points} {samples} {closed}
         interactive={!wired}
-        bind:selectedIdx bind:view bind:snap bind:zPan
+        bind:selectedIdx bind:view bind:snap bind:zPan bind:hPan
         {onPointsChange} />
     </Canvas>
 
@@ -261,6 +274,22 @@
         <input class="ge-sp-zslider" type="range"
           min={-zExtent} max={zExtent} step={zExtent / 100}
           bind:value={zPan} aria-label="Pan the view up / down (Z)" />
+      </div>
+    {/if}
+
+    <!-- h-scroller — horizontal slider on the BOTTOM edge (bottom-CENTER, above
+         the toolbar bar + clear of the right-edge z-slider), only in the flat
+         YZ/XZ plane views. Pans the camera LEFT/RIGHT along the in-plane
+         horizontal axis (Y in yz, X in xz) so deviated wells that spread out
+         sideways stay in frame. Sign: drag the thumb RIGHT → hPan increases →
+         target moves along the +horizontal axis (pans the view right). If it
+         feels inverted in the browser, flip via `direction: rtl` on the slider
+         like the z-scroller, or negate the bound value. -->
+    {#if view === 'yz' || view === 'xz'}
+      <div class="ge-sp-hscroll" title="Pan the view left / right">
+        <input class="ge-sp-hslider" type="range"
+          min={-hExtent} max={hExtent} step={hExtent / 100}
+          bind:value={hPan} aria-label="Pan the view left / right" />
       </div>
     {/if}
     <!-- point / sample controls — bottom bar, screen-fixed -->
@@ -376,6 +405,20 @@
   .ge-sp-zslider {
     writing-mode: vertical-lr; direction: rtl;
     width: 16px; height: 150px; margin: 0; cursor: ns-resize;
+    accent-color: #7c3aed;
+  }
+  /* h-scroller — compact horizontal slider, bottom-centred ABOVE the toolbar
+     bar. bottom offset clears the (wrapping) .ge-sp-bar; centred so it stays
+     clear of the right-edge z-slider. */
+  .ge-sp-hscroll {
+    position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+    z-index: 4; display: flex; align-items: center; justify-content: center;
+    padding: 3px 6px; border-radius: 6px;
+    background: rgba(237, 233, 254, 0.92); border: 1px solid #c4b5fd;
+    backdrop-filter: blur(2px);
+  }
+  .ge-sp-hslider {
+    width: 150px; height: 16px; margin: 0; cursor: ew-resize;
     accent-color: #7c3aed;
   }
   .ge-sp-n input { width: 54px; padding: 2px 5px; font: 11px ui-monospace, monospace; border: 1px solid #c4b5fd; border-radius: 4px; }
