@@ -28,6 +28,7 @@
  * here — that is graph-editor UI, left to the caller.
  */
 import { ensureOC } from '../brep-occt';
+import { creaseAwareCornerNormals, DEFAULT_CREASE_ANGLE } from '$lib/engines/trueform/crease-normals';
 
 export type BrepSvgMode = 'hlr' | 'edges';
 export type BrepSvgFill = 'none' | 'silhouette' | 'lambert';
@@ -36,7 +37,9 @@ export interface BrepSvgOpts {
   /** 'hlr' (default) = managed hidden-line removal; 'edges' = direct edge projection. */
   mode?: BrepSvgMode;
   /** 'none' (default) outline only · 'silhouette' fills the visible outline flat ·
-   *  'lambert' per-face analytic-normal shading (forces the ortho projector). */
+   *  'lambert' TESSELLATED per-triangle shading with CREASE-AWARE SMOOTHED normals
+   *  (the same normalizer the 3D BREP view uses) — a curved face reads as a smooth
+   *  gradient, not one flat tone. Forces the ortho projector. */
   fill?: BrepSvgFill;
   /** replicad ProjectionPlane string ('front'|'top'|'XZ'|…) or a ProjectionCamera.
    *  Default: front elevation — eye on +Y looking at origin, X horizontal, Z-down. */
@@ -166,41 +169,13 @@ function hlrAssembly(replicad: any, solid: any, opts: BrepSvgOpts): SvgAssembly 
   return { viewBox, body, mode: 'hlr' };
 }
 
-/** FALLBACK — direct edge projection (+ optional per-face Lambert fills). */
+/** FALLBACK — direct edge projection (line-art, no fill). The `fill:'lambert'`
+ *  path is handled by meshLambertAssembly; this is `mode:'edges'` + HLR recovery. */
 function edgeAssembly(replicad: any, solid: any, opts: BrepSvgOpts): SvgAssembly {
   const proj = orthoProjector(replicad, opts.camera);
   const margin = opts.margin ?? 2;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const bump = (p: [number, number]) => { if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; };
-
-  // Per-face Lambert fills (best-effort; each face guarded so one bad face is skipped).
-  let fills = '';
-  if (opts.fill === 'lambert') {
-    const light = norm(opts.light ?? [0.35, 1, -0.55]);
-    const ambient = opts.ambient ?? 0.35;
-    const base = rgb(opts.fillColor ?? '#c8ccd2');
-    let faces: any[] = [];
-    try { faces = solid.faces; } catch { faces = []; }
-    for (const face of faces) {
-      try {
-        const N = norm([face.normalAt().x, face.normalAt().y, face.normalAt().z]);
-        // Front-facing = outward normal points toward the eye, i.e. opposite the view dir.
-        if (dot(N, proj.viewDir) >= 0) continue;
-        const shade = clamp(Math.abs(dot(N, light)), ambient, 1);
-        const col = toHex([base[0] * shade, base[1] * shade, base[2] * shade]);
-        const wire2 = (wire: any): [number, number][] => {
-          const pts: [number, number][] = [];
-          const n = clamp((() => { try { return wire.edges.length * 8; } catch { return 32; } })(), 24, 256);
-          for (let i = 0; i < n; i++) { try { const v = wire.pointAt(i / n); const q = proj.project(v); bump(q); pts.push(q); } catch { /* skip */ } }
-          return pts;
-        };
-        const clone = face.clone ? face.clone() : face;               // outerWire() consumes the face
-        let d = polyD(wire2(face.outerWire()), true);
-        try { for (const iw of clone.innerWires()) d += ' ' + polyD(wire2(iw), true); } catch { /* no holes */ }
-        if (d) fills += `<path d="${d}" fill="${col}" fill-rule="evenodd" stroke="none"/>`;
-      } catch { /* skip this face */ }
-    }
-  }
 
   // Boundary edges.
   const strokeVisible = opts.strokeVisible ?? '#111';
@@ -218,13 +193,72 @@ function edgeAssembly(replicad: any, solid: any, opts: BrepSvgOpts): SvgAssembly
   if (!Number.isFinite(minX)) { minX = 0; minY = 0; maxX = 1; maxY = 1; }
   const viewBox: [number, number, number, number] = [minX - margin, minY - margin, (maxX - minX) + 2 * margin, (maxY - minY) + 2 * margin];
   const sw = opts.strokeWidth ?? Math.max(Math.max(viewBox[2], viewBox[3]) * 0.005, 1e-3);
-  let body = fills;
-  // `strokeVisible:'none'` suppresses the interior facet-edge grid so a Lambert
-  // fill reads as a clean SHADED solid (adjacent face shades define the form),
-  // not a dark wireframe. Edges are still projected above for the viewBox.
+  let body = '';
   if (strokeVisible !== 'none') {
     for (const d of edgePaths) body += `<path d="${d}" fill="none" stroke="${strokeVisible}" stroke-width="${fmt(sw)}" stroke-linejoin="round" stroke-linecap="round"/>`;
   }
+  return { viewBox, body, mode: 'edges' };
+}
+
+/**
+ * SHADED — tessellate the solid and Lambert-shade each triangle by a CREASE-AWARE
+ * SMOOTHED normal (`creaseAwareCornerNormals`, the exact-kernel shading pass the
+ * 3D BREP view uses). Smoothing across shallow dihedrals turns a curved face's
+ * facets into a smooth gradient (a plain cylinder shades, not one flat tone),
+ * while real creases (rims, box corners) stay hard. Back-face culled + painter-
+ * sorted (farthest first), no interior edge grid. This is the "shaded" fill.
+ */
+function meshLambertAssembly(replicad: any, solid: any, opts: BrepSvgOpts): SvgAssembly {
+  const proj = orthoProjector(replicad, opts.camera);
+  const margin = opts.margin ?? 2;
+  const mesh = solid.mesh({ tolerance: 0.01, angularTolerance: 0.12 });
+  const V: number[] = mesh?.vertices ?? [];
+  const Tr: number[] = mesh?.triangles ?? [];
+  if (Tr.length < 3 || V.length < 9) throw new Error('mesh produced no triangles');
+  // Crease-aware smoothed per-CORNER normals ([nt*9]) — smooth curves, hard creases.
+  const cn = creaseAwareCornerNormals(V, Tr, DEFAULT_CREASE_ANGLE);
+
+  const light = norm(opts.light ?? [0.35, 1, -0.55]);
+  const ambient = opts.ambient ?? 0.35;
+  const base = rgb(opts.fillColor ?? '#c8ccd2');
+
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const bump = (p: [number, number]) => { if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; };
+
+  const tris: { d: number; poly: [number, number][]; col: string }[] = [];
+  const nt = (Tr.length / 3) | 0;
+  for (let t = 0; t < nt; t++) {
+    const ia = Tr[t * 3], ib = Tr[t * 3 + 1], ic = Tr[t * 3 + 2];
+    const pa: Vec3 = [V[ia * 3], V[ia * 3 + 1], V[ia * 3 + 2]];
+    const pb: Vec3 = [V[ib * 3], V[ib * 3 + 1], V[ib * 3 + 2]];
+    const pc: Vec3 = [V[ic * 3], V[ic * 3 + 1], V[ic * 3 + 2]];
+    // Triangle normal = mean of its 3 crease-aware corner normals (smooth).
+    const o = t * 9;
+    const N = norm([
+      cn[o] + cn[o + 3] + cn[o + 6],
+      cn[o + 1] + cn[o + 4] + cn[o + 7],
+      cn[o + 2] + cn[o + 5] + cn[o + 8],
+    ]);
+    if (dot(N, proj.viewDir) >= 0) continue; // back-facing → cull
+    const shade = clamp(Math.abs(dot(N, light)), ambient, 1);
+    const col = toHex([base[0] * shade, base[1] * shade, base[2] * shade]);
+    const qa = proj.project({ x: pa[0], y: pa[1], z: pa[2] }); bump(qa);
+    const qb = proj.project({ x: pb[0], y: pb[1], z: pb[2] }); bump(qb);
+    const qc = proj.project({ x: pc[0], y: pc[1], z: pc[2] }); bump(qc);
+    // Depth key: projection onto the view dir (which points away from the eye) →
+    // farthest triangles have the LARGEST value, drawn first (painter's algorithm).
+    const d = (dot(pa, proj.viewDir) + dot(pb, proj.viewDir) + dot(pc, proj.viewDir)) / 3;
+    tris.push({ d, poly: [qa, qb, qc], col });
+  }
+  if (tris.length === 0) throw new Error('no front-facing triangles');
+  tris.sort((a, b) => b.d - a.d);
+
+  if (!Number.isFinite(minX)) { minX = 0; minY = 0; maxX = 1; maxY = 1; }
+  const viewBox: [number, number, number, number] = [minX - margin, minY - margin, (maxX - minX) + 2 * margin, (maxY - minY) + 2 * margin];
+  // Hairline stroke in the SAME colour closes the anti-alias seams between fills.
+  const sw = Math.max(Math.max(viewBox[2], viewBox[3]) * 0.0015, 1e-4);
+  let body = '';
+  for (const tr of tris) body += `<path d="${polyD(tr.poly, true)}" fill="${tr.col}" stroke="${tr.col}" stroke-width="${fmt(sw)}" stroke-linejoin="round"/>`;
   return { viewBox, body, mode: 'edges' };
 }
 
@@ -244,8 +278,18 @@ function wrapSvg(a: SvgAssembly, opts: BrepSvgOpts): string {
 export async function brepSolidToSvg(solid: any, opts: BrepSvgOpts = {}): Promise<string> {
   const replicad: any = await import('replicad');
   const mode: BrepSvgMode = opts.mode ?? 'hlr';
-  // Lambert needs the ortho projector (aligned fills + edges) → force the edge path.
-  if (mode === 'edges' || opts.fill === 'lambert') {
+  // Lambert = tessellated smooth-normal shading (its own projector + painter sort).
+  if (opts.fill === 'lambert') {
+    try {
+      return wrapSvg(meshLambertAssembly(replicad, solid, opts), opts);
+    } catch {
+      // Mesh/shade failed (degenerate solid) — degrade to a visible edge outline,
+      // never the empty body a 'none' stroke would leave.
+      const edgeOpts = { ...opts, fill: 'none' as const, strokeVisible: opts.strokeVisible === 'none' ? undefined : opts.strokeVisible };
+      return wrapSvg(edgeAssembly(replicad, solid, edgeOpts), opts);
+    }
+  }
+  if (mode === 'edges') {
     return wrapSvg(edgeAssembly(replicad, solid, opts), opts);
   }
   try {
