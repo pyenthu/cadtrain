@@ -53,9 +53,9 @@
   onpointerdown={(e) => e.stopPropagation()}
   onwheel={(e) => e.stopPropagation()}
 >
-  <!-- 2D | 3D | GRAPH surface toggle — the one PRIMARY control kept top-level.
-       2D = fast pure-SVG track (default); 3D lazy-mounts the Manifold cutaway;
-       GRAPH lazy-mounts the CAD graph editor on the well's generated graph. -->
+  <!-- 2D | 3D surface toggle — the one PRIMARY control kept top-level.
+       2D = fast pure-SVG track (default); 3D lazy-mounts the Manifold cutaway
+       (which embeds the full node-graph editor via the ✎ "edit graph" popover). -->
   <div class="wvc-seg" role="group" aria-label="View mode">
     <button type="button" class="wvc-seg-btn" class:on={settings.viewMode === '2d'}
       title="2D SVG track schematic (fast)" aria-pressed={settings.viewMode === '2d'}
@@ -63,10 +63,6 @@
     <button type="button" class="wvc-seg-btn" class:on={settings.viewMode === '3d'}
       title="3D Manifold cutaway" aria-pressed={settings.viewMode === '3d'}
       onclick={() => (settings.viewMode = '3d')}>3D</button>
-    <button type="button" class="wvc-seg-btn" class:on={settings.viewMode === 'graph'}
-      title="CAD graph editor — the well as a composition graph of bw_* parts"
-      aria-pressed={settings.viewMode === 'graph'}
-      onclick={() => (settings.viewMode = 'graph')}>GRAPH</button>
   </div>
 
   <!-- Single adjustments gear → the display-menu popover (SVTC WsonDisplayMenu). -->

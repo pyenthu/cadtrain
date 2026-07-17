@@ -7,14 +7,14 @@
    *     synchronous, NO Manifold CSG. This is the #1 perf lever: opening a tab
    *     no longer triggers the full 3D boolean build (ewells parity — see
    *     `docs/research/wells-perf-ewells-vs-cadtrain.md`).
-   *   • 3D + GRAPH (`GraphEditorPane`) — ONE lazily-mounted embedded editor over
-   *     the well's generated composition graph (`wsonToGraph`). The `3d` mode is
-   *     a chrome-free Manifold render (`embed.graphCanvas=false` → only the bake,
-   *     no node canvas); the `graph` mode is the full node editor. Same mounted
-   *     pane, embed reconfigured by mode — no double-bake. A well renders ONLY
-   *     through the CAD graph + engine (wells skill); this replaced the old
-   *     bespoke `WellSchematic3D`/`manifoldCut` THREE path, whose main-thread
-   *     Manifold init was COEP-blocked (memory `wells_empty_3d_wiring_gap`).
+   *   • 3D (`GraphEditorPane`) — ONE lazily-mounted embedded editor over the
+   *     well's generated composition graph (`wsonToGraph`). The `3d` mode is a
+   *     chrome-free Manifold render (`embed.graphCanvas=false` → only the bake,
+   *     no node canvas); the ✎ "edit graph" popover reconfigures the SAME pane
+   *     into the full node editor — no double-bake. A well renders ONLY through
+   *     the CAD graph + engine (wells skill); this replaced the old bespoke
+   *     `WellSchematic3D`/`manifoldCut` THREE path, whose main-thread Manifold
+   *     init was COEP-blocked (memory `wells_empty_3d_wiring_gap`).
    *
    * The control bar (`WellViewControls`) + element rail (`WellElementRail`)
    * mutate the shared settings, so their layer/scale toggles drive the views.
@@ -63,25 +63,26 @@
 
   const summary = $derived(summarise(wson));
 
-  // ONE lazy-mount latch for the embedded graph editor — it serves BOTH the 3D
-  // view (a chrome-free bake of the well graph via embed.graphCanvas=false) AND
-  // the full-editor GRAPH view. Sticky, so switching modes is instant and the
-  // baked geometry + graph state persist. A well that only ever shows 2D pays
-  // for zero Manifold work. (Replaces the old WellSchematic3D THREE path, whose
-  // main-thread manifoldCut was COEP-blocked — memory wells_empty_3d_wiring_gap.)
+  // ONE lazy-mount latch for the embedded graph editor. It serves the 3D view (a
+  // chrome-free bake of the well graph via embed.graphCanvas=false), and the ✎
+  // popover reconfigures the SAME pane into the full node editor. Sticky, so
+  // switching modes is instant and the baked geometry + graph state persist. A
+  // well that only ever shows 2D pays for zero Manifold work. (Replaces the old
+  // WellSchematic3D THREE path, whose main-thread manifoldCut was COEP-blocked —
+  // memory wells_empty_3d_wiring_gap.)
   let mountedEditor = $state(false);
   $effect(() => {
-    if ((view.viewMode === '3d' || view.viewMode === 'graph') && paneActive) mountedEditor = true;
+    if (view.viewMode === '3d' && paneActive) mountedEditor = true;
   });
 
-  // The embed config the editor mounts with, per view mode: 3D = a clean
-  // Manifold render (no node canvas, no toolbar/sidebar, only the bake tab);
-  // GRAPH = the full node editor. $derived so switching mode reconfigures the
-  // SAME mounted pane (no remount, no double-bake — only the active mode bakes).
-  // Open the full node editor as a LARGE popover from the clean 3D view — pop it
-  // open big, edit the graph, close back to the render. Reset on leaving 3D. When
-  // open, the SAME mounted pane reconfigures to the full editor (edits persist →
-  // the 3D reflects them on close; no second pane, no double-bake).
+  // The embed config the editor mounts with: 3D = a clean Manifold render (no
+  // node canvas, no toolbar/sidebar, only the bake tab); the ✎ popover = the full
+  // node editor. $derived so opening the popover reconfigures the SAME mounted
+  // pane (no remount, no double-bake — only the active config bakes). Open the
+  // full node editor as a LARGE popover from the clean 3D view — pop it open big,
+  // edit the graph, close back to the render. Reset on leaving 3D. When open, the
+  // SAME mounted pane reconfigures to the full editor (edits persist → the 3D
+  // reflects them on close; no second pane, no double-bake).
   let graphPopover = $state(false);
   $effect(() => {
     if (view.viewMode !== '3d') graphPopover = false;
@@ -133,7 +134,7 @@
     </div>
   {:else if summary}
     <!-- Stage: 2D SVG surface (default) + lazy 3D scene + shared overlays. -->
-    <section class="wv-stage" class:white={view.viewMode !== 'graph' && (view.viewMode === '2d' || view.whiteBg)}>
+    <section class="wv-stage" class:white={view.viewMode === '2d' || view.whiteBg}>
       <!-- 2D track schematic — always mounted (cheap). Hidden when in 3D. -->
       <div class="wv-surface" class:hidden={view.viewMode !== '2d'}>
         <WellSchematic2D {wson} {view} remap={remap2d} {onUpdateCompletion} {onDeleteCompletion} />
@@ -141,11 +142,11 @@
 
       <!-- CAD graph editor — the well's generated graph, baked through the SAME
            pipeline that bakes every bw_* part (wells skill: a well renders ONLY
-           through the CAD graph + engine). ONE mounted pane serves both views:
-           3D = a chrome-free Manifold render (embed.graphCanvas=false → no node
-           canvas); GRAPH = the full node editor. Shown for either mode, hidden in
-           2D. `seedGraph` hydrates the in-memory graph (opening writes NOTHING to
-           the volume; the pane's own Save creates `wellPartId` under wells/).
+           through the CAD graph + engine). ONE mounted pane: 3D = a chrome-free
+           Manifold render (embed.graphCanvas=false → no node canvas); the ✎
+           popover reconfigures it into the full node editor. Shown in 3D, hidden
+           in 2D. `seedGraph` hydrates the in-memory graph (opening writes NOTHING
+           to the volume; the pane's own Save creates `wellPartId` under wells/).
            Remounts only when the well changes. NO FALLBACK — a well we cannot
            express as a graph surfaces its error (wells skill). -->
       {#if mountedEditor}
@@ -156,7 +157,7 @@
         {/if}
         <div class="wv-surface" class:editor-offset={!inPopover}
           class:graph-popover={inPopover}
-          class:hidden={view.viewMode !== '3d' && view.viewMode !== 'graph'}>
+          class:hidden={view.viewMode !== '3d'}>
           {#if inPopover}
             <button class="wv-graph-close" type="button" title="Close the editor" onclick={() => (graphPopover = false)}>×</button>
           {/if}
@@ -173,7 +174,7 @@
               <GraphEditorPane
                 id={wellPartId}
                 embed={editorEmbed}
-                active={(view.viewMode === '3d' || view.viewMode === 'graph') && paneActive}
+                active={view.viewMode === '3d' && paneActive}
                 autoTf={false}
                 seedGraph={wellGraph.graph}
                 createDir="wells"
@@ -192,7 +193,7 @@
           title="Open the node-graph editor (large popover)"
           onclick={() => (graphPopover = true)}>✎ edit graph</button>
       {/if}
-      {#if view.viewMode !== 'graph' && !(view.viewMode === '3d' && graphPopover)}
+      {#if !(view.viewMode === '3d' && graphPopover)}
         <WellElementRail settings={view} {wson} />
       {/if}
     </section>
