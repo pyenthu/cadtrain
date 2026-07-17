@@ -435,6 +435,46 @@
   // solid (keeps clean HLR occlusion), 'lambert' = per-face normal shading.
   // Default shaded so a solid looks solid, not a hollow grid. Exposed as a toggle.
   let brepSvgFill = $state<'none' | 'silhouette' | 'lambert'>('lambert');
+  // ── B·SVG 2D pan/zoom (image-viewer style, client-only) ──────────────────────
+  // The injected SVG is centered at identity (scale 1, no pan) = the default fit.
+  // Wheel zooms toward the cursor, drag pans, ⌖ resets. State lives here (not in
+  // the SVG string) so re-projections don't fight it; it's RESET whenever a new
+  // projection loads (see the effect below) so a new part/fill starts fitted.
+  let bsvgScale = $state(1);
+  let bsvgTx = $state(0);
+  let bsvgTy = $state(0);
+  let bsvgDragging = $state(false);
+  let bsvgLastX = 0, bsvgLastY = 0;
+  const BSVG_MIN = 0.2, BSVG_MAX = 8;
+  function bsvgResetView() { bsvgScale = 1; bsvgTx = 0; bsvgTy = 0; }
+  function bsvgWheel(e: WheelEvent) {
+    e.preventDefault();
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    const cx = e.clientX - rect.left, cy = e.clientY - rect.top;
+    const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+    const next = Math.max(BSVG_MIN, Math.min(BSVG_MAX, bsvgScale * factor));
+    const k = next / bsvgScale;                 // keep the point under the cursor fixed
+    bsvgTx = cx - k * (cx - bsvgTx);
+    bsvgTy = cy - k * (cy - bsvgTy);
+    bsvgScale = next;
+  }
+  function bsvgPointerDown(e: PointerEvent) {
+    if (e.button !== 0) return;                  // left-drag only
+    bsvgDragging = true;
+    bsvgLastX = e.clientX; bsvgLastY = e.clientY;
+    (e.currentTarget as HTMLElement).setPointerCapture?.(e.pointerId);
+  }
+  function bsvgPointerMove(e: PointerEvent) {
+    if (!bsvgDragging) return;
+    bsvgTx += e.clientX - bsvgLastX;
+    bsvgTy += e.clientY - bsvgLastY;
+    bsvgLastX = e.clientX; bsvgLastY = e.clientY;
+  }
+  function bsvgPointerUp(e: PointerEvent) {
+    if (!bsvgDragging) return;
+    bsvgDragging = false;
+    (e.currentTarget as HTMLElement).releasePointerCapture?.(e.pointerId);
+  }
   $effect(() => {
     if (rightTab !== 'brepsvg' || !(active ?? true)) return;
     // Only (re)fetch off a real baked solid + non-empty source (mirror the BREP
@@ -449,6 +489,7 @@
     const key = JSON.stringify({ s: src, p: params, o: svgOpts });
     if (key === brepSvgKey) return; // already have this projection
     brepSvgKey = key;
+    bsvgResetView(); // a new part/projection re-fits (these vars aren't tracked here)
     brepSvgBusy = true;
     brepSvgError = '';
     let cancelled = false;
@@ -839,7 +880,19 @@
           <!-- No OCCT-buildable solid — mirror the BREP mesh tab's unsupported state. -->
           <div class="ge-empty">{brepSvgReason || 'no BREP-SVG path for this part'}</div>
         {:else if brepSvgStr}
-          <div class="ge-brepsvg-scroll">{@html brepSvgStr}</div>
+          <!-- Pan/zoom viewport: wheel = zoom toward cursor, drag = pan, ⌖ = fit.
+               The injected SVG rides a transform wrapper; identity = default fit. -->
+          <!-- svelte-ignore a11y_no_static_element_interactions -->
+          <div class="ge-brepsvg-scroll" class:grabbing={bsvgDragging}
+            onwheel={bsvgWheel} onpointerdown={bsvgPointerDown}
+            onpointermove={bsvgPointerMove} onpointerup={bsvgPointerUp}
+            onpointercancel={bsvgPointerUp}>
+            <div class="ge-brepsvg-view"
+              style="transform: translate({bsvgTx}px, {bsvgTy}px) scale({bsvgScale})">{@html brepSvgStr}</div>
+            <button class="ge-brepsvg-reset" type="button"
+              title="Reset view (fit)" aria-label="Reset BREP-SVG view to fit"
+              onpointerdown={(e) => e.stopPropagation()} onclick={bsvgResetView}>⌖</button>
+          </div>
           <!-- Cache/fresh badge row — mirrors the BREP mesh .ge-bake-meta. -->
           <div class="ge-bake-meta">
             {#if brepSvgBusy}
@@ -971,11 +1024,21 @@
   /* SVG tab — PrimitiveSvgView fills the pane (it manages its own toolbar +
      scroll). Give it a defined height so the renderer's container isn't 0px. */
   .ge-svg-body { min-height: 0; }
-  /* BREP-SVG tab — raw server SVG string ({@html}) centered in a scrollable box.
-     The {@html}-injected <svg> is UNSCOPED, so target it via :global. */
-  .ge-brepsvg-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex;
-    align-items: center; justify-content: center; padding: 12px; background: #fff; }
-  .ge-brepsvg-scroll :global(svg) { max-width: 100%; max-height: 100%; height: auto; }
+  /* BREP-SVG tab — raw server SVG string ({@html}) in an image-viewer-style
+     pan/zoom viewport. The viewport clips; the inner .ge-brepsvg-view carries the
+     translate()/scale() transform. The {@html}-injected <svg> is UNSCOPED → :global. */
+  .ge-brepsvg-scroll { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden;
+    background: #fff; cursor: grab; touch-action: none; }
+  .ge-brepsvg-scroll.grabbing { cursor: grabbing; }
+  .ge-brepsvg-view { position: absolute; inset: 0; display: flex; align-items: center;
+    justify-content: center; padding: 12px; transform-origin: 0 0; will-change: transform; }
+  .ge-brepsvg-view :global(svg) { max-width: 100%; max-height: 100%; height: auto; }
+  /* Reset-to-fit control, floated top-right of the viewport. */
+  .ge-brepsvg-reset { position: absolute; top: 6px; right: 6px; z-index: 2;
+    width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid #d1d5db; border-radius: 5px; background: rgba(255, 255, 255, 0.92);
+    color: #374151; cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
+  .ge-brepsvg-reset:hover { background: #f3f4f6; border-color: #9ca3af; }
   /* Fill-mode segmented toggle (outline / filled / shaded), right of the badge row. */
   .ge-bsvg-fill { display: inline-flex; border: 1px solid #d1d5db; border-radius: 5px;
     overflow: hidden; margin-left: 8px; }
