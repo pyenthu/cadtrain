@@ -22,6 +22,13 @@ const OCCT_TIMEOUT = 30_000; // OCCT WASM init + build can take a few seconds co
 // brep-to-svg tests use. Revolves to a plain cylinder.
 const CYL: [number, number][] = [[0.01, 0], [2, 0], [2, 6], [0.01, 6]];
 
+// An ASYMMETRIC "nail/mushroom" half-section for the Z-DOWN orientation pin: a WIDE
+// base disk (radius 3) at z 0→1 and a NARROW stem (radius 1) at z 1→6. Because the
+// world is Z-DOWN, the wide base (small z) MUST render at the TOP of the SVG and the
+// narrow stem tip (large z) at the BOTTOM. This gives a projection-invariant test:
+// the top half of the drawing must be markedly WIDER than the bottom half.
+const NAIL: [number, number][] = [[0.01, 0], [3, 0], [3, 1], [1, 1], [1, 6], [0.01, 6]];
+
 // A CSG part (box minus a smaller through-box) whose ONLY dep is the injected
 // r_cuboid engine — collectDeps skips engines, so this resolves with no fetch.
 const CSG_SRC = `export const meta = { id: 't_csg_svg', name: 't_csg_svg', kind: 'asm', uses: ['r_cuboid'], params: { a: { default: 4 }, b: { default: 2 } } };
@@ -63,10 +70,67 @@ function assertWellFormedSvg(svg: unknown): void {
   // Actual drawn content (boundary edges), and no NaN/Infinity leaking anywhere.
   const draws = (s.match(/<(path|line|polyline)\b/g) || []).length;
   expect(draws, 'svg must contain ≥1 drawn path/line (boundary content)').toBeGreaterThanOrEqual(1);
-  const tokens = s.match(/-?\d+(\.\d+)?(e-?\d+)?/gi) || [];
+  // Scan numeric COORDINATES for finiteness, but first strip hex colour literals:
+  // a shaded fill like "#7e8084" contains the substring "7e8084", which Number()
+  // reads as 7e8084 → Infinity and would trip the check even though the SVG is
+  // perfectly valid. Colours aren't coordinates, so drop them before the scan.
+  const coordsOnly = s.replace(/#[0-9a-f]{3,8}\b/gi, '');
+  const tokens = coordsOnly.match(/-?\d+(\.\d+)?(e-?\d+)?/gi) || [];
   expect(tokens.length, 'svg must carry numeric coordinates').toBeGreaterThan(0);
   expect(tokens.every((n) => Number.isFinite(Number(n))), 'all svg numbers must be finite').toBe(true);
 }
+
+/** Extract every (x,y) coordinate pair from the SVG's `<path d="…">` attributes.
+ *  Our exporters emit only M/L/Z commands (no curves), so stripping the command
+ *  letters and reading numbers in x,y pairs recovers the drawn points exactly. */
+function svgPathPoints(svg: string): [number, number][] {
+  const pts: [number, number][] = [];
+  for (const m of svg.matchAll(/\bd="([^"]*)"/g)) {
+    const nums = (m[1].replace(/[A-Za-z]/g, ' ').match(/-?\d+(?:\.\d+)?(?:e-?\d+)?/gi) || []).map(Number);
+    for (let i = 0; i + 1 < nums.length; i += 2) pts.push([nums[i], nums[i + 1]]);
+  }
+  return pts;
+}
+
+/** Pin the Z-DOWN orientation for a projected NAIL: the wide base (radius 3, z≈0)
+ *  must land at the TOP (small SVG-y) and the narrow stem (radius 1, z≈6) at the
+ *  BOTTOM (large SVG-y). We measure the max |x| in the top vs bottom half of the
+ *  drawing's y-range — the top half must be clearly wider. If the projection were
+ *  vertically flipped (the pre-fix bug) this inverts and the assertion fails. */
+function assertLargeZAtBottom(svg: string, label: string): void {
+  const pts = svgPathPoints(svg);
+  expect(pts.length, `${label}: must parse ≥4 path points`).toBeGreaterThan(3);
+  const ys = pts.map((p) => p[1]);
+  const midY = (Math.min(...ys) + Math.max(...ys)) / 2;
+  const top = pts.filter((p) => p[1] < midY).map((p) => Math.abs(p[0]));
+  const bot = pts.filter((p) => p[1] >= midY).map((p) => Math.abs(p[0]));
+  expect(top.length && bot.length, `${label}: points must span both halves`).toBeTruthy();
+  const topMax = Math.max(...top);
+  const botMax = Math.max(...bot);
+  // Base radius 3 vs stem radius 1 → the top half must be ~3× wider. A generous
+  // 1.3× threshold stays robust to meshing/silhouette sampling yet still fails
+  // hard on an upside-down projection (which would give top/bottom ≈ 1/3).
+  expect(topMax, `${label}: wide z≈0 base must render at the TOP — top½ maxX ${topMax.toFixed(2)} vs bottom½ maxX ${botMax.toFixed(2)}`).toBeGreaterThan(botMax * 1.3);
+}
+
+describe('/api/brep/svg — Z-down orientation', () => {
+  // All three fills must agree: larger z (deeper) renders LOWER (larger SVG-y).
+  for (const fill of ['none', 'silhouette', 'lambert'] as const) {
+    it(`fill:"${fill}" places the wide z≈0 base at the TOP (Z-down)`, async () => {
+      const { data } = await callPost({ kind: 'revolve', profile: NAIL, fill });
+      expect(data.supported, `expected supported:true, got ${JSON.stringify(data)}`).toBe(true);
+      assertWellFormedSvg(data.svg);
+      assertLargeZAtBottom(data.svg, `fill:${fill}`);
+    }, OCCT_TIMEOUT);
+  }
+
+  it('mode:"edges" (direct edge projection) is oriented the same way', async () => {
+    const { data } = await callPost({ kind: 'revolve', profile: NAIL, mode: 'edges' });
+    expect(data.supported).toBe(true);
+    assertWellFormedSvg(data.svg);
+    assertLargeZAtBottom(data.svg, 'mode:edges');
+  }, OCCT_TIMEOUT);
+});
 
 describe('/api/brep/svg — revolve input', () => {
   it('{ kind:"revolve", profile } → supported SVG with boundary paths', async () => {

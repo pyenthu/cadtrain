@@ -84,23 +84,35 @@ const toHex = (c: Vec3): string =>
   '#' + c.map((v) => Math.round(clamp(v, 0, 1) * 255).toString(16).padStart(2, '0')).join('');
 
 /**
- * Ortho projector for the fallback + Lambert paths. Reads the camera's own basis
- * (xAxis/yAxis/direction) so fills + edges share ONE consistent 2D frame; falls
- * back to the front-elevation frame (X horizontal, Z vertical, eye +Y) if a
- * ProjectionCamera can't be built.
+ * Ortho projector for the fallback + Lambert paths. Uses a fixed Z-DOWN front
+ * elevation (X horizontal, +Z pointing DOWN on screen, eye +Y) by default so
+ * fills + edges share ONE consistent 2D frame that matches the 3D views'
+ * up = [0,0,-1]. A REAL supplied ProjectionCamera object overrides that with its
+ * own basis (xAxis/yAxis/direction); a camera STRING is ignored (default frame).
  */
 function orthoProjector(replicad: any, cameraOpt: unknown) {
-  let xAxis: Vec3 = [1, 0, 0], yAxis: Vec3 = [0, 0, 1], viewDir: Vec3 = [0, -1, 0];
-  try {
-    const cam = (cameraOpt && typeof cameraOpt === 'object')
-      ? (cameraOpt as any)
-      : new replicad.ProjectionCamera([0, 100, 0], [0, -1, 0], [1, 0, 0]);
-    const rd = (v: any): Vec3 => [v.x, v.y, v.z];
-    xAxis = rd(cam.xAxis); yAxis = rd(cam.yAxis); viewDir = rd(cam.direction);
-  } catch { /* keep front-elevation defaults */ }
+  // DEFAULT front-elevation frame for the Z-DOWN world: X horizontal (screen-right
+  // = +X, never mirrored), eye on +Y looking at the origin, and the SCREEN vertical
+  // = +Z pointing DOWN. Paired with project()'s `-dot(v, yAxis)`, yAxis = [0,0,-1]
+  // maps larger z (deeper) to larger SVG-y (LOWER on screen) — matching the 3D
+  // views' camera up = [0,0,-1]. NOTE: a freshly-built default ProjectionCamera's
+  // YDirection is +Z (which rendered large-z at the TOP — the upside-down bug), so
+  // for the default frame we must NOT read a camera basis; we hard-set the Z-down one.
+  let xAxis: Vec3 = [1, 0, 0], yAxis: Vec3 = [0, 0, -1], viewDir: Vec3 = [0, -1, 0];
+  // Only a REAL supplied ProjectionCamera object overrides the default frame (its
+  // own basis is honoured verbatim). A camera STRING — or nothing — keeps the
+  // Z-down front elevation above.
+  if (cameraOpt && typeof cameraOpt === 'object') {
+    try {
+      const cam = cameraOpt as any;
+      const rd = (v: any): Vec3 => [v.x, v.y, v.z];
+      xAxis = rd(cam.xAxis); yAxis = rd(cam.yAxis); viewDir = rd(cam.direction);
+    } catch { /* keep front-elevation defaults */ }
+  }
   const project = (p: { x: number; y: number; z: number }): [number, number] => {
     const v: Vec3 = [p.x, p.y, p.z];
-    // SVG y grows DOWN — negate the frame's vertical so "up" reads up on screen.
+    // SVG y grows DOWN — negate the frame's vertical. For the default Z-down frame
+    // (yAxis = [0,0,-1]) this sends larger z to larger SVG-y (bottom); x untouched.
     return [dot(v, xAxis), -dot(v, yAxis)];
   };
   return { project, xAxis, yAxis, viewDir };
@@ -139,7 +151,16 @@ interface SvgAssembly { viewBox: [number, number, number, number]; body: string;
 
 /** PRIMARY — managed HLR (drawProjection) → visible/hidden Drawings → SVG paths. */
 function hlrAssembly(replicad: any, solid: any, opts: BrepSvgOpts): SvgAssembly {
-  const camera = (opts.camera ?? new replicad.ProjectionCamera([0, 100, 0], [0, -1, 0], [1, 0, 0])) as any;
+  // Z-DOWN front elevation. replicad's Drawing→SVG emits screen-y = -(dot(v,
+  // camYDir)) (it mirrors the blueprint across the x-axis, and the viewBox negates
+  // the max-y). With the old camera (eye +Y, dir -Y, xAxis +X) OCCT derives
+  // camYDir = dir × xAxis = +Z, so screen-y = -z → large z at the TOP (upside
+  // down for our Z-down world). Putting the eye on -Y (dir +Y) with the SAME
+  // xAxis = +X flips camYDir to dir × xAxis = [0,0,-1], so screen-y = +z → large z
+  // at the BOTTOM, consistent with the ortho (shaded/edges) projector above and
+  // the 3D views. xAxis stays [1,0,0] so screen-x = world-x (never mirrored); the
+  // outer silhouette is view-side-independent (identical for revolves).
+  const camera = (opts.camera ?? new replicad.ProjectionCamera([0, -100, 0], [0, 1, 0], [1, 0, 0])) as any;
   const { visible, hidden } = replicad.drawProjection(solid, camera);
   const margin = opts.margin ?? 2;
   const viewBox = parseViewBox(visible.toSVGViewBox(margin));
