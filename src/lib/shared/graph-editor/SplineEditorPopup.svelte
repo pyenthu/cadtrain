@@ -384,7 +384,10 @@
   .ge-sp-canvas { position: relative; width: 100%; height: 340px; min-height: 240px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fafafa; overflow: hidden; }
   /* Screen-fixed toolbar overlays (NOT Threlte <HTML> — those drift with orbit). */
   .ge-sp-views { position: absolute; top: 6px; left: 6px; display: flex; gap: 3px; z-index: 4; }
-  .ge-sp-bar { position: absolute; bottom: 6px; left: 6px; right: 6px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; z-index: 4; }
+  /* Vertical LEFT column, starting BELOW the .ge-sp-views buttons (top:6px, ~28px
+     tall) so it clears them; keeps the bottom-CENTER free for the .ge-sp-hscroll
+     and the right edge free for the .ge-sp-zscroll. */
+  .ge-sp-bar { position: absolute; top: 44px; left: 6px; bottom: auto; right: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 5px; flex-wrap: nowrap; z-index: 4; }
   .ge-sp-obtn {
     padding: 3px 8px; font: 600 11px Arial; cursor: pointer; border-radius: 4px;
     background: rgba(237, 233, 254, 0.92); color: #4c1d95; border: 1px solid #c4b5fd;
