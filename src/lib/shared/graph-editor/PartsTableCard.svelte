@@ -52,8 +52,14 @@
 
   /** Row `idx`'s current override (null when unset). */
   function matOf(idx: number): RowMaterial | null { return rowMaterials[idx] ?? null; }
-  /** The swatch fill for a row — its override colour, else a neutral "unset" grey. */
-  function swatchFill(idx: number): string { return matOf(idx)?.color ?? 'transparent'; }
+  /** The tint for a row's material sphere — its override colour when set; the purple
+   *  accent when the override is colourless (preset/opacity only) so a SET row still
+   *  reads distinct; 'transparent' when unset (button then shows pure black/white). */
+  function swatchFill(idx: number): string {
+    const c = matOf(idx)?.color;
+    if (c) return c;
+    return isMatSet(idx) ? '#7c5fc0' : 'transparent';
+  }
   function isMatSet(idx: number): boolean {
     const m = matOf(idx);
     return !!m && (!!m.color || !!m.preset || typeof m.opacity === 'number');
@@ -125,8 +131,13 @@
           <tr class="pt-row">
             <td class="pt-cell pt-cell-del">
               <span class="pt-lcluster">
-                <!-- Per-row material / colour override swatch (#38d): all rows share
-                     one template, so this is how a row gets its own colour. -->
+                <!-- Per-row material / colour override (#38d): a round black|white
+                     "material sphere" button (rows share one template, so this is how a
+                     row gets its own colour). Opens RowMaterialPopover.
+                     TODO(material-wire): this trigger could ALSO be a wire socket binding
+                     the row to a material node (src/lib/graph/nodes/kinds/material.ts) —
+                     deferred; wiring touches shared graph/emit plumbing (graph-to-tf,
+                     composition types) another change owns. -->
                 <button class="pt-swatch" class:pt-swatch-set={isMatSet(idx)}
                   style={`--sw:${swatchFill(idx)}`} title="row {idx + 1} material / colour"
                   onclick={(e) => openMatPop(idx, e)} aria-label="row {idx + 1} material"></button>
@@ -204,12 +215,17 @@
   .pt-tool { border: none; background: none; cursor: pointer; opacity: 0.55; padding: 0 2px; font-size: 11px; }
   .pt-tool:hover { opacity: 1; }
   .pt-del:hover { color: #b3261e; }
-  /* Per-row material / colour swatch (#38d) — a small square left of the trash.
-     Unset (--sw:transparent) reads as a dashed hollow chip; set = its colour fill. */
-  .pt-swatch { width: 13px; height: 13px; padding: 0; border-radius: 3px; cursor: pointer;
-    background: var(--sw, transparent); border: 1px dashed #a98fd8; }
-  .pt-swatch.pt-swatch-set { border-style: solid; border-color: rgba(0,0,0,0.25); }
+  /* Per-row material / colour trigger (#38d) — a round "material sphere" button,
+     hemispherically split black|white (evokes a shaded material-preview ball) left of
+     the trash. UNSET = pure black|white halves; SET tints the light hemisphere to the
+     row's override colour (--sw) so it reads distinct. A thin purple-grey ring keeps the
+     white half legible on the light card. Opens RowMaterialPopover. */
+  .pt-swatch { width: 14px; height: 14px; padding: 0; border-radius: 50%; cursor: pointer;
+    box-sizing: border-box; flex: none; border: 1px solid #9b86c9;
+    background: linear-gradient(90deg, #111 0 50%, #fff 50% 100%); }
+  .pt-swatch.pt-swatch-set { background: linear-gradient(90deg, #111 0 50%, var(--sw, #7c5fc0) 50% 100%); }
   .pt-swatch:hover { outline: 1px solid #7c5fc0; outline-offset: 1px; }
+  .pt-swatch:focus-visible { outline: 2px solid #7c5fc0; outline-offset: 1px; }
 
   /* Per-row output socket — pinned to the RIGHT edge of the card so it stays at the
      edge even while the columns scroll horizontally (sticky right, user 2026-07-13). */
