@@ -133,6 +133,16 @@
   ];
   /** Snap-to-grid drag aid (⊞) — bound into SplineScene (read there during drag). */
   let snap = $state(false);
+  /** Vertical z-pan of the FLAT plane views — bound into SplineScene, driven by
+   *  the z-scroller slider (shown only in yz/xz). SplineScene resets it to 0 on
+   *  every view switch. */
+  let zPan = $state(0);
+  /** Point-cloud Z extent → the z-scroller travel (±zExtent, centred at 0). */
+  const zExtent = $derived.by(() => {
+    const vs = points.filter((p) => Array.isArray(p) && p.length >= 3);
+    const bb = pointsBbox(vs);
+    return Math.max(bb.max[2] - bb.min[2], 1);
+  });
   /** Visible grid cell size (bbox → gridFor) — the round step for snapped adds. */
   const snapStep = $derived.by(() => {
     const vs = points.filter((p) => Array.isArray(p) && p.length >= 3);
@@ -230,7 +240,7 @@
       <SplineScene
         {points} {samples} {closed}
         interactive={!wired}
-        bind:selectedIdx bind:view bind:snap
+        bind:selectedIdx bind:view bind:snap bind:zPan
         {onPointsChange} />
     </Canvas>
 
@@ -240,6 +250,19 @@
         <button class="ge-sp-obtn" class:on={view === v.k} type="button" title={v.tip} onclick={() => (view = v.k)}>{v.label}</button>
       {/each}
     </div>
+
+    <!-- z-scroller — vertical slider on the RIGHT edge, only in the flat YZ/XZ
+         plane views (where Z is the vertical screen axis). Pans the camera
+         up/down along Z. Sign: drag the thumb UP → view pans UP (larger zPan =
+         target moves toward +Z). Fine-tune the direction in the browser if it
+         feels inverted. -->
+    {#if view === 'yz' || view === 'xz'}
+      <div class="ge-sp-zscroll" title="Pan the view up / down (Z)">
+        <input class="ge-sp-zslider" type="range"
+          min={-zExtent} max={zExtent} step={zExtent / 100}
+          bind:value={zPan} aria-label="Pan the view up / down (Z)" />
+      </div>
+    {/if}
     <!-- point / sample controls — bottom bar, screen-fixed -->
     <div class="ge-sp-bar">
       <button class="ge-sp-obtn" type="button" onclick={addPoint} disabled={wired} title={wired ? 'Points come from a wired expression' : 'Append a control point'}>＋ pt</button>
@@ -341,8 +364,20 @@
   .ge-sp-obtn:hover:not(:disabled) { background: #ddd6fe; }
   .ge-sp-obtn:disabled { opacity: 0.5; cursor: default; }
   .ge-sp-obtn.on { background: #a78bfa; color: #fff; border-color: #7c3aed; }
-  .ge-sp-n { margin-left: auto; display: flex; align-items: center; gap: 4px; font: 600 11px Arial; color: #374151;
-    background: rgba(255, 255, 255, 0.85); padding: 2px 6px; border-radius: 4px; }
+  /* z-scroller — compact vertical slider pinned to the right edge, centred. */
+  .ge-sp-zscroll {
+    position: absolute; top: 50%; right: 6px; transform: translateY(-50%);
+    z-index: 4; display: flex; align-items: center; justify-content: center;
+    padding: 6px 3px; border-radius: 6px;
+    background: rgba(237, 233, 254, 0.92); border: 1px solid #c4b5fd;
+    backdrop-filter: blur(2px);
+  }
+  /* vertical-lr + direction:rtl → thumb travels UP for a larger value. */
+  .ge-sp-zslider {
+    writing-mode: vertical-lr; direction: rtl;
+    width: 16px; height: 150px; margin: 0; cursor: ns-resize;
+    accent-color: #7c3aed;
+  }
   .ge-sp-n input { width: 54px; padding: 2px 5px; font: 11px ui-monospace, monospace; border: 1px solid #c4b5fd; border-radius: 4px; }
   .ge-sp-help { font: 11px Arial; color: #6b7280; line-height: 1.4; }
   .ge-sp-help b { color: #5b21b6; font-weight: 700; }

@@ -39,6 +39,7 @@
     selectedIdx = $bindable(-1),
     view = $bindable<SplineView>('free'),
     snap = $bindable(false),
+    zPan = $bindable(0),
     onPointsChange,
   }: {
     points: Vec3[];
@@ -56,6 +57,11 @@
     /** Snap-to-grid drag aid (⊞). Owned by the popup toolbar; read here in the
      *  point-drag so dragged points round to the visible grid. */
     snap?: boolean;
+    /** Vertical Z-pan of the FLAT plane views (yz/xz) — the popup's z-scroller
+     *  slider. Pans the orthographic camera UP/DOWN along world Z (the vertical
+     *  screen axis in those views); ignored in free/xy. Reset to 0 on view
+     *  switch. Owned by the popup toolbar (bound). */
+    zPan?: number;
     onPointsChange: (pts: Vec3[]) => void;
   } = $props();
 
@@ -162,6 +168,10 @@
   // UNTRACKED so dragging a point never re-frames / jumps the camera.
   $effect(() => {
     const v = view;
+    // Reset the vertical z-pan on every view switch. This effect tracks ONLY
+    // `view` (the bbox/size snapshot below is read UNTRACKED), and it does not
+    // READ zPan, so writing it here can't self-trigger a loop.
+    zPan = 0;
     if (v === 'free') { planeFrame = null; invalidate(); return; }
     untrack(() => {
       const pa = planeAxes(v)!;
@@ -182,6 +192,21 @@
       };
     });
     invalidate();
+  });
+
+  // ─── vertical z-scroller (plane-view pan) ─────────────────────────────────
+  // The robust pan with OrbitControls(enableRotate=false): keep `position` at
+  // the static planeFrame.pos and move ONLY the `target` by `zPan` along world
+  // Z. OrbitControls preserves its spherical position→target offset, so the
+  // camera is carried by the SAME delta → a clean vertical pan, no rotation.
+  // Only yz/xz have Z as the vertical SCREEN axis (up=[0,0,1]); xy locks Z
+  // (out of plane) and free is the orbit — no z-pan there. Panning along Z is
+  // IN-PLANE for yz/xz, so the along-view (lockAxis) distance to the geometry
+  // is unchanged → the near/far clip planes are never crossed.
+  const planeTarget = $derived.by<Vec3>(() => {
+    const c: Vec3 = planeFrame ? planeFrame.center : [0, 0, 0];
+    const dz = view === 'yz' || view === 'xz' ? zPan : 0;
+    return [c[0], c[1], c[2] + dz];
   });
 
   // ─── zoom-stable handle sizing (item c) ───────────────────────────────────
@@ -311,7 +336,7 @@
   </T.PerspectiveCamera>
 {:else if planeFrame}
   <T.OrthographicCamera makeDefault args={planeFrame.args} position={planeFrame.pos} up={planeFrame.up} zoom={1}>
-    <OrbitControls bind:ref={orbit} enableDamping enableRotate={false} enabled={orbitEnabled} target={planeFrame.center} />
+    <OrbitControls bind:ref={orbit} enableDamping enableRotate={false} enabled={orbitEnabled} target={planeTarget} />
   </T.OrthographicCamera>
 {/if}
 
