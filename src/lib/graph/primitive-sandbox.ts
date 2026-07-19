@@ -46,14 +46,32 @@ export const SANDBOX_ARG_NAMES: string[] = [
   ...MATH_NAMES,
 ];
 
-/** Argument VALUES, index-aligned with `SANDBOX_ARG_NAMES`. */
-export function sandboxArgValues(): any[] {
+/** Argument VALUES, index-aligned with `SANDBOX_ARG_NAMES`.
+ *
+ * `viewScale` (optional) is the NON-PERSISTED display exaggeration for warped
+ * parts (Problem 2, spline-aware scale): `radial` fattens the section (⊥ the
+ * tangent), `depth` scales the spline UNIFORMLY (shape kept, length ∝) + the
+ * arc-length. It multiplies whatever the warp node already carries, so a bake
+ * with no viewScale (or 1,1) injects the plain `warpManifoldAlongSpline` and is
+ * byte-identical. Applied here so BOTH the client worker (`bake-worker-core`)
+ * and the server loader inject it from the same place. */
+export function sandboxArgValues(viewScale?: { radial?: number; depth?: number }): any[] {
+  const vr = (Number.isFinite(viewScale?.radial) && (viewScale!.radial as number) > 0) ? (viewScale!.radial as number) : 1;
+  const vd = (Number.isFinite(viewScale?.depth) && (viewScale!.depth as number) > 0) ? (viewScale!.depth as number) : 1;
+  const warpFn = (vr !== 1 || vd !== 1)
+    ? (m: any, cp: any, opts: any = {}) => warpManifoldAlongSpline(m, cp, {
+        ...opts,
+        xDiaScale: (Number.isFinite(opts?.xDiaScale) ? opts.xDiaScale : 1) * vr,
+        yScale: (Number.isFinite(opts?.yScale) ? opts.yScale : 1) * vd,
+        splineScale: (Number.isFinite(opts?.splineScale) ? opts.splineScale : 1) * vd,
+      })
+    : warpManifoldAlongSpline;
   return [
     helpers.M, helpers.CS, helpers.cyl, helpers.tube, helpers.mv, helpers.rot, helpers.place, helpers.zMin, helpers.zMax, helpers.zLen, helpers.ref, helpers.head, helpers.tail, helpers.mate, helpers.align, helpers.stack, helpers.overlay, helpers.withStackRef,
     helpers.CIRCULAR_SEGMENTS_DEFAULT, helpers.CIRCULAR_SEGMENTS_COMPOSE,
     helpers.initManifold, helpers.setCircularSegmentMode, helpers.getCutBox, helpers.empty,
     helpers.helix_band, helpers.revolve, helpers.profile_extrude,
-    gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, sweepAnnular, boredSweep, loftStations, resampleSpline, surveyToXYZ, resolveProfile, warpManifoldAlongSpline, helpers.sectionCut,
+    gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, sweepAnnular, boredSweep, loftStations, resampleSpline, surveyToXYZ, resolveProfile, warpFn, helpers.sectionCut,
     cs, extrude_csg, ext, resample,
     compileSketch,
     helpers.tagManifold,
