@@ -24,12 +24,14 @@
  *  3. A SINGLE-material / un-preset part stays BYTE-IDENTICAL — no `parts` key,
  *     so it renders through the unchanged merged-mesh path (the hard gate).
  *
- *  4. BREP CANNOT feed the per-part path from the adapter: `brep-occt.ts` FUSES
- *     every subpart into ONE OCCT solid before tessellating, so the response
- *     (and `brepResponseToGeo`) is a single merged mesh with no per-part /
- *     per-material data. Per-part BREP would require a server-side change
- *     (emit per-part geometry) — out of scope here. This documents the real,
- *     structural limitation so a future reader knows WHY BREP differs.
+ *  4. BREP now REACHES per-part parity (#947, 2026-07-19). `brep-occt.ts` already
+ *     meshes each subpart separately for color-by-source; it now ALSO emits a
+ *     `parts[]` list — each carrying that subpart's resolved appearance (the SAME
+ *     `lut.appearance[hashId]` MF reads) — so `brepResponseToGeo` returns
+ *     `{ parts, full }` and the scene's per-part arm renders each subpart with its
+ *     OWN material (opacity · MATL preset · texture), not one flat opaque mesh.
+ *     Emitted only for an UNCUT multi-part solid with an active LUT; the cut view
+ *     and single-material parts stay on the merged mesh (byte-identical).
  */
 import { describe, it, expect } from 'vitest';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';
@@ -181,12 +183,13 @@ describe('hard gate — single-material parts stay byte-identical (no per-part p
   });
 });
 
-describe('BREP — structurally single-merged (no per-part path in the adapter)', () => {
-  // The BREP server (`brep-occt.ts`) fuses/compounds every subpart into ONE OCCT
-  // solid before tessellating, so the response carries no per-part / per-material
-  // data. The adapter therefore returns a single merged geometry and can never
-  // feed the scene's per-part arm. Per-part BREP needs a SERVER change (emit
-  // per-part geometry) — out of scope (brep-occt.ts is off-limits here).
+describe('BREP — per-part appearance when a LUT is active (#947)', () => {
+  // BREP now reaches per-part parity: an UNCUT multi-part solid baked with an
+  // active LUT emits a `parts[]` list (each = one subpart's mesh + appearance),
+  // so `brepResponseToGeo` returns `{ parts, full }` and the scene's per-part arm
+  // renders each subpart with its OWN material. A response WITHOUT a `parts` field
+  // (single-material / cut view) still routes to the merged `{ full }` / `{ cutVC }`
+  // path — byte-identical. These adapter assertions run HEADLESS (no OCCT).
   const solidResponse = {
     supported: true as const,
     positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
@@ -202,24 +205,49 @@ describe('BREP — structurally single-merged (no per-part path in the adapter)'
     cut: true,
   };
 
-  it('brepResponseToGeo emits a single { full } / { cutVC } — never parts/cutParts', () => {
+  it('a response with NO parts field routes to a single { full } / { cutVC }', () => {
     const solidGeo = brepResponseToGeo(solidResponse) as any;
     expect(solidGeo.full).toBeTruthy();
     expect(solidGeo.parts).toBeUndefined();
-    expect(solidGeo.cutParts).toBeUndefined();
 
     const cutGeo = brepResponseToGeo(cutResponse) as any;
     expect(cutGeo.cutVC).toBeTruthy();
     expect(cutGeo.parts).toBeUndefined();
-    expect(cutGeo.cutParts).toBeUndefined();
   });
 
-  it('a multi-material assembly bakes to ONE merged OCCT mesh (no per-part fields)', async () => {
+  it('a response WITH a parts array → { parts, full }, appearance preserved per part', () => {
+    // The shape `assemblePartMeshList` emits: each part = one sub-solid mesh +
+    // its resolved appearance (colour · MATL preset · opacity). The adapter must
+    // build one geometry per part AND keep a merged `full` for the camera bbox.
+    const partsResponse = {
+      supported: true as const,
+      // merged mesh (two triangles) — the bbox `full`.
+      positions: [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 2, 1, 0, 2, 0, 1, 2],
+      colors: new Array(18).fill(0.5),
+      cut: false,
+      parts: [
+        { positions: [0, 0, 0, 1, 0, 0, 0, 1, 0], index: [0, 1, 2], appearance: { colorOuter: M_STEEL, material: 'steel' } },
+        { positions: [0, 0, 2, 1, 0, 2, 0, 1, 2], index: [0, 1, 2], appearance: { colorOuter: M_BRASS, material: 'brass', opacity: 0.5 } },
+      ],
+    };
+    const geo = brepResponseToGeo(partsResponse) as any;
+    expect(geo.parts?.length).toBe(2);
+    expect(geo.full).toBeTruthy();               // merged mesh kept for the bbox
+    expect(geo.parts[0].geo.getAttribute('position').count).toBeGreaterThan(0);
+    // Per-part material/colour ASSIGNMENT matches what MF/TF resolve for the same
+    // two subparts (the whole point of the fix).
+    expect(sortedKeys(geo.parts.map((p: any) => p.appearance))).toEqual(sortedKeys([
+      { colorOuter: M_STEEL, material: 'steel' },
+      { colorOuter: M_BRASS, material: 'brass', opacity: 0.5 },
+    ]));
+  });
+
+  it('a multi-material assembly WITHOUT a LUT bakes to ONE merged OCCT mesh (needs OCCT)', async () => {
+    // Back-compat: no LUT passed → the merged path (no `parts`). Exercises the real
+    // OCCT executor, so it is skipped where the WASM kernel cannot load.
     const mesh: any = await brepFromSource(sources.m_asm, {}, { cut: false }, fetchFixture);
     expect(mesh).toBeTruthy();
     expect(mesh.positions.length).toBeGreaterThan(0);
-    // No per-part breakdown exists on the BREP response — one fused mesh.
     expect(mesh.parts).toBeUndefined();
-    expect(mesh.cutParts).toBeUndefined();
   });
 });

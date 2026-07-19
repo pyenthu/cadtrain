@@ -21,6 +21,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as mathLib from '$lib/graph/math-lib';
 import type { PartColorLUT } from '$lib/graph/part-lut-types';
+import type { PartAppearance } from '$lib/shared/viewer/part-appearance';
+import type { BrepPartResponse } from './brep-adapter';
 
 // The bare-name math surface a part/assembly body may reference (cos/sin/tau/…
 // PLUS ceil/hypot/sign/clamp/frac/lerp/deg/rad/pi/atan2/…). Mirror the primitive
@@ -129,6 +131,11 @@ export interface BrepMesh {
   colors?: number[];
   cut?: boolean;
   meta: { tris: number; verts: number; ms: number; tolerance: number };
+  /** #947 — per-part meshes + resolved appearance for the UNCUT color-by-source
+   *  path. Populated ALONGSIDE the merged `positions`/`colors` (which stay the
+   *  camera-fit bbox mesh) so the client renders each subpart with its OWN
+   *  material via the scene's per-part arm. Absent → single merged mesh, as before. */
+  parts?: BrepPartResponse[];
 }
 
 export interface MeshOpts {
@@ -245,6 +252,48 @@ export function assemblePartColorMesh(
     cut: false,
     meta: { tris: ntTotal, verts: ntTotal * 3, ms, tolerance },
   };
+}
+
+/**
+ * Resolve ONE part's full render appearance (colour · MATL preset · opacity ·
+ * texture) from a color-by-source LUT + the part's source hashId — the SAME
+ * lookup the Manifold render path uses (`render-helpers.ts:buildSourceParts`,
+ * `lut.appearance[hashId] ?? { colorOuter, colorInner, opacity }`). This is what
+ * makes BREP render at PARITY with MF: the LUT `analyzeParts` builds already
+ * carries each subpart's material/texture/opacity in `lut.appearance[id]`; we
+ * just hand it through per part instead of collapsing to one flat mesh. An
+ * un-keyed / untagged part → `{}`, so the scene falls back to its red default
+ * (matching the merged legacy skin).
+ */
+export function partAppearanceFromLut(lut: PartColorLUT, hashId: number | undefined): PartAppearance {
+  if (hashId !== undefined && lut.appearance?.[hashId]) return lut.appearance[hashId];
+  if (hashId === undefined) return {};
+  const out: PartAppearance = {};
+  if (lut.outer[hashId]) out.colorOuter = lut.outer[hashId];
+  if (lut.inner[hashId]) out.colorInner = lut.inner[hashId];
+  if (lut.opacity?.[hashId] != null) out.opacity = lut.opacity[hashId];
+  return out;
+}
+
+/**
+ * PURE per-part MESH-LIST assembler (#947 render side for BREP). Turns the SAME
+ * independently-meshed sub-solids `assemblePartColorMesh` concatenates into a
+ * LIST of `{ positions, index, normals, appearance }` — one entry per subpart,
+ * each carrying its OWN resolved appearance — so the client (`brepResponseToGeo`)
+ * builds one THREE mesh + material per part and renders through the scene's
+ * per-part arm, exactly like the Manifold `parts[]` path. Emitted ALONGSIDE the
+ * merged mesh (kept as the bbox `full`); the per-part arm is what the user sees.
+ *
+ * Extracted + exported so the appearance-assignment seam is unit-testable WITHOUT
+ * OCCT (see brep-part-colors.test.ts), mirroring `assemblePartColorMesh`.
+ */
+export function assemblePartMeshList(parts: BrepSubMesh[], lut: PartColorLUT): BrepPartResponse[] {
+  return parts.map((part) => ({
+    positions: part.vertices,
+    index: part.triangles,
+    ...(part.normals && part.normals.length ? { normals: part.normals } : {}),
+    appearance: partAppearanceFromLut(lut, part.hashId),
+  }));
 }
 
 /**
@@ -1085,6 +1134,13 @@ async function executeBrep(
   // colour (color-by-source for BREP). Reads each shape's part tag (set by
   // __tag, carried through the executor) and frees the meshed intermediate. The
   // pure concat/colour work lives in assemblePartColorMesh (unit-tested).
+  //
+  // #947 — the returned mesh ALSO carries a per-part `parts[]` list (each entry =
+  // one subpart's geometry + its resolved appearance, via assemblePartMeshList).
+  // The merged `positions`/`colors` stay the camera-fit bbox mesh; the client
+  // renders `parts[]` through the scene's per-part arm so each subpart shows its
+  // OWN material (opacity · MATL preset · texture), at parity with MF — instead
+  // of one flat, opaque merged mesh.
   function meshBrepParts(subSolids: any[], lut: PartColorLUT, t0p: number): BrepMesh {
     const tol = opts.tolerance ?? 0.05;
     const ang = opts.angularTolerance ?? 0.3;
@@ -1101,7 +1157,9 @@ async function executeBrep(
       });
       safeDelete(shape);   // its mesh is captured — free the OCCT solid now
     }
-    return assemblePartColorMesh(subs, lut, tol, Date.now() - t0p);
+    const merged = assemblePartColorMesh(subs, lut, tol, Date.now() - t0p);
+    merged.parts = assemblePartMeshList(subs, lut);
+    return merged;
   }
 
   // Per-part colouring applies to the UNCUT full solid only. The CUT arm keeps

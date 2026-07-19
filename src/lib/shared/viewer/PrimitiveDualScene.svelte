@@ -175,6 +175,14 @@
     const c = g?.getAttribute?.('color');
     return !!c && (c as any).itemSize === 4;
   });
+  // Belt-and-suspenders: bind the SINGLE-mesh (full/cutVC) material's
+  // transparent/opacity/depthWrite DECLARATIVELY, not only via the imperative
+  // `liveMat` effect below. So even when a backend collapses to one merged mesh
+  // (BREP's cut half-section, or any un-`parts` full mesh), graph-level opacity +
+  // per-vertex alpha still render. `effOpacity`=1 ∧ no vertex-alpha → transparent
+  // false / opacity 1 / depthWrite true = THREE's opaque defaults, so an opaque
+  // part stays byte-identical (the effect already sets the same values).
+  let singleMeshTransparent = $derived(effOpacity < 1 || hasVertexAlpha);
 
   // Build the InstancedMesh imperatively (Threlte mounts it via `<T is>`).
   // - Picks the canonical CHILD geo: cutVC under cutaway, else full — so the
@@ -1101,9 +1109,9 @@
       <!-- Geometry is pre-warped server-side; no subdivide / warp shader. -->
       <T.Mesh geometry={cutVC} bind:ref={liveMeshRef}>
         {#if scene.zRectLight}
-          <T.MeshStandardMaterial vertexColors roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
+          <T.MeshStandardMaterial vertexColors roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} transparent={singleMeshTransparent} opacity={effOpacity} depthWrite={!singleMeshTransparent} />
         {:else}
-          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
+          <T.MeshPhongMaterial vertexColors specular="#666666" shininess={120} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} transparent={singleMeshTransparent} opacity={effOpacity} depthWrite={!singleMeshTransparent} />
         {/if}
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>
@@ -1118,9 +1126,9 @@
            material while MF (per-part arm) looked right. -->
       <T.Mesh geometry={full} bind:ref={liveMeshRef}>
         {#if hasVC}
-          <T.MeshStandardMaterial vertexColors roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} clippingPlanes={fullClip} clipIntersection={true} />
+          <T.MeshStandardMaterial vertexColors roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} clippingPlanes={fullClip} clipIntersection={true} transparent={singleMeshTransparent} opacity={effOpacity} depthWrite={!singleMeshTransparent} />
         {:else}
-          <T.MeshStandardMaterial color={colorOuter ?? matPBR.color ?? '#cc2222'} map={getMaterialTexture(texture)} roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} clippingPlanes={fullClip} clipIntersection={true} />
+          <T.MeshStandardMaterial color={colorOuter ?? matPBR.color ?? '#cc2222'} map={getMaterialTexture(texture)} roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} clippingPlanes={fullClip} clipIntersection={true} transparent={singleMeshTransparent} opacity={effOpacity} depthWrite={!singleMeshTransparent} />
         {/if}
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>

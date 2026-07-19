@@ -30,6 +30,22 @@
  */
 import * as THREE from 'three';
 import { creaseAwareCornerNormals, DEFAULT_CREASE_ANGLE } from '$lib/engines/trueform/crease-normals';
+import type { PartAppearance } from '$lib/shared/viewer/part-appearance';
+
+/** One per-part BREP sub-mesh + its resolved appearance (#947 render side for
+ *  BREP). Emitted by `brep-occt.ts` (`assemblePartMeshList`) when a colour-by-
+ *  source LUT is active + the view is UNCUT, so a multi-part BREP solid renders
+ *  each subpart with its OWN material (colour · MATL preset · opacity · texture)
+ *  through the scene's per-part arm — at parity with the Manifold (MF_CLIENT)
+ *  and TrueForm tabs — instead of one flat, opaque merged mesh. `positions` +
+ *  (indexed) `index` are one sub-solid's OCCT mesh; the adapter recomputes
+ *  crease-aware normals per part exactly like the merged path. */
+export interface BrepPartResponse {
+  positions: number[];
+  index?: number[];
+  normals?: number[];
+  appearance?: PartAppearance;
+}
 
 export interface BrepPreviewResponse {
   supported?: boolean;
@@ -40,6 +56,11 @@ export interface BrepPreviewResponse {
   cut?: boolean;
   reason?: string;
   meta?: { tris?: number; verts?: number; ms?: number; tolerance?: number };
+  /** Per-part meshes + appearance (#947): present only for an UNCUT multi-part
+   *  solid with an active LUT. When set, `brepResponseToGeo` returns
+   *  `{ parts, full }` — `parts` drives the scene's per-part (per-material) arm,
+   *  `full` is the merged mesh kept solely for the camera-fit / stacking bbox. */
+  parts?: BrepPartResponse[];
 }
 
 /** Build a THREE.BufferGeometry from a (supported) BREP preview response, with
@@ -110,11 +131,22 @@ function identityIndex(nVerts: number): Uint32Array {
 }
 
 /**
- * Map a supported BREP response to the scene `geo` wrapper. A coloured
- * half-section becomes `{ cutVC }`; a plain solid becomes `{ full }`.
+ * Map a supported BREP response to the scene `geo` wrapper. A per-part response
+ * becomes `{ parts, full }`; a coloured half-section becomes `{ cutVC }`; a plain
+ * solid becomes `{ full }`.
  *
- * Routes on the EXPLICIT `data.cut` flag, NOT colour presence: an UNCUT
- * multi-part solid now carries per-part color-by-source colours (#86 BREP), and
+ * PER-PART (#947): when the response carries a `parts` array (an UNCUT multi-part
+ * solid baked with an active LUT), build one `THREE.BufferGeometry` per part —
+ * reusing `brepGeometryFromResponse` so each gets the SAME crease-aware smooth
+ * normals — and hand each part's resolved `appearance` alongside. The scene's
+ * per-part arm then renders each subpart with its own material (colour · MATL
+ * preset · opacity · texture), at parity with MF/TF. The merged mesh is ALSO
+ * returned as `full` (built from the response's concatenated positions/colours)
+ * so the scene's camera-fit / stacking bbox — which reads `full ?? cutVC` — still
+ * frames the whole assembly; `full` is not rendered while `parts` is present.
+ *
+ * SINGLE-MESH: routes on the EXPLICIT `data.cut` flag, NOT colour presence — an
+ * UNCUT multi-part solid carries per-part color-by-source colours (#86 BREP), and
  * keying on colours alone would mis-route that coloured full mesh into `cutVC`
  * (shown only under the cross-section toggle). `meshBrepSolid`/`meshBrepParts`
  * always set `cut`, so this is exact; the colour-presence fallback covers any
@@ -122,7 +154,21 @@ function identityIndex(nVerts: number): Uint32Array {
  */
 export function brepResponseToGeo(
   data: BrepPreviewResponse,
-): { full?: THREE.BufferGeometry; cutVC?: THREE.BufferGeometry } {
+): {
+  full?: THREE.BufferGeometry;
+  cutVC?: THREE.BufferGeometry;
+  parts?: { geo: THREE.BufferGeometry; appearance?: PartAppearance }[];
+} {
+  if (Array.isArray(data.parts) && data.parts.length > 0) {
+    const parts = data.parts.map((p) => ({
+      geo: brepGeometryFromResponse(p),
+      appearance: p.appearance,
+    }));
+    // `full` = the merged concatenated mesh (data.positions/colors) — kept ONLY
+    // for the scene's bbox (camera fit + GLB stacking + Z-light span); the
+    // per-part arm renders `parts`, so `full` is never drawn while parts exist.
+    return { parts, full: brepGeometryFromResponse(data) };
+  }
   const g = brepGeometryFromResponse(data);
   const isCut = data.cut === true || (data.cut === undefined && !!g.getAttribute('color'));
   return isCut ? { cutVC: g } : { full: g };

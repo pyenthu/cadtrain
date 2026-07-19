@@ -11,9 +11,10 @@
  * this pins the colour lookup + concatenation that the visual bug was in.
  */
 import { describe, it, expect } from 'vitest';
-import { assemblePartColorMesh, type BrepSubMesh } from '../brep-occt';
+import { assemblePartColorMesh, assemblePartMeshList, partAppearanceFromLut, type BrepSubMesh } from '../brep-occt';
 import { brepResponseToGeo } from '../brep-adapter';
 import type { PartColorLUT } from '$lib/graph/part-lut-types';
+import type { PartAppearance } from '$lib/shared/viewer/part-appearance';
 
 /** '#rrggbb' → [r,g,b] in 0..1 — mirrors brep-occt's cutHexToRgb so the test
  *  computes expected colours the same way the code does (no hardcoded floats). */
@@ -132,5 +133,55 @@ describe('BREP per-part colour (color-by-source) assembler', () => {
     const a = tri(0, HA); const b = tri(2, HB); delete b.normals;
     const mixed = assemblePartColorMesh([a, b], lut);
     expect(mixed.normals).toBeUndefined();              // one part lacks normals → drop all (adapter recomputes)
+  });
+});
+
+// ── #947 per-part APPEARANCE (opacity · MATL preset · texture), not just colour ──
+describe('BREP per-part appearance (#947) — assemblePartMeshList + partAppearanceFromLut', () => {
+  /** A LUT carrying a full `appearance` map (what analyzeParts actually builds). */
+  function lutWithAppearance(appearance: Record<number, PartAppearance>): PartColorLUT {
+    return { ...lutOf({}), appearance };
+  }
+
+  it('partAppearanceFromLut hands through lut.appearance[hashId] verbatim (material/opacity)', () => {
+    const app: PartAppearance = { colorOuter: '#3399ff', material: 'steel', opacity: 0.4, texture: 'brushed' };
+    const lut = lutWithAppearance({ [HA]: app });
+    expect(partAppearanceFromLut(lut, HA)).toEqual(app);      // full material rides through — the parity fix
+  });
+
+  it('partAppearanceFromLut falls back to outer/inner/opacity when no appearance map', () => {
+    const lut: PartColorLUT = { ...lutOf({ [HA]: '#7ac943' }), inner: { [HA]: '#222222' }, opacity: { [HA]: 0.6 } };
+    expect(partAppearanceFromLut(lut, HA)).toEqual({ colorOuter: '#7ac943', colorInner: '#222222', opacity: 0.6 });
+  });
+
+  it('partAppearanceFromLut → {} for an untagged (hashId undefined) part', () => {
+    expect(partAppearanceFromLut(lutOf({ [HA]: '#3399ff' }), undefined)).toEqual({});
+  });
+
+  it('assemblePartMeshList emits one entry per subpart, each geometry + its appearance', () => {
+    const lut = lutWithAppearance({
+      [HA]: { colorOuter: '#3399ff', material: 'steel' },
+      [HB]: { colorOuter: '#ff9933', material: 'brass', opacity: 0.5 },
+    });
+    const parts = assemblePartMeshList([tri(0, HA), tri(2, HB)], lut);
+    expect(parts.length).toBe(2);
+    // Real per-part geometry (positions + indexed triangles) carried through.
+    expect(parts[0].positions.length).toBe(9);
+    expect(parts[0].index).toEqual([0, 1, 2]);
+    expect(parts[0].normals!.length).toBe(9);
+    // Each part keeps its OWN material — the whole point of the fix.
+    expect(parts[0].appearance).toEqual({ colorOuter: '#3399ff', material: 'steel' });
+    expect(parts[1].appearance).toEqual({ colorOuter: '#ff9933', material: 'brass', opacity: 0.5 });
+  });
+
+  it('a parts-bearing response routes through brepResponseToGeo → { parts, full }', () => {
+    const lut = lutWithAppearance({ [HA]: { colorOuter: '#3399ff', material: 'steel' }, [HB]: { colorOuter: '#ff9933', opacity: 0.5 } });
+    const merged = assemblePartColorMesh([tri(0, HA), tri(2, HB)], lut);
+    merged.parts = assemblePartMeshList([tri(0, HA), tri(2, HB)], lut);   // what meshBrepParts attaches
+    const geo = brepResponseToGeo({ supported: true, ...merged }) as any;
+    expect(geo.parts?.length).toBe(2);
+    expect(geo.full).toBeTruthy();                                        // merged mesh kept for the bbox
+    expect(geo.parts[0].appearance).toEqual({ colorOuter: '#3399ff', material: 'steel' });
+    expect(geo.parts[0].geo.getAttribute('position').count).toBeGreaterThan(0);
   });
 });
