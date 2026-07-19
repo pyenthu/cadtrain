@@ -150,7 +150,9 @@
   .wvc {
     position: absolute;
     top: 8px;
-    right: 8px;
+    /* Clear the embedded editor's scene gear (SceneControls, ~top-right of the
+       render) so the 2D|3D + settings cluster sits NEXT TO it, not on top. */
+    right: 48px;
     z-index: 20;
     display: inline-flex;
     align-items: center;
