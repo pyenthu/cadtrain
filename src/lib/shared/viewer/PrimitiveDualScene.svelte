@@ -732,8 +732,27 @@
   $effect(() => {
     if (!renderer) return;
     (renderer as any).toneMappingExposure = scene.exposure;
+    // Enable per-material clipping planes (the CLIP-PLANE cutaway fallback below).
+    (renderer as any).localClippingEnabled = true;
     invalidate();
   });
+
+  // CLIP-PLANE cutaway (the render-time cross-section that works on OPEN /
+  // non-manifold meshes, where the boolean cutaway silently bails — memory
+  // tf_cutaway_open_mesh_warp). Two world-space half-spaces removed by
+  // INTERSECTION reproduce Manifold's +x,+y quadrant getCutBox: a fragment is
+  // hidden only where x>0 AND y>0. Scale-invariant (both planes pass through 0),
+  // so the parent group's [xScale,xScale,zScale] view scale doesn't move them.
+  // Materials are already DoubleSide, so the revealed interior renders.
+  const CLIP_QUADRANT = [
+    new THREE.Plane(new THREE.Vector3(-1, 0, 0), 0),
+    new THREE.Plane(new THREE.Vector3(0, -1, 0), 0),
+  ];
+  // Apply the clip ONLY as a fallback: when the cutaway is requested but there is
+  // no BOOLEAN cut mesh to show (`cutVC` / `cutParts`). Closed meshes keep the
+  // boolean cutaway (true grey cut faces); open/warped meshes get the clip.
+  const partsClip = $derived(showCutaway && !(cutParts && cutParts.length) ? CLIP_QUADRANT : null);
+  const fullClip = $derived(showCutaway && !cutVC ? CLIP_QUADRANT : null);
 
   // Live-mesh material ref — the ◐ Auto/Smooth/Flat toggle flips flatShading IN
   // PLACE (no mesh remount / no re-bake). flatShading is a shader-recompile prop,
@@ -1026,9 +1045,9 @@
                through the overlap (TODO #37). -->
           <T.Mesh geometry={p.geo} renderOrder={pTrans ? 1 : 0}>
             {#if scene.zRectLight}
-              <T.MeshStandardMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} wireframe={scene.wireframe} side={THREE.DoubleSide} transparent={pTrans} opacity={pOp} depthWrite={!pTrans} depthTest={true} />
+              <T.MeshStandardMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} roughness={aPBR.roughness} metalness={aPBR.metalness} flatShading={!smoothShade} wireframe={scene.wireframe} side={THREE.DoubleSide} transparent={pTrans} opacity={pOp} depthWrite={!pTrans} depthTest={true} clippingPlanes={partsClip} clipIntersection={true} />
             {:else}
-              <T.MeshPhongMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} specular="#666666" shininess={120} flatShading={!smoothShade} wireframe={scene.wireframe} side={THREE.DoubleSide} transparent={pTrans} opacity={pOp} depthWrite={!pTrans} depthTest={true} />
+              <T.MeshPhongMaterial color={a.colorOuter ?? aPBR.color ?? '#cc2222'} map={getMaterialTexture(a.texture)} specular="#666666" shininess={120} flatShading={!smoothShade} wireframe={scene.wireframe} side={THREE.DoubleSide} transparent={pTrans} opacity={pOp} depthWrite={!pTrans} depthTest={true} clippingPlanes={partsClip} clipIntersection={true} />
             {/if}
             {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
           </T.Mesh>
@@ -1099,9 +1118,9 @@
            material while MF (per-part arm) looked right. -->
       <T.Mesh geometry={full} bind:ref={liveMeshRef}>
         {#if hasVC}
-          <T.MeshStandardMaterial vertexColors roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
+          <T.MeshStandardMaterial vertexColors roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} clippingPlanes={fullClip} clipIntersection={true} />
         {:else}
-          <T.MeshStandardMaterial color={colorOuter ?? matPBR.color ?? '#cc2222'} map={getMaterialTexture(texture)} roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} />
+          <T.MeshStandardMaterial color={colorOuter ?? matPBR.color ?? '#cc2222'} map={getMaterialTexture(texture)} roughness={matPBR.roughness} metalness={matPBR.metalness} flatShading={!smoothShade} bind:ref={liveMat} side={THREE.DoubleSide} clippingPlanes={fullClip} clipIntersection={true} />
         {/if}
         {#if scene.showEdges}<Edges thresholdAngle={20} color="black" />{/if}
       </T.Mesh>
