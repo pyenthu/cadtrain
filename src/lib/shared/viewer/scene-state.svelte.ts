@@ -49,6 +49,13 @@ export const scene = $state({
    *  parts stay round; the part on disk + the bake stay TRUE scale. The camera
    *  auto-fit accounts for both. */
   xScale: 1.0,
+  /** COMMITTED spline-aware BAKE scale for a WARPED part (Problem 2). xScale/zScale
+   *  drive the render group LIVE, but a warped part bakes its exaggeration PRE-warp
+   *  (perpendicular sections + a uniformly-scaled spline). That is committed HERE on
+   *  slider RELEASE so it re-bakes ONCE (not per drag tick); the render group then
+   *  applies only the LIVE÷COMMITTED delta (identity at rest). {1,1} = true scale.
+   *  Reset to {1,1} on a new part load. */
+  warpBakeScale: { radial: 1.0, depth: 1.0 },
   /** When true, xScale/zScale are AUTO-set on each part load to normalize the
    *  displayed aspect ratio (a long thin tool reads thick + long-but-not-too-long;
    *  see PrimitiveDualScene's autoScale). Cleared the moment the user drags either

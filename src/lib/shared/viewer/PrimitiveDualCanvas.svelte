@@ -385,7 +385,15 @@
     // (omitted → byte-identical default bake + cache key). Reuse the crease angle
     // as the sharp-edge threshold; tolerance defaults server/worker-side.
     const smooth = scene.roundSurface ? { minSharpAngle: scene.creaseAngle } : undefined;
-    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: cutFlag, colorOuter, colorInner, instanced: true, ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}), ...(crease ? { creaseAngle: crease } : {}), ...(smooth ? { smooth } : {}) });
+    // SPLINE-AWARE view scale (Problem 2): a WARPED part bakes its radial/depth
+    // exaggeration PRE-warp (perpendicular section + uniformly-scaled spline). Sent
+    // only for a warp (`warpSpline(` in the compiled source) at a non-1 COMMITTED
+    // scale — so it keys the cache (re-bakes) and is byte-identical otherwise. The
+    // render group applies only the live÷committed delta (PrimitiveDualScene).
+    const warpViewScale = (typeof source === 'string' && source.includes('warpSpline(')
+      && (scene.warpBakeScale.radial !== 1 || scene.warpBakeScale.depth !== 1))
+      ? { radial: scene.warpBakeScale.radial, depth: scene.warpBakeScale.depth } : undefined;
+    const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: cutFlag, colorOuter, colorInner, instanced: true, ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}), ...(crease ? { creaseAngle: crease } : {}), ...(smooth ? { smooth } : {}), ...(warpViewScale ? { warpViewScale } : {}) });
     const cached = bust ? undefined : cacheGet(`mesh:${body}`);
     if (cached) {
       geo = deserializeComponentResult({
@@ -427,6 +435,7 @@
         const options = { cutaway: cutFlag, instanced: true,
           ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}),
           ...(crease ? { creaseAngle: crease } : {}), ...(smooth ? { smooth } : {}), colorOuter, colorInner,
+          ...(warpViewScale ? { warpViewScale } : {}),
           // #86: color-by-source LUT from compile → client bake tints each
           // subpart in its own colour (a single override still wins in finalize).
           ...(cd.partColors ? { parts: cd.partColors } : {}) };
@@ -779,6 +788,11 @@
   // re-render → fresh args → effect → cache hit → infinite loop
   // (effect_update_depth_exceeded). Skip when the request body is
   // unchanged and the loop has nothing to feed on.
+  // A part with a warp bends along a spline → its radial/depth exaggeration bakes
+  // PRE-warp (Problem 2), detected from the compiled source (the same tell the
+  // worker uses). Threaded to the scene so the render group applies only the
+  // live÷committed delta for a warped part (no double-scale).
+  const hasWarp = $derived(typeof source === 'string' && source.includes('warpSpline('));
   let lastRebuildKey = '';
   $effect(() => {
     // Include showCutaway so toggling it ON for a large (cutaway-auto-skipped)
@@ -795,12 +809,12 @@
       // (composites → UNSUPPORTED) for the server-inlined one ASYNCHRONOUSLY, and
       // only the NESTED ops change (s_tube stays booleanDifference at the root), so
       // the whole recipe must be in the key or the native re-bake never fires.
-      ? JSON.stringify({ b: 'tf', actual: tfActual, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), rcp: tfActual && tfRecipe ? tfRecipe : '', seg: effSegments, cut: scene.showCutaway, warpNonce: scene.warpBakeNonce })
+      ? JSON.stringify({ b: 'tf', actual: tfActual, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), rcp: tfActual && tfRecipe ? tfRecipe : '', seg: effSegments, cut: scene.showCutaway, warpNonce: scene.warpBakeNonce, warpR: scene.warpBakeScale.radial, warpD: scene.warpBakeScale.depth })
       : isBrep
       ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
       // `b` keeps MF_CLIENT and MF_SERVER on separate cache entries, so the two
       // tabs can show their meshes side by side (that IS the parity check).
-      : JSON.stringify({ b: backend, id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface });
+      : JSON.stringify({ b: backend, id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, warpR: scene.warpBakeScale.radial, warpD: scene.warpBakeScale.depth });
     if (!Scene) return;
     // TF composite parts: while the server recipe is still resolving, `tfRecipe`
     // may still expose the PREVIOUS (stale-but-supported) recipe, so an edit
@@ -943,14 +957,18 @@
     <div class="pd-scale-menu">
       <div class="pd-scale-row">
         <span class="pd-scale-lbl">Radial ×{scene.xScale.toFixed(2)}</span>
-        <input type="range" min="0.25" max="8" step="0.25" bind:value={scene.xScale} oninput={() => (scene.scaleAuto = false)} />
+        <input type="range" min="0.25" max="8" step="0.25" bind:value={scene.xScale}
+          oninput={() => (scene.scaleAuto = false)}
+          onchange={() => { if (hasWarp) scene.warpBakeScale = { radial: scene.xScale, depth: scene.zScale }; }} />
       </div>
       <div class="pd-scale-row">
         <span class="pd-scale-lbl">Z-depth ×{scene.zScale.toFixed(2)}</span>
-        <input type="range" min="0.05" max="2" step="0.05" bind:value={scene.zScale} oninput={() => (scene.scaleAuto = false)} />
+        <input type="range" min="0.05" max="2" step="0.05" bind:value={scene.zScale}
+          oninput={() => (scene.scaleAuto = false)}
+          onchange={() => { if (hasWarp) scene.warpBakeScale = { radial: scene.xScale, depth: scene.zScale }; }} />
       </div>
       <button class="pd-scale-reset" type="button"
-        onclick={() => { scene.xScale = 1; scene.zScale = 1; }}>1:1 true scale</button>
+        onclick={() => { scene.xScale = 1; scene.zScale = 1; if (hasWarp) scene.warpBakeScale = { radial: 1, depth: 1 }; }}>1:1 true scale</button>
     </div>
   {/if}
   <!-- Bake tools right under the scale gear: a quick Rebuild + an adjustable
@@ -1031,7 +1049,7 @@
       : smoothShadeAuto}
     <Canvas {createRenderer}>
       <!-- Only one of mesh/GLB is baked per tab now → centre it (offset 0). -->
-      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} {autoScaleOwner} opacity={opacity ?? 1} {texture} {colorOuter} {colorInner} {material} overlays={overlays ?? []} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} />
+      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} {autoScaleOwner} {hasWarp} opacity={opacity ?? 1} {texture} {colorOuter} {colorInner} {material} overlays={overlays ?? []} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} />
     </Canvas>
     {#if showControls && SceneControls}{@const Controls = SceneControls}<Controls />{/if}
   {:else}

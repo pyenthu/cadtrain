@@ -54,6 +54,7 @@
     // different bboxes both write the shared scale to different targets and
     // ping-pong → effect_update_depth_exceeded (frozen renderer). 2026-07-02.
     autoScaleOwner = true,
+    hasWarp = false,
     glbUrl = null,
     showCutaway = false,
     offset = 4.5,
@@ -66,6 +67,11 @@
     material = undefined,
   }: {
     geo?: any;            // { full, cutVC } from /api/primitives/preview
+    /** A WARPED part bakes its radial/depth exaggeration PRE-warp (Problem 2), so
+     *  the render group must NOT re-apply the world-space [xScale,xScale,zScale] on
+     *  top (that shears the bent sections + double-scales). When true, the group +
+     *  camera-fit use IDENTITY view scale; the slider drives the BAKE instead. */
+    hasWarp?: boolean;
     geoVersion?: number;
     glbUrl?: string | null; // blob URL of the baked GLB
     showCutaway?: boolean;  // applies to the LIVE-mesh half (GLB half follows its own cut bake)
@@ -658,7 +664,7 @@
     if (!bbox) return;
     // The whole render group is scaled [xScale, xScale, zScale] (view-only), so
     // the visual centre the look-at follows is the bbox centre times that scale.
-    const xs = scene.xScale, zs = scene.zScale;
+    const xs = hasWarp ? 1 : scene.xScale, zs = hasWarp ? 1 : scene.zScale;
     scene.partCenter = { x: bbox.cx * xs, y: bbox.cy * xs, z: bbox.cz * zs };
     // Visual Z range of the WHOLE stacked composition (mesh + GLB), in world
     // units after the view scale, so the Z-axis light strip spans both copies
@@ -688,7 +694,10 @@
   // only (NOT xScale/zScale), so writing the scales can't loop. A manual slider
   // drag clears scaleAuto (PrimitiveDualCanvas), so the user's value then sticks.
   $effect(() => {
-    if (!autoScaleOwner || !scene.scaleAuto || !bbox) return;
+    // A warped part bakes its exaggeration pre-warp + renders at IDENTITY view
+    // scale, so auto-scaling xScale/zScale would only mislead the slider — skip it
+    // (the part loads at true scale; the user drives the bake scale on release).
+    if (!autoScaleOwner || !scene.scaleAuto || !bbox || hasWarp) return;
     const { x, z } = autoScale(bbox.ex, bbox.ey, bbox.ez);
     if (scene.xScale !== x) scene.xScale = x;
     if (scene.zScale !== z) scene.zScale = z;
@@ -904,7 +913,7 @@
   $effect(() => {
     if (!bbox) return;
     // Fit the VISUAL extent = bbox × the view scale [xScale, xScale, zScale].
-    const xs = scene.xScale, zs = scene.zScale;
+    const xs = hasWarp ? 1 : scene.xScale, zs = hasWarp ? 1 : scene.zScale;
     const ex = bbox.ex * xs, ey = bbox.ey * xs, ez = bbox.ez * zs;
     const cy = bbox.cy * xs, cz = bbox.cz * zs, gapV = gap * zs;
     const key = `${ex.toFixed(2)}|${ey.toFixed(2)}|${ez.toFixed(2)}|${cy.toFixed(2)}|${cz.toFixed(2)}`;
@@ -1027,7 +1036,7 @@
      (zScale). Wraps BOTH stacked renders + their offsets so the whole
      composition scales together; the geometry on disk + the bake stay true.
      The camera auto-fit + OrbitControls target above account for it. -->
-<T.Group scale={[scene.xScale, scene.xScale, scene.zScale]}>
+<T.Group scale={[hasWarp ? 1 : scene.xScale, hasWarp ? 1 : scene.xScale, hasWarp ? 1 : scene.zScale]}>
 <!-- TOP — live mesh, stacked on the part (Z) axis. -->
 <T.Group position={meshPos}>
   {#key geoVersion + (showCutaway ? '_cut' : '_full') + (scene.zRectLight ? '_r' : '')}
