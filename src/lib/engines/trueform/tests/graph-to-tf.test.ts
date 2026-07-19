@@ -423,10 +423,11 @@ describe('graphToTf', () => {
     expect(rep.child).toEqual({ op: 'box', w: 4, h: 4, d: 20 });
   });
 
-  it('a parts_map (op:list) lowers a list<record> param to a union of N synthetic-Call instances', () => {
+  it('a parts_map (op:list) as an OUTPUT expands to one SEPARATE part per row', () => {
     // #38 Phase 3 — a `list<record>` param of 2 rows mapped over r_cuboid, each row
-    // feeding s.size into w/h/d. Native lowering must resolve the rows from the
-    // param default, evaluate `s.size` per row, and union the 2 boxes.
+    // feeding s.size into w/h/d. As a top-level output a NON-mated parts_map now
+    // SPLITS into one part per row (so partAppearance aligns 1:1 with instrs, and the
+    // list matches Manifold's `_parts` separation) instead of one fused union.
     const g = mkGraph(
       {
         n_root: { id: 'n_root', type: 'list', children: ['n_pm'] },
@@ -440,14 +441,38 @@ describe('graphToTf', () => {
       { blocks: { kind: 'list', of: { record: 'Block' }, default: [{ size: 2 }, { size: 3 }] } },
     );
     const recipe = graphToTf(g);
-    expect(recipe.instrs).toHaveLength(1);
-    const top = recipe.instrs[0] as Extract<TfInstr, { op: 'union' }>;
-    expect(top.op).toBe('union');
-    expect(top.children).toEqual([
+    expect(recipe.instrs).toEqual([
       { op: 'box', w: 2, h: 2, d: 2 },
       { op: 'box', w: 3, h: 3, d: 3 },
     ]);
     expect(recipe.notes.every((n) => !n.includes('UNSUPPORTED'))).toBe(true);
+  });
+
+  it('a parts_map NESTED inside a container still unions its rows (only OUTPUTs split)', () => {
+    // The split is OUTPUT-level: a parts_map used as an INPUT (here a stack child)
+    // keeps the single-union lowering, so nested composition is unchanged.
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_stack'] },
+        n_stack: { id: 'n_stack', type: 'stack', children: ['n_pm'] },
+        n_pm: {
+          id: 'n_pm', type: 'parts_map', src: 'r_cuboid', list: { kind: 'param', param: 'blocks' },
+          argMap: { w: { kind: 'expr', expr: 's.size' }, h: { kind: 'expr', expr: 's.size' }, d: { kind: 'expr', expr: 's.size' } },
+          op: 'list',
+        },
+      },
+      'n_root',
+      { blocks: { kind: 'list', of: { record: 'Block' }, default: [{ size: 2 }, { size: 3 }] } },
+    );
+    const recipe = graphToTf(g);
+    expect(recipe.instrs).toHaveLength(1);
+    const stack = recipe.instrs[0] as Extract<TfInstr, { op: 'union' }>;
+    const inner = stack.children[0] as Extract<TfInstr, { op: 'union' }>;
+    expect(inner.op).toBe('union');
+    expect(inner.children).toEqual([
+      { op: 'box', w: 2, h: 2, d: 2 },
+      { op: 'box', w: 3, h: 3, d: 3 },
+    ]);
   });
 
   it('a parts_map (op:stack) unions its instances mated; a blank src / unresolvable rows → UNSUPPORTED', () => {
@@ -685,14 +710,91 @@ describe('composite src discovery (parts_table / parts_map)', () => {
     // WITH the resolver (the server path, now that the src is discoverable) it builds natively.
     const recipe = graphToTf(g, {}, resolve);
     expect(JSON.stringify(recipe.instrs)).not.toContain('UNSUPPORTED');
-    // parts_table → a union of the two rows, each a revolve (bw_open_hole → r_revolve).
-    const union = recipe.instrs[0] as Extract<TfInstr, { op: 'union' }>;
-    expect(union.op).toBe('union');
-    expect(union.children).toHaveLength(2);
-    expect(union.children.every((c) => (c as any).op === 'revolve')).toBe(true);
+    // As a top-level OUTPUT a parts_table now expands to ONE SEPARATE part PER ROW
+    // (so each row can carry its own material) — two revolves (bw_open_hole → r_revolve),
+    // not one fused union.
+    expect(recipe.instrs).toHaveLength(2);
+    expect(recipe.instrs.every((c) => (c as any).op === 'revolve')).toBe(true);
     // The row's `od`/`segments` cells flowed into the sub-part's revolve.
-    expect((union.children[0] as any).segments).toBe(12);
-    expect((union.children[0] as any).profile).toEqual([[0, 0], [8.5, 0], [8.5, 30]]);
-    expect((union.children[1] as any).profile).toEqual([[0, 0], [12.25, 0], [12.25, 50]]);
+    expect((recipe.instrs[0] as any).segments).toBe(12);
+    expect((recipe.instrs[0] as any).profile).toEqual([[0, 0], [8.5, 0], [8.5, 30]]);
+    expect((recipe.instrs[1] as any).profile).toEqual([[0, 0], [12.25, 0], [12.25, 50]]);
+  });
+});
+
+/**
+ * #38d — PER-ROW parts_table material (colour / opacity / MATL preset) must reach
+ * `recipe.partAppearance`, one entry per row, so the TF per-part render arm paints
+ * each row like Manifold (which keys `meta.instanceColors` per row). Before this the
+ * whole table lowered to ONE union with the (empty) NODE appearance → all rows
+ * default. The fix SPLITS a top-level parts_table into one part per row (and each
+ * row UNDER a multi-input warp into its own warped part). `w2_multi_part_warp` is the
+ * driver: three parts_table nodes, each row carrying opacity:0.1 / material / colour.
+ */
+describe('parts_table per-row material → aligned partAppearance (#38d TF parity)', () => {
+  const boxRow = (w: number) => ({
+    w: { kind: 'literal', value: w }, h: { kind: 'literal', value: w }, d: { kind: 'literal', value: w },
+  });
+
+  it('a bare parts_table OUTPUT yields one part per row, each with its rowMaterials appearance', () => {
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_tab'] },
+        n_tab: {
+          id: 'n_tab', type: 'parts_table', src: 'r_cuboid', columns: ['w', 'h', 'd'],
+          rows: [boxRow(4), boxRow(6), boxRow(8)],
+          rowMaterials: [
+            { color: '#ff0000', preset: 'steel', opacity: 0.1 },
+            { preset: 'aluminum' },
+            null,
+          ],
+        },
+      },
+      'n_root',
+    );
+    const recipe = graphToTf(g);
+    // 3 SEPARATE parts (one per row), not one union.
+    expect(recipe.instrs).toHaveLength(3);
+    expect(recipe.instrs.map((i) => i.op)).toEqual(['box', 'box', 'box']);
+    // partAppearance aligned 1:1, per-row material carried.
+    expect(recipe.partAppearance).toBeDefined();
+    expect(recipe.partAppearance).toHaveLength(3);
+    expect(recipe.partAppearance![0]).toEqual({ colorOuter: '#ff0000', material: 'steel', opacity: 0.1 });
+    expect(recipe.partAppearance![1]).toEqual({ material: 'aluminum' });
+    // A null row material ⇒ no appearance (scene default), as before the split.
+    expect(recipe.partAppearance![2]).toBeUndefined();
+  });
+
+  it('under a MULTI-INPUT warp, each parts_table ROW becomes its own WARPED part with its row appearance', () => {
+    const g = mkGraph(
+      {
+        n_root: { id: 'n_root', type: 'list', children: ['n_warp'] },
+        n_spline: { id: 'n_spline', type: 'spline', points: [[0, 0, 0], [0, 0, 10]], samples: 6 },
+        n_warp: { id: 'n_warp', type: 'warp', children: ['n_ta', 'n_tb'], path: { kind: 'expr', expr: '_x_n_spline_path' } },
+        n_ta: {
+          id: 'n_ta', type: 'parts_table', src: 'r_cuboid', columns: ['w', 'h', 'd'],
+          rows: [boxRow(4), boxRow(6)],
+          rowMaterials: [{ opacity: 0.1, preset: 'steel' }, { color: '#00ff00' }],
+        },
+        n_tb: {
+          id: 'n_tb', type: 'parts_table', src: 'r_cuboid', columns: ['w', 'h', 'd'],
+          rows: [boxRow(8)],
+          rowMaterials: [{ preset: 'titanium' }],
+        },
+      },
+      'n_root',
+    );
+    const recipe = graphToTf(g);
+    // 2 rows (n_ta) + 1 row (n_tb) = 3 WARPED parts, each a warp instr wrapping a box.
+    expect(recipe.instrs).toHaveLength(3);
+    expect(recipe.instrs.every((i) => i.op === 'warp')).toBe(true);
+    expect((recipe.instrs[0] as any).child.op).toBe('box');
+    // The per-row material is carried on EACH warped part (previously the whole table
+    // warped as one union painted with the empty node appearance → all default).
+    expect(recipe.partAppearance).toEqual([
+      { material: 'steel', opacity: 0.1 },
+      { colorOuter: '#00ff00' },
+      { material: 'titanium' },
+    ]);
   });
 });

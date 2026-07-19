@@ -47,6 +47,10 @@ import { resolveProfile } from '$lib/shared/profiles/profile-presets';
 import * as mathLib from '$lib/graph/math-lib';
 import { orderExprDef, compileListFormula } from '$lib/graph/graph-exprs';
 import { isImperative, compileImperative } from '$lib/graph/expr-imperative';
+// The SINGLE source of truth for a parts_table RowMaterial → `{ outer, opacity,
+// material }` — the same mapping composition-emit stamps into meta.instanceColors, so
+// MF and TF paint a row identically. Pure fn (no UI/WASM); read-only reuse.
+import { rowMaterialEntry } from '$lib/graph/nodes/kinds/parts-table';
 
 // The bare math names (cos/sin/tau/pi/lerp/…) the profile + poly_repeat sandboxes
 // inject, so an expanded loop expr like `R * cos(theta)` evaluates the same way
@@ -725,6 +729,163 @@ function effectiveStackRef(
   return null;
 }
 
+/** Lower a WARP node given its ALREADY-LOWERED child instr — the shared core of the
+ *  single-child warp case in `lowerNode` AND the multi-input warp EXPANSION (which
+ *  lowers each child, or each parts_table ROW, separately and re-wraps it). Reuses
+ *  the wired spline PATH + the pre-frame radial/depth dials (xDiaScale/yScale) off
+ *  `w`; UNSUPPORTED when the path is unresolvable (< 2 control points). Pure. */
+function lowerWarpAround(
+  w: any,
+  childInst: TfInstr,
+  graph: Graph,
+  scope: Record<string, number>,
+  notes: string[],
+): TfInstr {
+  const spline = resolveSplineNode(w.path, graph);
+  const cp = ((spline?.points ?? []) as Vec3[]).filter((p) => Array.isArray(p) && p.length >= 2);
+  if (cp.length < 2) {
+    notes.push(`warp ${w.id}: no resolvable spline path (needs a wired spline with ≥2 points) — UNSUPPORTED`);
+    return { op: 'UNSUPPORTED', nodeType: 'warp', detail: 'no spline path' };
+  }
+  const originZ = w.originZ != null ? evalArg(w.originZ, scope) : NaN;
+  const xDiaScale = w.xDiaScale != null ? evalArg(w.xDiaScale, scope) : NaN;
+  const yScale = w.yScale != null ? evalArg(w.yScale, scope) : NaN;
+  return {
+    op: 'warp',
+    child: childInst,
+    path: cp,
+    ...(w.stretch ? { stretch: true } : {}),
+    ...(Number.isFinite(originZ) ? { originZ } : {}),
+    ...(Number.isFinite(xDiaScale) && xDiaScale > 0 && xDiaScale !== 1 ? { xDiaScale } : {}),
+    ...(Number.isFinite(yScale) && yScale > 0 && yScale !== 1 ? { yScale } : {}),
+  };
+}
+
+/** Per-ROW lowering of a `parts_table` — one synthetic Call instr per row, reusing
+ *  the full engine/composite `lowerNode` path (so each row's cells flow into the
+ *  template exactly as before). Returns the ordered row instrs, OR an `unsupported`
+ *  instr (+ a pushed note) for the no-src / no-rows conditions. Shared by the
+ *  union-wrapping `lowerNode` case (rows fused into one output) AND the per-row
+ *  OUTPUT expansion (each row its OWN part, carrying its rowMaterials[i] appearance). */
+function partsTableRowInstrs(
+  node: any,
+  graph: Graph,
+  scope: Record<string, number>,
+  notes: string[],
+  resolve: ResolveComposite | undefined,
+  seen: Set<string>,
+  depth: number,
+): { instrs: TfInstr[] } | { unsupported: TfInstr } {
+  const psrc = node.src as string;
+  if (!psrc || typeof psrc !== 'string') {
+    notes.push(`parts_table ${node.id}: no template src selected — UNSUPPORTED`);
+    return { unsupported: { op: 'UNSUPPORTED', nodeType: 'parts_table', detail: 'no src' } };
+  }
+  const cols: string[] = Array.isArray(node.columns) ? node.columns : [];
+  const rows: any[] = Array.isArray(node.rows) ? node.rows : [];
+  if (rows.length === 0) {
+    notes.push(`parts_table ${node.id}: no rows — UNSUPPORTED`);
+    return { unsupported: { op: 'UNSUPPORTED', nodeType: 'parts_table', detail: 'no rows' } };
+  }
+  const evalCell = (v: ArgValue | undefined, i: number): number => {
+    if (!v) return NaN;
+    if (v.kind === 'literal') return Number((v as any).value);
+    if (v.kind === 'param') return Number(scope[(v as any).param]);
+    if (v.kind === 'expr') {
+      try {
+        // eslint-disable-next-line no-new-func
+        const fn = new Function('p', 'Math', 'i', `"use strict"; return (${(v as any).expr});`);
+        return Number(fn(scope, Math, i));
+      } catch { return NaN; }
+    }
+    return NaN;
+  };
+  const instrs: TfInstr[] = rows.map((row, i) => {
+    const litArgs: Record<string, ArgValue> = {};
+    // Column order first (deterministic), then any extra keys — mirrors the emit's
+    // orderedRowKeys so TF and Manifold instantiate the same columns.
+    const keys = [
+      ...cols.filter((c) => Object.prototype.hasOwnProperty.call(row ?? {}, c)),
+      ...Object.keys(row ?? {}).filter((k) => !cols.includes(k)),
+    ];
+    for (const k of keys) {
+      const n = evalCell((row ?? {})[k], i);
+      litArgs[k] = { kind: 'literal', value: Number.isFinite(n) ? n : 0 } as ArgValue;
+    }
+    const synth = { id: `${node.id}__row${i}`, type: 'call', src: psrc, args: litArgs };
+    return lowerNode(synth as any, graph, scope, notes, resolve, seen, depth);
+  });
+  return { instrs };
+}
+
+/** Per-ROW lowering of a `parts_map` — one synthetic Call instr per resolved row,
+ *  plus the container `op` ('list'|'stack'|'place'). Returns the ordered row instrs
+ *  (+ op) OR an `unsupported` instr (+ pushed note). The 'place' note fires here so
+ *  it is emitted once whether the caller unions the rows (`lowerNode`) or splits them
+ *  into per-row parts (the OUTPUT expansion). */
+function partsMapRowInstrs(
+  node: any,
+  graph: Graph,
+  scope: Record<string, number>,
+  notes: string[],
+  resolve: ResolveComposite | undefined,
+  seen: Set<string>,
+  depth: number,
+): { instrs: TfInstr[]; op: string } | { unsupported: TfInstr } {
+  const src = node.src as string;
+  if (!src || typeof src !== 'string') {
+    notes.push(`parts_map ${node.id}: no template src selected — UNSUPPORTED`);
+    return { unsupported: { op: 'UNSUPPORTED', nodeType: 'parts_map', detail: 'no src' } };
+  }
+  const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(node.loopVar || '')) ? String(node.loopVar) : 's';
+  // Rows come from the `list` ArgValue — a literal array or (usually) a list<record>
+  // PARAM whose default holds the row objects. An `expr` list can't be resolved to
+  // concrete rows here (no object scope) → UNSUPPORTED.
+  let rows: any[] = [];
+  const listV = node.list as ArgValue | undefined;
+  if (listV?.kind === 'literal' && Array.isArray((listV as any).value)) {
+    rows = (listV as any).value;
+  } else if (listV?.kind === 'param') {
+    const def = (graph.params?.[(listV as any).param] as any)?.default;
+    if (Array.isArray(def)) rows = def;
+  }
+  if (!Array.isArray(rows) || rows.length === 0) {
+    notes.push(`parts_map ${node.id}: list did not resolve to a concrete row array (needs a list<record> param with a default, or a literal array) — UNSUPPORTED`);
+    return { unsupported: { op: 'UNSUPPORTED', nodeType: 'parts_map', detail: 'rows not resolvable' } };
+  }
+  const argMap = (node.argMap ?? {}) as Record<string, ArgValue>;
+  const op: string = node.op ?? 'list';
+  // Evaluate one argMap value against a specific row (`s`/loopVar → the record object)
+  // + `i` (the index) — mirrors the emitted `Array.from(rows,(s,i)=>…)`.
+  const evalRowArg = (v: ArgValue | undefined, row: any, i: number): number => {
+    if (!v) return NaN;
+    if (v.kind === 'literal') return Number((v as any).value);
+    if (v.kind === 'param') return Number(scope[(v as any).param]);
+    if (v.kind === 'expr') {
+      try {
+        // eslint-disable-next-line no-new-func
+        const fn = new Function('p', 'Math', loopVar, 'i', `"use strict"; return (${(v as any).expr});`);
+        return Number(fn(scope, Math, row, i));
+      } catch { return NaN; }
+    }
+    return NaN;
+  };
+  const instrs: TfInstr[] = rows.map((row, i) => {
+    const litArgs: Record<string, ArgValue> = {};
+    for (const [k, v] of Object.entries(argMap)) {
+      const n = evalRowArg(v, row, i);
+      litArgs[k] = { kind: 'literal', value: Number.isFinite(n) ? n : 0 } as ArgValue;
+    }
+    // Synthetic Call → reuse the full engine/composite lowering (incl. resolve).
+    const synth = { id: `${node.id}__row${i}`, type: 'call', src, args: litArgs };
+    return lowerNode(synth as any, graph, scope, notes, resolve, seen, depth);
+  });
+  if (op === 'place') {
+    notes.push(`parts_map ${node.id}: op=place positioning is not applied natively (TF unions the ${instrs.length} instances at their local origins)`);
+  }
+  return { instrs, op };
+}
+
 /** Lower a single node → its TfInstr, recursing into referenced children. The
  *  `resolve`/`seen`/`depth` context threads composite-Call recursion state. */
 function lowerNode(
@@ -1040,38 +1201,13 @@ function lowerNode(
     }
 
     case 'warp': {
-      // Bend the child along the wired spline PATH (#6). Reuse resolveSplineNode
-      // (as the sweep does): the spline's control points drive warpMeshJS in the
-      // executor. No spline / <2 points → UNSUPPORTED (keep the child un-warped
-      // would be misleading).
+      // Bend the child along the wired spline PATH (#6): the spline's control points
+      // drive warpMeshJS in the executor. Absolute depth placement (#36c b) + the
+      // build-time radial/depth exaggeration dials (N3) are read off the node by the
+      // shared `lowerWarpAround` (the same core the multi-input warp EXPANSION reuses
+      // to re-wrap each per-row part). No spline / <2 points → UNSUPPORTED.
       const w = node as any;
-      const childInst = ref(w.child ?? '');
-      const spline = resolveSplineNode(w.path, graph);
-      const cp = ((spline?.points ?? []) as Vec3[]).filter((p) => Array.isArray(p) && p.length >= 2);
-      if (cp.length < 2) {
-        notes.push(`warp ${node.id}: no resolvable spline path (needs a wired spline with ≥2 points) — UNSUPPORTED`);
-        return { op: 'UNSUPPORTED', nodeType: 'warp', detail: 'no spline path' };
-      }
-      // Absolute depth placement (#36c b): resolve originZ to a number and thread it
-      // to warpMeshJS so a part offset down-hole bends at its true arc-length station.
-      const originZ = w.originZ != null ? evalArg(w.originZ, scope) : NaN;
-      // BUILD-TIME exaggeration (N3) — radial (xDiaScale) + depth (yScale) are applied
-      // PRE-FRAME inside warpMeshJS (local cross-section scaled before it is placed on
-      // the spline frame), so the section stays perpendicular to the tangent. Manifold's
-      // warpManifoldAlongSpline already honours these; TF used to DROP them (the section
-      // sheared only when a post-warp world-scale was applied). Emit only when set + ≠1
-      // so a no-scale warp is byte-identical.
-      const xDiaScale = w.xDiaScale != null ? evalArg(w.xDiaScale, scope) : NaN;
-      const yScale = w.yScale != null ? evalArg(w.yScale, scope) : NaN;
-      return {
-        op: 'warp',
-        child: childInst,
-        path: cp,
-        ...(w.stretch ? { stretch: true } : {}),
-        ...(Number.isFinite(originZ) ? { originZ } : {}),
-        ...(Number.isFinite(xDiaScale) && xDiaScale > 0 && xDiaScale !== 1 ? { xDiaScale } : {}),
-        ...(Number.isFinite(yScale) && yScale > 0 && yScale !== 1 ? { yScale } : {}),
-      };
+      return lowerWarpAround(w, ref(w.child ?? ''), graph, scope, notes);
     }
 
     case 'cutaway': {
@@ -1093,117 +1229,29 @@ function lowerNode(
     }
 
     case 'parts_map': {
-      // A `list<record>` → N part INSTANCES (#38 Phase 3). Native lowering: resolve
-      // the rows (a list-param default), evaluate each row's argMap (`s.field`/`i`
-      // exprs) → a numeric arg map, and lower each as a synthetic Call to `src` (so
-      // engine + composite handling is reused verbatim). `op` wraps the N children:
-      // `list` (default) + `place` → a union; `stack` → a mated stack-union (the
-      // executor spaces the copies by Z-extent, like the Stack container).
-      const pm = node as any;
-      const src = pm.src as string;
-      if (!src || typeof src !== 'string') {
-        notes.push(`parts_map ${node.id}: no template src selected — UNSUPPORTED`);
-        return { op: 'UNSUPPORTED', nodeType: 'parts_map', detail: 'no src' };
+      // A `list<record>` → N part INSTANCES (#38 Phase 3). Row lowering lives in the
+      // shared `partsMapRowInstrs` (so the per-row OUTPUT expansion can reuse it): it
+      // resolves the rows, evaluates each row's argMap → a synthetic Call to `src`.
+      // Here we WRAP those N children per `op`: `list`/`place` → a plain union;
+      // `stack` → a mated stack-union (the executor spaces copies by Z-extent). NOTE:
+      // as a top-level OUTPUT a non-mated parts_map is instead SPLIT into per-row
+      // parts (see graphToTfInner.expandOutput) — this union is the NESTED lowering.
+      const r = partsMapRowInstrs(node as any, graph, scope, notes, resolve, seen, depth);
+      if ('unsupported' in r) return r.unsupported;
+      if (r.op === 'stack') {
+        return { op: 'union', children: r.instrs, mated: true, offsets: r.instrs.map(() => null) };
       }
-      const loopVar = /^[A-Za-z_$][\w$]*$/.test(String(pm.loopVar || '')) ? String(pm.loopVar) : 's';
-      // Rows come from the `list` ArgValue — a literal array or (usually) a
-      // list<record> PARAM whose default holds the row objects. An `expr` list
-      // can't be resolved to concrete rows here (no object scope) → UNSUPPORTED.
-      let rows: any[] = [];
-      const listV = pm.list as ArgValue | undefined;
-      if (listV?.kind === 'literal' && Array.isArray((listV as any).value)) {
-        rows = (listV as any).value;
-      } else if (listV?.kind === 'param') {
-        const def = (graph.params?.[(listV as any).param] as any)?.default;
-        if (Array.isArray(def)) rows = def;
-      }
-      if (!Array.isArray(rows) || rows.length === 0) {
-        notes.push(`parts_map ${node.id}: list did not resolve to a concrete row array (needs a list<record> param with a default, or a literal array) — UNSUPPORTED`);
-        return { op: 'UNSUPPORTED', nodeType: 'parts_map', detail: 'rows not resolvable' };
-      }
-      const argMap = (pm.argMap ?? {}) as Record<string, ArgValue>;
-      const op: string = pm.op ?? 'list';
-      // Evaluate one argMap value against a specific row (`s`/loopVar → the record
-      // object) + `i` (the index) — mirrors the emitted `Array.from(rows,(s,i)=>…)`.
-      const evalRowArg = (v: ArgValue | undefined, row: any, i: number): number => {
-        if (!v) return NaN;
-        if (v.kind === 'literal') return Number((v as any).value);
-        if (v.kind === 'param') return Number(scope[(v as any).param]);
-        if (v.kind === 'expr') {
-          try {
-            // eslint-disable-next-line no-new-func
-            const fn = new Function('p', 'Math', loopVar, 'i', `"use strict"; return (${(v as any).expr});`);
-            return Number(fn(scope, Math, row, i));
-          } catch { return NaN; }
-        }
-        return NaN;
-      };
-      const children: TfInstr[] = rows.map((row, i) => {
-        const litArgs: Record<string, ArgValue> = {};
-        for (const [k, v] of Object.entries(argMap)) {
-          const n = evalRowArg(v, row, i);
-          litArgs[k] = { kind: 'literal', value: Number.isFinite(n) ? n : 0 } as ArgValue;
-        }
-        // Synthetic Call → reuse the full engine/composite lowering (incl. resolve).
-        const synth = { id: `${node.id}__row${i}`, type: 'call', src, args: litArgs };
-        return lowerNode(synth as any, graph, scope, notes, resolve, seen, depth);
-      });
-      if (op === 'place') {
-        notes.push(`parts_map ${node.id}: op=place positioning is not applied natively (TF unions the ${children.length} instances at their local origins)`);
-      }
-      if (op === 'stack') {
-        return { op: 'union', children, mated: true, offsets: children.map(() => null) };
-      }
-      return { op: 'union', children };
+      return { op: 'union', children: r.instrs };
     }
 
     case 'parts_table': {
-      // The #38b PARTS-TABLE card — N inline ROWS of the SAME template `src`, each
-      // a set of per-column ArgValues. Native lowering mirrors parts_map: evaluate
-      // each row's cells → a numeric arg map, lower each as a synthetic Call to
-      // `src` (reusing the full engine/composite path), then UNION the N instances
-      // (rows render SEPARATE — no mating). Rows are inline so they always resolve.
-      const pt = node as any;
-      const psrc = pt.src as string;
-      if (!psrc || typeof psrc !== 'string') {
-        notes.push(`parts_table ${node.id}: no template src selected — UNSUPPORTED`);
-        return { op: 'UNSUPPORTED', nodeType: 'parts_table', detail: 'no src' };
-      }
-      const cols: string[] = Array.isArray(pt.columns) ? pt.columns : [];
-      const rows: any[] = Array.isArray(pt.rows) ? pt.rows : [];
-      if (rows.length === 0) {
-        notes.push(`parts_table ${node.id}: no rows — UNSUPPORTED`);
-        return { op: 'UNSUPPORTED', nodeType: 'parts_table', detail: 'no rows' };
-      }
-      const evalCell = (v: ArgValue | undefined, i: number): number => {
-        if (!v) return NaN;
-        if (v.kind === 'literal') return Number((v as any).value);
-        if (v.kind === 'param') return Number(scope[(v as any).param]);
-        if (v.kind === 'expr') {
-          try {
-            // eslint-disable-next-line no-new-func
-            const fn = new Function('p', 'Math', 'i', `"use strict"; return (${(v as any).expr});`);
-            return Number(fn(scope, Math, i));
-          } catch { return NaN; }
-        }
-        return NaN;
-      };
-      const ptChildren: TfInstr[] = rows.map((row, i) => {
-        const litArgs: Record<string, ArgValue> = {};
-        // Column order first (deterministic), then any extra keys — mirrors the
-        // emit's orderedRowKeys so TF and Manifold instantiate the same columns.
-        const keys = [
-          ...cols.filter((c) => Object.prototype.hasOwnProperty.call(row ?? {}, c)),
-          ...Object.keys(row ?? {}).filter((k) => !cols.includes(k)),
-        ];
-        for (const k of keys) {
-          const n = evalCell((row ?? {})[k], i);
-          litArgs[k] = { kind: 'literal', value: Number.isFinite(n) ? n : 0 } as ArgValue;
-        }
-        const synth = { id: `${node.id}__row${i}`, type: 'call', src: psrc, args: litArgs };
-        return lowerNode(synth as any, graph, scope, notes, resolve, seen, depth);
-      });
-      return { op: 'union', children: ptChildren };
+      // The #38b PARTS-TABLE card — N inline ROWS of the SAME template `src`. Row
+      // lowering lives in the shared `partsTableRowInstrs`; the rows ALWAYS render
+      // SEPARATE (no mating). As a NESTED value this unions them; as a top-level
+      // OUTPUT they are SPLIT into per-row parts each carrying rowMaterials[i]
+      // (graphToTfInner.expandOutput) — which is what surfaces per-row colour in TF.
+      const r = partsTableRowInstrs(node as any, graph, scope, notes, resolve, seen, depth);
+      return 'unsupported' in r ? r.unsupported : { op: 'union', children: r.instrs };
     }
 
     case 'polygon':
@@ -1299,28 +1347,73 @@ function graphToTfInner(
     return Object.keys(a).length ? a : undefined;
   };
 
-  // instrs + partAppearance (aligned). #36b: a MULTI-INPUT warp expands into one
-  // warped part PER child — separate meshes (like the Manifold separate-parts path)
-  // so a part inside a transparent open-hole stays independent (no union/fusion).
-  // Each expanded part reads the CHILD's appearance (the OH's opacity, the casing's
-  // material), NOT the warp node's.
+  // A parts_table ROW's material override (#38d rowMaterials[i]) → a TfAppearance,
+  // via the SAME `color→outer` / `preset→material` / `opacity` mapping composition-
+  // emit stamps into meta.instanceColors (rowMaterialEntry) — so MF and TF paint a
+  // row identically. Null / all-empty material ⇒ undefined (that row falls back to
+  // the scene default, exactly as a materialless row did before this split).
+  const rowAppr = (mat: any): TfAppearance | undefined => {
+    const e = rowMaterialEntry(mat);
+    if (!e) return undefined;
+    const a: TfAppearance = {};
+    if (e.outer) a.colorOuter = e.outer;
+    if (e.material) a.material = e.material;
+    if (typeof e.opacity === 'number') a.opacity = e.opacity;
+    return Object.keys(a).length ? a : undefined;
+  };
+
+  // Expand ONE output node → its 1..N TF parts (instr + appearance), each part its
+  // OWN aligned partAppearance entry. Three arms, mirroring the per-part render model:
+  //  (a) a parts_table (always) / a NON-mated parts_map → one part PER ROW. A
+  //      parts_table row carries its rowMaterials[i] material, so per-row colour /
+  //      opacity / material RENDERS (previously the N rows fused into ONE union
+  //      painted with the empty node appearance → all default). A parts_map row
+  //      carries the node appearance (parts_map has no per-row material model). A
+  //      MATED parts_map (op:'stack') is NOT split — that would drop the stack
+  //      mating — so it falls through to (c) and stays one mated union.
+  //  (b) a MULTI-INPUT warp (#36b) → each child through expandOutput (so a parts_table
+  //      UNDER the warp expands to per-row WARPED parts), each result re-wrapped in
+  //      the single-child warp, carrying the child/row appearance. Absolute placement
+  //      (originZ default 0), mirroring the Manifold emit (warp.ts).
+  //  (c) otherwise → the single { lowerNode(node), apprOf(id) }.
+  type Expanded = { instr: TfInstr; appearance: TfAppearance | undefined };
+  const expandOutput = (id: NodeId): Expanded[] => {
+    const node = graph.nodes[id] as any;
+    if (node && node.type === 'parts_table') {
+      const r = partsTableRowInstrs(node, graph, scope, notes, resolve, seen, depth);
+      if ('unsupported' in r) return [{ instr: r.unsupported, appearance: apprOf(id) }];
+      const mats = Array.isArray(node.rowMaterials) ? node.rowMaterials : [];
+      return r.instrs.map((instr, i) => ({ instr, appearance: rowAppr(mats[i]) }));
+    }
+    if (node && node.type === 'parts_map') {
+      const r = partsMapRowInstrs(node, graph, scope, notes, resolve, seen, depth);
+      if ('unsupported' in r) return [{ instr: r.unsupported, appearance: apprOf(id) }];
+      if (r.op !== 'stack') {
+        const a = apprOf(id); // no per-row material model — every row shares the node's
+        return r.instrs.map((instr) => ({ instr, appearance: a }));
+      }
+      // op:'stack' — fall through so the mated union is kept as ONE part (mating lost
+      // if split); (c) below re-lowers it via lowerNode.
+    }
+    if (node && node.type === 'warp' && Array.isArray(node.children) && node.children.length > 1) {
+      const single = { ...node, children: undefined, originZ: node.originZ ?? { kind: 'literal', value: 0 } };
+      const out: Expanded[] = [];
+      for (const c of node.children as NodeId[]) {
+        for (const e of expandOutput(c)) {
+          out.push({ instr: lowerWarpAround(single, e.instr, graph, scope, notes), appearance: e.appearance });
+        }
+      }
+      return out;
+    }
+    return [{ instr: lowerNode(node, graph, scope, notes, resolve, seen, depth), appearance: apprOf(id) }];
+  };
+
   const instrs: TfInstr[] = [];
   const partAppearance: (TfAppearance | undefined)[] = [];
   for (const id of outputs) {
-    const node = graph.nodes[id] as any;
-    if (node && node.type === 'warp' && Array.isArray(node.children) && node.children.length > 1) {
-      for (const c of node.children as NodeId[]) {
-        // Multi-input warp → ABSOLUTE placement (originZ default 0), mirroring the
-        // Manifold emit (warp.ts): each child's own z (incl. its mv-z) sets its
-        // distance along the spline, instead of the per-part bbox re-zero cancelling
-        // an mv-z. An explicit node.originZ still wins.
-        const single = { ...node, child: c, children: undefined, originZ: node.originZ ?? { kind: 'literal', value: 0 } };
-        instrs.push(lowerNode(single, graph, scope, notes, resolve, seen, depth));
-        partAppearance.push(apprOf(c));
-      }
-    } else {
-      instrs.push(lowerNode(node, graph, scope, notes, resolve, seen, depth));
-      partAppearance.push(apprOf(id));
+    for (const e of expandOutput(id)) {
+      instrs.push(e.instr);
+      partAppearance.push(e.appearance);
     }
   }
   return { instrs, notes, ...(partAppearance.some(Boolean) ? { partAppearance } : {}), ...(compose ? { compose: true } : {}) };
