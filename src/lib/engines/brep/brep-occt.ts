@@ -152,6 +152,10 @@ export interface MeshOpts {
    *  the legacy single-mesh path (byte-identical). Ignored on the CUT arm
    *  (which keeps its colorOuter/colorInner half-section behaviour, #997). */
   partColors?: PartColorLUT;
+  /** Non-persisted spline-aware VIEW scale for a warped part (Problem 2): `radial`
+   *  fattens the swept section ⊥ the tangent, `depth` scales the spine (path) +
+   *  arc-length uniformly (shape kept, length ∝). Absent/{1,1} → byte-identical. */
+  warpViewScale?: { radial?: number; depth?: number };
 }
 
 /** Legacy cut-arm vertex colours — the historical BREP red (outer skin) / grey
@@ -883,9 +887,14 @@ async function executeBrep(
 
     // Phase 2 — build the arc-length sampler + the z→arc-length map. A section point
     // at world-z rides the spline at arc-length s = z − zBase (mirrors warpManifoldAlongSpline).
-    const sampler = makeWarpSampler(path.map((q: any) => [Number(q[0]) || 0, Number(q[1]) || 0, Number(q[2]) || 0]));
+    // Spline-aware VIEW scale (Problem 2): `depth` scales the spine (path) +
+    // arc-length uniformly (same shape, ∝ length); `radial` fattens the swept
+    // section (Phase 4). Mirrors warpManifoldAlongSpline's splineScale/yScale/xDiaScale.
+    const vr = (Number.isFinite(opts?.warpViewScale?.radial) && (opts!.warpViewScale!.radial as number) > 0) ? (opts!.warpViewScale!.radial as number) : 1;
+    const vd = (Number.isFinite(opts?.warpViewScale?.depth) && (opts!.warpViewScale!.depth as number) > 0) ? (opts!.warpViewScale!.depth as number) : 1;
+    const sampler = makeWarpSampler(path.map((q: any) => [(Number(q[0]) || 0) * vd, (Number(q[1]) || 0) * vd, (Number(q[2]) || 0) * vd]));
     const zBase = (opts && opts.originZ !== undefined) ? Number(opts.originZ) : section.z0;
-    const sStart = section.z0 - zBase, sEnd = section.z1 - zBase;
+    const sStart = (section.z0 - zBase) * vd, sEnd = (section.z1 - zBase) * vd;
     if (!(sEnd > sStart)) return solidArg;
 
     // Phase 3 — build the polyline spine over the covered arc. Sample count ≈ input
@@ -915,7 +924,7 @@ async function executeBrep(
       const spineWire = assembleWire(spineEdges);
       const profileEdges: any[] = [];
       for (let i = 0; i < loop.length; i++) {
-        profileEdges.push(makeLine(toWorld(loop[i][0], loop[i][1]), toWorld(loop[(i + 1) % loop.length][0], loop[(i + 1) % loop.length][1])));
+        profileEdges.push(makeLine(toWorld(loop[i][0] * vr, loop[i][1] * vr), toWorld(loop[(i + 1) % loop.length][0] * vr, loop[(i + 1) % loop.length][1] * vr)));
       }
       return genericSweep(assembleWire(profileEdges), spineWire, { forceProfileSpineOthogonality: true });
     };

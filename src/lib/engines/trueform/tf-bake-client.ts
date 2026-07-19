@@ -47,6 +47,8 @@ export interface TfBakeArgs {
   mode: 'native';
   recipe?: import('$lib/graph/graph-to-tf').TfRecipe;
   cutaway: boolean;
+  /** Non-persisted spline-aware VIEW scale for a warped part (Problem 2). */
+  warpViewScale?: { radial?: number; depth?: number };
 }
 
 /** Per-bake timing (worker warm + build), surfaced for the badge/console. */
@@ -90,7 +92,7 @@ function settle(job: Job, r: TfBakeResult): void {
 /** Stable-ish signature of a bake request — same recipe ⇒ same string. Used to
  *  tell a re-trap of the SAME geometry from a genuinely new request. */
 function recipeSig(args: TfBakeArgs): string {
-  try { return JSON.stringify({ m: args.mode, c: args.cutaway, r: args.recipe }); }
+  try { return JSON.stringify({ m: args.mode, c: args.cutaway, r: args.recipe, w: args.warpViewScale }); }
   catch { return `sig-${++nextId}`; } // circular/proxy → unique, treated as "different"
 }
 
@@ -171,7 +173,7 @@ async function runOnMainThread(job: Job): Promise<void> {
   try {
     const tf = await ensureTf();
     if (job.settled) return; // superseded during warm
-    const req: TfWorkerRequest = { id: job.id, mode: job.args.mode, recipe: job.args.recipe, cutaway: job.args.cutaway };
+    const req: TfWorkerRequest = { id: job.id, mode: job.args.mode, recipe: job.args.recipe, cutaway: job.args.cutaway, warpViewScale: job.args.warpViewScale };
     const result = await buildTfRecipe(tf, req);
     if (job.settled) return; // superseded during build
     // packTfResult copies into owned typed arrays; on the main thread we don't need
@@ -213,7 +215,7 @@ async function dispatch(): Promise<void> {
     // — a JSON round-trip yields plain cloneable data (structured-clone rejects
     // proxies with DataCloneError, same trap bake-client guards).
     const recipe = job.args.recipe ? JSON.parse(JSON.stringify(job.args.recipe)) : undefined;
-    const msg: TfWorkerRequest = { id: job.id, mode: job.args.mode, recipe, cutaway: job.args.cutaway, timings: timingsOn() };
+    const msg: TfWorkerRequest = { id: job.id, mode: job.args.mode, recipe, cutaway: job.args.cutaway, warpViewScale: job.args.warpViewScale, timings: timingsOn() };
     lastSentSig = job.sig; // remember what we handed the worker — a death checks this to avoid re-trapping
     try {
       getWorker().postMessage(msg);

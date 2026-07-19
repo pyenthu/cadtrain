@@ -362,6 +362,18 @@ function buildMatedStack(t: any, kids: TfInstr[], offsets?: (number | null)[]): 
  * tf_examples call patterns. Booleans/transforms/containers recurse into their
  * child instrs first, exactly as the graph nests them.
  */
+// Spline-aware VIEW scale for warped parts (Problem 2), set by executeTfRecipe and
+// read by the `warp` case below. Module scope because buildInstr is standalone +
+// recursive; TF bakes are sequential so there is no cross-bake race.
+let _warpVS: { radial?: number; depth?: number } | undefined;
+/** The warp view-scale factors (radial, depth), each clamped to a positive number
+ *  or 1 — multiplied into the warp's own xDiaScale/yScale + splineScale. */
+function warpVsFactors(): { vr: number; vd: number } {
+  const vr = (Number.isFinite(_warpVS?.radial) && (_warpVS!.radial as number) > 0) ? (_warpVS!.radial as number) : 1;
+  const vd = (Number.isFinite(_warpVS?.depth) && (_warpVS!.depth as number) > 0) ? (_warpVS!.depth as number) : 1;
+  return { vr, vd };
+}
+
 function buildInstr(t: any, instr: TfInstr): any {
   switch (instr.op) {
     case 'revolve':
@@ -520,7 +532,8 @@ function buildInstr(t: any, instr: TfInstr): any {
         // Bake the child's lazy transform (an outer mv/rot) into world coords BEFORE
         // warping — else warpMeshJS bends the un-moved local points (see bug note above).
         const src = bakeTransformIntoPoints(built, local);
-        const { positions } = warpMeshJS(src, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ, xDiaScale: instr.xDiaScale, yScale: instr.yScale });
+        const { vr, vd } = warpVsFactors();
+        const { positions } = warpMeshJS(src, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ, xDiaScale: (instr.xDiaScale ?? 1) * vr, yScale: (instr.yScale ?? 1) * vd, splineScale: vd });
         return t.mesh(md.faces, positions);
       }
 
@@ -535,7 +548,8 @@ function buildInstr(t: any, instr: TfInstr): any {
       const src = bakeTransformIntoPoints(child, local); // honor an outer mv/rot (see bug note above)
       const dense = subdivideAxialAdaptive(src, null, md.faces, instr.path as any, { maxStations: GENERIC_WARP_MAX_STATIONS });
       const welded = weldMeshByPosition(dense.positions, dense.faces);
-      const { positions } = warpMeshJS(welded.points, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ, xDiaScale: instr.xDiaScale, yScale: instr.yScale });
+      const { vr, vd } = warpVsFactors();
+      const { positions } = warpMeshJS(welded.points, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ, xDiaScale: (instr.xDiaScale ?? 1) * vr, yScale: (instr.yScale ?? 1) * vd, splineScale: vd });
       return t.mesh(welded.faces, positions);
     }
     case 'cutaway':
@@ -626,10 +640,14 @@ export function executeTfRecipe(
   tf: any,
   t: any,
   recipe: TfRecipe,
-  opts: { cutaway?: boolean } = {},
+  opts: { cutaway?: boolean; warpViewScale?: { radial?: number; depth?: number } } = {},
 ): TfDemoResult {
   const instrs = recipe?.instrs ?? [];
   if (instrs.length === 0) throw new TfUnsupportedError('(empty recipe)');
+  // Spline-aware VIEW scale (Problem 2) — read by the `warp` case in buildInstr
+  // (which is standalone, so pass via module scope; TF bakes run one at a time and
+  // every executeTfRecipe call re-sets this, so a thrown bake can't leak it).
+  _warpVS = opts.warpViewScale;
   // The whole native build (tubeMesh / boxMesh / boolean{Difference,Union,
   // Intersection} …) runs inside runTfGuarded: a boolean on degenerate/coincident
   // geometry (the defect-2 tilted-coincident-cap class) can WASM-`unreachable`,

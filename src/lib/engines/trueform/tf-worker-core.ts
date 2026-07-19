@@ -45,6 +45,9 @@ export interface TfWorkerRequest {
   recipe?: TfRecipe;
   /** Mirror the Manifold cutaway — a half-quadrant boolean section cut. */
   cutaway: boolean;
+  /** Non-persisted spline-aware VIEW scale for a warped part (Problem 2): `radial`
+   *  fattens the section ⊥ the tangent, `depth` scales the spline uniformly. */
+  warpViewScale?: { radial?: number; depth?: number };
   /** Opt-in perf logging (worker warm + build). */
   timings?: boolean;
 }
@@ -58,7 +61,7 @@ export interface TfWorkerRequest {
 export async function buildTfRecipe(tf: any, req: TfWorkerRequest): Promise<TfDemoResult> {
   if (!req.recipe) throw new Error('native TF build requires a recipe');
   // Same call shape rebuildTf used inline: executeTfRecipe(tf, tf, recipe, opts).
-  return executeTfRecipe(tf, tf, req.recipe, { cutaway: req.cutaway });
+  return executeTfRecipe(tf, tf, req.recipe, { cutaway: req.cutaway, warpViewScale: req.warpViewScale });
 }
 
 /** The transfer-ready shape of a TF build result — flat typed arrays on their OWN

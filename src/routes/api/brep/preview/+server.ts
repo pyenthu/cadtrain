@@ -61,7 +61,11 @@ export const POST = async ({ request, fetch }) => {
       const partColors = (body?.partColors && typeof body.partColors === 'object')
         ? (body.partColors as PartColorLUT)
         : await partColorsFor(source, fetch);
-      const meshOpts = { ...opts, partColors };
+      // Non-persisted spline-aware VIEW scale (Problem 2) — threaded to the warp
+      // executor so a warped BREP part fattens (radial) / lengthens (depth) pre-sweep.
+      const warpViewScale = (body?.warpViewScale && typeof body.warpViewScale === 'object')
+        ? (body.warpViewScale as { radial?: number; depth?: number }) : undefined;
+      const meshOpts = { ...opts, partColors, ...(warpViewScale ? { warpViewScale } : {}) };
       let mesh;
       try {
         mesh = await brepFromSource(source, params, meshOpts, fetch);

@@ -385,14 +385,6 @@
     // (omitted → byte-identical default bake + cache key). Reuse the crease angle
     // as the sharp-edge threshold; tolerance defaults server/worker-side.
     const smooth = scene.roundSurface ? { minSharpAngle: scene.creaseAngle } : undefined;
-    // SPLINE-AWARE view scale (Problem 2): a WARPED part bakes its radial/depth
-    // exaggeration PRE-warp (perpendicular section + uniformly-scaled spline). Sent
-    // only for a warp (`warpSpline(` in the compiled source) at a non-1 COMMITTED
-    // scale — so it keys the cache (re-bakes) and is byte-identical otherwise. The
-    // render group applies only the live÷committed delta (PrimitiveDualScene).
-    const warpViewScale = (typeof source === 'string' && source.includes('warpSpline(')
-      && (scene.warpBakeScale.radial !== 1 || scene.warpBakeScale.depth !== 1))
-      ? { radial: scene.warpBakeScale.radial, depth: scene.warpBakeScale.depth } : undefined;
     const body = JSON.stringify({ id, name, source: source ?? '', params: args, mode: source ? 'sandbox' : 'bundle', cutaway: cutFlag, colorOuter, colorInner, instanced: true, ...(segUsed ? { segments: segUsed } : {}), ...(warp ? { warp } : {}), ...(crease ? { creaseAngle: crease } : {}), ...(smooth ? { smooth } : {}), ...(warpViewScale ? { warpViewScale } : {}) });
     const cached = bust ? undefined : cacheGet(`mesh:${body}`);
     if (cached) {
@@ -537,7 +529,7 @@
     // outer/inner vertex colours from the real appearance instead of the legacy
     // red/grey (#997) — the SAME colorOuter/colorInner the MF + GLB requests send
     // above. Undefined ⇒ omitted ⇒ brep-occt falls back to red/grey (back-compat).
-    const body = JSON.stringify({ source: brepSource ?? source ?? '', paramValues: brepParams ?? {}, tolerance: effTol, cut, colorOuter, colorInner });
+    const body = JSON.stringify({ source: brepSource ?? source ?? '', paramValues: brepParams ?? {}, tolerance: effTol, cut, colorOuter, colorInner, ...(warpViewScale ? { warpViewScale } : {}) });
     const key = `brep:${body}`;
     const emit = (data: BrepPreviewResponse, cached: boolean) => {
       if (data.supported === false) {
@@ -623,7 +615,7 @@
       // client transparently re-runs the same build on the main thread. A genuine
       // BUILD failure REJECTS → the outer catch blanks the canvas + shows the reason.
       const result = await tfBakeClient.run(
-        { mode: 'native', recipe: tfRecipe!, cutaway: scene.showCutaway },
+        { mode: 'native', recipe: tfRecipe!, cutaway: scene.showCutaway, ...(warpViewScale ? { warpViewScale } : {}) },
       );
       if (ac.signal.aborted || isTfCancelled(result)) return;
       // Worker-reported timings: warm (one-time ~31MB WASM + pthread pool) + build
@@ -793,6 +785,11 @@
   // worker uses). Threaded to the scene so the render group applies only the
   // live÷committed delta for a warped part (no double-scale).
   const hasWarp = $derived(typeof source === 'string' && source.includes('warpSpline('));
+  // The COMMITTED spline-aware view scale for a warped part → sent to every engine's
+  // bake so it multiplies into warpSpline pre-warp. Undefined (or {1,1}) → omitted →
+  // byte-identical. Shared by the MF, TF, and BREP bake paths.
+  const warpViewScale = $derived((hasWarp && (scene.warpBakeScale.radial !== 1 || scene.warpBakeScale.depth !== 1))
+    ? { radial: scene.warpBakeScale.radial, depth: scene.warpBakeScale.depth } : undefined);
   let lastRebuildKey = '';
   $effect(() => {
     // Include showCutaway so toggling it ON for a large (cutaway-auto-skipped)
@@ -811,7 +808,7 @@
       // the whole recipe must be in the key or the native re-bake never fires.
       ? JSON.stringify({ b: 'tf', actual: tfActual, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), rcp: tfActual && tfRecipe ? tfRecipe : '', seg: effSegments, cut: scene.showCutaway, warpNonce: scene.warpBakeNonce, warpR: scene.warpBakeScale.radial, warpD: scene.warpBakeScale.depth })
       : isBrep
-      ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway })
+      ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway, warpR: scene.warpBakeScale.radial, warpD: scene.warpBakeScale.depth })
       // `b` keeps MF_CLIENT and MF_SERVER on separate cache entries, so the two
       // tabs can show their meshes side by side (that IS the parity check).
       : JSON.stringify({ b: backend, id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, warpR: scene.warpBakeScale.radial, warpD: scene.warpBakeScale.depth });
