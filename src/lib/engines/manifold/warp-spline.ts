@@ -224,7 +224,7 @@ function maxAxialEdgeSpan(m: any): number {
 export function warpManifoldAlongSpline(
   m: any,
   cp: Pt2[] | Pt3[],
-  opts: { refine?: number; stretch?: boolean; validate?: boolean; originZ?: number; xDiaScale?: number; yScale?: number } = {},
+  opts: { refine?: number; stretch?: boolean; validate?: boolean; originZ?: number; xDiaScale?: number; yScale?: number; splineScale?: number } = {},
 ): any {
   // A LIST input maps the warp over each member. A single-child warp whose child
   // is a list producer (a parts_table aggregate, a repeat/parts_map, or any node
@@ -251,6 +251,14 @@ export function warpManifoldAlongSpline(
   // Naming mirrors SVTC's persisted displayOpts. Default 1 ⇒ byte-identical bake.
   const yScale = (Number.isFinite(opts.yScale) && (opts.yScale as number) > 0) ? (opts.yScale as number) : 1;
   const xDia = (Number.isFinite(opts.xDiaScale) && (opts.xDiaScale as number) > 0) ? (opts.xDiaScale as number) : 1;
+  // DEPTH (Z) view-scale: scale the SPLINE control points UNIFORMLY so the
+  // trajectory keeps its exact SHAPE but grows/shrinks proportionally in length
+  // (the user's "span the 3D space maintaining its shape, proportionally longer").
+  // Paired with `yScale = splineScale` by the caller so the part stretches to span
+  // the scaled trajectory (the section stays perpendicular — radial is `xDia`).
+  // Default 1 ⇒ byte-identical bake.
+  const sScale = (Number.isFinite(opts.splineScale) && (opts.splineScale as number) > 0) ? (opts.splineScale as number) : 1;
+  const cpS: number[][] = sScale !== 1 ? (cp as number[][]).map((p) => p.map((c) => c * sScale)) : (cp as number[][]);
 
   let mm = m;
   let refN = Math.max(0, Math.floor(opts.refine ?? 0));
@@ -282,8 +290,8 @@ export function warpManifoldAlongSpline(
   // length and merely BENDS along the spline (a 3-unit part follows 3 units of
   // arc). `stretch:true` elongates/compresses the part to span the WHOLE spline.
   let out: any;
-  if (is3DPath(cp as number[][])) {
-    const { at, total } = spline3DFrames(cp as Pt3[]);
+  if (is3DPath(cpS)) {
+    const { at, total } = spline3DFrames(cpS as Pt3[]);
     out = mm.warp((p: number[]) => {
       const x = p[0] * xDia, y = p[1] * xDia, z = p[2];
       const s = (opts.stretch ? ((z - z0) / zLen) * total : (z - zBase)) * yScale;
@@ -295,7 +303,7 @@ export function warpManifoldAlongSpline(
   } else {
     // Accept planar `Pt3[]` (drop the ~constant y) so callers can pass a single
     // 3D control-point list either way.
-    const flat: Pt2[] = (cp as number[][]).map((p) => (p.length >= 3 ? [p[0], p[2]] : (p as Pt2)));
+    const flat: Pt2[] = cpS.map((p) => (p.length >= 3 ? [p[0], p[2]] : (p as Pt2)));
     const { sampleAt, total } = splineSampler(flat);
     out = mm.warp((p: number[]) => {
       const x = p[0] * xDia, y = p[1] * xDia, z = p[2];
@@ -333,7 +341,7 @@ export function warpMeshJS(
   positions: Float32Array,
   normals: Float32Array | null,
   cp: Pt2[] | Pt3[],
-  opts: { stretch?: boolean; originZ?: number; xDiaScale?: number; yScale?: number } = {},
+  opts: { stretch?: boolean; originZ?: number; xDiaScale?: number; yScale?: number; splineScale?: number } = {},
 ): { positions: Float32Array; normals: Float32Array | null } {
   if (!positions || positions.length < 3 || !Array.isArray(cp) || cp.length < 2) {
     return { positions, normals };
@@ -352,11 +360,15 @@ export function warpMeshJS(
   // xDiaScale multiplies the in-frame radial offsets. Default 1 ⇒ byte-identical.
   const yScale = (Number.isFinite(opts.yScale) && (opts.yScale as number) > 0) ? (opts.yScale as number) : 1;
   const xDia = (Number.isFinite(opts.xDiaScale) && (opts.xDiaScale as number) > 0) ? (opts.xDiaScale as number) : 1;
+  // DEPTH view-scale: uniform spline-cp scale (same shape, proportional length) —
+  // MUST agree with warpManifoldAlongSpline. Default 1 ⇒ byte-identical.
+  const sScale = (Number.isFinite(opts.splineScale) && (opts.splineScale as number) > 0) ? (opts.splineScale as number) : 1;
+  const cpS: number[][] = sScale !== 1 ? (cp as number[][]).map((p) => p.map((c) => c * sScale)) : (cp as number[][]);
 
-  const use3D = is3DPath(cp as number[][]);
-  const s3 = use3D ? spline3DFrames(cp as Pt3[]) : null;
+  const use3D = is3DPath(cpS);
+  const s3 = use3D ? spline3DFrames(cpS as Pt3[]) : null;
   const sP = use3D ? null
-    : splineSampler((cp as number[][]).map((p) => (p.length >= 3 ? [p[0], p[2]] : (p as Pt2))));
+    : splineSampler(cpS.map((p) => (p.length >= 3 ? [p[0], p[2]] : (p as Pt2))));
   const total = use3D ? s3!.total : sP!.total;
 
   const outP = new Float32Array(positions.length);

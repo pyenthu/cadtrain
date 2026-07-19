@@ -58,4 +58,35 @@ describe('warp radial/depth scale is applied BEFORE the frame (perpendicularity)
     const { maxDot } = measure(4, 3);
     expect(maxDot).toBeLessThan(1e-4);
   });
+
+  // DEPTH view-scale = uniform spline scaling: the trajectory keeps its SHAPE but
+  // grows proportionally in length. `splineScale=k` (paired with `yScale=k`) makes
+  // the warped part span k× the world distance along the SAME-shaped path.
+  it('splineScale scales the trajectory length proportionally (same shape)', () => {
+    const DIAG: Pt2[] = [[0, 0], [5, 5], [10, 10]]; // planar diagonal (x,z)
+    const M = 12;
+    const line = new Float32Array(M * 3);
+    for (let i = 0; i < M; i++) { line[i * 3] = 0; line[i * 3 + 1] = 0; line[i * 3 + 2] = i; } // local z 0..11
+    const span = (k: number) => {
+      const { positions } = warpMeshJS(line, null, DIAG, { splineScale: k, yScale: k });
+      let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity;
+      for (let i = 0; i < M; i++) {
+        const x = positions[i * 3], z = positions[i * 3 + 2];
+        minx = Math.min(minx, x); maxx = Math.max(maxx, x);
+        minz = Math.min(minz, z); maxz = Math.max(maxz, z);
+      }
+      return Math.hypot(maxx - minx, maxz - minz);
+    };
+    const ratio = span(2) / span(1);
+    expect(ratio).toBeGreaterThan(1.9);
+    expect(ratio).toBeLessThan(2.1);
+  });
+
+  it('splineScale=1 is a no-op (byte-identical to no scale)', () => {
+    const CP2: Pt2[] = [[0, 0], [0, 6], [3, 10]];
+    const pts = new Float32Array([1, 0, 0, 0, 1, 3, -1, 0, 6]);
+    const a = warpMeshJS(pts, null, CP2, {}).positions;
+    const b = warpMeshJS(pts, null, CP2, { splineScale: 1 }).positions;
+    for (let i = 0; i < a.length; i++) expect(b[i]).toBeCloseTo(a[i], 10);
+  });
 });
