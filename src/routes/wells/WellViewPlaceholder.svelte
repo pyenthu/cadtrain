@@ -159,7 +159,7 @@
           <!-- Dim backdrop behind the large editor popover — click to close. -->
           <div class="wv-graph-backdrop" role="presentation" onclick={() => (graphPopover = false)}></div>
         {/if}
-        <div class="wv-surface" class:editor-offset={!inPopover}
+        <div class="wv-surface"
           class:graph-popover={inPopover}
           class:hidden={view.viewMode !== '3d'}>
           {#if inPopover}
@@ -188,17 +188,13 @@
         </div>
       {/if}
 
-      <!-- Top view/scale bar + left element rail (both mutate `view`). The rail is
-           a schematic-layer switch; it has no meaning over the graph canvas. -->
+      <!-- 2D|3D + display settings — floats top-RIGHT next to the editor gear (no
+           more black top strip). The left rail carries the layer on/off, add/edit
+           tools, and (3D only) the ✎ edit-graph opener. -->
       <WellViewControls settings={view} />
-      <!-- Pop the full node editor open LARGE over the clean 3D render. -->
-      {#if view.viewMode === '3d' && !graphPopover}
-        <button class="wv-graph-open" type="button"
-          title="Open the node-graph editor (large popover)"
-          onclick={() => (graphPopover = true)}>✎ edit graph</button>
-      {/if}
       {#if !(view.viewMode === '3d' && graphPopover)}
-        <WellDiagramRail settings={view} {wson} bind:activeTool />
+        <WellDiagramRail settings={view} {wson} bind:activeTool
+          onEditGraph={view.viewMode === '3d' ? (() => (graphPopover = true)) : undefined} />
       {/if}
     </section>
   {:else}
@@ -237,12 +233,9 @@
     visibility: hidden;
     pointer-events: none;
   }
-  /* The floating view/scale bar + the editor's bake-header chrome both overlay
-     the stage's top-left. Drop the embedded editor surface (3D + GRAPH) below the
-     bar so the two don't stack. */
-  .wv-surface.editor-offset {
-    top: 46px;
-  }
+  /* (removed the 46px editor top-offset — the embedded editor now fills the stage;
+     the old black top strip is gone. 2D|3D + settings float top-right by the gear,
+     and ✎ edit-graph moved into the left rail.) */
   /* Large node-editor popover (opened from the 3D view via ✎): the SAME editor
      surface floats as a big centered panel over a dim backdrop; × or the backdrop
      closes it (graphPopover). */
@@ -276,21 +269,6 @@
     cursor: pointer;
   }
   .wv-graph-close:hover { color: #5b21b6; border-color: #c4b5fd; }
-  .wv-graph-open {
-    position: absolute;
-    top: 8px;
-    right: 12px;
-    z-index: 15;
-    padding: 5px 10px;
-    border: 1px solid #c4b5fd;
-    border-radius: 6px;
-    background: #fff;
-    color: #5b21b6;
-    font: 600 12px Arial;
-    cursor: pointer;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.12);
-  }
-  .wv-graph-open:hover { background: #f5f3ff; }
   /* W-G c — schematics read best on white. Flag today tints the 3D backdrop;
      W-D's 2D/SVG track view will render on this same white surface. */
   .wv-stage.white {

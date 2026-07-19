@@ -150,7 +150,7 @@
   .wvc {
     position: absolute;
     top: 8px;
-    left: 8px;
+    right: 8px;
     z-index: 20;
     display: inline-flex;
     align-items: center;

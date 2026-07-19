@@ -22,10 +22,14 @@
     settings,
     wson = null,
     activeTool = $bindable('select'),
+    onEditGraph = undefined,
   }: {
     settings: WellViewSettings;
     wson?: WsonDoc | null;
     activeTool?: string;
+    /** Open the large node-graph editor popover. Passed ONLY in 3D mode (there is
+     *  no graph to edit over the 2D SVG); absent ⇒ the ✎ rail icon is hidden. */
+    onEditGraph?: (() => void) | undefined;
   } = $props();
 
   // ── Visibility layers (from WellElementRail) ────────────────────────────────
@@ -184,6 +188,22 @@
       </div>
     {/if}
   </div>
+
+  <!-- Icon 3 — Edit graph (3D only; opens the large node-editor popover). -->
+  {#if onEditGraph}
+    <div class="wdr-sep"></div>
+    <div class="wdr-slot">
+      <button class="wdr-btn" type="button" aria-label="Edit graph"
+        onclick={() => onEditGraph?.()}>
+        <svg width="17" height="17" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+          stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="4" cy="4.5" r="1.8" />
+          <circle cx="12" cy="11.5" r="1.8" />
+          <path d="M5.4 5.9l5.2 4.2" />
+        </svg>
+      </button>
+    </div>
+  {/if}
 </div>
 
 <style>
