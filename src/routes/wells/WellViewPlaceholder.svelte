@@ -23,7 +23,7 @@
    */
   import WellSchematic2D from './WellSchematic2D.svelte';
   import WellViewControls from './WellViewControls.svelte';
-  import WellElementRail from './WellElementRail.svelte';
+  import WellDiagramRail from './WellDiagramRail.svelte';
   import { buildRemap, type Wson2DInput } from '$lib/wells/wson-2d';
   import { summarise, type WsonDoc } from './wson-summary';
   import { defaultViewSettings, type WellViewSettings } from './view-settings';
@@ -42,6 +42,7 @@
     // default so the component still works standalone.
     view = defaultViewSettings(),
     paneActive = true,
+    activeTool = $bindable('select'),
     onUpdateCompletion,
     onDeleteCompletion,
   }: {
@@ -49,6 +50,9 @@
     error?: string | null;
     fileName?: string;
     view?: WellViewSettings;
+    /** The active add/edit placement tool id (scaffold) — bound to the shell so
+     *  it survives tab switches. Driven by the in-stage diagram rail. */
+    activeTool?: string;
     /** Is THIS well's pane the visible one? Every open `.wson` tab stays mounted
      *  and they all share one `view`, so without this each pane would mount its
      *  own graph editor and bake — and the panes share one TF worker, whose
@@ -194,7 +198,7 @@
           onclick={() => (graphPopover = true)}>✎ edit graph</button>
       {/if}
       {#if !(view.viewMode === '3d' && graphPopover)}
-        <WellElementRail settings={view} {wson} />
+        <WellDiagramRail settings={view} {wson} bind:activeTool />
       {/if}
     </section>
   {:else}

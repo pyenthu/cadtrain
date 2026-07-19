@@ -23,7 +23,6 @@
   import { tick } from 'svelte';
   import { type FolderTree } from '$lib/shared/volume/FolderTreeSidebar.svelte';
   import WellSideNav, { type LoadedFile, type LoadMeta } from '$lib/wells/WellSideNav.svelte';
-  import WellToolbar from './WellToolbar.svelte';
   import WellViewPlaceholder from './WellViewPlaceholder.svelte';
   import { wsonFiles, loadVolumeSamples, parseWsonFile, summarise, type WsonFile, type WsonDoc } from './wson-summary';
   import * as wsCache from './workspace-cache';
@@ -367,9 +366,6 @@
 </script>
 
 <div class="wells-app" class:resizing>
-  <!-- Far-left editor tool rail (SVTC-style icon toolbar). -->
-  <WellToolbar bind:active={activeTool} />
-
   <!-- Left file/folder sidebar — SVTC-style explorer (Samples + local Workspace)
        wrapping the shared folder tree, plus the local-file open affordance. -->
   <div class="wells-sidebar" style="width: {sidebarW}px">
@@ -502,6 +498,7 @@
               fileName={file?.name ?? tabLabel(t.id)}
               {view}
               paneActive={activeKey === t.key}
+              bind:activeTool
               onUpdateCompletion={updateComponent}
               onDeleteCompletion={deleteComponent}
             />
