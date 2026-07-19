@@ -32,7 +32,7 @@
     setStackChildRef,
     setMethodInput,
     setTransformAxisValue,
-    setWarpRefine, setWarpStretch, setWarpValidate,
+    setWarpRefine, setWarpStretch, setWarpValidate, setWarpXDiaScale, setWarpYScale,
     removeNode,
     STACK_REF_PARAM,
     type Graph,
@@ -374,6 +374,8 @@
   {@const wn = graph.nodes[warpPop.nodeId] as any}
   {#if wn && wn.type === 'warp'}
     {@const refineVal = wn.refine?.kind === 'literal' ? Number(wn.refine.value) : (wn.refine ? NaN : 0)}
+    {@const xDiaVal = wn.xDiaScale?.kind === 'literal' ? Number(wn.xDiaScale.value) : (wn.xDiaScale ? NaN : 1)}
+    {@const yScaleVal = wn.yScale?.kind === 'literal' ? Number(wn.yScale.value) : (wn.yScale ? NaN : 1)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <!-- svelte-ignore a11y_click_events_have_key_events -->
     <div class="ge-wire-shade" onclick={closeWarpPop}></div>
@@ -388,6 +390,18 @@
         <input class="ge-warp-optn" type="number" min="0" step="1"
           value={Number.isFinite(refineVal) ? refineVal : 0}
           oninput={(e) => { const v = Number((e.target as HTMLInputElement).value); graph = setWarpRefine(graph, warpPop!.nodeId, v > 0 ? asLiteral(v) : null); }} />
+      </div>
+      <div class="ge-warp-optrow">
+        <span class="ge-warp-optk" data-tip="Radial (diameter) exaggeration, baked BEFORE the bend so the cross-section stays perpendicular to the spline (1 = true scale)">radial ×</span>
+        <input class="ge-warp-optn" type="number" min="0" step="0.1"
+          value={Number.isFinite(xDiaVal) ? xDiaVal : 1}
+          oninput={(e) => { const v = Number((e.target as HTMLInputElement).value); graph = setWarpXDiaScale(graph, warpPop!.nodeId, (v > 0 && v !== 1) ? asLiteral(v) : null); }} />
+      </div>
+      <div class="ge-warp-optrow">
+        <span class="ge-warp-optk" data-tip="Depth (along-spline) exaggeration, baked into the bend — scales the arc-length coordinate (1 = true scale)">depth ×</span>
+        <input class="ge-warp-optn" type="number" min="0" step="0.1"
+          value={Number.isFinite(yScaleVal) ? yScaleVal : 1}
+          oninput={(e) => { const v = Number((e.target as HTMLInputElement).value); graph = setWarpYScale(graph, warpPop!.nodeId, (v > 0 && v !== 1) ? asLiteral(v) : null); }} />
       </div>
       <div class="ge-warp-optrow">
         <span class="ge-warp-optk" data-tip="Stretch the part to span the whole spline (else keep its own length)">stretch</span>

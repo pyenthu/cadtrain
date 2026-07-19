@@ -1571,6 +1571,28 @@ export function setWarpValidate(graph: Graph, warpId: NodeId, validate: boolean)
   });
 }
 
+/** Set (or clear, via null) the build-time RADIAL (diameter) exaggeration — an
+ *  ArgValue so it can be param/expr-driven. Applied PRE-FRAME inside the warp
+ *  (the local cross-section is scaled before it is placed on the spline frame),
+ *  so the section stays perpendicular to the tangent — unlike a post-warp world
+ *  scale, which shears it. Clearing (or 1) drops the field ⇒ byte-identical emit. */
+export function setWarpXDiaScale(graph: Graph, warpId: NodeId, xDiaScale: ArgValue | null): Graph {
+  return updateWarp(graph, warpId, (n) => {
+    if (xDiaScale == null) { const { xDiaScale: _drop, ...rest } = n; return rest; }
+    return { ...n, xDiaScale };
+  });
+}
+
+/** Set (or clear, via null) the build-time DEPTH (along-spline) exaggeration —
+ *  scales the arc-length coordinate, so a vertical and a lateral section stretch
+ *  by the same factor ALONG the path. Clearing (or 1) drops the field. */
+export function setWarpYScale(graph: Graph, warpId: NodeId, yScale: ArgValue | null): Graph {
+  return updateWarp(graph, warpId, (n) => {
+    if (yScale == null) { const { yScale: _drop, ...rest } = n; return rest; }
+    return { ...n, yScale };
+  });
+}
+
 // ─── Cutaway / cross-section MODIFIER helpers ───────────────────────────────
 //
 // A `cutaway` node SUBTRACTS an authored angular wedge from a built solid

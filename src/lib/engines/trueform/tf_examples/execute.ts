@@ -520,7 +520,7 @@ function buildInstr(t: any, instr: TfInstr): any {
         // Bake the child's lazy transform (an outer mv/rot) into world coords BEFORE
         // warping — else warpMeshJS bends the un-moved local points (see bug note above).
         const src = bakeTransformIntoPoints(built, local);
-        const { positions } = warpMeshJS(src, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ });
+        const { positions } = warpMeshJS(src, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ, xDiaScale: instr.xDiaScale, yScale: instr.yScale });
         return t.mesh(md.faces, positions);
       }
 
@@ -535,7 +535,7 @@ function buildInstr(t: any, instr: TfInstr): any {
       const src = bakeTransformIntoPoints(child, local); // honor an outer mv/rot (see bug note above)
       const dense = subdivideAxialAdaptive(src, null, md.faces, instr.path as any, { maxStations: GENERIC_WARP_MAX_STATIONS });
       const welded = weldMeshByPosition(dense.positions, dense.faces);
-      const { positions } = warpMeshJS(welded.points, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ });
+      const { positions } = warpMeshJS(welded.points, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ, xDiaScale: instr.xDiaScale, yScale: instr.yScale });
       return t.mesh(welded.faces, positions);
     }
     case 'cutaway':

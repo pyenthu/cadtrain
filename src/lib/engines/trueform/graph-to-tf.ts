@@ -110,7 +110,7 @@ export type TfInstr =
   // WARP (#6) — bend the CHILD solid along a spline `path` (control points), in
   // PURE JS (warpMeshJS: positions + normals by the local frame). Unlocks TF warp
   // ('TF can't build ops: warp') — TF builds the child mesh, warpMeshJS bends it.
-  | { op: 'warp'; child: TfInstr; path: Vec3[]; stretch?: boolean; originZ?: number }
+  | { op: 'warp'; child: TfInstr; path: Vec3[]; stretch?: boolean; originZ?: number; xDiaScale?: number; yScale?: number }
   // Authored angular cross-section (the graph `cutaway` modifier → Manifold
   // `sectionCut`). TF builds a pie-slice wedge extruded over the solid's Z span
   // and boolean-subtracts it (mirrors manifold-helpers.sectionCut).
@@ -1055,12 +1055,22 @@ function lowerNode(
       // Absolute depth placement (#36c b): resolve originZ to a number and thread it
       // to warpMeshJS so a part offset down-hole bends at its true arc-length station.
       const originZ = w.originZ != null ? evalArg(w.originZ, scope) : NaN;
+      // BUILD-TIME exaggeration (N3) — radial (xDiaScale) + depth (yScale) are applied
+      // PRE-FRAME inside warpMeshJS (local cross-section scaled before it is placed on
+      // the spline frame), so the section stays perpendicular to the tangent. Manifold's
+      // warpManifoldAlongSpline already honours these; TF used to DROP them (the section
+      // sheared only when a post-warp world-scale was applied). Emit only when set + ≠1
+      // so a no-scale warp is byte-identical.
+      const xDiaScale = w.xDiaScale != null ? evalArg(w.xDiaScale, scope) : NaN;
+      const yScale = w.yScale != null ? evalArg(w.yScale, scope) : NaN;
       return {
         op: 'warp',
         child: childInst,
         path: cp,
         ...(w.stretch ? { stretch: true } : {}),
         ...(Number.isFinite(originZ) ? { originZ } : {}),
+        ...(Number.isFinite(xDiaScale) && xDiaScale > 0 && xDiaScale !== 1 ? { xDiaScale } : {}),
+        ...(Number.isFinite(yScale) && yScale > 0 && yScale !== 1 ? { yScale } : {}),
       };
     }
 
