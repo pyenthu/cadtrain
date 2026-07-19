@@ -73,6 +73,13 @@ export interface EmbedConfig {
   /** Present the editor as a floating popover/panel rather than filling its
    *  container inline. Default `false`. Adds `.ge-root.popover` styling. */
   popover?: boolean;
+  /** The RIGHT pane's tab BAR (the vertical `.ge-pane-tabs` strip of tab
+   *  buttons — MF_CLIENT / TF / SRC / …). Default `true`. Off = the tab bar is
+   *  hidden and the active tab's content fills the pane. `/wells`' clean 3D view
+   *  turns this OFF: it pins a single `bake` tab, so the lone "MF_CLIENT" button
+   *  is redundant (the full engine tabs live in the ✎ edit-graph popover). This
+   *  is EXPLICIT — it does not auto-hide based on the tab count. */
+  tabBar?: boolean;
 }
 
 /** The fully-resolved config the components consume. All fields concrete. */
@@ -86,6 +93,7 @@ export interface ResolvedEmbedConfig {
   rightPane: boolean;
   graphCanvas: boolean;
   popover: boolean;
+  tabBar: boolean;
 }
 
 /** Canonical tab display order — the ONLY source of truth for "all tabs". */
@@ -152,6 +160,7 @@ export function resolveEmbedConfig(partial?: Partial<EmbedConfig> | null): Resol
     rightPane: p.rightPane ?? true,
     graphCanvas: p.graphCanvas ?? true,
     popover: p.popover ?? false,
+    tabBar: p.tabBar ?? true,
   };
 }
 
@@ -202,6 +211,8 @@ export function parseEmbedFromSearch(sp: URLSearchParams): Partial<EmbedConfig> 
   if (graphCanvas !== undefined) { out.graphCanvas = graphCanvas; any = true; }
   const popover = parseBool(sp.get('popover'));
   if (popover !== undefined) { out.popover = popover; any = true; }
+  const tabBar = parseBool(sp.get('tabbar') ?? sp.get('tabBar'));
+  if (tabBar !== undefined) { out.tabBar = tabBar; any = true; }
 
   const tabs = parseCsv(sp.get('tabs'));
   if (tabs !== undefined) { out.tabs = tabs as RightPaneTab[]; any = true; }

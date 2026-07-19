@@ -3107,6 +3107,7 @@
       {bake} {exemplarId} {paramDefaults} {graph} {hasSolidProducer}
       active={props.active}
       tabs={embedCfg.tabs}
+      tabBar={embedCfg.tabBar}
       autoTf={props.autoTf ?? true}
       splineOverlays={spline.splineOverlays}
       {legacyLoad} {sourceText}

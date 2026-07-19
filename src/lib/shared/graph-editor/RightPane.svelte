@@ -39,6 +39,7 @@
     hasSolidProducer,              // 3D-bake vs 2D-profile bake tab
     active = true,                 // tab/pane visibility gate (props.active in parent)
     tabs = null,                   // embed config: which tab ids to show (null = ALL)
+    tabBar = true,                 // embed config: show the vertical tab-bar strip (off = content only, no buttons)
     legacyLoad = null,             // legacy-load banner state
     sourceText,                    // emitted .asm.ts source
     rebuildStatus = null,
@@ -68,6 +69,11 @@
      *  A restricted list hides the tab buttons not in it; a persisted/active
      *  tab that's now hidden is clamped to the first visible one. */
     tabs?: readonly RightPaneTab[] | null;
+    /** Embed feature-flag: show the vertical tab-bar strip. Default `true`.
+     *  `false` hides the `.ge-pane-tabs` buttons entirely (the active tab's
+     *  content fills the pane) — /wells' clean 3D view sets this off since its
+     *  lone pinned `bake` tab needs no selector. EXPLICIT; not count-inferred. */
+    tabBar?: boolean;
     /** `false` ⇒ the persisted `ge-right-tab` is never allowed to restore to 'tf'.
      *  The TF tab button stays — the user can still ASK for TF by clicking it —
      *  but a stale localStorage from /primitives must not silently make /wells
@@ -526,6 +532,7 @@
 <!-- RIGHT pane — tabbed: 3D bake / live source. One tab visible at a
      time; both keep their state mounted so switching is instant. -->
 <section class="ge-right-pane">
+  {#if tabBar}
   <div class="ge-pane-tabs" role="tablist">
     <!-- Tab buttons are gated by the embed config (`tabOn`); default = all shown. -->
     {#if tabOn('bake')}
@@ -583,6 +590,7 @@
       onclick={() => setRightTab('mfserver')}>MF_SERVER</button>
     {/if}
   </div>
+  {/if}
   <div class="ge-pane-bodies">
     <div class="ge-bake-body" class:hidden={rightTab !== 'bake'}>
       {#if !hasSolidProducer}

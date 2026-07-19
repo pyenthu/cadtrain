@@ -94,7 +94,7 @@
 
   const editorEmbed: boolean | Partial<EmbedConfig> = $derived(
     view.viewMode === '3d' && !graphPopover
-      ? { graphCanvas: false, toolbar: false, sidebar: false, tabs: ['bake'], engines: ['manifold'] }
+      ? { graphCanvas: false, toolbar: false, sidebar: false, tabs: ['bake'], engines: ['manifold'], tabBar: false }
       : true,
   );
 
