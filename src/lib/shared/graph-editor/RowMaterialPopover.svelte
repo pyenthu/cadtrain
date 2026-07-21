@@ -46,13 +46,23 @@
   }
   function pickColor(hex: string) { color = hex; commit(); }
   function clearAll() { color = ''; preset = 'none'; opacity = 1; onCommit(null); onClose(); }
+
+  // Portal to <body>. This popover is `position: fixed` (screen space), but it is
+  // rendered INSIDE PartsTableCard, which lives in the node's SVG `foreignObject`.
+  // A transformed ancestor (the pan/zoom SVG) becomes the containing block for a
+  // fixed descendant, so the popover would resolve its left/top against that
+  // transformed frame → off-screen. Moving it to <body> restores true screen-space.
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return { destroy() { node.remove(); } };
+  }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="rm-scrim" onpointerdown={onClose}></div>
+<div class="rm-scrim" use:portal onpointerdown={onClose}></div>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="rm-pop" style={`left:${anchor.x}px; top:${anchor.y}px`}
+<div class="rm-pop" use:portal style={`left:${anchor.x}px; top:${anchor.y}px`}
      onpointerdown={(e) => e.stopPropagation()}>
   <div class="rm-head">
     <span>◑ row material</span>
