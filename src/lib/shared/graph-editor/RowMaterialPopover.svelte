@@ -12,7 +12,7 @@
 -->
 <script lang="ts">
   import type { RowMaterial } from '$lib/graph/composition-graph-types';
-  import { MATERIAL_PRESET_NAMES } from '$lib/shared/viewer/material-preset';
+  import { MATERIAL_PRESET_NAMES, materialPreset } from '$lib/shared/viewer/material-preset';
 
   let {
     material,
@@ -46,6 +46,20 @@
   function pickColor(hex: string) { color = hex; commit(); }
   function clearAll() { color = ''; preset = 'none'; opacity = 1; onCommit(null); onClose(); }
 
+  // Picking a MATERIAL overrides the colour with that material's own tint (steel →
+  // blue-grey, sandstone → tan, …). The override is FLAGGED (below) so it is clear
+  // the colour now comes from the material; the user can still pick a custom colour
+  // afterwards, which clears the flag.
+  function setMaterial(v: string) {
+    preset = v;
+    const mc = materialPreset(v).color;
+    if (mc) color = mc;
+    commit();
+  }
+  // Colour is currently the material's own tint (i.e. material-driven, not custom).
+  const matColor = $derived(preset && preset !== 'none' ? materialPreset(preset).color : undefined);
+  const colorFromMat = $derived(!!matColor && color.toLowerCase() === (matColor as string).toLowerCase());
+
   // Portal to <body>. This popover is `position: fixed` (screen space), but it is
   // rendered INSIDE PartsTableCard, which lives in the node's SVG `foreignObject`.
   // A transformed ancestor (the pan/zoom SVG) becomes the containing block for a
@@ -67,13 +81,15 @@
        opacity align uniformly (colour has no text label — it is self-evident). -->
   <div class="rm-fields">
     <label class="rm-field rm-field-color">
-      <span aria-hidden="true"></span>
+      <!-- Flag: when the colour is the MATERIAL's own tint (not a custom pick). -->
+      <span class="rm-flag" class:on={colorFromMat} aria-hidden={!colorFromMat}
+        title="Colour set by the material — pick a colour to override">{colorFromMat ? '↳ matl' : ''}</span>
       <input type="color" class="rm-color" value={color || DEFAULT_COLOR} title="Row colour"
         oninput={(e) => pickColor((e.currentTarget as HTMLInputElement).value)} />
     </label>
     <label class="rm-field rm-field-mat">
       <span>material</span>
-      <select value={preset} onchange={(e) => { preset = (e.currentTarget as HTMLSelectElement).value; commit(); }}>
+      <select value={preset} onchange={(e) => setMaterial((e.currentTarget as HTMLSelectElement).value)}>
         {#each MATERIAL_PRESET_NAMES as m (m)}<option value={m}>{m}</option>{/each}
       </select>
     </label>
@@ -110,6 +126,8 @@
     letter-spacing: 0.3px; font-size: 9px; white-space: nowrap;
   }
   .rm-field > span em { font-style: normal; color: #3a2a55; }
+  /* Flag: colour is the material's own tint (not a custom pick). */
+  .rm-flag.on { color: #a21caf; }
   .rm-field-color { flex: none; }
   .rm-color { width: 30px; height: 24px; padding: 0; border: 1px solid #c9b6ef; border-radius: 4px; background: #fff; cursor: pointer; }
   .rm-field-mat { flex: 1.1; }
