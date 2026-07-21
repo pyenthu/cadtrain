@@ -61,6 +61,10 @@
     setPartsTableCell,
     setPartsTableRowMaterial,
     setPartsTableMaterial,
+    addPartsStackRow,
+    removePartsStackRow,
+    setPartsStackRowArg,
+    setPartsStackRowMaterial,
     asLiteral,
     STACK_REF_PARAM,
     type Graph,
@@ -105,6 +109,7 @@
   }
   import SketchNodeCard from './SketchNodeCard.svelte';
   import PartsTableCard from './PartsTableCard.svelte';
+  import PartsStackCard from './PartsStackCard.svelte';
   import { partsTableRowVar } from '$lib/graph/nodes/kinds/parts-table';
   import { DeleteConfirm } from './delete-confirm.svelte';
   import type Popovers from './Popovers.svelte';
@@ -209,7 +214,7 @@
     onOpenPartMaterial?: (ev: PointerEvent, id: string) => void;
     /** Open the template-part SEARCH picker for a parts_table (#38b R3),
      *  anchored to the selector chip on its title row. */
-    onOpenPartsSrcPicker?: (ev: PointerEvent, id: string) => void;
+    onOpenPartsSrcPicker?: (ev: PointerEvent, id: string, row?: number) => void;
     setHoverVertex: (polyId: string, idx: number) => void;
     clearHoverVertex: (polyId: string, idx: number) => void;
     openPolyPreview: (ev: PointerEvent, polyId: string) => void;
@@ -1952,6 +1957,52 @@
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
                 <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy="16" r="6"
                   data-tip="Multi part — the whole table as one list<geometry>. Wire into a Stack / Output (supersedes the individual row sockets), or leave unconsumed to render every row at the root."
+                  onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
+              {:else if n.type === 'parts_stack'}
+                {@const psn = n as any}
+                <!-- parts_stack — the "completion string" card: N heterogeneous ROWS
+                     (each a different element part) mated end-to-end via stack([...]).
+                     The TITLE ROW is the SVG drag handle + ⊟ marker + the single mated
+                     output socket; the decoupled PartsStackCard is the row table below. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <rect role="button" tabindex="-1" class="ge-node-bg parts-stack"
+                  width={size.w} height={size.h} rx="6"
+                  data-tip="parts_stack: a completion string — add elements (each a different part), set each length, and they stack end-to-end. Other params + material live in the row's ⚙."
+                  onpointerdown={(ev) => onNodePointerDown(ev, n.id)}
+                  onpointermove={onNodePointerMove}
+                  onpointerup={onNodePointerUp}/>
+                <text x="14" y="20" class="ge-node-title">⊟</text>
+                <line x1="0" y1="28" x2={size.w} y2="28" class="ge-node-divider"/>
+                <!-- Close button (armed → green ✓), mirroring the parts_table close. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <g class="ge-pt-close" class:armed={del.isArmed(n.id)}
+                  role="button" tabindex="-1" transform="translate({size.w - 22}, 15)"
+                  data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
+                  onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>
+                  <circle class="ge-pt-close-bg" cx="0" cy="0" r="8"/>
+                  {#if del.isArmed(n.id)}
+                    <path class="ge-pt-close-mark" d="M -3.5 0 L -1 3 L 4 -3.5"/>
+                  {:else}
+                    <path class="ge-pt-close-mark" d="M -3.2 -3.2 L 3.2 3.2 M 3.2 -3.2 L -3.2 3.2"/>
+                  {/if}
+                </g>
+                <foreignObject x="2" y="30" width={size.w - 4} height={size.h - 33}>
+                  <div class="ge-pt-host" xmlns="http://www.w3.org/1999/xhtml">
+                    <PartsStackCard
+                      node={psn}
+                      paramsForSrc={(src) => expected.params[src] ?? []}
+                      onAddRow={() => setGraph(addPartsStackRow(graph, n.id))}
+                      onRemoveRow={(i) => setGraph(removePartsStackRow(graph, n.id, i))}
+                      onRowSrc={(i, ev) => onOpenPartsSrcPicker?.(ev as any, n.id, i)}
+                      onRowArg={(i, name, val) => setGraph(setPartsStackRowArg(graph, n.id, i, name, val))}
+                      onRowMaterial={(i, mat) => setGraph(setPartsStackRowMaterial(graph, n.id, i, mat))}
+                    />
+                  </div>
+                </foreignObject>
+                <!-- OUTPUT — the whole mated string as ONE geometry. -->
+                <!-- svelte-ignore a11y_no_static_element_interactions -->
+                <circle role="button" tabindex="-1" class="ge-sock out" cx={size.w} cy="16" r="6"
+                  data-tip="Completion string — the elements mated end-to-end as one geometry. Wire into a Stack / warp / Output, or leave unconsumed to render at the root."
                   onpointerdown={(ev) => wire.startWire(ev, n.id)}/>
               {/if}
               <!-- ─── Bottom-right corner resize grip ─────────────────────

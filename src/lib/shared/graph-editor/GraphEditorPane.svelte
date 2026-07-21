@@ -77,6 +77,8 @@
     addCutawayPlaceholder,
     addPartsMap,
     addPartsTable,
+    addPartsStack,
+    setPartsStackRowSrc,
     addMaterialNode,
     updateMaterialNode,
     resolveEffectiveAppearance,
@@ -358,7 +360,9 @@
   // parts_table (#38b R3) — the title-row chip opens a SEARCH picker for the
   // TEMPLATE part; picking sets the node's `src`. Reuses the ＋ Call picker's
   // loaded id list (pickerSrcs), fetching it on demand if not yet populated.
-  let partsSrcPop = $state<{ anchor: { x: number; y: number }; id: string } | null>(null);
+  // `row` is set when the picker was opened for ONE parts_stack ROW (per-row `src`);
+  // absent ⇒ a parts_table TEMPLATE pick (the node's single `src`).
+  let partsSrcPop = $state<{ anchor: { x: number; y: number }; id: string; row?: number } | null>(null);
   // Collect EVERY part id from /api/primitives/list — recursively, so parts in
   // ANY folder/subfolder (basic_well `bw_*`, completion subfolders, …) are found,
   // not just the flat top-level arrays. A real part entry is any object carrying
@@ -389,9 +393,9 @@
     const { ids, meta } = await loadAllPrimIds();
     if (ids.length) { pickerSrcs = ids; pickerSrcMeta = meta; }
   }
-  async function openPartsSrcPicker(ev: PointerEvent, id: string) {
+  async function openPartsSrcPicker(ev: PointerEvent, id: string, row?: number) {
     const r = (ev.currentTarget as Element).getBoundingClientRect();
-    partsSrcPop = { anchor: { x: r.left, y: r.bottom + 4 }, id };
+    partsSrcPop = { anchor: { x: r.left, y: r.bottom + 4 }, id, row };
     await ensurePickerSrcs();
   }
   // Wire-delete popover — click a connection in WireLayer → open a small "delete
@@ -1778,6 +1782,9 @@
       // a parts_table's `src` template drives its COLUMN picker (the template's
       // meta.params) → fetch its params like a Call's (#38b).
       else if (n.type === 'parts_table' && n.src) srcs.add(n.src);
+      // every parts_stack ROW has its OWN element src — fetch each so its ⚙ popover
+      // can list that element's params.
+      else if (n.type === 'parts_stack') for (const r of ((n as any).rows ?? [])) { if (r?.src) srcs.add(r.src); }
     }
     for (const src of srcs) loadExpectedParamsFor(src);
   });
@@ -1895,6 +1902,9 @@
    *  SEPARATE (no fusion); leave the node unconsumed to render all rows at the root,
    *  or wire its aggregate output into a Stack. */
   function dropPartsTable() { closePicker(); graph = addPartsTable(graph).graph; }
+  /** Drop a parts_stack — the heterogeneous "completion string" card (N rows, each a
+   *  different element, mated end-to-end via stack([...])). */
+  function dropPartsStack() { closePicker(); graph = addPartsStack(graph).graph; }
 
   /** Drop a MATERIAL node (G-MAT-CARD) — a floating appearance bundle. Wire its
    *  output into a part's material socket to assign colour/texture/opacity,
@@ -2804,9 +2814,18 @@
       srcs={pickerSrcs}
       srcMeta={pickerSrcMeta}
       anchor={partsSrcPop.anchor}
-      current={(graph.nodes[partsSrcPop.id] as any)?.src}
+      current={partsSrcPop.row != null
+        ? ((graph.nodes[partsSrcPop.id] as any)?.rows?.[partsSrcPop.row]?.src)
+        : ((graph.nodes[partsSrcPop.id] as any)?.src)}
       onPick={async (src) => {
         const id = partsSrcPop!.id;
+        // parts_stack ROW pick — set just that row's element `src` (its params load
+        // via the graph effect + surface in the row's ⚙ popover). No column forming.
+        if (partsSrcPop!.row != null) {
+          graph = setPartsStackRowSrc(graph, id, partsSrcPop!.row, src);
+          await loadExpectedParamsFor(src);
+          return;
+        }
         graph = setPartsTableSrc(graph, id, src);
         // Auto-form the columns from the picked part's params (#38b) — fetch the
         // template's meta.params, then set every param as a column so the table
@@ -3483,6 +3502,10 @@
         <!-- parts_table: N inline rows of ONE template part → N instances (#38b). -->
         <button class="ge-pick-item" type="button" onclick={() => { dropPartsTable(); submenuKey = null; }}>
           <span class="ge-pick-icon">▤</span><span class="ge-pick-name">parts_table</span><span class="ge-pick-hint">N rows → N parts</span>
+        </button>
+        <!-- parts_stack: N heterogeneous elements mated end-to-end (a completion string). -->
+        <button class="ge-pick-item" type="button" onclick={() => { dropPartsStack(); submenuKey = null; }}>
+          <span class="ge-pick-icon">⊟</span><span class="ge-pick-name">parts_stack</span><span class="ge-pick-hint">completion string</span>
         </button>
       </div>
     {/if}
