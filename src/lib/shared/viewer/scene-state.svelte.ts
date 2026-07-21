@@ -112,13 +112,14 @@ export const scene = $state({
   zDirIntensity: 1.3,
   /** Ambient fill intensity — a KNOB (SceneControls "Amb"). Was a hardcoded
    *  0.45; raised + exposed so a long/deviated part's off-bearing faces (lit
-   *  only by ambient, since there's one directional key) don't read muddy. */
-  ambientIntensity: 0.7,
+   *  only by ambient, since there's one directional key) don't read muddy.
+   *  Lifted 0.7 → 0.9 (user 2026-07-21 — MF_CLIENT read a touch dim). */
+  ambientIntensity: 0.9,
   /** Renderer tone-mapping EXPOSURE — a KNOB (SceneControls "Bright"). Threlte
    *  applies AgX tone mapping at exposure 1.0 by default, which reads dim; >1
    *  brightens globally. Wired to renderer.toneMappingExposure in
-   *  PrimitiveDualScene. */
-  exposure: 1.35,
+   *  PrimitiveDualScene. Lifted 1.35 → 1.55 (user 2026-07-21). */
+  exposure: 1.55,
   /** Bearing (deg) of the directional light around Z: 0°=+Y (front, camera
    *  side), 90°=+X, 180°=behind. Light shines FROM this bearing toward the axis.
    *  −45° is the user-confirmed "perfect" default. */

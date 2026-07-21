@@ -57,8 +57,8 @@ const PRESETS: Record<string, MaterialPreset> = {
   limestone: { metalness: 0, roughness: 0.86, color: '#ddd6c4' },
   // dark grey-green shale
   shale: { metalness: 0.05, roughness: 0.78, color: '#5f655f' },
-  // grey concrete/cement, chalky matte
-  cement: { metalness: 0, roughness: 0.96, color: '#b7b2aa' },
+  // light greyish-brown cement, chalky-matte (lighter · browner · greyer · rougher, user 2026-07-21)
+  cement: { metalness: 0, roughness: 1, color: '#c8bfb0' },
   // brown drilling mud, slightly wet/glossy
   mud: { metalness: 0.12, roughness: 0.6, color: '#6e5b41' },
 };
