@@ -63,13 +63,8 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="rm-pop" use:portal style={`left:${anchor.x}px; top:${anchor.y}px`}
      onpointerdown={(e) => e.stopPropagation()}>
-  <div class="rm-head">
-    <span>◑ row material</span>
-    <button type="button" class="rm-x" onclick={onClose} aria-label="Close">×</button>
-  </div>
-
-  <!-- Compact single row: colour swatch (self-evident, no label) · material · opacity,
-       each control's label sits ABOVE it. -->
+  <!-- The ENTIRE material in ONE row: colour swatch (self-evident, no label) ·
+       material · opacity · close — no separate title row. -->
   <div class="rm-fields">
     <input type="color" class="rm-color" value={color || DEFAULT_COLOR} title="Row colour"
       oninput={(e) => pickColor((e.currentTarget as HTMLInputElement).value)} />
@@ -84,6 +79,7 @@
       <input type="range" min="0.05" max="1" step="0.05" value={opacity}
         oninput={(e) => { opacity = Number((e.currentTarget as HTMLInputElement).value); commit(); }} />
     </label>
+    <button type="button" class="rm-x" onclick={onClose} aria-label="Close" title="Close">×</button>
   </div>
 
   <button type="button" class="rm-clear" onclick={clearAll}>clear override</button>
@@ -98,8 +94,8 @@
     font: 700 11px ui-monospace, monospace; color: #3a2a55;
     display: flex; flex-direction: column; gap: 8px;
   }
-  .rm-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
-  .rm-x { border: none; background: none; cursor: pointer; font-size: 15px; color: #3a2a55; line-height: 1; padding: 0 2px; }
+  .rm-x { flex: none; height: 24px; border: none; background: none; cursor: pointer; font-size: 17px; color: #6b3fb0; line-height: 1; padding: 0 2px; }
+  .rm-x:hover { color: #3a2a55; }
   /* One compact row: swatch · material · opacity, bottom-aligned so the labels
      stack above each control. */
   .rm-fields { display: flex; align-items: flex-end; gap: 8px; }
