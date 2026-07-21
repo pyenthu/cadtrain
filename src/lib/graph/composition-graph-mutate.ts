@@ -1832,6 +1832,22 @@ export function setPartsTableRowMaterial(
     return { ...n, rowMaterials: mats.slice(0, end) };
   });
 }
+/** Set / clear the CARD-LEVEL material override (#38d) — one `{color?, preset?,
+ *  opacity?}` bundle applied to EVERY row as a BASE (per-row overrides still win
+ *  field-by-field). Passing null (or an all-empty bundle) drops the `tableMaterial`
+ *  field entirely, so a cleared table is byte-identical on emit + serialise. */
+export function setPartsTableMaterial(
+  graph: Graph, id: NodeId, material: RowMaterial | null,
+): Graph {
+  return updatePartsTable(graph, id, (n) => {
+    const norm = normalizeRowMaterial(material);
+    if (!norm) {
+      const { tableMaterial: _drop, ...rest } = n;   // clear ⇒ drop the field
+      return rest as PartsTableNode;
+    }
+    return { ...n, tableMaterial: norm };
+  });
+}
 /** Wire / unwire the external DATA-INPUT (#38c). `sourceId` = an upstream LIST-
  *  producer node whose runtime list feeds the table's rows (each element → one
  *  row); passing null CLEARS it → the table falls back to its inline `rows`. The

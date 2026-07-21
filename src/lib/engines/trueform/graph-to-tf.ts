@@ -1352,9 +1352,11 @@ function graphToTfInner(
   // emit stamps into meta.instanceColors (rowMaterialEntry) — so MF and TF paint a
   // row identically. Null / all-empty material ⇒ undefined (that row falls back to
   // the scene default, exactly as a materialless row did before this split).
-  const rowAppr = (mat: any): TfAppearance | undefined => {
-    const e = rowMaterialEntry(mat);
-    if (!e) return undefined;
+  const rowAppr = (mat: any, base?: any): TfAppearance | undefined => {
+    // CARD-LEVEL override (#38d `tableMaterial`) is the BASE; the row's own material
+    // WINS field-by-field — same merge composition-emit stamps into meta.instanceColors.
+    const e = { ...(rowMaterialEntry(base) ?? {}), ...(rowMaterialEntry(mat) ?? {}) };
+    if (!Object.keys(e).length) return undefined;
     const a: TfAppearance = {};
     if (e.outer) a.colorOuter = e.outer;
     if (e.material) a.material = e.material;
@@ -1383,7 +1385,7 @@ function graphToTfInner(
       const r = partsTableRowInstrs(node, graph, scope, notes, resolve, seen, depth);
       if ('unsupported' in r) return [{ instr: r.unsupported, appearance: apprOf(id) }];
       const mats = Array.isArray(node.rowMaterials) ? node.rowMaterials : [];
-      return r.instrs.map((instr, i) => ({ instr, appearance: rowAppr(mats[i]) }));
+      return r.instrs.map((instr, i) => ({ instr, appearance: rowAppr(mats[i], node.tableMaterial) }));
     }
     if (node && node.type === 'parts_map') {
       const r = partsMapRowInstrs(node, graph, scope, notes, resolve, seen, depth);

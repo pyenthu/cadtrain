@@ -36,6 +36,9 @@
     onCell?: (idx: number, col: string, value: { expr: string } | number | string | boolean | null) => void;
     /** Set / clear row `idx`'s per-row MATERIAL override (#38d) — null clears it. */
     onRowMaterial?: (idx: number, material: RowMaterial | null) => void;
+    /** Set / clear the CARD-LEVEL material override (#38d) — the master ● in the
+     *  title row; applies to EVERY row as a base (null clears it). */
+    onTableMaterial?: (material: RowMaterial | null) => void;
     /** Begin wiring FROM row `idx`'s output socket (the parent starts the wire;
      *  the socket's stable name is partsTableRowVar(node.id, idx)). */
     onRowSocketDown?: (idx: number, ev: PointerEvent) => void;
@@ -43,37 +46,46 @@
 
   let {
     node, paramNames = [],
-    onColumns, onAddRow, onDuplicateRow, onRemoveRow, onCell, onRowMaterial, onRowSocketDown,
+    onColumns, onAddRow, onDuplicateRow, onRemoveRow, onCell, onRowMaterial, onTableMaterial, onRowSocketDown,
   }: Props = $props();
 
   const columns = $derived(Array.isArray(node.columns) ? node.columns : []);
   const rows = $derived(Array.isArray(node.rows) ? node.rows : []);
   const rowMaterials = $derived(Array.isArray(node.rowMaterials) ? node.rowMaterials : []);
+  /** The CARD-LEVEL override (the master ● in the title row); null when unset. */
+  const tableMaterial = $derived((node.tableMaterial ?? null) as RowMaterial | null);
 
-  /** Row `idx`'s current override (null when unset). */
-  function matOf(idx: number): RowMaterial | null { return rowMaterials[idx] ?? null; }
-  /** The tint for a row's material sphere — its override colour when set; the purple
-   *  accent when the override is colourless (preset/opacity only) so a SET row still
-   *  reads distinct; 'transparent' when unset (button then shows pure black/white). */
-  function swatchFill(idx: number): string {
-    const c = matOf(idx)?.color;
-    if (c) return c;
-    return isMatSet(idx) ? '#7c5fc0' : 'transparent';
-  }
-  function isMatSet(idx: number): boolean {
-    const m = matOf(idx);
+  /** Is a material bundle "set" (any of colour / preset / opacity present)? */
+  function matSet(m: RowMaterial | null): boolean {
     return !!m && (!!m.color || !!m.preset || typeof m.opacity === 'number');
   }
+  /** The tint for a material sphere — its override colour when set; the purple accent
+   *  when the override is colourless (preset/opacity only) so a SET one still reads
+   *  distinct; 'transparent' when unset (button then shows pure black/white). */
+  function swatchTint(m: RowMaterial | null): string {
+    return m?.color ?? (matSet(m) ? '#7c5fc0' : 'transparent');
+  }
+  /** Row `idx`'s current override (null when unset). */
+  function matOf(idx: number): RowMaterial | null { return rowMaterials[idx] ?? null; }
+  function swatchFill(idx: number): string { return swatchTint(matOf(idx)); }
+  function isMatSet(idx: number): boolean { return matSet(matOf(idx)); }
 
   // SELF-CONTAINED material popover — its open row + screen anchor live HERE (the
-  // card owns it; no state routes through GraphEditorPane, per #38d).
+  // card owns it; no state routes through GraphEditorPane, per #38d). matPopIdx === -1
+  // is the sentinel for the CARD-LEVEL (table) material; >= 0 is a row index.
   let matPopIdx = $state<number | null>(null);
   let matAnchor = $state<{ x: number; y: number }>({ x: 0, y: 0 });
   function openMatPop(idx: number, ev: MouseEvent) {
     const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
     matAnchor = { x: r.left, y: r.bottom + 4 };
     matPopIdx = idx;
+    confirmDelIdx = null;
   }
+
+  // Two-click delete confirm (#38d) — clicking 🗑 ARMS the row (swaps to ✓/✕); we
+  // never use a native confirm() dialog (it wedges the in-browser extension). Only
+  // one row can be armed at a time, so arming another row disarms the first.
+  let confirmDelIdx = $state<number | null>(null);
 
   /** Render a cell ArgValue for the input box: a literal shows its raw value; an
    *  expr/param shows the ƒ-style source; an empty cell shows '' (template default). */
@@ -110,7 +122,14 @@
     <table class="pt-table">
       <thead>
         <tr>
-          <th class="pt-th pt-th-del"></th>
+          <!-- CARD-LEVEL master material (#38d): a black|white "material sphere" in the
+               TITLE row that skins the WHOLE table (every row) when set; per-row swatches
+               below still win. SET tints the light hemisphere to the override colour. -->
+          <th class="pt-th pt-th-mat">
+            <button class="pt-swatch" class:pt-swatch-set={matSet(tableMaterial)}
+              style={`--sw:${swatchTint(tableMaterial)}`} title="table material / colour — applies to every row"
+              onclick={(e) => openMatPop(-1, e)} aria-label="table material"></button>
+          </th>
           {#each columns as col (col)}
             <th class="pt-th">{col}</th>
           {/each}
@@ -123,27 +142,19 @@
               </select>
             {/if}
           </th>
-          <th class="pt-th pt-th-sock"></th>
+          <th class="pt-th pt-th-rtools"></th>
         </tr>
       </thead>
       <tbody>
         {#each rows as row, idx (idx)}
           <tr class="pt-row">
-            <td class="pt-cell pt-cell-del">
-              <span class="pt-lcluster">
-                <!-- Per-row material / colour override (#38d): a round black|white
-                     "material sphere" button (rows share one template, so this is how a
-                     row gets its own colour). Opens RowMaterialPopover.
-                     TODO(material-wire): this trigger could ALSO be a wire socket binding
-                     the row to a material node (src/lib/graph/nodes/kinds/material.ts) —
-                     deferred; wiring touches shared graph/emit plumbing (graph-to-tf,
-                     composition types) another change owns. -->
-                <button class="pt-swatch" class:pt-swatch-set={isMatSet(idx)}
-                  style={`--sw:${swatchFill(idx)}`} title="row {idx + 1} material / colour"
-                  onclick={(e) => openMatPop(idx, e)} aria-label="row {idx + 1} material"></button>
-                <button class="pt-tool pt-del" title="delete row {idx + 1}"
-                  onclick={() => onRemoveRow?.(idx)} aria-label="delete row {idx + 1}">🗑</button>
-              </span>
+            <!-- Per-row material / colour override (#38d): a round black|white "material
+                 sphere" (rows share one template, so this is how a row differs). Opens
+                 RowMaterialPopover; wins over the card-level master ● above. -->
+            <td class="pt-cell pt-cell-mat">
+              <button class="pt-swatch" class:pt-swatch-set={isMatSet(idx)}
+                style={`--sw:${swatchFill(idx)}`} title="row {idx + 1} material / colour"
+                onclick={(e) => openMatPop(idx, e)} aria-label="row {idx + 1} material"></button>
             </td>
             {#each columns as col (col)}
               <td class="pt-cell" class:pt-fx={isFx(row?.[col])}>
@@ -155,11 +166,24 @@
               </td>
             {/each}
             <td class="pt-cell pt-cell-add"></td>
-            <!-- The row's OWN output socket — pinned to the RIGHT edge of the card
-                 (user 2026-07-13). Its stable wire name is partsTableRowVar(id, idx). -->
-            <td class="pt-cell pt-cell-sock">
-              <button class="pt-socket" title="output socket — row {idx + 1}"
-                onpointerdown={(e) => onRowSocketDown?.(idx, e)} aria-label="row {idx + 1} output">◇</button>
+            <!-- RIGHT WALL cluster (user 2026-07-21): the delete button then the row's
+                 OWN output socket, both pinned to the card's right edge (sticky). Delete
+                 is TWO-CLICK (🗑 arms → ✓/✕) so a row is never lost on a stray click. The
+                 socket's stable wire name is partsTableRowVar(id, idx). -->
+            <td class="pt-cell pt-cell-rtools">
+              <span class="pt-rcluster">
+                {#if confirmDelIdx === idx}
+                  <button class="pt-tool pt-del-yes" title="confirm — delete row {idx + 1}"
+                    onclick={() => { onRemoveRow?.(idx); confirmDelIdx = null; }} aria-label="confirm delete row {idx + 1}">✓</button>
+                  <button class="pt-tool pt-del-no" title="cancel"
+                    onclick={() => (confirmDelIdx = null)} aria-label="cancel delete">✕</button>
+                {:else}
+                  <button class="pt-tool pt-del" title="delete row {idx + 1}"
+                    onclick={() => (confirmDelIdx = idx)} aria-label="delete row {idx + 1}">🗑</button>
+                {/if}
+                <button class="pt-socket" title="output socket — row {idx + 1}"
+                  onpointerdown={(e) => onRowSocketDown?.(idx, e)} aria-label="row {idx + 1} output">◇</button>
+              </span>
             </td>
           </tr>
         {/each}
@@ -178,9 +202,9 @@
      so no popover state routes through GraphEditorPane. -->
 {#if matPopIdx !== null}
   <RowMaterialPopover
-    material={matOf(matPopIdx)}
+    material={matPopIdx === -1 ? tableMaterial : matOf(matPopIdx)}
     anchor={matAnchor}
-    onCommit={(m) => onRowMaterial?.(matPopIdx as number, m)}
+    onCommit={(m) => (matPopIdx === -1 ? onTableMaterial?.(m) : onRowMaterial?.(matPopIdx as number, m))}
     onClose={() => (matPopIdx = null)}
   />
 {/if}
@@ -198,7 +222,6 @@
      (user 2026-07-13). */
   .pt-table { border-collapse: collapse; width: 100%; }
   .pt-th { text-align: left; font-weight: 600; padding: 0 4px; border: 1px solid #7c5fc0; white-space: nowrap; }
-  .pt-th-del { width: 1%; }
   .pt-col-add { font-size: 10px; border: 1px dashed #c9b6ef; border-radius: 4px; background: transparent; }
   .pt-cell { padding: 1px 4px; border: 1px solid #a98fd8; }
   /* Columns size to their FIELD-NAME width (user 2026-07-13): the `th` name is
@@ -209,17 +232,21 @@
   .pt-in:focus { border-color: #8a5cd6; outline: none; }
   .pt-fx .pt-in { color: #6b3fb0; font-style: italic; }
 
-  /* Delete-row trash button + material swatch — LEFT edge of every row. */
-  .pt-cell-del { width: 1%; text-align: center; white-space: nowrap; }
-  .pt-lcluster { display: inline-flex; align-items: center; gap: 2px; }
+  /* Material swatch column — LEFT edge of every row (per-row) + the title row (the
+     card-level master). Both share `.pt-swatch`. */
+  .pt-cell-mat, .pt-th-mat { width: 1%; text-align: center; white-space: nowrap; }
   .pt-tool { border: none; background: none; cursor: pointer; opacity: 0.55; padding: 0 2px; font-size: 11px; }
   .pt-tool:hover { opacity: 1; }
   .pt-del:hover { color: #b3261e; }
-  /* Per-row material / colour trigger (#38d) — a round "material sphere" button,
-     hemispherically split black|white (evokes a shaded material-preview ball) left of
-     the trash. UNSET = pure black|white halves; SET tints the light hemisphere to the
-     row's override colour (--sw) so it reads distinct. A thin purple-grey ring keeps the
-     white half legible on the light card. Opens RowMaterialPopover. */
+  /* Two-click delete confirm (#38d): ✓ commits (red), ✕ cancels (grey); both always
+     full-opacity so the armed state reads clearly. */
+  .pt-del-yes { opacity: 1; color: #b3261e; font-weight: 700; }
+  .pt-del-no { opacity: 0.8; color: #6b7280; }
+  /* Material / colour trigger (#38d) — a round "material sphere" button, hemispherically
+     split black|white (evokes a shaded material-preview ball). Used both per-row (left
+     column) and card-level (title row). UNSET = pure black|white halves; SET tints the
+     light hemisphere to the override colour (--sw) so it reads distinct. A thin
+     purple-grey ring keeps the white half legible on the light card. Opens RowMaterialPopover. */
   .pt-swatch { width: 14px; height: 14px; padding: 0; border-radius: 50%; cursor: pointer;
     box-sizing: border-box; flex: none; border: 1px solid #9b86c9;
     background: linear-gradient(90deg, #111 0 50%, #fff 50% 100%); }
@@ -227,9 +254,12 @@
   .pt-swatch:hover { outline: 1px solid #7c5fc0; outline-offset: 1px; }
   .pt-swatch:focus-visible { outline: 2px solid #7c5fc0; outline-offset: 1px; }
 
-  /* Per-row output socket — pinned to the RIGHT edge of the card so it stays at the
-     edge even while the columns scroll horizontally (sticky right, user 2026-07-13). */
-  .pt-cell-sock, .pt-th-sock { position: sticky; right: 0; width: 1%; text-align: center; background: #fdfcff; }
+  /* RIGHT-WALL tools cluster — delete + the row's output socket, pinned to the card's
+     right edge so they stay at the wall even while the columns scroll horizontally
+     (sticky right; delete moved here + socket to the wall, user 2026-07-21). */
+  .pt-cell-rtools, .pt-th-rtools { position: sticky; right: 0; width: 1%; text-align: right; white-space: nowrap; background: #fdfcff; }
+  .pt-rcluster { display: inline-flex; align-items: center; gap: 3px; }
+  /* The socket is the LAST child → flush against the right wall. */
   .pt-socket { border: none; background: none; cursor: crosshair; color: #b3261e; font-size: 13px; line-height: 1; padding: 0; }
 
   /* Compact add-row — a single small + at the bottom of the last row (replaces the

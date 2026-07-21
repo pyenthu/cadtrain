@@ -16,7 +16,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { emitGraph } from '../composition-emit';
-import { setPartsTableRowMaterial, hydrateGraph } from '../composition-graph';
+import { setPartsTableRowMaterial, setPartsTableMaterial, hydrateGraph } from '../composition-graph';
 import { partsTableRowVar } from '../nodes/kinds/parts-table';
 import type { Graph, ArgValue, RowMaterial } from '../composition-graph-types';
 
@@ -143,5 +143,49 @@ describe('#38d EMIT — a row material stamps meta.instanceColors keyed by its o
     // … and rowMaterials NEVER touches the emitted geometry body (the const rows +
     // aggregate + return are byte-identical — the override is render-only metadata).
     expect(allNull.body).toBe(plain.body);
+  });
+});
+
+describe('#38d setPartsTableMaterial — the CARD-LEVEL (master ●) material', () => {
+  it('sets a normalised bundle on tableMaterial; clearing drops the field', () => {
+    const g = setPartsTableMaterial(tableGraph(THREE()), 'tbl', { color: '#c8bfb0', preset: 'cement', opacity: 0.5 });
+    expect(tbl(g).tableMaterial).toEqual({ color: '#c8bfb0', preset: 'cement', opacity: 0.5 });
+    expect(tbl(g).rows).toHaveLength(3);   // rows untouched
+    const g2 = setPartsTableMaterial(g, 'tbl', null);
+    expect(tbl(g2).tableMaterial).toBeUndefined();
+  });
+
+  it('an all-junk bundle normalises to null → field never set', () => {
+    const g = setPartsTableMaterial(tableGraph(THREE()), 'tbl', { color: 'nope', preset: 'none', opacity: 1 } as any);
+    expect(tbl(g).tableMaterial).toBeUndefined();
+  });
+
+  it('survives serialise (meta.graph) → hydrate', () => {
+    const g = setPartsTableMaterial(tableGraph(THREE()), 'tbl', { preset: 'steel' });
+    const back = hydrateGraph(emitGraph(g, { id: 'pt_tm_rt' }).meta.graph as any);
+    expect(tbl(back).tableMaterial).toEqual({ preset: 'steel' });
+  });
+});
+
+describe('#38d EMIT — tableMaterial is a BASE applied to EVERY row; per-row wins', () => {
+  it('stamps the card-level material on EVERY row var when no row overrides it', () => {
+    const g = setPartsTableMaterial(tableGraph(THREE()), 'tbl', { color: '#c8bfb0', preset: 'cement' });
+    const ic = emitGraph(g, { id: 'pt_tm' }).meta.instanceColors as any;
+    for (let i = 0; i < 3; i++) {
+      expect(ic[partsTableRowVar('tbl', i)]).toEqual({ outer: '#c8bfb0', material: 'cement' });
+    }
+  });
+
+  it('a per-row override WINS field-by-field over the card-level base (merge)', () => {
+    let g = setPartsTableMaterial(tableGraph(THREE()), 'tbl', { color: '#c8bfb0', preset: 'cement' });
+    g = setPartsTableRowMaterial(g, 'tbl', 1, { color: '#00aaff' });   // row 1 overrides ONLY the colour
+    const ic = emitGraph(g, { id: 'pt_tm_row' }).meta.instanceColors as any;
+    expect(ic[partsTableRowVar('tbl', 0)]).toEqual({ outer: '#c8bfb0', material: 'cement' });  // base
+    expect(ic[partsTableRowVar('tbl', 2)]).toEqual({ outer: '#c8bfb0', material: 'cement' });  // base
+    expect(ic[partsTableRowVar('tbl', 1)]).toEqual({ outer: '#00aaff', material: 'cement' });  // colour from row, material from base
+  });
+
+  it('no tableMaterial + no rowMaterials ⇒ NO instanceColors (byte-identical)', () => {
+    expect((emitGraph(tableGraph(THREE()), { id: 'pt_none' }).meta as any).instanceColors).toBeUndefined();
   });
 });

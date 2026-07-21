@@ -65,11 +65,15 @@ export function partsTableInstanceColors(node: PartsTableNode): Record<string, R
   // the upstream list at runtime — so per-row material overrides don't apply; stamp
   // nothing (keying by non-existent vars would only add dead entries to meta).
   if (node.dataInput) return out;
+  // CARD-LEVEL override (#38d) → a BASE applied to EVERY row; the per-row override
+  // (rowMaterials[i]) WINS field-by-field over it. Absent card-level + absent row ⇒
+  // an empty merge ⇒ nothing stamped ⇒ byte-identical emit.
+  const base = rowMaterialEntry(node.tableMaterial);
   const mats = Array.isArray(node.rowMaterials) ? node.rowMaterials : [];
   const rows = Array.isArray(node.rows) ? node.rows : [];
   for (let i = 0; i < rows.length; i++) {
-    const entry = rowMaterialEntry(mats[i]);
-    if (entry) out[partsTableRowVar(node.id, i)] = entry;
+    const merged = { ...(base ?? {}), ...(rowMaterialEntry(mats[i]) ?? {}) };
+    if (Object.keys(merged).length) out[partsTableRowVar(node.id, i)] = merged;
   }
   return out;
 }

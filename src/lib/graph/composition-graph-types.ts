@@ -641,6 +641,13 @@ export type PartsTableNode = {
    *  stamp, byte-identical emit); round-trips wholesale through serialiseGraph /
    *  hydrateGraph like every other node field. */
   rowMaterials?: Array<RowMaterial | null>;
+  /** CARD-LEVEL material / colour override (#38d) — a SINGLE `{color?, preset?,
+   *  opacity?}` bundle applied to EVERY row of the table as a BASE, so one gesture
+   *  (the master ● in the title row) skins the whole table. A per-row
+   *  `rowMaterials[i]` still WINS field-by-field over it. Null / absent ⇒ no
+   *  card-level override (every legacy file) ⇒ byte-identical emit. Round-trips
+   *  through serialiseGraph / hydrateGraph like every other node field. */
+  tableMaterial?: RowMaterial | null;
   /** OPTIONAL external DATA-INPUT (#38c) — the NodeId of an upstream LIST-PRODUCER
    *  (a `list`/`stack`/`group` container, another `parts_table` aggregate, a
    *  `parts_map`, a `repeat` — any node whose emitted VAR is a runtime list of row
