@@ -63,19 +63,22 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="rm-pop" use:portal style={`left:${anchor.x}px; top:${anchor.y}px`}
      onpointerdown={(e) => e.stopPropagation()}>
-  <!-- The ENTIRE material in ONE row: colour swatch (self-evident, no label) ·
-       material · opacity · close — no separate title row. -->
+  <!-- ONE row, on a regular label-over-input grid so the swatch · material ·
+       opacity align uniformly (colour has no text label — it is self-evident). -->
   <div class="rm-fields">
-    <input type="color" class="rm-color" value={color || DEFAULT_COLOR} title="Row colour"
-      oninput={(e) => pickColor((e.currentTarget as HTMLInputElement).value)} />
-    <label class="rm-field">
+    <label class="rm-field rm-field-color">
+      <span aria-hidden="true"></span>
+      <input type="color" class="rm-color" value={color || DEFAULT_COLOR} title="Row colour"
+        oninput={(e) => pickColor((e.currentTarget as HTMLInputElement).value)} />
+    </label>
+    <label class="rm-field rm-field-mat">
       <span>material</span>
       <select value={preset} onchange={(e) => { preset = (e.currentTarget as HTMLSelectElement).value; commit(); }}>
         {#each MATERIAL_PRESET_NAMES as m (m)}<option value={m}>{m}</option>{/each}
       </select>
     </label>
     <label class="rm-field rm-field-op">
-      <span>opacity {opacity.toFixed(2)}</span>
+      <span>opacity <em>{opacity.toFixed(2)}</em></span>
       <input type="range" min="0.05" max="1" step="0.05" value={opacity}
         oninput={(e) => { opacity = Number((e.currentTarget as HTMLInputElement).value); commit(); }} />
     </label>
@@ -94,24 +97,33 @@
     font: 700 11px ui-monospace, monospace; color: #3a2a55;
     display: flex; flex-direction: column; gap: 8px;
   }
-  .rm-x { flex: none; height: 24px; border: none; background: none; cursor: pointer; font-size: 17px; color: #6b3fb0; line-height: 1; padding: 0 2px; }
+  .rm-x { flex: none; height: 24px; line-height: 24px; border: none; background: none; cursor: pointer; font-size: 17px; color: #6b3fb0; padding: 0 2px; }
   .rm-x:hover { color: #3a2a55; }
   /* One compact row: swatch · material · opacity, bottom-aligned so the labels
      stack above each control. */
+  /* Uniform label-over-input grid: a fixed-height label row (empty for the swatch)
+     keeps every control's input on the SAME baseline. */
   .rm-fields { display: flex; align-items: flex-end; gap: 8px; }
-  .rm-color { width: 34px; height: 34px; flex: none; padding: 0; border: 1px solid #c9b6ef; border-radius: 5px; background: #fff; cursor: pointer; }
-  .rm-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-  .rm-field > span { color: #6b3fb0; text-transform: uppercase; letter-spacing: 0.3px; font-size: 9px; white-space: nowrap; }
+  .rm-field { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .rm-field > span {
+    height: 11px; line-height: 11px; color: #6b3fb0; text-transform: uppercase;
+    letter-spacing: 0.3px; font-size: 9px; white-space: nowrap;
+  }
+  .rm-field > span em { font-style: normal; color: #3a2a55; }
+  .rm-field-color { flex: none; }
+  .rm-color { width: 30px; height: 24px; padding: 0; border: 1px solid #c9b6ef; border-radius: 4px; background: #fff; cursor: pointer; }
+  .rm-field-mat { flex: 1.1; }
   .rm-field select {
-    width: 100%; height: 24px; box-sizing: border-box; padding: 0 4px;
+    width: 100%; height: 24px; box-sizing: border-box; padding: 0 5px;
     font: 11px ui-monospace, monospace; color: #3a2a55;
     background: #fff; border: 1px solid #c9b6ef; border-radius: 4px;
   }
-  .rm-field-op { flex: 1; }
-  .rm-field-op input[type=range] { width: 100%; height: 24px; accent-color: #7c3aed; margin: 0; }
+  .rm-field-op { flex: 1.4; }
+  .rm-field-op input[type=range] { width: 100%; height: 24px; accent-color: #7c3aed; margin: 0; padding: 0; }
   .rm-clear {
-    margin-top: 2px; height: 22px; border: 1px solid #c9b6ef; border-radius: 4px;
+    height: 24px; border: 1px solid #c9b6ef; border-radius: 4px;
     background: #fff; cursor: pointer; color: #6b3fb0; font: 600 10px ui-monospace, monospace;
+    text-transform: uppercase; letter-spacing: 0.4px;
   }
   .rm-clear:hover { background: #efe7fb; }
 </style>

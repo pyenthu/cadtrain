@@ -41,6 +41,7 @@ const NONE: MaterialPreset = { metalness: 0, roughness: 0.5, color: undefined };
 
 const PRESETS: Record<string, MaterialPreset> = {
   none: NONE,
+  // ── metals (shiny, low roughness, metallic tint) ──
   // cool blue-grey brushed steel
   steel: { metalness: 0.85, roughness: 0.35, color: '#8a929c' },
   // light silver
@@ -49,6 +50,17 @@ const PRESETS: Record<string, MaterialPreset> = {
   titanium: { metalness: 0.72, roughness: 0.42, color: '#a9a5a0' },
   // brass yellow
   brass: { metalness: 0.82, roughness: 0.3, color: '#b08d2e' },
+  // ── geology / downhole (non-metallic, HIGH roughness → matte) ──
+  // sandy tan, very matte
+  sandstone: { metalness: 0, roughness: 0.92, color: '#c9a877' },
+  // pale buff limestone
+  limestone: { metalness: 0, roughness: 0.86, color: '#ddd6c4' },
+  // dark grey-green shale
+  shale: { metalness: 0.05, roughness: 0.78, color: '#5f655f' },
+  // grey concrete/cement, chalky matte
+  cement: { metalness: 0, roughness: 0.96, color: '#b7b2aa' },
+  // brown drilling mud, slightly wet/glossy
+  mud: { metalness: 0.12, roughness: 0.6, color: '#6e5b41' },
 };
 
 /** Resolve a preset name to its PBR params. Unknown / empty / 'none' /
@@ -60,4 +72,4 @@ export function materialPreset(name?: string | null): MaterialPreset {
 }
 
 /** The preset names offered in the UI (mirrors PropertiesCard / MaterialEditorPopover). */
-export const MATERIAL_PRESET_NAMES = ['none', 'steel', 'aluminum', 'titanium', 'brass'] as const;
+export const MATERIAL_PRESET_NAMES = ['none', 'steel', 'aluminum', 'titanium', 'brass', 'sandstone', 'limestone', 'shale', 'cement', 'mud'] as const;
