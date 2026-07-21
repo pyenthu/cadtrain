@@ -13,7 +13,6 @@
 <script lang="ts">
   import type { RowMaterial } from '$lib/graph/composition-graph-types';
   import { MATERIAL_PRESET_NAMES } from '$lib/shared/viewer/material-preset';
-  import { INSTANCE_PALETTE } from '$lib/shared/viewer/instance-colors';
 
   let {
     material,
@@ -69,37 +68,23 @@
     <button type="button" class="rm-x" onclick={onClose} aria-label="Close">×</button>
   </div>
 
-  <div class="rm-row">
-    <span>colour</span>
-    <input type="color" value={color || DEFAULT_COLOR} title="Row outer colour"
+  <!-- Compact single row: colour swatch (self-evident, no label) · material · opacity,
+       each control's label sits ABOVE it. -->
+  <div class="rm-fields">
+    <input type="color" class="rm-color" value={color || DEFAULT_COLOR} title="Row colour"
       oninput={(e) => pickColor((e.currentTarget as HTMLInputElement).value)} />
-  </div>
-
-  <!-- Quick palette — the 12-stop INSTANCE_PALETTE so each row gets a distinct hue
-       with one click (the point of a per-row override). -->
-  <div class="rm-swatches">
-    {#each INSTANCE_PALETTE as hex (hex)}
-      <button type="button" class="rm-chip" class:sel={color === hex}
-        style={`background:${hex}`} title={hex} aria-label={hex}
-        onclick={() => pickColor(hex)}></button>
-    {/each}
-  </div>
-
-  <label class="rm-row">
-    <span>material</span>
-    <select value={preset} onchange={(e) => { preset = (e.currentTarget as HTMLSelectElement).value; commit(); }}>
-      {#each MATERIAL_PRESET_NAMES as m (m)}<option value={m}>{m}</option>{/each}
-    </select>
-  </label>
-
-  <label class="rm-row">
-    <span>opacity</span>
-    <span class="rm-op">
+    <label class="rm-field">
+      <span>material</span>
+      <select value={preset} onchange={(e) => { preset = (e.currentTarget as HTMLSelectElement).value; commit(); }}>
+        {#each MATERIAL_PRESET_NAMES as m (m)}<option value={m}>{m}</option>{/each}
+      </select>
+    </label>
+    <label class="rm-field rm-field-op">
+      <span>opacity {opacity.toFixed(2)}</span>
       <input type="range" min="0.05" max="1" step="0.05" value={opacity}
         oninput={(e) => { opacity = Number((e.currentTarget as HTMLInputElement).value); commit(); }} />
-      <em>{opacity.toFixed(2)}</em>
-    </span>
-  </label>
+    </label>
+  </div>
 
   <button type="button" class="rm-clear" onclick={clearAll}>clear override</button>
 </div>
@@ -107,28 +92,27 @@
 <style>
   .rm-scrim { position: fixed; inset: 0; z-index: 1000; }
   .rm-pop {
-    position: fixed; z-index: 1001; width: 200px;
+    position: fixed; z-index: 1001; width: 254px;
     background: #f6f1fe; border: 1.5px solid #7c3aed; border-radius: 8px;
     box-shadow: 0 6px 20px rgba(0,0,0,0.18); padding: 8px;
     font: 700 11px ui-monospace, monospace; color: #3a2a55;
-    display: flex; flex-direction: column; gap: 6px;
+    display: flex; flex-direction: column; gap: 8px;
   }
   .rm-head { display: flex; align-items: center; justify-content: space-between; font-size: 12px; }
   .rm-x { border: none; background: none; cursor: pointer; font-size: 15px; color: #3a2a55; line-height: 1; padding: 0 2px; }
-  .rm-row { display: grid; grid-template-columns: 58px 1fr; align-items: center; gap: 6px; }
-  .rm-row > span:first-child { color: #6b3fb0; text-transform: uppercase; letter-spacing: 0.3px; font-size: 9px; }
-  .rm-row input[type=color] { width: 40px; height: 22px; padding: 0; border: 1px solid #c9b6ef; border-radius: 4px; background: #fff; cursor: pointer; }
-  .rm-row select {
-    width: 100%; height: 22px; box-sizing: border-box; padding: 0 4px;
+  /* One compact row: swatch · material · opacity, bottom-aligned so the labels
+     stack above each control. */
+  .rm-fields { display: flex; align-items: flex-end; gap: 8px; }
+  .rm-color { width: 34px; height: 34px; flex: none; padding: 0; border: 1px solid #c9b6ef; border-radius: 5px; background: #fff; cursor: pointer; }
+  .rm-field { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .rm-field > span { color: #6b3fb0; text-transform: uppercase; letter-spacing: 0.3px; font-size: 9px; white-space: nowrap; }
+  .rm-field select {
+    width: 100%; height: 24px; box-sizing: border-box; padding: 0 4px;
     font: 11px ui-monospace, monospace; color: #3a2a55;
     background: #fff; border: 1px solid #c9b6ef; border-radius: 4px;
   }
-  .rm-swatches { display: grid; grid-template-columns: repeat(6, 1fr); gap: 3px; }
-  .rm-chip { height: 16px; border: 1px solid rgba(0,0,0,0.15); border-radius: 3px; cursor: pointer; padding: 0; }
-  .rm-chip.sel { outline: 2px solid #3a2a55; outline-offset: 1px; }
-  .rm-op { display: flex; align-items: center; gap: 6px; }
-  .rm-op input[type=range] { flex: 1; accent-color: #7c3aed; }
-  .rm-op em { font-style: normal; font-size: 10px; color: #6b3fb0; min-width: 26px; text-align: right; }
+  .rm-field-op { flex: 1; }
+  .rm-field-op input[type=range] { width: 100%; height: 24px; accent-color: #7c3aed; margin: 0; }
   .rm-clear {
     margin-top: 2px; height: 22px; border: 1px solid #c9b6ef; border-radius: 4px;
     background: #fff; cursor: pointer; color: #6b3fb0; font: 600 10px ui-monospace, monospace;
