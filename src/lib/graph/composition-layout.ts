@@ -84,7 +84,10 @@ function predecessorsOf(graph: Graph, id: NodeId): NodeId[] {
   // polygon / poly_repeat / sketch / sketch_repeat are leaf producers — no
   // predecessors (sketch_repeat carries an `ops` array, NOT `children`, so it
   // MUST be listed here too or it crashes autoLayoutGraph, #805).
-  if (n.type === 'polygon' || n.type === 'poly_repeat' || n.type === 'sketch' || n.type === 'sketch_repeat') return [];
+  // parts_stack is ALSO a leaf producer — its rows are inline srcs (a `rows` array,
+  // NOT `children`), so it MUST be listed here or it falls through to the container
+  // branch and crashes on the missing `children` (same class as #805).
+  if (n.type === 'polygon' || n.type === 'poly_repeat' || n.type === 'sketch' || n.type === 'sketch_repeat' || n.type === 'parts_stack') return [];
   // A Call consumes any polygon wired through a profile arg whose expr is
   // `__POLY__<id>` (revolve/extrude profiles). Modeling that as a data-flow
   // edge puts the polygon in the column BEFORE its consumer instead of

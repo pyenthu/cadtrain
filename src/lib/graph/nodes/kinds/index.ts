@@ -19,3 +19,4 @@ export { SketchRepeatKind } from './sketch-repeat';
 export { ExprKind } from './expr';
 export { PartsMapKind } from './parts-map';
 export { PartsTableKind, partsTableRowVar, orderedRowKeys } from './parts-table';
+export { PartsStackKind, partsStackRowVar, partsStackInstanceColors } from './parts-stack';

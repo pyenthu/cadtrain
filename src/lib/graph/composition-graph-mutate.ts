@@ -16,7 +16,7 @@ import type {
   ExprNode, ExprDef, ExprOut, ExprOutShape, ExprOutElem, SplineNode, WarpNode, CutawayNode,
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph, MaterialNode, PartAppearance,
   PartsMapNode,
-  PartsTableNode, RowMaterial,
+  PartsTableNode, RowMaterial, PartsStackNode, PartsStackRow,
 } from './composition-graph-types';
 import { newNodeId, asLiteral, asParam, asExpr } from './composition-graph-types';
 
@@ -1859,6 +1859,89 @@ export function setPartsTableDataInput(graph: Graph, id: NodeId, sourceId: NodeI
     if (sourceId) return { ...n, dataInput: sourceId };
     const { dataInput: _drop, ...rest } = n;   // clear ⇒ drop the field (byte-identical to a never-wired table)
     return rest as PartsTableNode;
+  });
+}
+
+// ─── PARTS-STACK (the heterogeneous "completion string" card) ───────────────
+// Each ROW is a DIFFERENT part (`row.src`) + its `args` + optional per-row
+// `material`; the rows mate end-to-end via `stack([...])`. Mirrors the parts_table
+// family but per-row `src` instead of one template.
+
+/** ADD a blank parts_stack node (a child of `parentId` / root). The user then adds
+ *  rows, each picking its OWN element part + editing its length inline / rest via ⚙. */
+export function addPartsStack(graph: Graph, parentId?: NodeId): { graph: Graph; id: NodeId } {
+  const id = newNodeId();
+  const node: PartsStackNode = { id, type: 'parts_stack', rows: [] };
+  const xy = defaultCallPosition(graph);
+  const next: Graph = { ...withNodes(graph, { [id]: node }), layout: { ...graph.layout, [id]: xy } };
+  return { graph: finalize(appendChild(next, parentId ?? graph.root, id)), id };
+}
+
+function updatePartsStack(graph: Graph, id: NodeId, fn: (n: PartsStackNode) => PartsStackNode): Graph {
+  const node = graph.nodes[id];
+  if (!node || node.type !== 'parts_stack') return graph;
+  return finalize({ ...graph, nodes: { ...graph.nodes, [id]: fn(node as PartsStackNode) } });
+}
+/** Append ONE row (optionally seeded with a part `src`). */
+export function addPartsStackRow(graph: Graph, id: NodeId, src = ''): Graph {
+  return updatePartsStack(graph, id, (n) => ({ ...n, rows: [...(n.rows ?? []), { src, args: {} }] }));
+}
+/** DUPLICATE row `idx` (append a copy) — "add another like this". No-op out of range. */
+export function duplicatePartsStackRow(graph: Graph, id: NodeId, idx: number): Graph {
+  return updatePartsStack(graph, id, (n) => {
+    const rows = n.rows ?? [];
+    if (idx < 0 || idx >= rows.length) return n;
+    const src = rows[idx]!;
+    return { ...n, rows: [...rows, { src: src.src, args: { ...(src.args ?? {}) }, ...(src.material ? { material: src.material } : {}) }] };
+  });
+}
+/** Remove row `idx`. No-op out of range. */
+export function removePartsStackRow(graph: Graph, id: NodeId, idx: number): Graph {
+  return updatePartsStack(graph, id, (n) => {
+    const rows = n.rows ?? [];
+    if (idx < 0 || idx >= rows.length) return n;
+    return { ...n, rows: rows.filter((_, i) => i !== idx) };
+  });
+}
+/** Set row `idx`'s part type (`src`). Clears the row's args (a different part has
+ *  different params, so stale args would be meaningless). No-op out of range. */
+export function setPartsStackRowSrc(graph: Graph, id: NodeId, idx: number, src: string): Graph {
+  return updatePartsStack(graph, id, (n) => {
+    const rows = (n.rows ?? []).slice();
+    if (idx < 0 || idx >= rows.length) return n;
+    rows[idx] = { ...rows[idx]!, src: String(src ?? ''), args: {} };
+    return { ...n, rows };
+  });
+}
+/** Set / clear ONE arg (row `idx`, param `name`). A literal (number/string/bool) OR
+ *  an `{expr}`; null CLEARS it (back to the element's own default). No-op out of range. */
+export function setPartsStackRowArg(
+  graph: Graph, id: NodeId, idx: number, name: string,
+  value: { expr: string } | number | string | boolean | null,
+): Graph {
+  const k = (name || '').trim();
+  if (!k) return graph;
+  return updatePartsStack(graph, id, (n) => {
+    const rows = (n.rows ?? []).slice();
+    if (idx < 0 || idx >= rows.length) return n;
+    const args = { ...(rows[idx]!.args ?? {}) };
+    if (value === null) delete args[k];
+    else if (typeof value === 'object') args[k] = asExpr(value.expr);
+    else args[k] = asLiteral(value);
+    rows[idx] = { ...rows[idx]!, args };
+    return { ...n, rows };
+  });
+}
+/** Set / clear row `idx`'s per-row MATERIAL override. A sparse `{color?, preset?,
+ *  opacity?}`; null (or an all-empty bundle) clears it. No-op out of range. */
+export function setPartsStackRowMaterial(graph: Graph, id: NodeId, idx: number, material: RowMaterial | null): Graph {
+  return updatePartsStack(graph, id, (n) => {
+    const rows = (n.rows ?? []).slice();
+    if (idx < 0 || idx >= rows.length) return n;
+    const norm = normalizeRowMaterial(material);
+    if (norm) rows[idx] = { ...rows[idx]!, material: norm };
+    else { const { material: _drop, ...rest } = rows[idx]!; rows[idx] = rest as PartsStackRow; }
+    return { ...n, rows };
   });
 }
 

@@ -672,7 +672,24 @@ export type PartsTableNode = {
  *  reads back. */
 export type RowMaterial = { color?: string; preset?: string; opacity?: number };
 
-export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode | CutawayNode | MaterialNode | PartsMapNode | PartsTableNode;
+/** One ROW of a PARTS-STACK card (the heterogeneous "completion string" card).
+ *  Unlike a parts_table row (a column→ArgValue map under ONE shared template
+ *  `src`), a stack row carries its OWN `src` (part type) + that part's `args`
+ *  (its `meta.params` name → ArgValue; `length` is edited inline, the rest via the
+ *  per-row ⚙ popover) + an optional per-row `material` override (reused RowMaterial).
+ *  Absent `args`/`material` ⇒ the template's own defaults / color-by-source. */
+export type PartsStackRow = { src: string; args?: Record<string, ArgValue>; material?: RowMaterial | null };
+
+/** PARTS-STACK node — a heterogeneous, auto-stacked multi-row card. Each ROW is a
+ *  DIFFERENT part type (its own `src`); the rows mate END-TO-END in order (Z-down)
+ *  via the sandbox `stack([...])` helper, producing ONE completion string (a single
+ *  mated value — NOT a list producer, unlike parts_table). Emit lowers each row to a
+ *  prelude const `_ps_<id>_i = <row.src>({…args})` and the node expression to
+ *  `stack([_ps_<id>_0, …])`; per-row material stamps meta.instanceColors keyed by that
+ *  var. Rows are INLINE (no wired node inputs) ⇒ `inputRefs` = []. */
+export type PartsStackNode = { id: NodeId; type: 'parts_stack'; rows: PartsStackRow[] };
+
+export type GraphNode = CallNode | ContainerNode | MethodNode | MvNode | RotNode | TxfmnNode | RepeatNode | PolygonNode | PolyRepeatNode | SketchNode | SketchRepeatNode | ExprNode | SplineNode | WarpNode | CutawayNode | MaterialNode | PartsMapNode | PartsTableNode | PartsStackNode;
 
 // ─── graph ────────────────────────────────────────────────────────────────
 

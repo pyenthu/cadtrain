@@ -50,6 +50,7 @@ import { inferStructure } from './struct-type';
 import { kindOf } from './nodes/registry';
 import type { EmitCtx } from './nodes/node-kind';
 import { partsTableRowVar, orderedRowKeys, partsTableInstanceColors } from './nodes/kinds/parts-table';
+import { partsStackRowVar, partsStackInstanceColors } from './nodes/kinds/parts-stack';
 
 export interface EmitOptions {
   /** The assembly id (becomes meta.id + the export function name). */
@@ -179,6 +180,13 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     if (node?.type !== 'parts_table') continue;
     Object.assign(instanceColors, partsTableInstanceColors(node));
   }
+  // Per-row parts_stack material overrides — same LUT, keyed by partsStackRowVar.
+  // A stack's rows are already different srcs (color-by-source differentiates them);
+  // this is the per-row RE-SKIN. Absent ⇒ nothing stamped (byte-identical).
+  for (const node of Object.values(graph.nodes)) {
+    if (node?.type !== 'parts_stack') continue;
+    Object.assign(instanceColors, partsStackInstanceColors(node));
+  }
 
   // OUTPUT FILTERING: a node referenced as input to ANOTHER node (method's
   // obj/arg, mv/rot/method's child, etc.) is an intermediate value — emitted
@@ -306,6 +314,9 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     // A parts_table (#38b) instantiates its `src` template ONCE PER ROW — same
     // dependency wiring, so the loader fetches the template part.
     if (n.type === 'parts_table' && n.src) usesSet.add(n.src);
+    // A parts_stack instantiates a DIFFERENT `src` per row — every distinct row src
+    // is a dependency, so add them all so the loader fetches each element part.
+    if (n.type === 'parts_stack') for (const r of (Array.isArray(n.rows) ? n.rows : [])) { if (r?.src) usesSet.add(r.src); }
   }
   for (const i of graph.imports) usesSet.add(i);
 
@@ -365,6 +376,15 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   const partsTableBlockLines = emitPartsTableBlocks(graph);
   if (partsTableBlockLines.length > 0) {
     const block = partsTableBlockLines.map((l) => `  ${l}`).join('\n');
+    bodyText = `${block}\n${bodyText}`;
+  }
+
+  // ── Parts-stack row-instance prelude — the N per-row Call consts (each its OWN
+  // src) that PartsStackKind.emitExpr mates via `stack([...])`. Same placement +
+  // TDZ reasoning as the parts_table prelude. ABSENT ⇒ [] ⇒ byte-identical.
+  const partsStackBlockLines = emitPartsStackBlocks(graph);
+  if (partsStackBlockLines.length > 0) {
+    const block = partsStackBlockLines.map((l) => `  ${l}`).join('\n');
     bodyText = `${block}\n${bodyText}`;
   }
 
@@ -642,6 +662,24 @@ export function emitPartsTableBlocks(graph: Graph): string[] {
   return lines;
 }
 
+/** The PRELUDE `const` lines for every parts_stack node — one per-row Call, each
+ *  with its OWN `src` (heterogeneous). PartsStackKind.emitExpr then mates them via
+ *  `stack([_ps_<id>_0, …])`. Empty when there are no parts_stack nodes (byte-
+ *  identical). A blank row `src` is skipped here (validate greys the card). */
+export function emitPartsStackBlocks(graph: Graph): string[] {
+  const lines: string[] = [];
+  for (const node of Object.values(graph.nodes)) {
+    if (!node || node.type !== 'parts_stack') continue;
+    const rows = Array.isArray(node.rows) ? node.rows : [];
+    rows.forEach((row, i) => {
+      const src = typeof row?.src === 'string' ? row.src : '';
+      const args = (row?.args && typeof row.args === 'object') ? row.args : {};
+      lines.push(`const ${partsStackRowVar(node.id, i)} = ${emitCallExpr(src, args, graph.nodes)};`);
+    });
+  }
+  return lines;
+}
+
 /** The `spline` node whose OUTPUT the given `path` ArgValue references, or null.
  *  A wired path arg is `{kind:'expr', expr:'_x_<splineId>_path'}` (exactly
  *  `exprBlockMember(splineId,'path')`); we match that against every spline node.
@@ -800,6 +838,7 @@ function assignVarNames(graph: Graph, order: NodeId[]): Map<NodeId, string> {
         node.type === 'cutaway' ? 'cut_obj' :
         node.type === 'parts_map' ? 'parts' :
         node.type === 'parts_table' ? 'table' :
+        node.type === 'parts_stack' ? 'pstack' :
                                    'rot_obj';
       counters[prefix] = (counters[prefix] ?? 0) + 1;
       name = `_${prefix}_${counters[prefix]}`;
