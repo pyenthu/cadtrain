@@ -1903,6 +1903,19 @@ export function removePartsStackRow(graph: Graph, id: NodeId, idx: number): Grap
     return { ...n, rows: rows.filter((_, i) => i !== idx) };
   });
 }
+/** REORDER — move row `idx` by `dir` (−1 up / +1 down). Row order IS the physical
+ *  stack order (top→bottom, Z-down), so this reshuffles the completion string. A
+ *  swap with the neighbour; no-op at the ends or on a non-±1 `dir`. */
+export function movePartsStackRow(graph: Graph, id: NodeId, idx: number, dir: number): Graph {
+  const step = dir < 0 ? -1 : 1;
+  return updatePartsStack(graph, id, (n) => {
+    const rows = (n.rows ?? []).slice();
+    const j = idx + step;
+    if (idx < 0 || idx >= rows.length || j < 0 || j >= rows.length) return n;
+    [rows[idx], rows[j]] = [rows[j]!, rows[idx]!];
+    return { ...n, rows };
+  });
+}
 /** Set row `idx`'s part type (`src`). Clears the row's args (a different part has
  *  different params, so stale args would be meaningless). No-op out of range. */
 export function setPartsStackRowSrc(graph: Graph, id: NodeId, idx: number, src: string): Graph {

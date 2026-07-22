@@ -9,7 +9,7 @@ import { describe, it, expect } from 'vitest';
 import { emitGraph } from '../composition-emit';
 import {
   addPartsStackRow, setPartsStackRowSrc, setPartsStackRowArg, setPartsStackRowMaterial,
-  removePartsStackRow, duplicatePartsStackRow, hydrateGraph,
+  removePartsStackRow, duplicatePartsStackRow, movePartsStackRow, hydrateGraph,
 } from '../composition-graph';
 import { partsStackRowVar } from '../nodes/kinds/parts-stack';
 import type { Graph, PartsStackRow } from '../composition-graph-types';
@@ -101,6 +101,19 @@ describe('parts_stack MUTATE', () => {
     expect(ps(g).rows[1].src).toBe('bw_packer');
     g = removePartsStackRow(g, 'ps', 0);
     expect(ps(g).rows).toHaveLength(1);
+  });
+
+  it('movePartsStackRow swaps with the neighbour and is a no-op at the ends', () => {
+    const g0 = stackGraph([HANGER, PACKER, TUBING]);
+    // move row 1 (packer) UP → order hanger/packer/tubing → packer/hanger/tubing
+    const up = movePartsStackRow(g0, 'ps', 1, -1);
+    expect(ps(up).rows.map((r: any) => r.src)).toEqual(['bw_packer', 'bw_hanger', 'bw_tubing']);
+    // move row 1 DOWN → hanger/tubing/packer
+    const down = movePartsStackRow(g0, 'ps', 1, 1);
+    expect(ps(down).rows.map((r: any) => r.src)).toEqual(['bw_hanger', 'bw_tubing', 'bw_packer']);
+    // ends are no-ops: row 0 up, last row down
+    expect(ps(movePartsStackRow(g0, 'ps', 0, -1)).rows.map((r: any) => r.src)).toEqual(['bw_hanger', 'bw_packer', 'bw_tubing']);
+    expect(ps(movePartsStackRow(g0, 'ps', 2, 1)).rows.map((r: any) => r.src)).toEqual(['bw_hanger', 'bw_packer', 'bw_tubing']);
   });
 });
 

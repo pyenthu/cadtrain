@@ -19,6 +19,7 @@
     paramsForSrc,
     onAddRow,
     onRemoveRow,
+    onMoveRow,
     onRowSrc,
     onRowArg,
     onRowMaterial,
@@ -28,6 +29,8 @@
     paramsForSrc: (src: string) => string[];
     onAddRow?: () => void;
     onRemoveRow?: (idx: number) => void;
+    /** Reorder — move row `idx` by `dir` (−1 up / +1 down). Row order = stack order. */
+    onMoveRow?: (idx: number, dir: number) => void;
     /** Open the per-row part-type SEARCH picker (anchored to the chip). */
     onRowSrc?: (idx: number, ev: MouseEvent) => void;
     /** Set / clear one arg of row `idx` — a literal, an `{expr}`, or null to clear. */
@@ -109,6 +112,14 @@
             <!-- Right-wall tools: ⚙ more (params + material) then two-click delete. -->
             <td class="ps-cell ps-cell-tools">
               <span class="ps-rcluster">
+                <!-- Reorder — row order IS the stack order (top→bottom). ↑ hidden on the
+                     first row, ↓ on the last, so the ends can't move past the string. -->
+                <span class="ps-reorder">
+                  <button class="ps-tool ps-mv" title="move up" aria-label="move element {idx + 1} up"
+                    disabled={idx === 0} onclick={() => onMoveRow?.(idx, -1)}>▲</button>
+                  <button class="ps-tool ps-mv" title="move down" aria-label="move element {idx + 1} down"
+                    disabled={idx === rows.length - 1} onclick={() => onMoveRow?.(idx, 1)}>▼</button>
+                </span>
                 <button class="ps-tool ps-more" class:on={hasMore(idx)} title="more — {row.src || 'element'} params + material"
                   onclick={(e) => openMore(idx, e)} aria-label="row {idx + 1} params and material">⚙</button>
                 {#if confirmDelIdx === idx}
@@ -174,6 +185,11 @@
   .ps-rcluster { display: inline-flex; align-items: center; gap: 3px; }
   .ps-tool { border: none; background: none; cursor: pointer; opacity: 0.55; padding: 0 2px; font-size: 12px; }
   .ps-tool:hover { opacity: 1; }
+  /* Reorder — a tight vertical ▲/▼ pair; a disabled end-arrow fades out + no cursor. */
+  .ps-reorder { display: inline-flex; flex-direction: column; line-height: 0.7; }
+  .ps-mv { font-size: 8px; padding: 0 1px; opacity: 0.5; }
+  .ps-mv:hover:not(:disabled) { opacity: 1; color: #7c3aed; }
+  .ps-mv:disabled { opacity: 0.15; cursor: default; }
   .ps-more.on { opacity: 1; color: #7c3aed; }
   .ps-del:hover { color: #b3261e; }
   .ps-del-yes { opacity: 1; color: #b3261e; font-weight: 700; }

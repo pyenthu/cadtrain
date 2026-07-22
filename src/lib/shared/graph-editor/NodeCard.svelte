@@ -63,6 +63,7 @@
     setPartsTableMaterial,
     addPartsStackRow,
     removePartsStackRow,
+    movePartsStackRow,
     setPartsStackRowArg,
     setPartsStackRowMaterial,
     asLiteral,
@@ -1993,6 +1994,7 @@
                       paramsForSrc={(src) => expected.params[src] ?? []}
                       onAddRow={() => setGraph(addPartsStackRow(graph, n.id))}
                       onRemoveRow={(i) => setGraph(removePartsStackRow(graph, n.id, i))}
+                      onMoveRow={(i, dir) => setGraph(movePartsStackRow(graph, n.id, i, dir))}
                       onRowSrc={(i, ev) => onOpenPartsSrcPicker?.(ev as any, n.id, i)}
                       onRowArg={(i, name, val) => setGraph(setPartsStackRowArg(graph, n.id, i, name, val))}
                       onRowMaterial={(i, mat) => setGraph(setPartsStackRowMaterial(graph, n.id, i, mat))}
