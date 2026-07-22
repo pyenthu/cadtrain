@@ -520,13 +520,30 @@
   // text matches what Save writes to disk.
   let emittedForRender = $derived(emitGraph(graph, { id: exemplarId, ghosts: ghostIds, drawingMd }));
   let sourceText = $derived(emittedForRender.source);
+  // The BAKE identity (#994) — everything the baked geometry + its render depend on,
+  // and NOTHING else. Deliberately EXCLUDES `meta.graph` (node x/y/w/h layout + view
+  // scales): moving/resizing a card is pure visual layout, so it must NOT re-bake.
+  // The emitted `body` is the geometry (topo-ordered, layout-independent); the meta
+  // fields below are the appearance the canvas paints (color-by-source LUT, per-part
+  // material/opacity/texture) + the param defaults it feeds as args + the dep list.
+  // The auto-bake trigger + the "stale" badge both key on THIS, so a drag is free.
+  let bakeKey = $derived.by(() => {
+    const m = emittedForRender.meta as any;
+    return JSON.stringify({
+      body: emittedForRender.body,
+      uses: m.uses, params: m.params,
+      instanceColors: m.instanceColors, partAppearance: m.partAppearance,
+      colorOuter: m.colorOuter, colorInner: m.colorInner,
+      opacity: m.opacity, texture: m.texture, material: m.material,
+    });
+  });
   // Memoised param-defaults — a STABLE reference for the canvas `args` fallback.
   // A fresh `Object.values(...).map(...)` per render re-mounts the canvas / loops
   // its auto-fit (see fresh_array_props_effect_loops). Only changes when the
   // param defaults actually change.
   let paramDefaults = $derived(Object.values(graph.params).map((p) => p.default));
 
-  let bake = $state<{ ok: boolean; source?: string; args?: (number | string)[]; bake?: any; message?: string } | 'loading' | null>(null);
+  let bake = $state<{ ok: boolean; source?: string; key?: string; args?: (number | string)[]; bake?: any; message?: string } | 'loading' | null>(null);
   let bakeTimer: ReturnType<typeof setTimeout> | undefined;
   /** Mode the polygon at `polyId` should render under — revolve (r, z)
    *  with axis at r=0, or cartesian (x, y) centered around origin.
@@ -616,8 +633,11 @@
   /** Tracks whether the source the user is LOOKING AT has changed since
    *  the bake panel last rendered geometry. Shown as a small "stale" badge
    *  next to the Bake button so the user knows there's a pending change. */
+  // STALE = the geometry/appearance the user is looking at differs from what the bake
+  // panel last rendered — compared on `bakeKey`, NOT the raw source, so a layout-only
+  // move (which changes the source's meta.graph but not the geometry) never reads stale (#994).
   let bakeStale = $derived(
-    typeof bake === 'object' && bake && bake.source !== undefined && bake.source !== emittedForRender.source,
+    typeof bake === 'object' && bake && (bake as any).key !== undefined && (bake as any).key !== bakeKey,
   );
   /** Auto-bake mode — defaults ON with a long debounce so slider scrubs
    *  don't fire intermediate bakes. Press Enter in any input to force-
@@ -997,6 +1017,7 @@
       bake = {
         ok: r.ok,
         source: emittedForRender.source,
+        key: bakeKey,   // #994 — the layout-independent identity this bake rendered
         args: Object.values(graph.params).map((p) => p.default),
         bake: r,
         message: r.message as string | undefined,
@@ -1024,7 +1045,9 @@
   // Enter in any input force-fires immediately (see onWindowKeydown).
   let autoBakeTimer: ReturnType<typeof setTimeout> | undefined;
   $effect(() => {
-    emittedForRender.source; // track — also catches ghostIds changes
+    bakeKey; // track the GEOMETRY/APPEARANCE identity (#994), NOT the raw source —
+             // a layout-only move leaves bakeKey unchanged, so it never re-bakes.
+             // (ghostIds changes flow through `body`, so they still trigger.)
     if (!autoBake) {
       // Don't just skip — actively cancel anything that was scheduled
       // while we were on. Without this, flipping the toggle off lets
