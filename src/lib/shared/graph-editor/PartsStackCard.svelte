@@ -87,6 +87,7 @@
     <table class="ps-table">
       <thead>
         <tr>
+          <th class="ps-th ps-th-ltools"></th>
           <th class="ps-th ps-th-el">element</th>
           <th class="ps-th ps-th-len">length</th>
           <th class="ps-th ps-th-tools"></th>
@@ -95,6 +96,22 @@
       <tbody>
         {#each rows as row, idx (idx)}
           <tr class="ps-row">
+            <!-- LEFT tools (user 2026-07-22): reorder ▲▼ + ⚙ more, moved off the right
+                 wall so they're always visible before the element picker. -->
+            <td class="ps-cell ps-cell-ltools">
+              <span class="ps-lcluster">
+                <!-- Reorder — row order IS the stack order (top→bottom). ▲ disabled on the
+                     first row, ▼ on the last, so the ends can't move past the string. -->
+                <span class="ps-reorder">
+                  <button class="ps-tool ps-mv" title="move up" aria-label="move element {idx + 1} up"
+                    disabled={idx === 0} onclick={() => onMoveRow?.(idx, -1)}>▲</button>
+                  <button class="ps-tool ps-mv" title="move down" aria-label="move element {idx + 1} down"
+                    disabled={idx === rows.length - 1} onclick={() => onMoveRow?.(idx, 1)}>▼</button>
+                </span>
+                <button class="ps-tool ps-more" class:on={hasMore(idx)} title="more — {row.src || 'element'} params + material"
+                  onclick={(e) => openMore(idx, e)} aria-label="row {idx + 1} params and material">⚙</button>
+              </span>
+            </td>
             <!-- Part-type picker chip — each row its OWN element (heterogeneous). -->
             <td class="ps-cell ps-cell-el">
               <button class="ps-srcsel" class:empty={!row.src} title="choose the element part"
@@ -109,19 +126,9 @@
                 onkeydown={(e) => { if (e.key === 'Enter') commitLength(idx, (e.currentTarget as HTMLInputElement).value); }}
                 onblur={(e) => commitLength(idx, (e.currentTarget as HTMLInputElement).value)} />
             </td>
-            <!-- Right-wall tools: ⚙ more (params + material) then two-click delete. -->
+            <!-- Right-wall tool: two-click delete (the reorder + ⚙ moved LEFT above). -->
             <td class="ps-cell ps-cell-tools">
               <span class="ps-rcluster">
-                <!-- Reorder — row order IS the stack order (top→bottom). ↑ hidden on the
-                     first row, ↓ on the last, so the ends can't move past the string. -->
-                <span class="ps-reorder">
-                  <button class="ps-tool ps-mv" title="move up" aria-label="move element {idx + 1} up"
-                    disabled={idx === 0} onclick={() => onMoveRow?.(idx, -1)}>▲</button>
-                  <button class="ps-tool ps-mv" title="move down" aria-label="move element {idx + 1} down"
-                    disabled={idx === rows.length - 1} onclick={() => onMoveRow?.(idx, 1)}>▼</button>
-                </span>
-                <button class="ps-tool ps-more" class:on={hasMore(idx)} title="more — {row.src || 'element'} params + material"
-                  onclick={(e) => openMore(idx, e)} aria-label="row {idx + 1} params and material">⚙</button>
                 {#if confirmDelIdx === idx}
                   <button class="ps-tool ps-del-yes" title="confirm — remove element {idx + 1}"
                     onclick={() => { onRemoveRow?.(idx); confirmDelIdx = null; }} aria-label="confirm remove element {idx + 1}">✓</button>
@@ -136,7 +143,7 @@
           </tr>
         {/each}
         <tr class="ps-addrow">
-          <td class="ps-cell ps-addrow-cell" colspan="3">
+          <td class="ps-cell ps-addrow-cell" colspan="4">
             <button class="ps-add-mini" title="add an element" onclick={() => onAddRow?.()} aria-label="add an element">＋ element</button>
           </td>
         </tr>
@@ -164,8 +171,12 @@
   .ps-table { border-collapse: collapse; width: 100%; }
   .ps-th { text-align: left; font-weight: 600; padding: 0 4px; border: 1px solid #7c5fc0; white-space: nowrap; text-transform: uppercase; letter-spacing: 0.3px; font-size: 9px; color: #6b3fb0; }
   .ps-th-len { width: 5.5ch; }
-  .ps-th-tools { width: 1%; }
+  .ps-th-tools, .ps-th-ltools { width: 1%; }
   .ps-cell { padding: 1px 4px; border: 1px solid #a98fd8; }
+
+  /* LEFT tools — reorder ▲▼ + ⚙ more (moved off the right wall, user 2026-07-22). */
+  .ps-cell-ltools { width: 1%; text-align: left; white-space: nowrap; }
+  .ps-lcluster { display: inline-flex; align-items: center; gap: 3px; }
 
   /* Element (part-type) picker chip — fills the column, opens the search picker. */
   .ps-cell-el { min-width: 8ch; }
@@ -180,7 +191,7 @@
   .ps-in:focus { border-color: #8a5cd6; outline: none; }
   .ps-fx .ps-in { color: #6b3fb0; font-style: italic; }
 
-  /* Right-wall tools — ⚙ more + two-click delete. */
+  /* Right-wall tool — two-click delete (reorder + ⚙ moved to the LEFT cluster). */
   .ps-cell-tools { width: 1%; text-align: right; white-space: nowrap; }
   .ps-rcluster { display: inline-flex; align-items: center; gap: 3px; }
   .ps-tool { border: none; background: none; cursor: pointer; opacity: 0.55; padding: 0 2px; font-size: 12px; }
