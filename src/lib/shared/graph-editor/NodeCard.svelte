@@ -67,7 +67,6 @@
     movePartsStackRow,
     setPartsStackRowArg,
     setPartsStackRowTop,
-    setPartsStackRowMaterial,
     asLiteral,
     STACK_REF_PARAM,
     type Graph,
@@ -2001,7 +2000,6 @@
                       onRowSrc={(i, ev) => onOpenPartsSrcPicker?.(ev as any, n.id, i)}
                       onRowArg={(i, name, val) => setGraph(setPartsStackRowArg(graph, n.id, i, name, val))}
                       onRowTop={(i, val) => setGraph(setPartsStackRowTop(graph, n.id, i, val))}
-                      onRowMaterial={(i, mat) => setGraph(setPartsStackRowMaterial(graph, n.id, i, mat))}
                     />
                   </div>
                 </foreignObject>

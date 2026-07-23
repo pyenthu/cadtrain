@@ -11,7 +11,7 @@
   mutators. Imports nothing from GEP / the graph.
 -->
 <script lang="ts">
-  import type { PartsStackNode, ArgValue, RowMaterial } from '$lib/graph/composition-graph-types';
+  import type { PartsStackNode, ArgValue } from '$lib/graph/composition-graph-types';
   import StackRowPopover from './StackRowPopover.svelte';
 
   let {
@@ -24,7 +24,6 @@
     onRowSrc,
     onRowArg,
     onRowTop,
-    onRowMaterial,
   }: {
     node: PartsStackNode;
     /** The ordered meta.params names of a given part `src` (from `expected.params`). */
@@ -41,8 +40,6 @@
     onRowArg?: (idx: number, name: string, value: { expr: string } | number | string | boolean | null) => void;
     /** Set / clear row `idx`'s absolute placement depth (`top`) — null clears (mates). */
     onRowTop?: (idx: number, value: { expr: string } | number | null) => void;
-    /** Set / clear row `idx`'s material override (null clears). */
-    onRowMaterial?: (idx: number, material: RowMaterial | null) => void;
   } = $props();
 
   const rows = $derived(Array.isArray(node.rows) ? node.rows : []);
@@ -65,14 +62,13 @@
     else onRowArg?.(idx, 'length', { expr: t });
   }
 
-  /** Does a row carry any ⚙-level override (a depth, a non-length arg, or a material)?
-   *  Tints the ⚙ so a configured row reads distinct at a glance. */
+  /** Does a row carry any ⚙-level override (a depth or a non-length arg)? Tints the ⚙
+   *  so a configured row reads distinct at a glance. */
   function hasMore(idx: number): boolean {
     const r = rows[idx];
     if (!r) return false;
     const argKeys = Object.keys(r.args ?? {}).filter((k) => k !== 'length');
-    const m = r.material;
-    return !!r.top || argKeys.length > 0 || !!(m && (m.color || m.preset || typeof m.opacity === 'number'));
+    return !!r.top || argKeys.length > 0;
   }
 
   // The ⚙ "more" popover — its open row + anchor live HERE (self-contained, #38d style).
@@ -171,11 +167,9 @@
     paramNames={paramsForSrc(rows[morePopIdx]?.src ?? '').filter((p) => p !== 'length')}
     args={rows[morePopIdx]?.args ?? {}}
     top={rows[morePopIdx]?.top}
-    material={rows[morePopIdx]?.material ?? null}
     anchor={moreAnchor}
     onArg={(name, value) => onRowArg?.(morePopIdx as number, name, value)}
     onTop={(value) => onRowTop?.(morePopIdx as number, value)}
-    onMaterial={(m) => onRowMaterial?.(morePopIdx as number, m)}
     onClose={() => (morePopIdx = null)}
   />
 {/if}
