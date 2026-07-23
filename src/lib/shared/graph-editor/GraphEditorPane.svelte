@@ -2474,6 +2474,21 @@
     if (!cur) return;
     graph = setParamSchema(graph, name, { ...cur, default: value });
   }
+  /** Flip a param's PUBLIC/PRIVATE flag (own-editor only, #public-private). A
+   *  private param (`public: false`) still emits its default but is HIDDEN from
+   *  caller-facing editors; a public param is caller-visible. Going back to
+   *  public DROPS the key entirely so the schema stays byte-identical to a
+   *  never-touched param (absent ⇒ public — the backward-compat invariant). */
+  function onToggleParamPublic(name: string) {
+    const cur = graph.params[name] as any;
+    if (!cur) return;
+    if (cur.public === false) {
+      const { public: _drop, ...rest } = cur;
+      graph = setParamSchema(graph, name, rest);
+    } else {
+      graph = setParamSchema(graph, name, { ...cur, public: false });
+    }
+  }
   function onAddStackRef() {
     graph = addStackRef(graph);
     addParamPop = null;
@@ -3085,6 +3100,7 @@
             onOpenAddParamPop={openAddParamPop}
             {onParamDefault}
             {onRemoveParam}
+            {onToggleParamPublic}
             onStartParamWire={wire.startParamWire} />
         {/if}
       </svg>

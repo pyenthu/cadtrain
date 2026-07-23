@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { extractGraphFromSource, extractDrawingMdFromSource, callDrift } from '../graph-editor-bake';
+import { extractGraphFromSource, extractDrawingMdFromSource, callDrift, publicParamKeys } from '../graph-editor-bake';
 
 // Pure parsing + drift logic carved out of GraphEditorPane (modularize Phase B).
 // The stateful loaders (loadExpectedParamsFor/isCallDrifted/refreshCallArgs)
@@ -75,5 +75,42 @@ describe('callDrift', () => {
   it('is false for non-call nodes', () => {
     expect(callDrift({ type: 'mv' }, ['x'])).toBe(false);
     expect(callDrift(null, ['x'])).toBe(false);
+  });
+});
+
+describe('publicParamKeys — the caller-facing interface subset (expected.publicParams)', () => {
+  it('records only the public keys from a mixed-flag meta.params', () => {
+    // Mirrors what ingestMeta stores in expected.publicParams[src]: the ordered
+    // subset the Call args / parts_stack / parts_table editors show a caller.
+    const meta = {
+      od:        { default: 9.625 },                 // absent ⇒ public
+      length:    { default: 40 },                    // absent ⇒ public
+      depth:     { default: 100, public: true },     // explicit public
+      wall:      { default: 0.5, public: false },     // private — hidden
+      collar_od: { default: 11, public: false },      // private — hidden
+      segments:  { default: 64, public: false },      // private — hidden
+    };
+    expect(publicParamKeys(meta)).toEqual(['od', 'length', 'depth']);
+  });
+
+  it('absent `public` everywhere ⇒ every key public (backward-compat golden)', () => {
+    const meta = { od: { default: 1 }, wall: { default: 2 }, length: { default: 3 } };
+    expect(publicParamKeys(meta)).toEqual(['od', 'wall', 'length']);
+  });
+
+  it('preserves declaration order of the public keys', () => {
+    const meta = {
+      a: { default: 1 },
+      b: { default: 2, public: false },
+      c: { default: 3 },
+      d: { default: 4, public: false },
+      e: { default: 5 },
+    };
+    expect(publicParamKeys(meta)).toEqual(['a', 'c', 'e']);
+  });
+
+  it('undefined / empty → []', () => {
+    expect(publicParamKeys(undefined)).toEqual([]);
+    expect(publicParamKeys({})).toEqual([]);
   });
 });

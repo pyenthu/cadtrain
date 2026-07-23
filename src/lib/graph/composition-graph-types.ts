@@ -726,6 +726,13 @@ export type NumberParam = {
   step?: number;
   unit?: string;
   label?: string;
+  /** PUBLIC/PRIVATE interface flag. ABSENT ⇒ public (the byte-identical,
+   *  backward-compatible default — every existing param stays caller-visible).
+   *  `public: false` marks the param PRIVATE: it still EMITS its default, but is
+   *  HIDDEN from CALLER-facing editors (a Call's arg rows, a parts_stack row
+   *  popover, a parts_table columns picker). The part's OWN editor always shows
+   *  every param (public + private). Read via `isPublicParam`. */
+  public?: boolean;
 };
 /** A RECORD param — an object whose fields come from a volume `types/<id>.json`
  *  TypeDef (`typeId`). Field access into it emits `p.<name>.<field>` via the
@@ -735,6 +742,8 @@ export type RecordParam = {
   typeId: string;                                       // → a <volume>/types/<id>.json TypeDef
   default: Record<string, number | string | boolean>;   // { od: 9.625, wall: 0.5, … }
   label?: string;
+  /** See NumberParam.public — absent ⇒ public. */
+  public?: boolean;
 };
 /** A LIST param — the rows that drive a data-driven `list<part>` producer. `of`
  *  names the element type: a record (`{record:'Casing'}` → list<Casing>) or the
@@ -744,6 +753,8 @@ export type ListParam = {
   of: { record: string } | { scalar: true };
   default: Array<Record<string, number | string | boolean> | number>;
   label?: string;
+  /** See NumberParam.public — absent ⇒ public. */
+  public?: boolean;
 };
 
 export type ParamSchema = NumberParam | RecordParam | ListParam;
@@ -759,6 +770,25 @@ export function hasKind(p: ParamSchema): 'number' | 'record' | 'list' {
 export function isNumberParam(p: ParamSchema): p is NumberParam { return hasKind(p) === 'number'; }
 export function isRecordParam(p: ParamSchema): p is RecordParam { return hasKind(p) === 'record'; }
 export function isListParam(p: ParamSchema): p is ListParam { return hasKind(p) === 'list'; }
+
+/** PUBLIC/PRIVATE interface predicate. A param is PUBLIC unless it is EXPLICITLY
+ *  marked `public: false`. ABSENT ⇒ public — the golden backward-compat
+ *  invariant (every existing part, which has no `public` key, is unchanged).
+ *  Accepts a raw param-schema-shaped object (the `expected`-cache path parses
+ *  plain JSON, so this must not assume a hydrated ParamSchema). */
+export function isPublicParam(p: { public?: boolean } | null | undefined): boolean {
+  return !!p && p.public !== false;
+}
+/** The subset of param NAMES that are PUBLIC, preserving declaration order.
+ *  Used by the caller-facing editors to filter a called part's interface down to
+ *  the params it means to expose. Absent-`public` params are included (default
+ *  public); a param whose schema is missing/nullish is dropped. */
+export function publicParamNames(
+  params: Record<string, { public?: boolean } | null | undefined> | null | undefined,
+): string[] {
+  if (!params) return [];
+  return Object.keys(params).filter((k) => isPublicParam(params[k]));
+}
 
 export type Edge = {
   from: string;   // 'p.<paramName>' (param wired into a slot)

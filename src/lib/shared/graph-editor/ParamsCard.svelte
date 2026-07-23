@@ -35,6 +35,7 @@
     onParamDefault,
     onRemoveParam,
     onStartParamWire,
+    onToggleParamPublic,
   }: {
     /** [name, ParamSchema][] minus the reserved stack_ref handling done inline. */
     paramEntries: [string, any][];
@@ -48,6 +49,9 @@
     onParamDefault: (name: string, value: number) => void;
     onRemoveParam: (name: string) => void;
     onStartParamWire: (ev: PointerEvent, name: string) => void;
+    /** Flip a param's PUBLIC/PRIVATE flag (👁 public → callers see it · 🔒 private
+     *  → hidden from callers, still emits its default). Own-editor only. */
+    onToggleParamPublic: (name: string) => void;
   } = $props();
 
   // Two-step delete confirm — one instance gates all param trash buttons, keyed
@@ -91,6 +95,13 @@
           }}
           oninput={(e) => onParamDefault(name, Number((e.target as HTMLInputElement).value))}/>
         {#if name !== STACK_REF_PARAM}
+          {@const isPriv = (p as any).public === false}
+          <!-- PUBLIC/PRIVATE toggle — 👁 public (callers see this param) / 🔒
+               private (hidden from callers, still emits its default). Own-editor
+               only; flips the schema's `public` flag. -->
+          <button class="vis" type="button" class:priv={isPriv}
+            title={isPriv ? 'private — hidden from callers (click to make public)' : 'public — shown to callers (click to make private)'}
+            onpointerdown={(ev) => { ev.stopPropagation(); onToggleParamPublic(name); }}>{isPriv ? '🔒' : '👁'}</button>
           <button class="trash" type="button" class:armed={del.isArmed(name)}
             title={del.isArmed(name) ? 'Click again to delete p.' + name : 'Remove p.' + name}
             onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(name)) onRemoveParam(name); }}>{del.isArmed(name) ? '✓' : '🗑'}</button>
@@ -156,6 +167,18 @@
   .ge-param-chip .trash:hover { opacity: 1; background: rgba(220, 38, 38, 0.12); }
   /* Armed (awaiting confirm): ✓ glyph on a green wash, fully opaque. */
   .ge-param-chip .trash.armed { opacity: 1; color: #16a34a; background: rgba(22, 163, 74, 0.16); }
+  /* PUBLIC/PRIVATE toggle — sits just left of the trash. 👁 public (dim) /
+     🔒 private (amber, fully opaque so the hidden-from-callers state reads). */
+  .ge-param-chip .vis {
+    flex: 0 0 auto;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 18px; height: 18px; padding: 0;
+    font: 11px 'Apple Color Emoji', 'Segoe UI Emoji', Arial;
+    background: transparent; border: 0; cursor: pointer;
+    opacity: 0.5; border-radius: 3px;
+  }
+  .ge-param-chip .vis:hover { opacity: 1; background: rgba(217, 119, 6, 0.12); }
+  .ge-param-chip .vis.priv { opacity: 1; background: rgba(217, 119, 6, 0.16); }
   /* Output socket — base + param variant (the .ge-sock family is shared editor-wide;
      these copies cover this component's one socket type). */
   .ge-sock { fill: #fff; stroke: #0c4a6e; stroke-width: 2; cursor: crosshair; touch-action: none; }
