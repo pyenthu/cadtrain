@@ -20,7 +20,7 @@ import { gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, sweepA
 import { resampleSpline } from './spline-resample';
 import { surveyToXYZ } from './survey-to-xyz';
 import { resolveProfile } from '$lib/shared/profiles/profile-presets';
-import { warpManifoldAlongSpline } from '$lib/engines/manifold/warp-spline';
+import { warpManifoldAlongSpline, type DtxLut } from '$lib/engines/manifold/warp-spline';
 import { cs, extrude_csg, ext, resample } from './csg-2d';
 import { compileSketch } from './sketch';
 import * as mathLib from './math-lib';
@@ -55,15 +55,26 @@ export const SANDBOX_ARG_NAMES: string[] = [
  * with no viewScale (or 1,1) injects the plain `warpManifoldAlongSpline` and is
  * byte-identical. Applied here so BOTH the client worker (`bake-worker-core`)
  * and the server loader inject it from the same place. */
-export function sandboxArgValues(viewScale?: { radial?: number; depth?: number }): any[] {
+export function sandboxArgValues(viewScale?: { radial?: number; depth?: number; dtx?: DtxLut }): any[] {
   const vr = (Number.isFinite(viewScale?.radial) && (viewScale!.radial as number) > 0) ? (viewScale!.radial as number) : 1;
   const vd = (Number.isFinite(viewScale?.depth) && (viewScale!.depth as number) > 0) ? (viewScale!.depth as number) : 1;
-  const warpFn = (vr !== 1 || vd !== 1)
+  // AUTOSCALE (DTX) mode: a valid LUT replaces the manual uniform `depth` scale —
+  // it reparametrizes the along-hole station (magnifies detail-dense intervals),
+  // so the `depth`→yScale/splineScale multipliers are DROPPED (they'd double-count:
+  // DTX doesn't scale the curve). Radial (vr) still applies. Absent/degenerate → the
+  // MANUAL path (byte-identical when {1,1}).
+  const dtx = (viewScale?.dtx && Array.isArray(viewScale.dtx.depth) && Array.isArray(viewScale.dtx.depthTx) && viewScale.dtx.depth.length >= 2)
+    ? viewScale.dtx : undefined;
+  const warpFn = (vr !== 1 || vd !== 1 || dtx)
     ? (m: any, cp: any, opts: any = {}) => warpManifoldAlongSpline(m, cp, {
         ...opts,
         xDiaScale: (Number.isFinite(opts?.xDiaScale) ? opts.xDiaScale : 1) * vr,
-        yScale: (Number.isFinite(opts?.yScale) ? opts.yScale : 1) * vd,
-        splineScale: (Number.isFinite(opts?.splineScale) ? opts.splineScale : 1) * vd,
+        ...(dtx
+          ? { dtx, yScale: (Number.isFinite(opts?.yScale) ? opts.yScale : 1), splineScale: (Number.isFinite(opts?.splineScale) ? opts.splineScale : 1) }
+          : {
+              yScale: (Number.isFinite(opts?.yScale) ? opts.yScale : 1) * vd,
+              splineScale: (Number.isFinite(opts?.splineScale) ? opts.splineScale : 1) * vd,
+            }),
       })
     : warpManifoldAlongSpline;
   return [

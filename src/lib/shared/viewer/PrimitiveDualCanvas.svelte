@@ -16,6 +16,9 @@
   import { bakeClient, isCancelled } from '$lib/engines/manifold/bake-client';
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/engines/brep/brep-adapter';
   import { scene } from '$lib/shared/viewer/scene-state.svelte';
+  // AUTOSCALE (DTX): pure DTX depth-transform builder (plain-arrays LUT). This UI
+  // file may import wells/ (the plan's stated exception); the ENGINE layer may not.
+  import { autoNodes, type Dtx } from '$lib/wells/dtx';
 
   let { id, name = id, description = '', args, source, showControls = true, showLabels = true, sceneOffset = 4.5, colorOuter = undefined, colorInner = undefined, opacity = undefined, texture = undefined, material = undefined, bakeMesh = true, bakeGlb = true, meshSegments = undefined, onRebuild = undefined, backend = 'manifold', brepSource = undefined, brepParams = undefined, tolerance = 0.05, onBakeMeta = undefined, onBakeTimings = undefined, viewZScale = undefined, viewXScale = undefined, overlays = undefined, autoScaleOwner = true, tfActual = false, tfRecipe = undefined, tfPending = false }: {
     id: string; name?: string; description?: string; args: (number | string)[]; source?: string; showControls?: boolean;
@@ -785,11 +788,23 @@
   // worker uses). Threaded to the scene so the render group applies only the
   // live÷committed delta for a warped part (no double-scale).
   const hasWarp = $derived(typeof source === 'string' && source.includes('warpSpline('));
+  // AUTOSCALE (DTX): when "Auto depth" is on for a warped part, drive the along-hole
+  // reparam with a DTX LUT (the SVTC depth transform) instead of the manual uniform
+  // depth. A GENERIC warped CAD part carries no detail-dense emphasis intervals, so
+  // the LUT is the IDENTITY (autoNodes([], …)) — a safe no-op that never distorts a
+  // part with nothing to emphasize; the SAME warpViewScale.dtx channel magnifies once
+  // emphasis nodes (a well's completion/perf MD intervals) are fed in. A large domain
+  // keeps the identity LUT from clamp-truncating any real part's z-extent.
+  const DTX_IDENTITY_DEPTH = 1e7;
+  const autoDtx = $derived<Dtx | undefined>((scene.autoDepth && hasWarp) ? autoNodes([], DTX_IDENTITY_DEPTH) : undefined);
+  // A compact rebuild fingerprint for the LUT (length + checksum) so toggling Auto
+  // depth (or a future non-identity LUT) re-bakes; content-stable → no churn.
+  const dtxFp = $derived(autoDtx ? `${autoDtx.depthTx.length}:${autoDtx.depthTx.reduce((a, b) => a + b, 0).toFixed(3)}` : '');
   // The COMMITTED spline-aware view scale for a warped part → sent to every engine's
-  // bake so it multiplies into warpSpline pre-warp. Undefined (or {1,1}) → omitted →
-  // byte-identical. Shared by the MF, TF, and BREP bake paths.
-  const warpViewScale = $derived((hasWarp && (scene.warpBakeScale.radial !== 1 || scene.warpBakeScale.depth !== 1))
-    ? { radial: scene.warpBakeScale.radial, depth: scene.warpBakeScale.depth } : undefined);
+  // bake so it multiplies into warpSpline pre-warp. Undefined (or {1,1}, no dtx) →
+  // omitted → byte-identical. Shared by the MF, TF, and BREP bake paths.
+  const warpViewScale = $derived((hasWarp && (scene.warpBakeScale.radial !== 1 || scene.warpBakeScale.depth !== 1 || autoDtx))
+    ? { radial: scene.warpBakeScale.radial, depth: scene.warpBakeScale.depth, ...(autoDtx ? { dtx: autoDtx } : {}) } : undefined);
   let lastRebuildKey = '';
   $effect(() => {
     // Include showCutaway so toggling it ON for a large (cutaway-auto-skipped)
@@ -806,12 +821,12 @@
       // (composites → UNSUPPORTED) for the server-inlined one ASYNCHRONOUSLY, and
       // only the NESTED ops change (s_tube stays booleanDifference at the root), so
       // the whole recipe must be in the key or the native re-bake never fires.
-      ? JSON.stringify({ b: 'tf', actual: tfActual, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), rcp: tfActual && tfRecipe ? tfRecipe : '', seg: effSegments, cut: scene.showCutaway, warpNonce: scene.warpBakeNonce, warpR: scene.warpBakeScale.radial, warpD: scene.warpBakeScale.depth })
+      ? JSON.stringify({ b: 'tf', actual: tfActual, id, src: brepSource ?? source ?? '', p: tfActual ? args : (brepParams ?? {}), rcp: tfActual && tfRecipe ? tfRecipe : '', seg: effSegments, cut: scene.showCutaway, warpNonce: scene.warpBakeNonce, warpR: scene.warpBakeScale.radial, warpD: scene.warpBakeScale.depth, warpAuto: scene.autoDepth, dtxFp })
       : isBrep
-      ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway, warpR: scene.warpBakeScale.radial, warpD: scene.warpBakeScale.depth })
+      ? JSON.stringify({ b: 'brep', src: brepSource ?? source ?? '', p: brepParams ?? {}, tol: effTol, cut: scene.showCutaway, warpR: scene.warpBakeScale.radial, warpD: scene.warpBakeScale.depth, warpAuto: scene.autoDepth, dtxFp })
       // `b` keeps MF_CLIENT and MF_SERVER on separate cache entries, so the two
       // tabs can show their meshes side by side (that IS the parity check).
-      : JSON.stringify({ b: backend, id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, warpR: scene.warpBakeScale.radial, warpD: scene.warpBakeScale.depth });
+      : JSON.stringify({ b: backend, id, args, source: source ?? '', cut: scene.showCutaway, colorOuter, colorInner, segments: effSegments, warpNonce: scene.warpBakeNonce, crease: scene.creaseAngle, round: scene.roundSurface, warpR: scene.warpBakeScale.radial, warpD: scene.warpBakeScale.depth, warpAuto: scene.autoDepth, dtxFp });
     if (!Scene) return;
     // TF composite parts: while the server recipe is still resolving, `tfRecipe`
     // may still expose the PREVIOUS (stale-but-supported) recipe, so an edit
@@ -894,6 +909,7 @@
   // can't override the parent/viewer scale.)
   $effect(() => {
     id; // eslint-disable-line no-unused-expressions — dependency only
+    scene.autoDepth = false; // AUTOSCALE (DTX) is per-part; reset on load (like warpBakeScale)
     if (viewZScale != null || viewXScale != null) {
       if (viewZScale != null) scene.zScale = viewZScale;
       if (viewXScale != null) scene.xScale = viewXScale;
@@ -958,14 +974,24 @@
           oninput={() => (scene.scaleAuto = false)}
           onchange={() => { if (hasWarp) scene.warpBakeScale = { radial: scene.xScale, depth: scene.zScale }; }} />
       </div>
-      <div class="pd-scale-row">
+      <div class="pd-scale-row" class:pd-scale-dim={hasWarp && scene.autoDepth}>
         <span class="pd-scale-lbl">Z-depth ×{scene.zScale.toFixed(2)}</span>
         <input type="range" min="0.05" max="2" step="0.05" bind:value={scene.zScale}
+          disabled={hasWarp && scene.autoDepth}
           oninput={() => (scene.scaleAuto = false)}
           onchange={() => { if (hasWarp) scene.warpBakeScale = { radial: scene.xScale, depth: scene.zScale }; }} />
       </div>
+      {#if hasWarp}
+        <!-- AUTOSCALE (DTX): drive along-hole depth by the DTX transform (magnifies
+             detail-dense sub-intervals, total length preserved) instead of the manual
+             uniform Z-depth, which greys out while this is on. -->
+        <label class="pd-scale-auto" title="Auto depth (DTX): non-linear depth remap along the spline — magnifies detail-dense intervals, total length preserved">
+          <input type="checkbox" bind:checked={scene.autoDepth} />
+          Auto depth (DTX)
+        </label>
+      {/if}
       <button class="pd-scale-reset" type="button"
-        onclick={() => { scene.xScale = 1; scene.zScale = 1; if (hasWarp) scene.warpBakeScale = { radial: 1, depth: 1 }; }}>1:1 true scale</button>
+        onclick={() => { scene.xScale = 1; scene.zScale = 1; scene.autoDepth = false; if (hasWarp) scene.warpBakeScale = { radial: 1, depth: 1 }; }}>1:1 true scale</button>
     </div>
   {/if}
   <!-- Bake tools right under the scale gear: a quick Rebuild + an adjustable
@@ -1138,6 +1164,9 @@
     background: #f5f5f4; color: #44403c; cursor: pointer; font: 600 10px Arial;
   }
   .pd-scale-reset:hover { background: #e7e5e4; }
+  .pd-scale-dim { opacity: 0.4; pointer-events: none; }
+  .pd-scale-auto { display: flex; align-items: center; gap: 5px; font: 600 10px Arial; color: #44403c; cursor: pointer; user-select: none; }
+  .pd-scale-auto input[type="checkbox"] { accent-color: #cc2222; margin: 0; cursor: pointer; }
   .pd-desc { position: absolute; bottom: 8px; left: 12px; right: 96px; z-index: 5; pointer-events: none; font: 11px Arial; color: #333; line-height: 1.35; text-align: center; text-shadow: 0 1px 2px rgba(255,255,255,0.95); }
   .pd-dl { position: absolute; bottom: 8px; right: 8px; z-index: 6; background: rgba(0,0,0,0.6); color: #fff; border: 1px solid rgba(255,255,255,0.2); border-radius: 4px; padding: 4px 10px; font: 11px Arial; cursor: pointer; }
   .pd-dl:hover { background: #cc2222; border-color: #cc2222; }

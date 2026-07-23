@@ -10,6 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from '../primitive-sandbox';
+import { warpManifoldAlongSpline, type DtxLut } from '$lib/engines/manifold/warp-spline';
 
 describe('primitive sandbox — NAMES/VALUES index alignment', () => {
   it('the two lists are the same length', () => {
@@ -40,5 +41,50 @@ describe('primitive sandbox — NAMES/VALUES index alignment', () => {
     // Exactly how primitive-loader evaluates a part/engine source.
     const fn = new Function(...SANDBOX_ARG_NAMES, 'return typeof sectionCut;');
     expect(fn(...sandboxArgValues())).toBe('function');
+  });
+});
+
+// A minimal fake Manifold sufficient to drive the injected warpSpline: it captures
+// its verts, applies the warp callback in place on .warp(), and reports bbox.
+type V3 = [number, number, number];
+function fakeManifold(verts: V3[]) {
+  const min: V3 = [Infinity, Infinity, Infinity], max: V3 = [-Infinity, -Infinity, -Infinity];
+  for (const v of verts) for (let d = 0; d < 3; d++) { if (v[d] < min[d]) min[d] = v[d]; if (v[d] > max[d]) max[d] = v[d]; }
+  return {
+    verts,
+    boundingBox: () => ({ min, max }),
+    numTri: () => verts.length,
+    volume: () => 1,
+    genus: () => 0,
+    warp(cb: (p: number[]) => void) { return fakeManifold(verts.map((v) => { const p: V3 = [...v]; cb(p); return p; })); },
+  };
+}
+
+describe('primitive sandbox — AUTOSCALE (DTX) warpSpline threading', () => {
+  const warpIdx = SANDBOX_ARG_NAMES.indexOf('warpSpline');
+  const vertCP: [number, number][] = [[0, 0], [0, 60]]; // vertical spline, total ≈ 60
+  const part = (): V3[] => [[-0.5, 0, 0], [0.5, 0, 0], [-0.5, 0, 10], [0.5, 0, 10]]; // z ∈ [0,10]
+  const zExtent = (m: any) => { let lo = Infinity, hi = -Infinity; for (const v of m.verts) { if (v[2] < lo) lo = v[2]; if (v[2] > hi) hi = v[2]; } return hi - lo; };
+  // Identity LUT over the depth domain [0,60] (autoNodes([], 60) shape) → a no-op remap.
+  const identity: DtxLut = { depth: [0, 60], depthTx: [0, 60] };
+
+  it('no viewScale injects the RAW warpManifoldAlongSpline (byte-identical)', () => {
+    expect(sandboxArgValues()[warpIdx]).toBe(warpManifoldAlongSpline);
+  });
+
+  it('manual depth stretches along the path; AUTO (dtx) DROPS the depth multiplier', () => {
+    const manual = sandboxArgValues({ depth: 5 })[warpIdx] as any;
+    const auto = sandboxArgValues({ dtx: identity, depth: 5 })[warpIdx] as any;
+    // Manual depth=5: the part's z∈[0,10] stretches to ~50 along the vertical spline.
+    expect(zExtent(manual(fakeManifold(part()), vertCP))).toBeCloseTo(50, 1);
+    // AUTO with an identity DTX: the manual depth (5) is DROPPED (DTX reparametrizes
+    // the station, it doesn't scale the curve) → true along-hole depth ~10.
+    expect(zExtent(auto(fakeManifold(part()), vertCP))).toBeCloseTo(10, 1);
+  });
+
+  it('radial (depth=1) with a dtx still applies + a degenerate LUT falls back to manual', () => {
+    // A <2-sample LUT is ignored → manual path (depth=3 stretches to ~30).
+    const degenerate = sandboxArgValues({ dtx: { depth: [0], depthTx: [0] } as DtxLut, depth: 3 })[warpIdx] as any;
+    expect(zExtent(degenerate(fakeManifold(part()), vertCP))).toBeCloseTo(30, 1);
   });
 });

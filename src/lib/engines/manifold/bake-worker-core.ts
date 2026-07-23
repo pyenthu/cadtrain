@@ -92,7 +92,7 @@ export interface BakeOptions {
    *  kept, length ∝). Threaded into `sandboxArgValues` → wraps `warpSpline`. Absent
    *  / {1,1} → byte-identical. The saved part stays TRUE scale (this is view-only,
    *  so it re-bakes rather than mutating the graph). */
-  warpViewScale?: { radial?: number; depth?: number };
+  warpViewScale?: { radial?: number; depth?: number; dtx?: import('./warp-spline').DtxLut };
   /** Axial ring spacing (world units) for a `warpSpline` bake, overriding the
    *  absolute `WARP_AXIAL_MAX_ZSPAN` constant. The rings must exist BEFORE the
    *  warp bends them (Rule 25), so this is a BAKE option, not a warp-node option.

@@ -25,6 +25,41 @@ export type Pt2 = [number, number];
 export type Pt3 = [number, number, number];
 type V3 = [number, number, number];
 
+// ── DTX autoscale (a z-scaler for the along-hole reparam) ─────────────────────
+/**
+ * A DTX ("depth transform") lookup table: a MONOTONIC, ANCHORED remap of the
+ * part-local along-hole coordinate (`z − zBase`, which the warp consumes as the
+ * raw arc-length station) → a magnified/compressed station. Detail-dense
+ * sub-intervals occupy MORE arc-length while total length is preserved (the LUT
+ * is anchored 0→0 and maxDepth→maxDepth). Our own smoothing/subdivision is
+ * unchanged — DTX is JUST the z-scaler that replaces the linear `s = (z−zBase)`.
+ *
+ * PLAIN ARRAYS on purpose: the value must cross the Web-Worker JSON boundary, and
+ * the engine layer must not import `$lib/wells/*` (dependency rule). Same shape as
+ * `$lib/wells/dtx.ts`'s `Dtx` — deliberately NOT imported; see `lerpDtxLut`.
+ */
+export type DtxLut = { depth: number[]; depthTx: number[] };
+
+/**
+ * Linear-interpolate a raw station `d` through a {@link DtxLut}; clamps to the
+ * endpoints outside the sampled range. A self-contained copy of
+ * `$lib/wells/dtx.ts:lerpDTX` (pure, ~8 lines) so the engine stays wells-free and
+ * the math survives structured-clone into the worker. Monotonic non-decreasing.
+ */
+export function lerpDtxLut(dtx: DtxLut, d: number): number {
+  const D = dtx?.depth, T = dtx?.depthTx;
+  if (!D || !T || D.length < 2) return d;
+  if (d <= D[0]) return T[0];
+  if (d >= D[D.length - 1]) return T[T.length - 1];
+  for (let i = 1; i < D.length; i++) {
+    if (d <= D[i]) {
+      const t = (d - D[i - 1]) / ((D[i] - D[i - 1]) || 1e-9);
+      return T[i - 1] + t * (T[i] - T[i - 1]);
+    }
+  }
+  return d;
+}
+
 // ── Catmull-Rom densification (shared planar + 3D) ────────────────────────────
 
 /** Densify Catmull-Rom control points into a fine polyline + its cumulative
@@ -224,7 +259,7 @@ function maxAxialEdgeSpan(m: any): number {
 export function warpManifoldAlongSpline(
   m: any,
   cp: Pt2[] | Pt3[],
-  opts: { refine?: number; stretch?: boolean; validate?: boolean; originZ?: number; xDiaScale?: number; yScale?: number; splineScale?: number } = {},
+  opts: { refine?: number; stretch?: boolean; validate?: boolean; originZ?: number; xDiaScale?: number; yScale?: number; splineScale?: number; dtx?: DtxLut } = {},
 ): any {
   // A LIST input maps the warp over each member. A single-child warp whose child
   // is a list producer (a parts_table aggregate, a repeat/parts_map, or any node
@@ -294,7 +329,11 @@ export function warpManifoldAlongSpline(
     const { at, total } = spline3DFrames(cpS as Pt3[]);
     out = mm.warp((p: number[]) => {
       const x = p[0] * xDia, y = p[1] * xDia, z = p[2];
-      const s = (opts.stretch ? ((z - z0) / zLen) * total : (z - zBase)) * yScale;
+      // AUTOSCALE (DTX): the along-hole station is the DTX-remapped depth instead
+      // of the linear `(z−zBase)·yScale` — a detail-dense sub-interval magnifies
+      // (occupies more arc-length) while total length holds (LUT anchored). Radial
+      // offsets (x·N + y·B) are untouched so sections stay ⊥ the tangent.
+      const s = opts.stretch ? ((z - z0) / zLen) * total * yScale : (opts.dtx ? lerpDtxLut(opts.dtx, z - zBase) : (z - zBase) * yScale);
       const { pos, N, B } = at(s);
       p[0] = pos[0] + x * N[0] + y * B[0];
       p[1] = pos[1] + x * N[1] + y * B[1];
@@ -307,7 +346,7 @@ export function warpManifoldAlongSpline(
     const { sampleAt, total } = splineSampler(flat);
     out = mm.warp((p: number[]) => {
       const x = p[0] * xDia, y = p[1] * xDia, z = p[2];
-      const s = (opts.stretch ? ((z - z0) / zLen) * total : (z - zBase)) * yScale;
+      const s = opts.stretch ? ((z - z0) / zLen) * total * yScale : (opts.dtx ? lerpDtxLut(opts.dtx, z - zBase) : (z - zBase) * yScale);
       const { pos, tan } = sampleAt(s);
       const N = frameN(tan);
       p[0] = pos[0] + x * N[0];
@@ -341,7 +380,7 @@ export function warpMeshJS(
   positions: Float32Array,
   normals: Float32Array | null,
   cp: Pt2[] | Pt3[],
-  opts: { stretch?: boolean; originZ?: number; xDiaScale?: number; yScale?: number; splineScale?: number } = {},
+  opts: { stretch?: boolean; originZ?: number; xDiaScale?: number; yScale?: number; splineScale?: number; dtx?: DtxLut } = {},
 ): { positions: Float32Array; normals: Float32Array | null } {
   if (!positions || positions.length < 3 || !Array.isArray(cp) || cp.length < 2) {
     return { positions, normals };
@@ -376,7 +415,8 @@ export function warpMeshJS(
 
   for (let i = 0; i < positions.length; i += 3) {
     const x = positions[i] * xDia, y = positions[i + 1] * xDia, z = positions[i + 2];
-    const s = (opts.stretch ? ((z - z0) / zLen) * total : (z - zBase)) * yScale;
+    // AUTOSCALE (DTX): DTX-remapped along-hole station (see warpManifoldAlongSpline).
+    const s = opts.stretch ? ((z - z0) / zLen) * total * yScale : (opts.dtx ? lerpDtxLut(opts.dtx, z - zBase) : (z - zBase) * yScale);
 
     let N: V3, B: V3, T: V3, pos: V3;
     if (use3D) {
@@ -412,13 +452,17 @@ export function warpMeshJS(
 
 /** Unit tangent of the warp spline at arc-length `s` (planar OR 3D), the same
  *  path warpMeshJS bends along. Used only to measure curvature. */
-function splineTangentSampler(cp: Pt2[] | Pt3[]): (s: number) => V3 {
+function splineTangentSampler(cp: Pt2[] | Pt3[], dtx?: DtxLut): (s: number) => V3 {
+  // Under DTX the z-station `s` (part-local depth) lands on the spline at the
+  // REMAPPED arc-length lerpDtxLut(dtx, s), so curvature is measured in post-DTX
+  // arc space → build-time stations concentrate where a magnified interval bends.
+  const arc = dtx ? (s: number) => lerpDtxLut(dtx, s) : (s: number) => s;
   if (is3DPath(cp as number[][])) {
     const s3 = spline3DFrames(cp as Pt3[]);
-    return (s: number) => s3.at(s).tan;
+    return (s: number) => s3.at(arc(s)).tan;
   }
   const sP = splineSampler((cp as number[][]).map((p) => (p.length >= 3 ? [p[0], p[2]] : (p as Pt2))));
-  return (s: number) => sP.sampleAt(s).tan;
+  return (s: number) => sP.sampleAt(arc(s)).tan;
 }
 
 function _angleBetween(a: V3, b: V3): number {
@@ -444,7 +488,7 @@ export function planAxialStations(
   cp: Pt2[] | Pt3[],
   z0: number,
   z1: number,
-  opts: { epsilon?: number; minStations?: number; maxStations?: number; radialExtent?: number } = {},
+  opts: { epsilon?: number; minStations?: number; maxStations?: number; radialExtent?: number; dtx?: DtxLut } = {},
 ): number[] {
   const zRange = z1 - z0;
   if (!(zRange > 1e-9) || !Array.isArray(cp) || cp.length < 2) return [];
@@ -458,7 +502,7 @@ export function planAxialStations(
   const minSpacing = zRange / maxStations;
   const dThetaMax = Math.PI / 12; // 15° of turning per station (curvature gate)
 
-  const tanAt = splineTangentSampler(cp);
+  const tanAt = splineTangentSampler(cp, opts.dtx);
 
   // Fine walk over arc-length s ∈ [0, zRange] (non-stretch: s = z - z0).
   const NF = Math.max(64, Math.min(4096, Math.ceil(zRange / Math.max(minSpacing / 4, 1e-6))));
@@ -580,7 +624,7 @@ export function subdivideAxialAdaptive(
   normals: Float32Array | null,
   faces: Uint32Array | Int32Array,
   cp: Pt2[] | Pt3[],
-  opts: { epsilon?: number; minStations?: number; maxStations?: number } = {},
+  opts: { epsilon?: number; minStations?: number; maxStations?: number; dtx?: DtxLut } = {},
 ): { positions: Float32Array; normals: Float32Array | null; faces: Uint32Array } {
   const passthrough = (): { positions: Float32Array; normals: Float32Array | null; faces: Uint32Array } => ({
     positions,
@@ -687,7 +731,7 @@ type RZ = readonly [number, number];
 export function densifyProfileAxial(
   profile: readonly RZ[],
   cp: Pt2[] | Pt3[],
-  opts: { minStations?: number; maxStations?: number; epsilon?: number } = {},
+  opts: { minStations?: number; maxStations?: number; epsilon?: number; dtx?: DtxLut } = {},
 ): [number, number][] {
   const P: [number, number][] = profile.map((p) => [p[0], p[1]]);
   if (P.length < 2 || !Array.isArray(cp) || cp.length < 2) return P;
@@ -707,6 +751,7 @@ export function densifyProfileAxial(
     minStations: Math.max(1, Math.floor(opts.minStations ?? 8)),
     maxStations: Math.max(2, Math.floor(opts.maxStations ?? 96)),
     ...(opts.epsilon ? { epsilon: opts.epsilon } : {}),
+    ...(opts.dtx ? { dtx: opts.dtx } : {}),
   });
   if (!stations.length) return P;
   const sorted = [...stations].sort((a, b) => a - b);
