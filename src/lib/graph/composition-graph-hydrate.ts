@@ -366,6 +366,8 @@ export function hydrateGraph(serialised: any): Graph {
           }
           const out: any = { src, args };
           if (row?.material && typeof row.material === 'object') out.material = row.material;
+          // OPTIONAL placement depth (`top`) — keep only a well-formed ArgValue; drop junk.
+          if (isArg(row?.top)) out.top = row.top;
           return out;
         })
       : [];

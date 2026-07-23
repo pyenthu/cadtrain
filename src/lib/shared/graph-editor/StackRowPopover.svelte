@@ -14,9 +14,11 @@
     src,
     paramNames,
     args,
+    top,
     material,
     anchor,
     onArg,
+    onTop,
     onMaterial,
     onClose,
   }: {
@@ -24,14 +26,35 @@
     /** The element's meta.params names, EXCLUDING `length` (edited inline on the row). */
     paramNames: string[];
     args: Record<string, ArgValue>;
+    /** The row's absolute placement depth (`top`) — undefined ⇒ mates end-to-end. */
+    top: ArgValue | undefined;
     material: RowMaterial | null;
     anchor: { x: number; y: number };
     onArg: (name: string, value: { expr: string } | number | string | boolean | null) => void;
+    /** Set / clear the placement depth — a literal, an `{expr}`, or null to clear. */
+    onTop: (value: { expr: string } | number | null) => void;
     onMaterial: (m: RowMaterial | null) => void;
     onClose: () => void;
   } = $props();
 
   const DEFAULT_COLOR = '#cc2222';
+
+  /** The current text for the placement-depth field. */
+  function topText(): string {
+    const v = top;
+    if (!v) return '';
+    if (v.kind === 'literal') return String(v.value);
+    if (v.kind === 'expr') return v.expr;
+    return `p.${v.param}${v.field ? '.' + v.field : ''}`;
+  }
+  function commitTop(raw: string) {
+    const t = raw.trim();
+    if (t === '') { onTop(null); return; }
+    if (t.startsWith('=')) { onTop({ expr: t.slice(1).trim() }); return; }
+    const n = Number(t);
+    if (Number.isFinite(n) && /^[-+]?[0-9.eE]+$/.test(t)) onTop(n);
+    else onTop({ expr: t });
+  }
 
   /** The current text for a param cell — its arg (literal or ƒ), else '' (default). */
   function argText(name: string): string {
@@ -93,6 +116,16 @@
 <div class="sr-pop" use:portal style={`left:${anchor.x}px; top:${anchor.y}px`}
      onpointerdown={(e) => e.stopPropagation()}>
   <div class="sr-head"><span class="sr-title">{src || 'element'}</span><button class="sr-x" onclick={onClose} title="Close" aria-label="Close">×</button></div>
+
+  <!-- PLACEMENT — an absolute depth (Z-down `top`). Set ⇒ this element is placed at
+       that depth (mv) instead of mating end-to-end. Blank ⇒ mates (running string). -->
+  <div class="sr-sec-label">placement</div>
+  <label class="sr-field sr-field-depth" class:sr-fx={top && top.kind !== 'literal'}>
+    <span>place at depth (top) — blank = mate end-to-end</span>
+    <input class="sr-in" value={topText()} placeholder="mate"
+      onkeydown={(e) => { if (e.key === 'Enter') commitTop((e.currentTarget as HTMLInputElement).value); }}
+      onblur={(e) => commitTop((e.currentTarget as HTMLInputElement).value)} />
+  </label>
 
   {#if paramNames.length}
     <div class="sr-sec-label">params</div>

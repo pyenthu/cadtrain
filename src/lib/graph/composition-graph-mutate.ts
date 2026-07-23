@@ -1886,6 +1886,16 @@ function updatePartsStack(graph: Graph, id: NodeId, fn: (n: PartsStackNode) => P
 export function addPartsStackRow(graph: Graph, id: NodeId, src = ''): Graph {
   return updatePartsStack(graph, id, (n) => ({ ...n, rows: [...(n.rows ?? []), { src, args: {} }] }));
 }
+/** INSERT a blank row ABOVE row `idx` (the per-row ⊕). idx is clamped to [0, len],
+ *  so idx===len appends (same as addPartsStackRow). Row order = stack order. */
+export function insertPartsStackRowAbove(graph: Graph, id: NodeId, idx: number, src = ''): Graph {
+  return updatePartsStack(graph, id, (n) => {
+    const rows = (n.rows ?? []).slice();
+    const at = Math.max(0, Math.min(idx, rows.length));
+    rows.splice(at, 0, { src, args: {} });
+    return { ...n, rows };
+  });
+}
 /** DUPLICATE row `idx` (append a copy) — "add another like this". No-op out of range. */
 export function duplicatePartsStackRow(graph: Graph, id: NodeId, idx: number): Graph {
   return updatePartsStack(graph, id, (n) => {
@@ -1942,6 +1952,22 @@ export function setPartsStackRowArg(
     else if (typeof value === 'object') args[k] = asExpr(value.expr);
     else args[k] = asLiteral(value);
     rows[idx] = { ...rows[idx]!, args };
+    return { ...n, rows };
+  });
+}
+/** Set / clear row `idx`'s absolute placement DEPTH (`top`). A literal number OR an
+ *  `{expr}`; null clears it (back to end-to-end mating). Set → the element is placed
+ *  at that depth via mv() and pulled out of the mating. No-op out of range. */
+export function setPartsStackRowTop(
+  graph: Graph, id: NodeId, idx: number,
+  value: { expr: string } | number | null,
+): Graph {
+  return updatePartsStack(graph, id, (n) => {
+    const rows = (n.rows ?? []).slice();
+    if (idx < 0 || idx >= rows.length) return n;
+    if (value === null) { const { top: _drop, ...rest } = rows[idx]!; rows[idx] = rest as PartsStackRow; }
+    else if (typeof value === 'object') rows[idx] = { ...rows[idx]!, top: asExpr(value.expr) };
+    else rows[idx] = { ...rows[idx]!, top: asLiteral(value) };
     return { ...n, rows };
   });
 }

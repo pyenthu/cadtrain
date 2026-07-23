@@ -8,7 +8,8 @@
 import { describe, it, expect } from 'vitest';
 import { emitGraph } from '../composition-emit';
 import {
-  addPartsStackRow, setPartsStackRowSrc, setPartsStackRowArg, setPartsStackRowMaterial,
+  addPartsStackRow, insertPartsStackRowAbove, setPartsStackRowSrc, setPartsStackRowArg,
+  setPartsStackRowTop, setPartsStackRowMaterial,
   removePartsStackRow, duplicatePartsStackRow, movePartsStackRow, hydrateGraph,
 } from '../composition-graph';
 import { partsStackRowVar } from '../nodes/kinds/parts-stack';
@@ -61,6 +62,57 @@ describe('parts_stack EMIT — rows mate end-to-end via stack([...])', () => {
   it('no per-row material ⇒ NO instanceColors stamp', () => {
     const res = emitGraph(stackGraph([HANGER, TUBING]), { id: 'w_comp_plain' });
     expect((res.meta as any).instanceColors).toBeUndefined();
+  });
+});
+
+describe('parts_stack DEPTH — per-row `top` anchors an element (place vs mate)', () => {
+  const v = (i: number) => partsStackRowVar('ps', i);
+
+  it('a row WITH top is placed via mv(); unanchored rows still mate — mixed emits a LIST', () => {
+    const rows = [HANGER, TUBING, { ...PACKER, top: lit(100) }];
+    const res = emitGraph(stackGraph(rows), { id: 'w_comp_depth' });
+    // unanchored hanger+tubing mate; packer placed at 100; combined as a bare array.
+    expect(res.source).toContain(`[stack([${v(0)}, ${v(1)}]), mv(${v(2)}, [0, 0, 100])]`);
+  });
+
+  it('ALL rows anchored ⇒ no stack, just the placed mv list (each at its depth)', () => {
+    const rows = [{ ...HANGER, top: lit(0) }, { ...TUBING, top: lit(0) }, { ...PACKER, top: lit(100) }];
+    const res = emitGraph(stackGraph(rows), { id: 'w_comp_all' });
+    expect(res.source).toContain(`[mv(${v(0)}, [0, 0, 0]), mv(${v(1)}, [0, 0, 0]), mv(${v(2)}, [0, 0, 100])]`);
+    expect(res.source).not.toContain('stack([');
+  });
+
+  it('NO top on any row ⇒ the single mated stack (byte-identical to before `top`)', () => {
+    const res = emitGraph(stackGraph([HANGER, TUBING, PACKER]), { id: 'w_comp_none' });
+    expect(res.source).toContain(`stack([${v(0)}, ${v(1)}, ${v(2)}])`);
+    expect(res.source).not.toMatch(/\[stack\(/);   // not wrapped in a list
+  });
+
+  it('an anchored row makes parts_stack a LIST producer (spread by the root/warp)', () => {
+    // A mixed stack feeding the root list should SPREAD (each body separate), which the
+    // emit expresses as the bare-array form above. A pure-mate stack stays one value.
+    const anchored = emitGraph(stackGraph([HANGER, { ...PACKER, top: lit(50) }]), { id: 'lp' });
+    expect(anchored.source).toMatch(/\[stack\(\[.*\]\), mv\(/);
+  });
+});
+
+describe('parts_stack MUTATE — depth + insert-above', () => {
+  it('setPartsStackRowTop sets a literal / expr and clears on null', () => {
+    let g = setPartsStackRowTop(stackGraph([PACKER]), 'ps', 0, 100);
+    expect((ps(g).rows[0] as any).top).toEqual(lit(100));
+    g = setPartsStackRowTop(g, 'ps', 0, { expr: 'p.md' });
+    expect((ps(g).rows[0] as any).top).toEqual({ kind: 'expr', expr: 'p.md' });
+    g = setPartsStackRowTop(g, 'ps', 0, null);
+    expect((ps(g).rows[0] as any).top).toBeUndefined();
+  });
+
+  it('insertPartsStackRowAbove inserts a blank row at idx (pushing the rest down)', () => {
+    const g = insertPartsStackRowAbove(stackGraph([HANGER, PACKER]), 'ps', 1);
+    expect(ps(g).rows.map((r: any) => r.src)).toEqual(['bw_hanger', '', 'bw_packer']);
+    expect(ps(g).rows[1]).toEqual({ src: '', args: {} });
+    // idx === len appends
+    const g2 = insertPartsStackRowAbove(stackGraph([HANGER]), 'ps', 5);
+    expect(ps(g2).rows.map((r: any) => r.src)).toEqual(['bw_hanger', '']);
   });
 });
 

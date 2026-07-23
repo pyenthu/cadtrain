@@ -62,9 +62,11 @@
     setPartsTableRowMaterial,
     setPartsTableMaterial,
     addPartsStackRow,
+    insertPartsStackRowAbove,
     removePartsStackRow,
     movePartsStackRow,
     setPartsStackRowArg,
+    setPartsStackRowTop,
     setPartsStackRowMaterial,
     asLiteral,
     STACK_REF_PARAM,
@@ -1993,10 +1995,12 @@
                       node={psn}
                       paramsForSrc={(src) => expected.params[src] ?? []}
                       onAddRow={() => setGraph(addPartsStackRow(graph, n.id))}
+                      onInsertAbove={(i) => setGraph(insertPartsStackRowAbove(graph, n.id, i))}
                       onRemoveRow={(i) => setGraph(removePartsStackRow(graph, n.id, i))}
                       onMoveRow={(i, dir) => setGraph(movePartsStackRow(graph, n.id, i, dir))}
                       onRowSrc={(i, ev) => onOpenPartsSrcPicker?.(ev as any, n.id, i)}
                       onRowArg={(i, name, val) => setGraph(setPartsStackRowArg(graph, n.id, i, name, val))}
+                      onRowTop={(i, val) => setGraph(setPartsStackRowTop(graph, n.id, i, val))}
                       onRowMaterial={(i, mat) => setGraph(setPartsStackRowMaterial(graph, n.id, i, mat))}
                     />
                   </div>

@@ -678,7 +678,18 @@ export type RowMaterial = { color?: string; preset?: string; opacity?: number };
  *  (its `meta.params` name → ArgValue; `length` is edited inline, the rest via the
  *  per-row ⚙ popover) + an optional per-row `material` override (reused RowMaterial).
  *  Absent `args`/`material` ⇒ the template's own defaults / color-by-source. */
-export type PartsStackRow = { src: string; args?: Record<string, ArgValue>; material?: RowMaterial | null };
+export type PartsStackRow = {
+  src: string;
+  args?: Record<string, ArgValue>;
+  material?: RowMaterial | null;
+  /** OPTIONAL absolute placement DEPTH (Z-down `top`, an ArgValue). When SET, this
+   *  element is PLACED at that depth via `mv(elem, [0,0,top])` and pulled OUT of the
+   *  end-to-end mating — for a completion element that sits at a specific MD (a packer,
+   *  a nipple). When UNSET (the default), the row mates end-to-end (a running string).
+   *  A `top` of literal 0 still counts as anchored (co-located at the top, e.g. a
+   *  tubing hanger + tubing). */
+  top?: ArgValue;
+};
 
 /** PARTS-STACK node — a heterogeneous, auto-stacked multi-row card. Each ROW is a
  *  DIFFERENT part type (its own `src`); the rows mate END-TO-END in order (Z-down)

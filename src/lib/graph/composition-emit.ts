@@ -760,6 +760,10 @@ function computeListProducers(graph: Graph): Set<NodeId> {
     // instances that render SEPARATE — the parent Stack / root `...`-spreads it so
     // each row stays its OWN body (no compose → no fusion), exactly like above.
     if (n.type === 'parts_table') set.add(n.id);
+    // A parts_stack emits a bare array `[stack([…]), mv(…), …]` ONLY when a row is
+    // ANCHORED (has `top`) — separate bodies to spread. With nothing anchored it emits
+    // ONE mated `stack([…])` (a single value), so it's a list producer conditionally.
+    if (n.type === 'parts_stack' && Array.isArray((n as any).rows) && (n as any).rows.some((r: any) => r?.top)) set.add(n.id);
     // A multi-input warp (#36b) emits `[warpSpline(a,…), warpSpline(b,…)]` — a bare
     // array of per-part warps; the parent Stack / root `...`-spreads it so each
     // warped part stays a SEPARATE body (no compose → no fusion).

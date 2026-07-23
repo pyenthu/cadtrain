@@ -1,10 +1,14 @@
 /**
  * PartsStackKind — the "completion string" card. ONE node, N ROWS, each a
- * DIFFERENT part type (`row.src`); the rows mate END-TO-END in order (Z-down) via
- * the sandbox `stack([...])` helper → ONE mated body (a single value, NOT a list
- * producer). It is the heterogeneous sibling of `parts_table` (homogeneous, one
- * shared `src`, rows render SEPARATE) and the card form of the `stack` container
- * (which mates wired CHILD nodes instead of inline rows).
+ * DIFFERENT part type (`row.src`). By default the rows mate END-TO-END in order
+ * (Z-down) via the sandbox `stack([...])` helper → ONE mated body (a running string).
+ * A row may instead set an absolute placement DEPTH (`row.top`): it is then PLACED at
+ * that depth via `mv(elem,[0,0,top])` and pulled OUT of the mating — so ONE card
+ * authors both a running string (all unanchored) AND a completion (elements at set
+ * MDs). It is the heterogeneous sibling of `parts_table` (homogeneous, one shared
+ * `src`, rows render SEPARATE) and the card form of the `stack` container (which mates
+ * wired CHILD nodes instead of inline rows). Emits a single mated value when nothing
+ * is anchored, else a LIST of separate bodies (see emitExpr + computeListProducers).
  *
  * SPLIT EMIT (mirrors PartsTableKind):
  *   • emitPartsStackBlocks (composition-emit.ts, a PRELUDE pass) emits the N per-row
@@ -44,14 +48,31 @@ export function partsStackInstanceColors(node: PartsStackNode): Record<string, R
 
 export const PartsStackKind: NodeKind<PartsStackNode> = {
   type: 'parts_stack',
-  // The node expression mates the N per-row consts end-to-end. The consts
-  // themselves come from emitPartsStackBlocks (the prelude), so they exist ABOVE
-  // this expression (JS const TDZ satisfied). `stack([...])` returns ONE mated
-  // Manifold — a single value — so parts_stack is NOT a list producer (unlike
-  // parts_table): the root returns the string, a parent Stack nests it as one child.
-  emitExpr: (node) => {
+  // Two placement modes per row (the per-row `top` field):
+  //  • UNANCHORED (no top) → mated END-TO-END via `stack([...])` (a running string).
+  //  • ANCHORED (top set)  → PLACED at that absolute depth via `mv(elem,[0,0,top])`,
+  //    pulled OUT of the mating (a completion element at a specific MD).
+  // Emit shape:
+  //  • no anchored rows  → `stack([all])` — ONE mated value (NOT a list producer;
+  //    a parent Stack nests it as one child). Backward-identical to before `top`.
+  //  • any anchored row  → `[stack([…unanchored]), mv(a0,…), …]` — a LIST of separate
+  //    bodies (each renders on its own / warps independently). Marked a list producer
+  //    in computeListProducers so the root / a warp SPREADS it. The row consts come
+  //    from emitPartsStackBlocks (prelude), so they exist ABOVE this expression.
+  emitExpr: (node, c) => {
     const rows = Array.isArray(node.rows) ? node.rows : [];
-    return `stack([${rows.map((_, i) => partsStackRowVar(node.id, i)).join(', ')}])`;
+    const vv = (i: number) => partsStackRowVar(node.id, i);
+    const unanchored: number[] = [];
+    const placed: string[] = [];
+    rows.forEach((row, i) => {
+      if (row?.top) placed.push(`mv(${vv(i)}, [0, 0, ${c.emitValue(row.top)}])`);
+      else unanchored.push(i);
+    });
+    const mated = unanchored.length ? `stack([${unanchored.map(vv).join(', ')}])` : null;
+    // No anchored rows → the single mated value (or an empty stack for an empty node).
+    if (!placed.length) return mated ?? 'stack([])';
+    // Any anchored → a bare array of separate bodies (mated group + each placed elem).
+    return `[${[...(mated ? [mated] : []), ...placed].join(', ')}]`;
   },
   validate: (node, g) => {
     const errs: ValidationError[] = [];

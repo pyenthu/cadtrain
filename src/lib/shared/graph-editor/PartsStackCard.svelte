@@ -18,16 +18,20 @@
     node,
     paramsForSrc,
     onAddRow,
+    onInsertAbove,
     onRemoveRow,
     onMoveRow,
     onRowSrc,
     onRowArg,
+    onRowTop,
     onRowMaterial,
   }: {
     node: PartsStackNode;
     /** The ordered meta.params names of a given part `src` (from `expected.params`). */
     paramsForSrc: (src: string) => string[];
     onAddRow?: () => void;
+    /** Insert a blank element ABOVE row `idx` (the per-row ⊕). */
+    onInsertAbove?: (idx: number) => void;
     onRemoveRow?: (idx: number) => void;
     /** Reorder — move row `idx` by `dir` (−1 up / +1 down). Row order = stack order. */
     onMoveRow?: (idx: number, dir: number) => void;
@@ -35,6 +39,8 @@
     onRowSrc?: (idx: number, ev: MouseEvent) => void;
     /** Set / clear one arg of row `idx` — a literal, an `{expr}`, or null to clear. */
     onRowArg?: (idx: number, name: string, value: { expr: string } | number | string | boolean | null) => void;
+    /** Set / clear row `idx`'s absolute placement depth (`top`) — null clears (mates). */
+    onRowTop?: (idx: number, value: { expr: string } | number | null) => void;
     /** Set / clear row `idx`'s material override (null clears). */
     onRowMaterial?: (idx: number, material: RowMaterial | null) => void;
   } = $props();
@@ -59,13 +65,14 @@
     else onRowArg?.(idx, 'length', { expr: t });
   }
 
-  /** Does a row carry any ⚙-level override (a non-length arg or a material)? Tints the ⚙. */
+  /** Does a row carry any ⚙-level override (a depth, a non-length arg, or a material)?
+   *  Tints the ⚙ so a configured row reads distinct at a glance. */
   function hasMore(idx: number): boolean {
     const r = rows[idx];
     if (!r) return false;
     const argKeys = Object.keys(r.args ?? {}).filter((k) => k !== 'length');
     const m = r.material;
-    return argKeys.length > 0 || !!(m && (m.color || m.preset || typeof m.opacity === 'number'));
+    return !!r.top || argKeys.length > 0 || !!(m && (m.color || m.preset || typeof m.opacity === 'number'));
   }
 
   // The ⚙ "more" popover — its open row + anchor live HERE (self-contained, #38d style).
@@ -100,6 +107,10 @@
                  wall so they're always visible before the element picker. -->
             <td class="ps-cell ps-cell-ltools">
               <span class="ps-lcluster">
+                <!-- Insert an element ABOVE this row (a round ⊕). The bottom '＋ element'
+                     appends; this inserts between (user 2026-07-23). -->
+                <button class="ps-ins" title="insert an element above this row"
+                  onclick={() => onInsertAbove?.(idx)} aria-label="insert element above row {idx + 1}">+</button>
                 <!-- Reorder — row order IS the stack order (top→bottom). ▲ disabled on the
                      first row, ▼ on the last, so the ends can't move past the string. -->
                 <span class="ps-reorder">
@@ -108,8 +119,8 @@
                   <button class="ps-tool ps-mv" title="move down" aria-label="move element {idx + 1} down"
                     disabled={idx === rows.length - 1} onclick={() => onMoveRow?.(idx, 1)}>▼</button>
                 </span>
-                <button class="ps-tool ps-more" class:on={hasMore(idx)} title="more — {row.src || 'element'} params + material"
-                  onclick={(e) => openMore(idx, e)} aria-label="row {idx + 1} params and material">⚙</button>
+                <button class="ps-tool ps-more" class:on={hasMore(idx)} title="more — {row.src || 'element'} depth · params · material"
+                  onclick={(e) => openMore(idx, e)} aria-label="row {idx + 1} depth params and material">⚙</button>
               </span>
             </td>
             <!-- Part-type picker chip — each row its OWN element (heterogeneous). -->
@@ -120,11 +131,13 @@
                 <span class="ps-srcsel-ic">🔍</span>
               </button>
             </td>
-            <!-- The ONE inline param: length. Everything else → the ⚙ popover. -->
+            <!-- The ONE inline param: length. Depth + other params → the ⚙ popover; an
+                 anchored row shows a small ⚓depth badge so it reads distinct. -->
             <td class="ps-cell ps-cell-len" class:ps-fx={row.args?.length && row.args.length.kind !== 'literal'}>
               <input class="ps-in" value={lengthText(row.args?.length)} placeholder="·"
                 onkeydown={(e) => { if (e.key === 'Enter') commitLength(idx, (e.currentTarget as HTMLInputElement).value); }}
                 onblur={(e) => commitLength(idx, (e.currentTarget as HTMLInputElement).value)} />
+              {#if row.top}<span class="ps-depth" title="placed at depth {lengthText(row.top)} (not mated)">⚓{lengthText(row.top)}</span>{/if}
             </td>
             <!-- Right-wall tool: two-click delete (the reorder + ⚙ moved LEFT above). -->
             <td class="ps-cell ps-cell-tools">
@@ -157,9 +170,11 @@
     src={rows[morePopIdx]?.src ?? ''}
     paramNames={paramsForSrc(rows[morePopIdx]?.src ?? '').filter((p) => p !== 'length')}
     args={rows[morePopIdx]?.args ?? {}}
+    top={rows[morePopIdx]?.top}
     material={rows[morePopIdx]?.material ?? null}
     anchor={moreAnchor}
     onArg={(name, value) => onRowArg?.(morePopIdx as number, name, value)}
+    onTop={(value) => onRowTop?.(morePopIdx as number, value)}
     onMaterial={(m) => onRowMaterial?.(morePopIdx as number, m)}
     onClose={() => (morePopIdx = null)}
   />
@@ -174,9 +189,14 @@
   .ps-th-tools, .ps-th-ltools { width: 1%; }
   .ps-cell { padding: 1px 4px; border: 1px solid #a98fd8; }
 
-  /* LEFT tools — reorder ▲▼ + ⚙ more (moved off the right wall, user 2026-07-22). */
+  /* LEFT tools — insert⊕ + reorder ▲▼ + ⚙ more (moved off the right wall, user 2026-07-22). */
   .ps-cell-ltools { width: 1%; text-align: left; white-space: nowrap; }
   .ps-lcluster { display: inline-flex; align-items: center; gap: 3px; }
+  /* Round ⊕ insert-above button (user 2026-07-23). */
+  .ps-ins { width: 15px; height: 15px; flex: none; padding: 0; border: 1px solid #c9b6ef; border-radius: 50%;
+    background: #fff; color: #7c3aed; font: 700 12px/1 ui-monospace, monospace; cursor: pointer; display: inline-flex;
+    align-items: center; justify-content: center; }
+  .ps-ins:hover { background: #7c3aed; color: #fff; border-color: #7c3aed; }
 
   /* Element (part-type) picker chip — fills the column, opens the search picker. */
   .ps-cell-el { min-width: 8ch; }
@@ -186,7 +206,8 @@
   .ps-srcsel-id { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
   .ps-srcsel-ic { flex: none; opacity: 0.6; font-size: 10px; }
 
-  .ps-cell-len { width: 5.5ch; }
+  .ps-cell-len { width: 5.5ch; white-space: nowrap; }
+  .ps-depth { margin-left: 3px; font-size: 9px; font-weight: 700; color: #a21caf; }
   .ps-in { width: 100%; min-width: 3ch; box-sizing: border-box; font-size: 11px; font-weight: 600; padding: 1px 4px; border: 1px solid transparent; border-radius: 4px; background: #fff; }
   .ps-in:focus { border-color: #8a5cd6; outline: none; }
   .ps-fx .ps-in { color: #6b3fb0; font-style: italic; }
