@@ -63,8 +63,13 @@ export function tagInstanceSources(source: string): string {
   let out = source;
   for (const inst of targets) {
     const id = partHashId(inst.name);
+    // __tagNest (not __tag): for a nested MULTI-PART assembly instance it PRESERVES the
+    // callee's internal named sub-part runs, namespaced as partNestId(id, childId), so
+    // a part's own materials survive one Call deeper (#947 — the packer-blob bug). For a
+    // leaf instance (≤1 named run, or anonymous internal CSG) it collapses to `id`,
+    // byte-identical to the old __tag. The render LUT recomputes the same partNestId.
     out = out.slice(0, inst.initStart)
-      + `__tag(${out.slice(inst.initStart, inst.initEnd)}, ${id})`
+      + `__tagNest(${out.slice(inst.initStart, inst.initEnd)}, ${id})`
       + out.slice(inst.initEnd);
   }
   return out;

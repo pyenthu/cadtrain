@@ -26,8 +26,10 @@ const fakeFetch = (async (url: any) => {
 describe('#86 client-bake core applies the subpart LUT', () => {
   it('runCompiledManifold(parts) tints each subpart its own colour', async () => {
     const { script } = await compilePrimitiveScript(sources.t86_asm, 't86_asm', fakeFetch);
-    // The compiled (meta-stripped) script must still carry instance tags.
-    expect(script).toContain('__tag(');
+    // The compiled (meta-stripped) script must still carry instance tags (#947: the
+    // splice is now __tagNest, which collapses like __tag for a leaf but preserves a
+    // nested assembly's runs).
+    expect(script).toContain('__tagNest(');
     const parts = analyzeParts(sources.t86_asm, await resolveDepColors(sources.t86_asm, fakeFetch));
     const out = await runCompiledManifold(script, [], { parts });
     const cols = out.full.colors ?? [];

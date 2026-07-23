@@ -47,6 +47,27 @@ export function partHashId(name: string): number {
   return ((fnv1a(name) & 0x3fffffff) | 0x40000000) >>> 0;
 }
 
+/** Combine a PARENT instance hashId with a CHILD sub-part hashId into a stable,
+ *  collision-safe NESTED id, biased into the SAME part band. Used when a multi-part
+ *  assembly is Called from another assembly (#947): each internal run of the callee
+ *  is re-tagged `partNestId(parentHash, childHash)` so the child's sub-parts stay
+ *  DISTINCT (the seal ≠ the body) AND namespaced under the parent instance — two
+ *  elements that internally reuse alias 'A' can't collide. Deterministic + pure, so
+ *  the tagger (bake) and the color LUT (render) compute the SAME value and never need
+ *  a runtime name→int reverse lookup. Composes level-by-level for deeper nesting. */
+export function partNestId(parentHash: number, childHash: number): number {
+  // FNV-1a over the two ids' bytes, then band-bias exactly like partHashId so the
+  // result stays in [0x40000000, 0x7FFFFFFF] (never SECTION_ID / the -1 sentinel).
+  let h = 0x811c9dc5;
+  for (const v of [parentHash >>> 0, childHash >>> 0]) {
+    for (let b = 0; b < 4; b++) {
+      h ^= (v >>> (b * 8)) & 0xff;
+      h = Math.imul(h, 0x01000193);
+    }
+  }
+  return (((h >>> 0) & 0x3fffffff) | 0x40000000) >>> 0;
+}
+
 /**
  * Per-triangle source hashId from a Manifold mesh's relation
  * (`runOriginalID` + `runIndex`). Triangle t belongs to run r where

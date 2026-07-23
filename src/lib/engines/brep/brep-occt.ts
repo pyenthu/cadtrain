@@ -1080,14 +1080,17 @@ async function executeBrep(
     'p', 'sketch', 'r_revolve', 'r_weld_extrude', 'r_loft', 'r_extrude', 'r_cuboid', 'r_sweep',
     'resampleSpline', 'resolveProfile', 'sectionCut', 'warpSpline',
     'mv', 'rot', 'place', 'withStackRef', 'stack', 'list', 'group',
-    '__tag',
+    '__tag', '__tagNest',
     ...MATH_NAMES,
   ];
   const baseVals = (p: any) => [
     p, sketch, r_revolve, r_weld_extrude, r_loft, r_extrude, r_cuboid, r_sweep,
     resampleSpline, resolveProfile, sectionCut, warpSpline,
     mv, rot, place, withStackRef, stackOcct, compoundOf, compoundOf,
-    __tag,
+    // BREP tags whole OCCT solids (no mesh-run relation to preserve), so __tagNest
+    // COLLAPSES to the parent id exactly like __tag — the nested-material feature
+    // (#947) is Manifold-only for now. This keeps BREP byte-identical to pre-#947.
+    __tag, __tag,
     ...MATH_VALUES,
   ];
   function bodyOf(src: string): string | null {

@@ -18,7 +18,7 @@ import { recognizeComposite } from './recognize-composite';
 import { evalMetaLiteral } from './primitives-meta';
 import { usesOf, fetchDepSource } from './primitive-loader';
 import { colorsForInstance, DEFAULT_INNER_COLOR } from '$lib/shared/viewer/instance-colors';
-import { partHashId } from '$lib/graph/part-id';
+import { partHashId, partNestId } from '$lib/graph/part-id';
 import type { PartAppearance } from '$lib/shared/viewer/part-appearance';
 import type { PartColorLUT } from '$lib/graph/part-lut-types';
 export type { PartColorLUT } from '$lib/graph/part-lut-types';
@@ -34,6 +34,11 @@ export interface DepColor {
   opacity?: number;
   material?: string;
   texture?: string;
+  /** #947 — the dep's OWN full color LUT, present only when the dep is a MULTI-PART
+   *  assembly (≥2 coloured sub-parts). The parent composes namespaced entries from it
+   *  (partNestId) so the dep's internal sub-part colours survive one Call deeper (the
+   *  __tagNest-preserved runs). Absent for a leaf → the single effective colour above. */
+  childLut?: PartColorLUT;
 }
 export type DepColorMap = Record<string, DepColor>;
 
@@ -118,7 +123,11 @@ export async function resolveDepColors(
       try { meta = evalMetaLiteral(s); } catch { /* leaf-ish */ }
       const lut = analyzeParts(s, depOfDep);
       const eff = lut.active ? effectiveDepColor(meta, lut, depOfDep) : depColorFromMeta(meta);
-      if (eff) out[dep] = eff;
+      // #947 — attach the dep's FULL LUT when it's a MULTI-PART assembly (≥2 coloured
+      // sub-parts), so the parent can colour the nested runs __tagNest preserved. A
+      // single-part / leaf dep keeps just its effective colour (byte-identical).
+      const multi = lut.active && Object.keys(lut.outer).length >= 2;
+      if (eff || multi) out[dep] = { ...(eff ?? {}), ...(multi ? { childLut: lut } : {}) };
     } catch { /* dep unreadable → palette fallback */ }
   }));
   return out;
@@ -226,6 +235,60 @@ const INACTIVE: PartColorLUT = {
   bodyInner: DEFAULT_INNER_COLOR, bodyColor: '#cc2222', bodyName: null, bodyCall: null, active: false,
 };
 
+/** #947 — compose namespaced NESTED sub-part LUT entries. For every instance whose dep
+ *  is a MULTI-PART assembly (`depColors[call].childLut`), the baked mesh carries that
+ *  dep's internal runs PRESERVED + namespaced as `partNestId(partHashId(instanceName),
+ *  childHash)` (by `__tagNest`). Mirror that here so each nested run renders in the
+ *  child's OWN colour (INHERIT). If the parent set an override on the element, every
+ *  nested run instead maps to that single override colour (override WINS → the element
+ *  reads as one re-skinned body). Mutates the passed LUT accumulators. */
+function composeNestedLut(
+  instances: any[],
+  instanceColors: Record<string, any>,
+  depColors: DepColorMap | undefined,
+  ownOuter: string | undefined,
+  ownInner: string | undefined,
+  lut: {
+    outer: Record<number, string>; inner: Record<number, string>;
+    opacity: Record<number, number>; subtractive: number[];
+    names: Record<number, string>; appearance: Record<number, PartAppearance>;
+  },
+): void {
+  const { outer, inner, opacity, subtractive, names, appearance } = lut;
+  for (const inst of instances) {
+    const childLut = depColors?.[inst.call]?.childLut;
+    if (!childLut || !childLut.active) continue;
+    const id = partHashId(inst.name);
+    const override = instanceColors[inst.name];   // parent override on the WHOLE element
+    // The per-instance override is used DIRECTLY (like the main analyzeParts loop) —
+    // NOT through preferOwnColor, which would let the PARENT's own colorOuter clobber
+    // the explicit override (the row colour) with the parent's body colour.
+    const ov = override ? colorsForInstance(inst.name, override) : null;
+    const ovOp = override ? overrideOpacity(override) : undefined;
+    for (const key of Object.keys(childLut.outer)) {
+      const childHash = Number(key) >>> 0;
+      const nid = partNestId(id, childHash);
+      names[nid] = `${inst.name}/${childLut.names?.[childHash] ?? key}`;
+      const isSub = (childLut.subtractive ?? []).includes(childHash);
+      if (ov) {
+        outer[nid] = ov.outer;
+        inner[nid] = ov.inner;
+        if (ovOp !== undefined) opacity[nid] = ovOp;
+        // Propagate the sub-part ROLE so a hollow element still reads skin=outer /
+        // bore=inner under the override (the render colours a subtractive run with its
+        // INNER colour). Without this the bore takes the outer colour → skin/bore swap.
+        if (isSub) subtractive.push(nid);
+      } else {
+        outer[nid] = childLut.outer[childHash];
+        inner[nid] = childLut.inner[childHash] ?? childLut.bodyInner;
+        if (childLut.opacity[childHash] !== undefined) opacity[nid] = childLut.opacity[childHash];
+        if (childLut.appearance?.[childHash]) appearance[nid] = childLut.appearance[childHash];
+        if (isSub) subtractive.push(nid);
+      }
+    }
+  }
+}
+
 export function analyzeParts(source: string, depColors?: DepColorMap): PartColorLUT {
   // K.63 ASSEMBLY PATH — `.asm.ts` files carry meta.composition (a TreeNode)
   // instead of the older `const X = …;` instance declarations
@@ -313,6 +376,14 @@ export function analyzeParts(source: string, depColors?: DepColorMap): PartColor
     if (op !== undefined) opacity[id] = op;
     if (subtractiveNames.has(inst.name)) subtractive.push(id);
   }
+  // #947 — NESTED sub-part colours. An instance whose dep is a MULTI-PART assembly
+  // bakes with its child runs PRESERVED + namespaced (partNestId) by __tagNest. Add a
+  // LUT entry for each nested sub-part keyed by the SAME partNestId so those runs render
+  // in the child's OWN colour (INHERIT). If the parent set an override on the element,
+  // the whole element takes the override colour instead (override WINS): every nested run
+  // maps to the one override colour, so it reads as a single re-skinned element.
+  composeNestedLut(instances, instanceColors, depColors, ownOuter, ownInner,
+    { outer, inner, opacity, subtractive, names, appearance });
   return finalizeLut(outer, inner, opacity, subtractive, bodyId, bodyPair.inner, bodyPair.outer, bodyName, bodyCall ?? null, names, appearance);
 }
 

@@ -16,7 +16,7 @@ import Module from 'manifold-3d';
 // revolve path (revolveProfile). manifold-mesh imports nothing from here (it
 // reads the wasm singleton off globalThis), so this import is acyclic.
 import { subdivideProfileAxial, getAxialMaxZSpan, getAxialMaxSegPerEdge, revolveProfile, weldAndBuild } from './manifold-mesh';
-import { triSourceIds } from '$lib/graph/part-id';
+import { triSourceIds, partNestId } from '$lib/graph/part-id';
 // Trap detection lives in `manifold-trap.ts` — no `manifold-3d` import there, so
 // the MAIN-THREAD bake-client can use it without pulling the WASM module in.
 export { isManifoldFatalTrap, describeManifoldError } from '$lib/graph/manifold-trap';
@@ -302,6 +302,75 @@ export function tagManifold(m: any, hashId: number): any {
       triVerts: new Uint32Array(old.triVerts),
       runOriginalID: new Uint32Array([hashId >>> 0]),
       runIndex: new Uint32Array([0, tvLen]),
+    });
+    return new Manifold(fresh);
+  } catch {
+    return m;
+  }
+}
+
+/**
+ * tagManifoldNested — like `tagManifold`, but for a NESTED multi-part assembly
+ * instance (#947). `tagManifold` COLLAPSES the input's relation to ONE run so the
+ * outer tag wins — which destroys a callee assembly's internal per-sub-part runs
+ * (the packer's blue seal + brown body all become one colour). This variant does the
+ * OPPOSITE: it PRESERVES every run and re-tags each with `partNestId(parentHash,
+ * oldId)`, so the child's sub-parts stay DISTINCT and NAMESPACED under this instance
+ * (two elements internally reusing alias 'A' can't collide). The render LUT recomputes
+ * the same `partNestId`, so the baked runs and the colour keys line up.
+ *
+ * A relation-less or single-run input has no internal structure to preserve, so it
+ * falls back to the collapsing single-run form (deterministic, == tagManifold). Injected
+ * as `__tagNest`; the loader splices it around a nested-assembly instance only when the
+ * parent sets NO override on it (else the collapsing `__tag` = the override colour wins).
+ */
+export function tagManifoldNested(m: any, parentHash: number): any {
+  if (!m || typeof m.getMesh !== 'function') return m;
+  const wasm = G.__cadtrain_manifold__?.wasm;
+  const Manifold = wasm?.Manifold;
+  const Mesh = wasm?.Mesh;
+  if (!Manifold || !Mesh) return m;
+  try {
+    const old = m.getMesh();
+    const tvLen = (old.triVerts as ArrayLike<number>).length;
+    const ro = old.runOriginalID as ArrayLike<number> | undefined;
+    const ri = old.runIndex as ArrayLike<number> | undefined;
+    if (!ro || !ri || ro.length < 2) return tagManifold(m, parentHash);
+    const nRuns = ro.length;
+    // A run belongs to a NAMED sub-part iff its id is in the part band [0x40000000,
+    // 0x7FFFFFFF] (partHashId / partNestId). Anonymous Manifold CSG pieces (a leaf
+    // doing cyl().subtract(cyl())) carry LOW auto-counter ids and must NOT be split
+    // into colours — they're this instance's own body. So we PRESERVE only band runs,
+    // and only when there are ≥2 of them (a genuine multi-part assembly); otherwise
+    // collapse like tagManifold. This makes __tagNest safe to splice on EVERY instance.
+    const inBand = (id: number) => id >= 0x40000000 && id <= 0x7fffffff;
+    let named = 0;
+    for (let r = 0; r < nRuns; r++) if (inBand(ro[r] >>> 0)) named++;
+    if (named < 2) return tagManifold(m, parentHash);
+    // Named runs → partNestId(parent, oldId); anonymous runs → the parent instance's
+    // own id (they're the element's body, not a separately-coloured sub-part).
+    const newIds = new Uint32Array(nRuns);
+    for (let r = 0; r < nRuns; r++) {
+      const id = ro[r] >>> 0;
+      newIds[r] = inBand(id) ? partNestId(parentHash >>> 0, id) : (parentHash >>> 0);
+    }
+    // runIndex canonical length is nRuns+1 (start-of-each-run + total). Manifold may
+    // hand back the short form (nRuns), so append tvLen when it's missing.
+    let newRunIndex: Uint32Array;
+    if (ri.length >= nRuns + 1) {
+      newRunIndex = new Uint32Array(nRuns + 1);
+      for (let r = 0; r <= nRuns; r++) newRunIndex[r] = ri[r];
+    } else {
+      newRunIndex = new Uint32Array(nRuns + 1);
+      for (let r = 0; r < nRuns; r++) newRunIndex[r] = ri[r];
+      newRunIndex[nRuns] = tvLen;
+    }
+    const fresh = new Mesh({
+      numProp: old.numProp,
+      vertProperties: new Float32Array(old.vertProperties),
+      triVerts: new Uint32Array(old.triVerts),
+      runOriginalID: newIds,
+      runIndex: newRunIndex,
     });
     return new Manifold(fresh);
   } catch {

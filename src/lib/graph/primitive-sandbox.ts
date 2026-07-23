@@ -41,7 +41,7 @@ export const SANDBOX_ARG_NAMES: string[] = [
   'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile', 'sweepAlongPath', 'sweepAnnular', 'boredSweep', 'loftStations', 'resampleSpline', 'surveyToXYZ', 'resolveProfile', 'warpSpline', 'sectionCut',
   'cs', 'extrude_csg', 'ext', 'resample',
   'sketch',
-  '__tag',
+  '__tag', '__tagNest',
   'G', 'Math',
   ...MATH_NAMES,
 ];
@@ -74,7 +74,7 @@ export function sandboxArgValues(viewScale?: { radial?: number; depth?: number }
     gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, sweepAnnular, boredSweep, loftStations, resampleSpline, surveyToXYZ, resolveProfile, warpFn, helpers.sectionCut,
     cs, extrude_csg, ext, resample,
     compileSketch,
-    helpers.tagManifold,
+    helpers.tagManifold, helpers.tagManifoldNested,
     globalThis, Math,
     ...MATH_VALUES,
   ];
