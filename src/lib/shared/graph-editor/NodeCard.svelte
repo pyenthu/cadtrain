@@ -235,6 +235,29 @@
   // Two-step delete confirm for this card's × (first click arms → ✓, second
   // deletes). One node per NodeCard, so a single instance keyed by n.id suffices.
   const del = new DeleteConfirm();
+
+  // ─── PUBLIC/PRIVATE param filtering (caller-facing) ────────────────────────
+  // A called part exposes only its PUBLIC params to its caller. `expected`
+  // records both the full key list (`params`) and the public subset
+  // (`publicParams`). These helpers derive the display filter from that cache.
+
+  /** The names of `src`'s params that are PRIVATE (`public: false`) — hidden
+   *  from this Call's arg rows. EMPTY when we don't yet know src's params (not
+   *  loaded → show everything, never hide what we can't classify) or the public
+   *  subset wasn't recorded (older cache entry → treat all as public). */
+  function hiddenArgKeysFor(src: string): Set<string> {
+    const all = expected.params[src];
+    const pub = expected.publicParams[src];
+    if (!all || !pub) return new Set();
+    const pubSet = new Set(pub);
+    return new Set(all.filter((k) => !pubSet.has(k)));
+  }
+  /** The PUBLIC subset of `src`'s param names (declaration order) — the caller
+   *  interface for the parts_table columns picker + parts_stack row popover.
+   *  Falls back to the full list when the public subset wasn't recorded. */
+  function publicParamsForSrc(src: string): string[] {
+    return expected.publicParams[src] ?? expected.params[src] ?? [];
+  }
 </script>
 
             <g transform="translate({pos.x},{pos.y})" class="ge-node" class:ai-selected={selected}
@@ -243,6 +266,7 @@
               onpointerdown={() => onBringToFront(n.id)}>
               {#if n.type === 'call'}
                 {@const call = n as any}
+                {@const hiddenArgKeys = hiddenArgKeysFor(call.src)}
                 {@const inlineMv  = inlineTransformOf(graph, n.id, 'mv')}
                 {@const inlineRot = inlineTransformOf(graph, n.id, 'rot')}
                 {@const matBound = !!graph.materialBindings?.[n.id]}
@@ -329,7 +353,10 @@
                 <line x1="0" y1="32" x2={size.w} y2="32" class="ge-node-divider"/>
                 <foreignObject x="6" y="36" width={size.w - 12} height={size.h - 40} class="ge-fo">
                   <div class="ge-args" xmlns="http://www.w3.org/1999/xhtml">
-                    {#each Object.entries(call.args ?? {}) as [k, v] (k)}
+                    <!-- Filter to PUBLIC params — a private (public:false) arg on
+                         the called part still emits its default, it's just not
+                         shown/editable here (hiddenArgKeys). -->
+                    {#each Object.entries(call.args ?? {}).filter(([k]) => !hiddenArgKeys.has(k)) as [k, v] (k)}
                       {@const argTip = expected.tips[call.src]?.[k]}
                       <!-- Unified row: [key_label][value_body][trailing_actions]
                            The value_body shows the literal input, the wired
@@ -1941,7 +1968,7 @@
                   <div class="ge-pt-host" xmlns="http://www.w3.org/1999/xhtml">
                     <PartsTableCard
                       node={pt}
-                      paramNames={expected.params[pt.src] ?? []}
+                      paramNames={publicParamsForSrc(pt.src)}
                       onColumns={(cols) => setGraph(setPartsTableColumns(graph, n.id, cols))}
                       onAddRow={() => setGraph(addPartsTableRow(graph, n.id))}
                       onDuplicateRow={(i) => setGraph(duplicatePartsTableRow(graph, n.id, i))}
@@ -1992,7 +2019,7 @@
                   <div class="ge-pt-host" xmlns="http://www.w3.org/1999/xhtml">
                     <PartsStackCard
                       node={psn}
-                      paramsForSrc={(src) => expected.params[src] ?? []}
+                      paramsForSrc={(src) => publicParamsForSrc(src)}
                       onAddRow={() => setGraph(addPartsStackRow(graph, n.id))}
                       onInsertAbove={(i) => setGraph(insertPartsStackRowAbove(graph, n.id, i))}
                       onRemoveRow={(i) => setGraph(removePartsStackRow(graph, n.id, i))}

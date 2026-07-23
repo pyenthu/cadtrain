@@ -19,13 +19,20 @@
  * $state — the caller does `graph = refreshCallArgs(graph, id)`.
  */
 import { asLiteral, finalize, type Graph, type NodeId } from '$lib/graph/composition-graph';
-import { callDrift } from './graph-editor-bake';
+import { callDrift, publicParamKeys } from './graph-editor-bake';
 
-export { extractGraphFromSource, extractDrawingMdFromSource, callDrift } from './graph-editor-bake';
+export { extractGraphFromSource, extractDrawingMdFromSource, callDrift, publicParamKeys } from './graph-editor-bake';
 
 export interface ExpectedParams {
   /** src → ordered meta.params keys. */
   params: Record<string, string[]>;
+  /** src → ordered PUBLIC meta.params keys (the caller-facing INTERFACE subset —
+   *  every key whose schema is NOT `public: false`; absent-`public` ⇒ public).
+   *  Caller editors (Call args, parts_stack row popover, parts_table columns)
+   *  read THIS instead of `params` so private internals stay hidden. A src that
+   *  was ingested by an OLDER build (no publicParams entry) falls back to `params`
+   *  at the read site → treated as all-public. */
+  publicParams: Record<string, string[]>;
   /** src → key → default numeric value. */
   defaults: Record<string, Record<string, number>>;
   /** src → set of profile-typed arg keys (#119 chip). */
@@ -40,6 +47,7 @@ export interface ExpectedParams {
 
 export const expected = $state<ExpectedParams>({
   params: {},
+  publicParams: {},
   defaults: {},
   profileKeys: {},
   profileSet: {},
@@ -72,6 +80,9 @@ export function ingestMeta(src: string, params: Record<string, any> | undefined)
     if (typeof tip === 'string' && tip.trim()) tips[k] = tip;
   }
   expected.params = { ...expected.params, [src]: keys };
+  // PUBLIC/PRIVATE — the caller-facing interface subset (every key not marked
+  // `public: false`; absent ⇒ public). Derived via the pure `publicParamKeys`.
+  expected.publicParams = { ...expected.publicParams, [src]: publicParamKeys(p) };
   expected.defaults = { ...expected.defaults, [src]: defaults };
   expected.tips = { ...expected.tips, [src]: tips };
   // Infer the profile "set" from the primitive name: r_revolve → revolve (r,z);

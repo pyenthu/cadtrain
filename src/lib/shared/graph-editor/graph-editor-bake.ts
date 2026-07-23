@@ -38,6 +38,22 @@ export function extractDrawingMdFromSource(src: string): string {
   return (m[2] ?? '').replace(/\\n/g, '\n').replace(/\\'/g, "'").replace(/\\\\/g, '\\');
 }
 
+/** The PUBLIC subset of a raw meta.params record's keys, in declaration order.
+ *  A param is PUBLIC unless its schema object is EXPLICITLY `public: false`
+ *  (absent ⇒ public — the byte-identical backward-compat default, so every
+ *  existing part exposes every param). `ingestMeta` calls this to build
+ *  `expected.publicParams[src]`; the caller-facing editors (Call args rows,
+ *  parts_stack row popover, parts_table columns) read that subset so a called
+ *  part's private internals (wall / collar_od / segments / …) stay hidden while
+ *  still emitting their defaults. Pure (no runes) so it's unit-testable. */
+export function publicParamKeys(params: Record<string, any> | undefined): string[] {
+  const p = params ?? {};
+  return Object.keys(p).filter((k) => {
+    const v = p[k];
+    return !(v && typeof v === 'object' && v.public === false);
+  });
+}
+
 /** Pure drift comparator: a Call's args keys vs the primitive's CURRENT params
  *  keys. Returns false when expected keys are unknown (not yet fetched) so the
  *  ⚠ badge doesn't false-positive, and for non-call nodes. */

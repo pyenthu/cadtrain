@@ -12,10 +12,14 @@ import {
   isNumberParam,
   isRecordParam,
   isListParam,
+  isPublicParam,
+  publicParamNames,
   hydrateParams,
+  hydrateGraph,
   newGraph,
   addCall,
   addParam,
+  setParamSchema,
   type ParamSchema,
   type NumberParam,
   type RecordParam,
@@ -129,6 +133,89 @@ describe('emit — STACK_REF_PARAM guard is number-only', () => {
     const { graph } = addCall(g, 'g_casing', {});
     const body = emitGraph(graph, { id: 'w_x' }).body;
     expect(body).not.toContain('_stackRef');
+  });
+});
+
+describe('public/private param flag — the interface subset', () => {
+  it('absent `public` ⇒ PUBLIC (the byte-identical backward-compat default)', () => {
+    // The golden invariant: every existing param (no `public` key) is public.
+    expect(isPublicParam(numberP)).toBe(true);
+    expect(isPublicParam({ default: 5 })).toBe(true);
+    expect(isPublicParam(recordP)).toBe(true);
+    expect(isPublicParam(listP)).toBe(true);
+  });
+
+  it('`public: true` is public; only `public: false` is private', () => {
+    expect(isPublicParam({ default: 5, public: true })).toBe(true);
+    expect(isPublicParam({ default: 5, public: false })).toBe(false);
+  });
+
+  it('a nullish schema is not public (dropped)', () => {
+    expect(isPublicParam(null)).toBe(false);
+    expect(isPublicParam(undefined)).toBe(false);
+  });
+
+  it('publicParamNames filters to the public subset, preserving order', () => {
+    const params = {
+      od:        { default: 9.625 },                    // absent ⇒ public
+      length:    { default: 40, public: true },         // explicit public
+      wall:      { default: 0.5, public: false },        // private
+      collar_od: { default: 11, public: false },         // private
+      depth:     { default: 100 },                       // absent ⇒ public
+    };
+    expect(publicParamNames(params)).toEqual(['od', 'length', 'depth']);
+  });
+
+  it('an all-default (no flags) params record is fully public', () => {
+    const params = { od: { default: 1 }, wall: { default: 2 }, length: { default: 3 } };
+    expect(publicParamNames(params)).toEqual(['od', 'wall', 'length']);
+  });
+
+  it('undefined / empty → []', () => {
+    expect(publicParamNames(undefined)).toEqual([]);
+    expect(publicParamNames({})).toEqual([]);
+  });
+});
+
+describe('public flag — serialize + hydrate round-trip', () => {
+  function partWithPrivateWall() {
+    let g = newGraph();
+    g = addParam(g, 'od', { default: 9.625 });
+    g = addParam(g, 'wall', { default: 0.5 });
+    g = setParamSchema(g, 'wall', { default: 0.5, public: false });
+    return g;
+  }
+
+  it('emit serializes `public: false` into the meta.params text', () => {
+    const { source } = emitGraph(partWithPrivateWall(), { id: 'w_x' });
+    expect(source).toContain('public: false');
+  });
+
+  it('emit keeps the param object round-trippable (meta.params.wall.public)', () => {
+    const { meta } = emitGraph(partWithPrivateWall(), { id: 'w_x' });
+    expect((meta.params as any).wall.public).toBe(false);
+    expect((meta.params as any).od.public).toBeUndefined();  // untouched param stays clean
+  });
+
+  it('hydrateParams passes the public flag through verbatim', () => {
+    const raw = { od: { default: 1 }, wall: { default: 0.5, public: false } } as any;
+    const out = hydrateParams(raw);
+    expect((out.wall as any).public).toBe(false);
+    expect((out.od as any).public).toBeUndefined();
+  });
+
+  it('full serialise → hydrateGraph round-trip preserves public:false', () => {
+    const { meta } = emitGraph(partWithPrivateWall(), { id: 'w_x' });
+    const g2 = hydrateGraph(meta.graph);
+    expect((g2.params.wall as any).public).toBe(false);
+    expect((g2.params.od as any).public).toBeUndefined();
+  });
+
+  it('a part with NO private params emits byte-identically (no `public` key)', () => {
+    let g = newGraph();
+    g = addParam(g, 'od', { default: 9.625 });
+    const { source } = emitGraph(g, { id: 'w_x' });
+    expect(source).not.toContain('public');
   });
 });
 
