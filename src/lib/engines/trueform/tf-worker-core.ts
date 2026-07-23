@@ -46,8 +46,10 @@ export interface TfWorkerRequest {
   /** Mirror the Manifold cutaway — a half-quadrant boolean section cut. */
   cutaway: boolean;
   /** Non-persisted spline-aware VIEW scale for a warped part (Problem 2): `radial`
-   *  fattens the section ⊥ the tangent, `depth` scales the spline uniformly. */
-  warpViewScale?: { radial?: number; depth?: number };
+   *  fattens the section ⊥ the tangent, `depth` scales the spline uniformly, or `dtx`
+   *  (AUTOSCALE) reparametrizes the along-hole station via the DTX transform. Plain
+   *  arrays so it survives structured-clone into the worker. */
+  warpViewScale?: { radial?: number; depth?: number; dtx?: import('$lib/engines/manifold/warp-spline').DtxLut };
   /** Opt-in perf logging (worker warm + build). */
   timings?: boolean;
 }

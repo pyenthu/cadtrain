@@ -154,8 +154,9 @@ export interface MeshOpts {
   partColors?: PartColorLUT;
   /** Non-persisted spline-aware VIEW scale for a warped part (Problem 2): `radial`
    *  fattens the swept section ⊥ the tangent, `depth` scales the spine (path) +
-   *  arc-length uniformly (shape kept, length ∝). Absent/{1,1} → byte-identical. */
-  warpViewScale?: { radial?: number; depth?: number };
+   *  arc-length uniformly (shape kept, length ∝), or `dtx` (AUTOSCALE) reparametrizes
+   *  the along-hole station via the DTX transform. Absent/{1,1}/no-dtx → byte-identical. */
+  warpViewScale?: { radial?: number; depth?: number; dtx?: import('$lib/engines/manifold/warp-spline').DtxLut };
 }
 
 /** Legacy cut-arm vertex colours — the historical BREP red (outer skin) / grey
@@ -891,21 +892,39 @@ async function executeBrep(
     // arc-length uniformly (same shape, ∝ length); `radial` fattens the swept
     // section (Phase 4). Mirrors warpManifoldAlongSpline's splineScale/yScale/xDiaScale.
     const vr = (Number.isFinite(opts?.warpViewScale?.radial) && (opts!.warpViewScale!.radial as number) > 0) ? (opts!.warpViewScale!.radial as number) : 1;
-    const vd = (Number.isFinite(opts?.warpViewScale?.depth) && (opts!.warpViewScale!.depth as number) > 0) ? (opts!.warpViewScale!.depth as number) : 1;
+    // AUTOSCALE (DTX): a valid LUT reparametrizes the along-hole station (magnifies
+    // detail-dense intervals, total length preserved) — DROP the uniform `depth`
+    // multiplier (it would double-count) + DON'T scale the path; remap z→arc through
+    // the LUT instead. Self-contained lerp (plain-arrays LUT crossed the JSON boundary;
+    // engine layer stays wells-free). Absent → the manual linear map (byte-identical).
+    const dtxLut = (opts?.warpViewScale?.dtx && Array.isArray(opts.warpViewScale.dtx.depth) && Array.isArray(opts.warpViewScale.dtx.depthTx) && opts.warpViewScale.dtx.depth.length >= 2)
+      ? opts.warpViewScale.dtx as { depth: number[]; depthTx: number[] } : undefined;
+    const lerpDtx = (d: number): number => {
+      const D = dtxLut!.depth, T = dtxLut!.depthTx;
+      if (d <= D[0]) return T[0];
+      if (d >= D[D.length - 1]) return T[T.length - 1];
+      for (let i = 1; i < D.length; i++) if (d <= D[i]) { const t = (d - D[i - 1]) / ((D[i] - D[i - 1]) || 1e-9); return T[i - 1] + t * (T[i] - T[i - 1]); }
+      return d;
+    };
+    const vd = dtxLut ? 1 : ((Number.isFinite(opts?.warpViewScale?.depth) && (opts!.warpViewScale!.depth as number) > 0) ? (opts!.warpViewScale!.depth as number) : 1);
     const sampler = makeWarpSampler(path.map((q: any) => [(Number(q[0]) || 0) * vd, (Number(q[1]) || 0) * vd, (Number(q[2]) || 0) * vd]));
     const zBase = (opts && opts.originZ !== undefined) ? Number(opts.originZ) : section.z0;
-    const sStart = (section.z0 - zBase) * vd, sEnd = (section.z1 - zBase) * vd;
+    // z→arc station: DTX-remapped (autoscale) or linear (manual, byte-identical).
+    const sOf = dtxLut ? (z: number) => lerpDtx(z - zBase) : (z: number) => (z - zBase) * vd;
+    const sStart = sOf(section.z0), sEnd = sOf(section.z1);
     if (!(sEnd > sStart)) return solidArg;
 
     // Phase 3 — build the polyline spine over the covered arc. Sample count ≈ input
     // path resolution over that arc (refine bumps it modestly). The polyline spine rides
     // the SAME resampled points the Manifold warp bends along — identical fidelity, no
-    // BSpline-approximation risk (the documented MakePipeShell pathology).
+    // BSpline-approximation risk (the documented MakePipeShell pathology). Spine samples
+    // are even in the PART's z, each mapped through sOf — so a DTX-magnified interval
+    // gets proportionally more spine (manual mode: even-in-z ≡ even-in-arc, unchanged).
     const refine = Math.max(1, Math.min(8, Math.floor(opts?.refine ?? 1)));
     const step = sampler.total / Math.max(1, path.length - 1);
     const nSpine = Math.max(MIN_SPINE, Math.min(MAX_SPINE, Math.round(((sEnd - sStart) / step) * (refine > 1 ? 1.5 : 1))));
     const spinePts: number[][] = [];
-    for (let i = 0; i <= nSpine; i++) spinePts.push(sampler.at(sStart + (sEnd - sStart) * (i / nSpine)).pos);
+    for (let i = 0; i <= nSpine; i++) spinePts.push(sampler.at(sOf(section.z0 + (section.z1 - section.z0) * (i / nSpine))).pos);
 
     // Phase 4 — plant a 2D section loop into the start frame at pos(sStart): a local
     // (a,b) becomes a world offset on that frame's (startN, startB) axes.

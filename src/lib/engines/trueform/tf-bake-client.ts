@@ -47,8 +47,9 @@ export interface TfBakeArgs {
   mode: 'native';
   recipe?: import('$lib/graph/graph-to-tf').TfRecipe;
   cutaway: boolean;
-  /** Non-persisted spline-aware VIEW scale for a warped part (Problem 2). */
-  warpViewScale?: { radial?: number; depth?: number };
+  /** Non-persisted spline-aware VIEW scale for a warped part (Problem 2) — incl. the
+   *  optional AUTOSCALE `dtx` LUT. Forwarded verbatim to the worker + keyed. */
+  warpViewScale?: { radial?: number; depth?: number; dtx?: import('$lib/engines/manifold/warp-spline').DtxLut };
 }
 
 /** Per-bake timing (worker warm + build), surfaced for the badge/console. */

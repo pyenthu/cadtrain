@@ -56,6 +56,14 @@ export const scene = $state({
    *  applies only the LIVE÷COMMITTED delta (identity at rest). {1,1} = true scale.
    *  Reset to {1,1} on a new part load. */
   warpBakeScale: { radial: 1.0, depth: 1.0 },
+  /** AUTOSCALE (DTX) toggle for a WARPED part — when true the along-hole depth is
+   *  driven by the SVTC "DTX" transform (a non-linear, monotonic, anchored depth
+   *  remap that magnifies detail-dense sub-intervals while preserving total length)
+   *  instead of the manual uniform `warpBakeScale.depth`. PrimitiveDualCanvas derives
+   *  the DTX LUT and rides it on `warpViewScale.dtx`; the manual Z-depth slider greys
+   *  out while on. Reset to false on a new part load (same lifecycle as warpBakeScale).
+   *  false ⇒ manual depth path (byte-identical). */
+  autoDepth: false,
   /** When true, xScale/zScale are AUTO-set on each part load to normalize the
    *  displayed aspect ratio (a long thin tool reads thick + long-but-not-too-long;
    *  see PrimitiveDualScene's autoScale). Cleared the moment the user drags either

@@ -29,7 +29,7 @@ import { tfLoftProfile } from './loft';
 import { tfSweepSection } from './sweep-section';
 import { tfResult, tfMeshData, tfAnalyze, buildOpenCurve, capOpenEnds, runTfGuarded, weldMeshByPosition, applyTfCutaway, type TfDemoResult, type TfMeshData, type TfMeshStats, type TfCutPlane } from '../trueform-client';
 import type { TfRecipe, TfInstr, Vec3 } from '$lib/engines/trueform/graph-to-tf';
-import { warpMeshJS, subdivideAxialAdaptive, densifyProfileAxial } from '$lib/engines/manifold/warp-spline';
+import { warpMeshJS, subdivideAxialAdaptive, densifyProfileAxial, type DtxLut } from '$lib/engines/manifold/warp-spline';
 
 /** Flatten a `[[x,y,z]…]` path → the `[n*3]` Float32Array `buildOpenCurve` /
  *  `tubeMesh` sweep along. */
@@ -136,21 +136,23 @@ export function isRevolveTree(instr: any): boolean {
  *  structurally — the booleans then run on the DENSE cylinders, and their lateral
  *  walls (which don't self-intersect on coaxial tubes) keep those rings, so the warp
  *  is smooth with NO plane-split spanning triangles. Pure data transform. */
-export function densifyRevolveTree(instr: any, path: any): any {
+export function densifyRevolveTree(instr: any, path: any, dtx?: DtxLut): any {
   switch (instr.op) {
     case 'revolve':
     case 'profile':
-      return { ...instr, profile: densifyProfileAxial(instr.profile, path, {}) };
+      // AUTOSCALE (DTX): pass the LUT so profile z-stations are chosen in post-DTX
+      // arc space (dense where the magnified interval bends). Absent → as before.
+      return { ...instr, profile: densifyProfileAxial(instr.profile, path, dtx ? { dtx } : {}) };
     case 'translate':
     case 'rotate':
     case 'cutaway':
-      return { ...instr, child: densifyRevolveTree(instr.child, path) };
+      return { ...instr, child: densifyRevolveTree(instr.child, path, dtx) };
     case 'booleanDifference':
     case 'booleanUnion':
     case 'booleanIntersection':
-      return { ...instr, obj: densifyRevolveTree(instr.obj, path), arg: densifyRevolveTree(instr.arg, path) };
+      return { ...instr, obj: densifyRevolveTree(instr.obj, path, dtx), arg: densifyRevolveTree(instr.arg, path, dtx) };
     case 'union':
-      return { ...instr, children: instr.children.map((c: any) => densifyRevolveTree(c, path)) };
+      return { ...instr, children: instr.children.map((c: any) => densifyRevolveTree(c, path, dtx)) };
     default:
       return instr;
   }
@@ -365,13 +367,16 @@ function buildMatedStack(t: any, kids: TfInstr[], offsets?: (number | null)[]): 
 // Spline-aware VIEW scale for warped parts (Problem 2), set by executeTfRecipe and
 // read by the `warp` case below. Module scope because buildInstr is standalone +
 // recursive; TF bakes are sequential so there is no cross-bake race.
-let _warpVS: { radial?: number; depth?: number } | undefined;
-/** The warp view-scale factors (radial, depth), each clamped to a positive number
- *  or 1 — multiplied into the warp's own xDiaScale/yScale + splineScale. */
-function warpVsFactors(): { vr: number; vd: number } {
+let _warpVS: { radial?: number; depth?: number; dtx?: DtxLut } | undefined;
+/** The warp view-scale factors (radial, depth) + an optional DTX LUT. AUTOSCALE
+ *  (DTX) mode drops the manual `depth`→yScale/splineScale multiplier (the LUT
+ *  reparametrizes the along-hole station, it doesn't scale the curve); radial still
+ *  applies. Absent/degenerate LUT → the manual path (byte-identical when {1,1}). */
+function warpVsFactors(): { vr: number; vd: number; dtx?: DtxLut } {
   const vr = (Number.isFinite(_warpVS?.radial) && (_warpVS!.radial as number) > 0) ? (_warpVS!.radial as number) : 1;
-  const vd = (Number.isFinite(_warpVS?.depth) && (_warpVS!.depth as number) > 0) ? (_warpVS!.depth as number) : 1;
-  return { vr, vd };
+  const dtx = (_warpVS?.dtx && Array.isArray(_warpVS.dtx.depth) && Array.isArray(_warpVS.dtx.depthTx) && _warpVS.dtx.depth.length >= 2) ? _warpVS.dtx : undefined;
+  const vd = dtx ? 1 : ((Number.isFinite(_warpVS?.depth) && (_warpVS!.depth as number) > 0) ? (_warpVS!.depth as number) : 1);
+  return { vr, vd, dtx };
 }
 
 function buildInstr(t: any, instr: TfInstr): any {
@@ -526,14 +531,14 @@ function buildInstr(t: any, instr: TfInstr): any {
       // re-runs the booleans on the densified tree; buildRevolveMesh shares verts, so
       // no weld is needed and the adapter's crease-aware normals read round.
       if (isRevolveTree(childInstr)) {
-        const built = buildInstr(t, densifyRevolveTree(childInstr, instr.path as any));
+        const { vr, vd, dtx } = warpVsFactors();
+        const built = buildInstr(t, densifyRevolveTree(childInstr, instr.path as any, dtx));
         const md = tfMeshData(built);
         const local = md.points instanceof Float32Array ? md.points : new Float32Array(md.points);
         // Bake the child's lazy transform (an outer mv/rot) into world coords BEFORE
         // warping — else warpMeshJS bends the un-moved local points (see bug note above).
         const src = bakeTransformIntoPoints(built, local);
-        const { vr, vd } = warpVsFactors();
-        const { positions } = warpMeshJS(src, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ, xDiaScale: (instr.xDiaScale ?? 1) * vr, yScale: (instr.yScale ?? 1) * vd, splineScale: vd });
+        const { positions } = warpMeshJS(src, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ, xDiaScale: (instr.xDiaScale ?? 1) * vr, yScale: (instr.yScale ?? 1) * vd, splineScale: vd, ...(dtx ? { dtx } : {}) });
         return t.mesh(md.faces, positions);
       }
 
@@ -546,10 +551,10 @@ function buildInstr(t: any, instr: TfInstr): any {
       const md = tfMeshData(child); // { points: Float(32|64)Array, faces: Int32Array }
       const local = md.points instanceof Float32Array ? md.points : new Float32Array(md.points);
       const src = bakeTransformIntoPoints(child, local); // honor an outer mv/rot (see bug note above)
-      const dense = subdivideAxialAdaptive(src, null, md.faces, instr.path as any, { maxStations: GENERIC_WARP_MAX_STATIONS });
+      const { vr, vd, dtx } = warpVsFactors();
+      const dense = subdivideAxialAdaptive(src, null, md.faces, instr.path as any, { maxStations: GENERIC_WARP_MAX_STATIONS, ...(dtx ? { dtx } : {}) });
       const welded = weldMeshByPosition(dense.positions, dense.faces);
-      const { vr, vd } = warpVsFactors();
-      const { positions } = warpMeshJS(welded.points, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ, xDiaScale: (instr.xDiaScale ?? 1) * vr, yScale: (instr.yScale ?? 1) * vd, splineScale: vd });
+      const { positions } = warpMeshJS(welded.points, null, instr.path as any, { stretch: instr.stretch, originZ: instr.originZ, xDiaScale: (instr.xDiaScale ?? 1) * vr, yScale: (instr.yScale ?? 1) * vd, splineScale: vd, ...(dtx ? { dtx } : {}) });
       return t.mesh(welded.faces, positions);
     }
     case 'cutaway':
@@ -640,7 +645,7 @@ export function executeTfRecipe(
   tf: any,
   t: any,
   recipe: TfRecipe,
-  opts: { cutaway?: boolean; warpViewScale?: { radial?: number; depth?: number } } = {},
+  opts: { cutaway?: boolean; warpViewScale?: { radial?: number; depth?: number; dtx?: DtxLut } } = {},
 ): TfDemoResult {
   const instrs = recipe?.instrs ?? [];
   if (instrs.length === 0) throw new TfUnsupportedError('(empty recipe)');
