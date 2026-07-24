@@ -55,7 +55,10 @@ export const SANDBOX_ARG_NAMES: string[] = [
  * with no viewScale (or 1,1) injects the plain `warpManifoldAlongSpline` and is
  * byte-identical. Applied here so BOTH the client worker (`bake-worker-core`)
  * and the server loader inject it from the same place. */
-export function sandboxArgValues(viewScale?: { radial?: number; depth?: number; dtx?: DtxLut }): any[] {
+// `verticalDtx`/`verticalMaxDepth` are carried on the shared warpViewScale shape but
+// are IGNORED here — they drive a POST-BAKE vertical warp in bake-worker-core (a part
+// with no `warpSpline` never invokes the injected warpFn), not the warp-fn injection.
+export function sandboxArgValues(viewScale?: { radial?: number; depth?: number; dtx?: DtxLut; verticalDtx?: boolean; verticalMaxDepth?: number }): any[] {
   const vr = (Number.isFinite(viewScale?.radial) && (viewScale!.radial as number) > 0) ? (viewScale!.radial as number) : 1;
   const vd = (Number.isFinite(viewScale?.depth) && (viewScale!.depth as number) > 0) ? (viewScale!.depth as number) : 1;
   // AUTOSCALE (DTX) mode: a valid LUT replaces the manual uniform `depth` scale —

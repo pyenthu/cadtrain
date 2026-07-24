@@ -20,16 +20,48 @@ export interface DtxNode { start: number; end: number; }
  *  depth. Both start at 0 and are monotonically non-decreasing. */
 export interface Dtx { depth: number[]; depthTx: number[]; }
 
+/** Options for the NORMALIZED grade (see {@link autoNodes}). */
+export interface AutoNodesOpts {
+  /**
+   * When provided, magnification is NORMALIZED to a FRACTION OF TOTAL length:
+   * a short element's minimum display footprint is `footprintFrac × maxDepth`,
+   * so the grade behaves identically for a 257-unit or a 3000-m well (unlike the
+   * legacy ABSOLUTE `50/(0.3·len)` grade, which is tuned for km-scale wells and
+   * balloons a tiny element on a short completion). ABSENT ⇒ the absolute grade,
+   * byte-identical to before. `0` ⇒ identity (no magnification at all).
+   */
+  footprintFrac?: number;
+  /** Cap on a single short element's magnification ratio, so a tiny element can't
+   *  dominate. Only used with `footprintFrac`. Default 6. */
+  maxRatio?: number;
+}
+
 /**
  * Build a DTX from a set of emphasis intervals over [0, maxDepth]. Short
- * intervals (< 50 m) fully covered by a node get a weight boost so they
- * occupy more display depth; everything else stays weight 1. The cumulative
- * weighted length is normalised back onto [0, maxDepth].
+ * intervals fully covered by a node get a weight boost so they occupy more
+ * display depth; everything else stays weight 1. The cumulative weighted length
+ * is normalised back onto [0, maxDepth].
  *
- * Faithful port of the server `autoNodes` (the turf-free simplification of the
- * DLIS autonodes algorithm).
+ * TWO grades, chosen by `opts`:
+ *  • ABSENT `opts.footprintFrac` — the legacy ABSOLUTE grade (`len < 50` gate,
+ *    `w = 50/(0.3·len)`). Faithful port of the server `autoNodes`; byte-identical.
+ *  • GIVEN `opts.footprintFrac` — NORMALIZED: a short element (`len <
+ *    footprintFrac·maxDepth`) is boosted so its footprint ≈ `footprintFrac·maxDepth`,
+ *    capped at `opts.maxRatio` (default 6). `footprintFrac = 0` ⇒ identity.
  */
-export function autoNodes(nodes: DtxNode[], maxDepth: number): Dtx {
+export function autoNodes(nodes: DtxNode[], maxDepth: number, opts?: AutoNodesOpts): Dtx {
+  // NORMALIZED grade when footprintFrac is PROVIDED (even 0 ⇒ identity); else the
+  // legacy ABSOLUTE grade (byte-identical). Gating on `!== undefined` (not `> 0`)
+  // is what lets strength 0 ⇒ footprintFrac 0 ⇒ identity, rather than falling back
+  // to the absolute path.
+  const fracGiven = opts?.footprintFrac !== undefined && Number.isFinite(opts.footprintFrac);
+  const footprintFrac = fracGiven ? Math.max(0, opts!.footprintFrac as number) : 0;
+  const targetFootprint = footprintFrac * maxDepth;
+  const maxRatio = (Number.isFinite(opts?.maxRatio) && (opts!.maxRatio as number) > 0) ? (opts!.maxRatio as number) : 6;
+  // A "short" element is one below the threshold: the normalized target footprint,
+  // or the legacy absolute 50-unit gate.
+  const thresh = fracGiven ? targetFootprint : 50;
+
   // Collect all breakpoints.
   const breaks = new Set<number>([0, maxDepth]);
   for (const nd of nodes) { breaks.add(nd.start); breaks.add(nd.end); }
@@ -42,8 +74,10 @@ export function autoNodes(nodes: DtxNode[], maxDepth: number): Dtx {
     if (len <= 0) continue; // skip zero-length or negative intervals
     let weight = 1;
     for (const nd of nodes) {
-      if (nd.start <= s && nd.end >= e && len < 50) {
-        const w = 50 / (0.3 * len);
+      if (nd.start <= s && nd.end >= e && len < thresh) {
+        // NORMALIZED: weight so the element's footprint ≈ targetFootprint, capped at
+        // maxRatio. ABSOLUTE: the legacy 50/(0.3·len) boost.
+        const w = fracGiven ? Math.min(targetFootprint / len, maxRatio) : 50 / (0.3 * len);
         weight = Math.max(weight, isFinite(w) ? w : 1);
       }
     }

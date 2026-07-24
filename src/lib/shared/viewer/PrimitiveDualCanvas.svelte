@@ -808,18 +808,39 @@
     const maxDepth = parseFloat(mD[1]);
     return nodes.length && Number.isFinite(maxDepth) && maxDepth > 0 ? { nodes, maxDepth } : null;
   });
+  // NORMALIZED grade (#38e follow-up): the magnification is a FRACTION of total
+  // length (footprintFrac × maxDepth), scaled by scene.warpAutoStrength, so a short
+  // element reads the same on a 257-unit completion or a 3000-m well. BASE_FRAC 0.08
+  // ⇒ at strength 0.4 a short element ≈ 3% of the total; maxRatio caps a tiny element.
+  const BASE_FRAC = 0.08;
   const autoDtx = $derived<Dtx | undefined>(
-    (scene.autoDepth && hasWarp)
-      ? (warpNodeSpec ? autoNodes(warpNodeSpec.nodes, warpNodeSpec.maxDepth) : autoNodes([], DTX_IDENTITY_DEPTH))
+    scene.autoDepth
+      ? (warpNodeSpec
+          ? autoNodes(warpNodeSpec.nodes, warpNodeSpec.maxDepth, { footprintFrac: BASE_FRAC * scene.warpAutoStrength, maxRatio: 6 })
+          // A generic WARPED part with nothing to grade → the identity LUT no-op (kept
+          // for byte-parity). A generic NON-warped part → nothing (skip entirely).
+          : (hasWarp ? autoNodes([], DTX_IDENTITY_DEPTH) : undefined))
       : undefined);
-  // A compact rebuild fingerprint for the LUT (length + checksum) so toggling Auto
-  // depth (or a future non-identity LUT) re-bakes; content-stable → no churn.
-  const dtxFp = $derived(autoDtx ? `${autoDtx.depthTx.length}:${autoDtx.depthTx.reduce((a, b) => a + b, 0).toFixed(3)}` : '');
-  // The COMMITTED spline-aware view scale for a warped part → sent to every engine's
-  // bake so it multiplies into warpSpline pre-warp. Undefined (or {1,1}, no dtx) →
-  // omitted → byte-identical. Shared by the MF, TF, and BREP bake paths.
-  const warpViewScale = $derived((hasWarp && (scene.warpBakeScale.radial !== 1 || scene.warpBakeScale.depth !== 1 || autoDtx))
-    ? { radial: scene.warpBakeScale.radial, depth: scene.warpBakeScale.depth, ...(autoDtx ? { dtx: autoDtx } : {}) } : undefined);
+  // A compact rebuild fingerprint for the LUT (length + checksum + strength + mode)
+  // so toggling Auto depth OR dragging the strength slider re-bakes; content-stable
+  // → no churn.
+  const dtxFp = $derived(autoDtx ? `${autoDtx.depthTx.length}:${autoDtx.depthTx.reduce((a, b) => a + b, 0).toFixed(3)}:${scene.warpAutoStrength.toFixed(3)}:${hasWarp ? 'w' : 'v'}` : '');
+  // The COMMITTED spline-aware view scale → sent to every engine's bake. Two shapes:
+  //  • WARPED part — ride the DTX (+ manual radial/depth) THROUGH warpSpline pre-warp.
+  //  • VERTICAL part (no warpSpline) with emphasis nodes + Auto-depth — apply the SAME
+  //    along-hole z-stretch as a POST-BAKE pure-z warp (no bend): `verticalDtx`. The
+  //    only step is "no warp" — the bake wraps the final manifold along a straight
+  //    vertical spline so a short element magnifies without any radial/depth change.
+  // Undefined → omitted → byte-identical. Shared by the MF (+ TF/BREP for warped) paths.
+  const warpViewScale = $derived.by(() => {
+    if (autoDtx && !hasWarp && warpNodeSpec) {
+      return { dtx: autoDtx, verticalDtx: true, verticalMaxDepth: warpNodeSpec.maxDepth };
+    }
+    if (hasWarp && (scene.warpBakeScale.radial !== 1 || scene.warpBakeScale.depth !== 1 || autoDtx)) {
+      return { radial: scene.warpBakeScale.radial, depth: scene.warpBakeScale.depth, ...(autoDtx ? { dtx: autoDtx } : {}) };
+    }
+    return undefined;
+  });
   let lastRebuildKey = '';
   $effect(() => {
     // Include showCutaway so toggling it ON for a large (cutaway-auto-skipped)
@@ -925,6 +946,7 @@
   $effect(() => {
     id; // eslint-disable-line no-unused-expressions — dependency only
     scene.autoDepth = false; // AUTOSCALE (DTX) is per-part; reset on load (like warpBakeScale)
+    scene.warpAutoStrength = 0.4; // reset the graded-autoscale strength to its default per-part
     if (viewZScale != null || viewXScale != null) {
       if (viewZScale != null) scene.zScale = viewZScale;
       if (viewXScale != null) scene.xScale = viewXScale;
@@ -996,14 +1018,25 @@
           oninput={() => (scene.scaleAuto = false)}
           onchange={() => { if (hasWarp) scene.warpBakeScale = { radial: scene.xScale, depth: scene.zScale }; }} />
       </div>
-      {#if hasWarp}
+      {#if hasWarp || warpNodeSpec}
         <!-- AUTOSCALE (DTX): drive along-hole depth by the DTX transform (magnifies
              detail-dense sub-intervals, total length preserved) instead of the manual
-             uniform Z-depth, which greys out while this is on. -->
-        <label class="pd-scale-auto" title="Auto depth (DTX): non-linear depth remap along the spline — magnifies detail-dense intervals, total length preserved">
+             uniform Z-depth, which greys out while this is on. Available for a WARPED
+             part (rides the spline) AND a VERTICAL part with emphasis nodes (a pure
+             post-bake z-stretch, no bend). -->
+        <label class="pd-scale-auto" title="Auto depth (DTX): non-linear depth remap that magnifies detail-dense intervals, total length preserved — along the spline for a warped part, a pure z-stretch for a vertical one">
           <input type="checkbox" bind:checked={scene.autoDepth} />
           Auto depth (DTX)
         </label>
+        <!-- Strength: how hard short elements magnify (a FRACTION of total length, so
+             it reads the same on a 257-unit or a 3000-m well). Enabled only when
+             Auto-depth is on. -->
+        <div class="pd-scale-row pd-scale-sub" class:pd-scale-dim={!scene.autoDepth}>
+          <span class="pd-scale-lbl">Strength {(scene.warpAutoStrength * 100).toFixed(0)}%</span>
+          <input type="range" min="0" max="1" step="0.05" bind:value={scene.warpAutoStrength}
+            disabled={!scene.autoDepth}
+            title="Magnification strength of the graded auto-depth (0 = off, 1 = full)" />
+        </div>
       {/if}
       <button class="pd-scale-reset" type="button"
         onclick={() => { scene.xScale = 1; scene.zScale = 1; scene.autoDepth = false; if (hasWarp) scene.warpBakeScale = { radial: 1, depth: 1 }; }}>1:1 true scale</button>
@@ -1172,6 +1205,7 @@
     box-shadow: 0 4px 14px rgba(0,0,0,0.14);
   }
   .pd-scale-row { display: flex; flex-direction: column; gap: 3px; }
+  .pd-scale-sub { margin-left: 18px; }
   .pd-scale-lbl { font: 600 10px ui-monospace, monospace; color: #44403c; }
   .pd-scale-menu input[type="range"] { width: 100%; accent-color: #cc2222; height: 14px; }
   .pd-scale-reset {

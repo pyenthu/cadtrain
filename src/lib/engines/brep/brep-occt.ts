@@ -155,8 +155,9 @@ export interface MeshOpts {
   /** Non-persisted spline-aware VIEW scale for a warped part (Problem 2): `radial`
    *  fattens the swept section ⊥ the tangent, `depth` scales the spine (path) +
    *  arc-length uniformly (shape kept, length ∝), or `dtx` (AUTOSCALE) reparametrizes
-   *  the along-hole station via the DTX transform. Absent/{1,1}/no-dtx → byte-identical. */
-  warpViewScale?: { radial?: number; depth?: number; dtx?: import('$lib/engines/manifold/warp-spline').DtxLut };
+   *  the along-hole station via the DTX transform. Absent/{1,1}/no-dtx → byte-identical.
+   *  `verticalDtx`/`verticalMaxDepth` (Change 2) are carried but IGNORED by BREP (MF-only). */
+  warpViewScale?: { radial?: number; depth?: number; dtx?: import('$lib/engines/manifold/warp-spline').DtxLut; verticalDtx?: boolean; verticalMaxDepth?: number };
 }
 
 /** Legacy cut-arm vertex colours — the historical BREP red (outer skin) / grey

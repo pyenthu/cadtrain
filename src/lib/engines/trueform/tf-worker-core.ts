@@ -48,8 +48,9 @@ export interface TfWorkerRequest {
   /** Non-persisted spline-aware VIEW scale for a warped part (Problem 2): `radial`
    *  fattens the section ⊥ the tangent, `depth` scales the spline uniformly, or `dtx`
    *  (AUTOSCALE) reparametrizes the along-hole station via the DTX transform. Plain
-   *  arrays so it survives structured-clone into the worker. */
-  warpViewScale?: { radial?: number; depth?: number; dtx?: import('$lib/engines/manifold/warp-spline').DtxLut };
+   *  arrays so it survives structured-clone into the worker. `verticalDtx`/
+   *  `verticalMaxDepth` (Change 2) are carried but IGNORED by TF (MF-only for now). */
+  warpViewScale?: { radial?: number; depth?: number; dtx?: import('$lib/engines/manifold/warp-spline').DtxLut; verticalDtx?: boolean; verticalMaxDepth?: number };
   /** Opt-in perf logging (worker warm + build). */
   timings?: boolean;
 }
