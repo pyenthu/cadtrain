@@ -12,7 +12,8 @@ import {
   setPartsStackRowTop, setPartsStackRowMaterial,
   removePartsStackRow, duplicatePartsStackRow, movePartsStackRow, hydrateGraph,
 } from '../composition-graph';
-import { partsStackRowVar } from '../nodes/kinds/parts-stack';
+import { partsStackRowVar, partsStackWarpNodes } from '../nodes/kinds/parts-stack';
+import { autoNodes, lerpDTX } from '$lib/wells/dtx';
 import type { Graph, PartsStackRow } from '../composition-graph-types';
 
 const lit = (v: number | string | boolean) => ({ kind: 'literal', value: v } as const);
@@ -166,6 +167,62 @@ describe('parts_stack MUTATE', () => {
     // ends are no-ops: row 0 up, last row down
     expect(ps(movePartsStackRow(g0, 'ps', 0, -1)).rows.map((r: any) => r.src)).toEqual(['bw_hanger', 'bw_packer', 'bw_tubing']);
     expect(ps(movePartsStackRow(g0, 'ps', 2, 1)).rows.map((r: any) => r.src)).toEqual(['bw_hanger', 'bw_packer', 'bw_tubing']);
+  });
+});
+
+describe('parts_stack GRADED WARP-AUTOSCALE — element spans → DTX magnifies short elements', () => {
+  // A completion string: hanger 2, tubing 240, packer 10, mule_shoe 5 — mated end-to-end.
+  const COMP = [
+    { src: 'bw_hanger', args: { length: lit(2) } },
+    { src: 'bw_tubing', args: { length: lit(240) } },
+    { src: 'bw_packer', args: { length: lit(10) } },
+    { src: 'bw_mule_shoe', args: { length: lit(5) } },
+  ];
+
+  it('partsStackWarpNodes returns each element span (mated cumulative) + maxDepth', () => {
+    const { nodes, maxDepth } = partsStackWarpNodes(stackGraph(COMP).nodes['ps'] as any);
+    expect(nodes).toEqual([[0, 2], [2, 242], [242, 252], [252, 257]]);
+    expect(maxDepth).toBe(257);
+  });
+
+  it('an ANCHORED row sits at [top, top+len] and does not advance the mate cursor', () => {
+    const rows = [
+      { src: 'bw_hanger', args: { length: lit(2) } },
+      { src: 'bw_packer', args: { length: lit(10) }, top: lit(100) },   // anchored at 100
+      { src: 'bw_tubing', args: { length: lit(240) } },
+    ];
+    const { nodes } = partsStackWarpNodes(stackGraph(rows).nodes['ps'] as any);
+    // hanger 0..2 (mate), packer 100..110 (anchored, cursor stays at 2), tubing 2..242 (mate)
+    expect(nodes).toEqual([[0, 2], [100, 110], [2, 242]]);
+  });
+
+  it('the emit stamps meta.warpNodes (flat) + warpMaxDepth', () => {
+    const res = emitGraph(stackGraph(COMP), { id: 'w_comp_auto' });
+    expect(res.meta.warpNodes).toEqual([0, 2, 2, 242, 242, 252, 252, 257]);
+    expect(res.meta.warpMaxDepth).toBe(257);
+  });
+
+  it('an expr length is skipped (can\'t precompute at emit); only literal elements grade', () => {
+    const withExpr = [{ src: 'bw_tubing', args: { length: { kind: 'expr', expr: 'p.len' } as any } }, { src: 'bw_packer', args: { length: lit(10) } }];
+    const { nodes } = partsStackWarpNodes(stackGraph(withExpr).nodes['ps'] as any);
+    expect(nodes).toEqual([[0, 10]]);   // expr tubing skipped (cursor stays 0) → literal packer lands at [0,10]
+    // a graph with no parts_stack stamps no warpNodes:
+    const plain = emitGraph({ nodes: { r: { id: 'r', type: 'list', children: [] } }, root: 'r', params: {}, imports: [], edges: [], layout: {} } as any, { id: 'x' });
+    expect((plain.meta as any).warpNodes).toBeUndefined();
+  });
+
+  it('the graded DTX magnifies the SHORT elements more than the long tubing', () => {
+    const { nodes, maxDepth } = partsStackWarpNodes(stackGraph(COMP).nodes['ps'] as any);
+    const dtx = autoNodes(nodes.map(([start, end]) => ({ start, end })), maxDepth);
+    // arc-length occupied by each element under the DTX (display Δ per raw Δ):
+    const arc = (s: number, e: number) => lerpDTX(dtx, e) - lerpDTX(dtx, s);
+    const hanger = arc(0, 2), tubing = arc(2, 242), packer = arc(242, 252), mule = arc(252, 257);
+    // the short hanger/packer/mule each get MORE arc per raw unit than the long tubing:
+    expect(hanger / 2).toBeGreaterThan(tubing / 240);
+    expect(packer / 10).toBeGreaterThan(tubing / 240);
+    expect(mule / 5).toBeGreaterThan(tubing / 240);
+    // total length is preserved (anchored): full arc == maxDepth
+    expect(lerpDTX(dtx, maxDepth)).toBeCloseTo(maxDepth, 3);
   });
 });
 

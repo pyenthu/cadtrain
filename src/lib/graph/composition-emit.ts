@@ -50,7 +50,7 @@ import { inferStructure } from './struct-type';
 import { kindOf } from './nodes/registry';
 import type { EmitCtx } from './nodes/node-kind';
 import { partsTableRowVar, orderedRowKeys, partsTableInstanceColors } from './nodes/kinds/parts-table';
-import { partsStackRowVar, partsStackInstanceColors } from './nodes/kinds/parts-stack';
+import { partsStackRowVar, partsStackInstanceColors, partsStackWarpNodes } from './nodes/kinds/parts-stack';
 
 export interface EmitOptions {
   /** The assembly id (becomes meta.id + the export function name). */
@@ -320,6 +320,20 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   }
   for (const i of graph.imports) usesSet.add(i);
 
+  // GRADED WARP-AUTOSCALE nodes (view-only) — each parts_stack element's depth span,
+  // so the DTX autoscale can grade them by LENGTH (a short element magnifies). Emitted
+  // as a FLAT number array [s0,e0,s1,e1,…] (trivially regex-parseable by the client
+  // canvas) + the total maxDepth. Sparse: no parts_stack / no literal lengths ⇒ absent
+  // ⇒ the identity autoscale (byte-identical). Purely a display aid — never affects geom.
+  const warpNodesFlat: number[] = [];
+  let warpMaxDepth = 0;
+  for (const n of Object.values(graph.nodes)) {
+    if (n.type !== 'parts_stack') continue;
+    const { nodes, maxDepth } = partsStackWarpNodes(n);
+    for (const [s, e] of nodes) warpNodesFlat.push(s, e);
+    if (maxDepth > warpMaxDepth) warpMaxDepth = maxDepth;
+  }
+
   const meta: Record<string, unknown> = {
     id: opts.id,
     name: opts.id,
@@ -346,6 +360,9 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
     ...(graph.viewZScale != null ? { viewZScale: graph.viewZScale } : {}),
     ...(graph.viewXScale != null ? { viewXScale: graph.viewXScale } : {}),
     ...(graph.partAppearance && Object.keys(graph.partAppearance).length ? { partAppearance: graph.partAppearance } : {}),
+    // Graded warp-autoscale (DTX) element spans — view-only; the client canvas grades
+    // these by length so a short element magnifies along the spline.
+    ...(warpNodesFlat.length ? { warpNodes: warpNodesFlat, warpMaxDepth } : {}),
     // #86 — per-part colour LUT (keyed by emitted var name) so the color-by-
     // source render applies each part's wired-material / override colour.
     ...(Object.keys(instanceColors).length ? { instanceColors } : {}),

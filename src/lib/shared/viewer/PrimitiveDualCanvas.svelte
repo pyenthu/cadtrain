@@ -788,15 +788,30 @@
   // worker uses). Threaded to the scene so the render group applies only the
   // live÷committed delta for a warped part (no double-scale).
   const hasWarp = $derived(typeof source === 'string' && source.includes('warpSpline('));
-  // AUTOSCALE (DTX): when "Auto depth" is on for a warped part, drive the along-hole
-  // reparam with a DTX LUT (the SVTC depth transform) instead of the manual uniform
-  // depth. A GENERIC warped CAD part carries no detail-dense emphasis intervals, so
-  // the LUT is the IDENTITY (autoNodes([], …)) — a safe no-op that never distorts a
-  // part with nothing to emphasize; the SAME warpViewScale.dtx channel magnifies once
-  // emphasis nodes (a well's completion/perf MD intervals) are fed in. A large domain
-  // keeps the identity LUT from clamp-truncating any real part's z-extent.
+  // GRADED WARP-AUTOSCALE (DTX): when "Auto depth" is on for a warped part, drive the
+  // along-hole reparam with a DTX LUT built from the part's EMPHASIS NODES — the
+  // per-element depth spans the emit stamps into meta.warpNodes (a parts_stack's
+  // element lengths). autoNodes GRADES them by length so a SHORT element magnifies
+  // along the spline (and the spline segment magnifies with it — one warp, both sides),
+  // while total length is preserved. No warpNodes (a generic warped part) ⇒ the IDENTITY
+  // (autoNodes([], …)) → a safe no-op that never distorts a part with nothing to grade.
   const DTX_IDENTITY_DEPTH = 1e7;
-  const autoDtx = $derived<Dtx | undefined>((scene.autoDepth && hasWarp) ? autoNodes([], DTX_IDENTITY_DEPTH) : undefined);
+  // Parse meta.warpNodes (a flat [s0,e0,…] number array) + warpMaxDepth from the source.
+  const warpNodeSpec = $derived.by<{ nodes: { start: number; end: number }[]; maxDepth: number } | null>(() => {
+    const s = source ?? '';
+    const mN = s.match(/warpNodes:\s*\[([\d.,\s+eE-]*)\]/);
+    const mD = s.match(/warpMaxDepth:\s*([\d.eE+-]+)/);
+    if (!mN || !mD) return null;
+    const flat = mN[1].split(',').map((x) => parseFloat(x.trim())).filter((n) => Number.isFinite(n));
+    const nodes: { start: number; end: number }[] = [];
+    for (let i = 0; i + 1 < flat.length; i += 2) nodes.push({ start: flat[i], end: flat[i + 1] });
+    const maxDepth = parseFloat(mD[1]);
+    return nodes.length && Number.isFinite(maxDepth) && maxDepth > 0 ? { nodes, maxDepth } : null;
+  });
+  const autoDtx = $derived<Dtx | undefined>(
+    (scene.autoDepth && hasWarp)
+      ? (warpNodeSpec ? autoNodes(warpNodeSpec.nodes, warpNodeSpec.maxDepth) : autoNodes([], DTX_IDENTITY_DEPTH))
+      : undefined);
   // A compact rebuild fingerprint for the LUT (length + checksum) so toggling Auto
   // depth (or a future non-identity LUT) re-bakes; content-stable → no churn.
   const dtxFp = $derived(autoDtx ? `${autoDtx.depthTx.length}:${autoDtx.depthTx.reduce((a, b) => a + b, 0).toFixed(3)}` : '');

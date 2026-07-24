@@ -31,6 +31,33 @@ export function partsStackRowVar(id: NodeId, idx: number): string {
   return `_ps_${String(id).replace(/[^A-Za-z0-9_$]/g, '_')}_${idx}`;
 }
 
+/** The per-element DEPTH SPANS for graded warp-autoscale (DTX). Each row is one
+ *  element along the string; its span is `[start, start+length]`. Mated rows stack
+ *  end-to-end from 0 (the cursor advances); an anchored row (`top` set) sits at
+ *  `[top, top+length]` and does NOT advance the cursor (it's pulled out of the mate).
+ *  Only LITERAL lengths/tops contribute — an expr length can't be precomputed at emit.
+ *  These become the `autoNodes` intervals so a SHORT element (small span) gets the tall
+ *  grade → magnified along the spline. Empty when nothing is computable (identity). */
+export function partsStackWarpNodes(node: PartsStackNode): { nodes: [number, number][]; maxDepth: number } {
+  const rows = Array.isArray(node.rows) ? node.rows : [];
+  const litNum = (v: any): number | null =>
+    (v && v.kind === 'literal' && typeof v.value === 'number' && Number.isFinite(v.value)) ? v.value : null;
+  const nodes: [number, number][] = [];
+  let cursor = 0;      // running mate position for UNANCHORED rows
+  let maxDepth = 0;
+  for (const row of rows) {
+    const len = litNum(row?.args?.length);
+    if (len == null || len <= 0) continue;   // expr / absent length → can't grade this one
+    const top = litNum(row?.top);
+    const start = top != null ? top : cursor;
+    const end = start + len;
+    nodes.push([start, end]);
+    if (top == null) cursor = end;           // only mated rows advance the mate cursor
+    if (end > maxDepth) maxDepth = end;
+  }
+  return { nodes, maxDepth };
+}
+
 /** The `meta.instanceColors` sub-map a parts_stack contributes — each SET row
  *  material keyed by that row's own const var (partsStackRowVar). Rows already have
  *  DIFFERENT srcs (so color-by-source differentiates them by default); this override
