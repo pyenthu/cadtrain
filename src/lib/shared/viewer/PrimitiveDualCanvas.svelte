@@ -16,6 +16,7 @@
   import { bakeClient, isCancelled } from '$lib/engines/manifold/bake-client';
   import { brepResponseToGeo, type BrepPreviewResponse } from '$lib/engines/brep/brep-adapter';
   import { scene } from '$lib/shared/viewer/scene-state.svelte';
+  import { loadViewScale, saveViewScale } from '$lib/shared/viewer/view-scale-cache';
   // AUTOSCALE (DTX): pure DTX depth-transform builder (plain-arrays LUT). This UI
   // file may import wells/ (the plan's stated exception); the ENGINE layer may not.
   import { autoNodes, type Dtx } from '$lib/wells/dtx';
@@ -945,6 +946,20 @@
   // can't override the parent/viewer scale.)
   $effect(() => {
     id; // eslint-disable-line no-unused-expressions — dependency only
+    // PER-PART view-scale PERSISTENCE: if THIS part (primary canvas) has a locally-saved
+    // scale, restore it — radial / z-depth / auto-depth (+ strength) / warp bake-scale —
+    // and pin auto-normalize OFF so it sticks. Wins over the meta viewZScale/viewXScale
+    // and the default reset. Absent (or a nested subpart) ⇒ today's reset behaviour.
+    const saved = autoScaleOwner ? loadViewScale(id) : null;
+    if (saved) {
+      scene.xScale = saved.xScale;
+      scene.zScale = saved.zScale;
+      scene.warpBakeScale = { radial: saved.warpBakeScale.radial, depth: saved.warpBakeScale.depth };
+      scene.autoDepth = saved.autoDepth;
+      scene.warpAutoStrength = saved.warpAutoStrength;
+      scene.scaleAuto = false;
+      return;
+    }
     scene.autoDepth = false; // AUTOSCALE (DTX) is per-part; reset on load (like warpBakeScale)
     scene.warpAutoStrength = 0.4; // reset the graded-autoscale strength to its default per-part
     if (viewZScale != null || viewXScale != null) {
@@ -955,6 +970,20 @@
       scene.scaleAuto = true;
     }
   });
+  /** Capture the current view scale to local cache for THIS part — called on every scale
+   *  change (slider release, toggle, strength, 1:1) so the persisted value is current
+   *  BEFORE any rebake fires and is restored next time the part loads. Only the PRIMARY
+   *  canvas persists (a nested subpart shares the scene singleton but must not own it). */
+  function persistScale() {
+    if (!autoScaleOwner) return;
+    saveViewScale(id, {
+      xScale: scene.xScale,
+      zScale: scene.zScale,
+      autoDepth: scene.autoDepth,
+      warpAutoStrength: scene.warpAutoStrength,
+      warpBakeScale: { radial: scene.warpBakeScale.radial, depth: scene.warpBakeScale.depth },
+    });
+  }
 
   // #12: dismiss the Radial / Z-depth scale popover on a click OUTSIDE it. The
   // toggle button itself is excluded so its own click still toggles (the open
@@ -1009,14 +1038,14 @@
         <span class="pd-scale-lbl">Radial ×{scene.xScale.toFixed(2)}</span>
         <input type="range" min="0.25" max="8" step="0.25" bind:value={scene.xScale}
           oninput={() => (scene.scaleAuto = false)}
-          onchange={() => { if (hasWarp) scene.warpBakeScale = { radial: scene.xScale, depth: scene.zScale }; }} />
+          onchange={() => { if (hasWarp) scene.warpBakeScale = { radial: scene.xScale, depth: scene.zScale }; persistScale(); }} />
       </div>
       <div class="pd-scale-row" class:pd-scale-dim={hasWarp && scene.autoDepth}>
         <span class="pd-scale-lbl">Z-depth ×{scene.zScale.toFixed(2)}</span>
         <input type="range" min="0.05" max="2" step="0.05" bind:value={scene.zScale}
           disabled={hasWarp && scene.autoDepth}
           oninput={() => (scene.scaleAuto = false)}
-          onchange={() => { if (hasWarp) scene.warpBakeScale = { radial: scene.xScale, depth: scene.zScale }; }} />
+          onchange={() => { if (hasWarp) scene.warpBakeScale = { radial: scene.xScale, depth: scene.zScale }; persistScale(); }} />
       </div>
       {#if hasWarp || warpNodeSpec}
         <!-- AUTOSCALE (DTX): drive along-hole depth by the DTX transform (magnifies
@@ -1025,7 +1054,7 @@
              part (rides the spline) AND a VERTICAL part with emphasis nodes (a pure
              post-bake z-stretch, no bend). -->
         <label class="pd-scale-auto" title="Auto depth (DTX): non-linear depth remap that magnifies detail-dense intervals, total length preserved — along the spline for a warped part, a pure z-stretch for a vertical one">
-          <input type="checkbox" bind:checked={scene.autoDepth} />
+          <input type="checkbox" bind:checked={scene.autoDepth} onchange={persistScale} />
           Auto depth (DTX)
         </label>
         <!-- Strength: how hard short elements magnify (a FRACTION of total length, so
@@ -1034,12 +1063,12 @@
         <div class="pd-scale-row pd-scale-sub" class:pd-scale-dim={!scene.autoDepth}>
           <span class="pd-scale-lbl">Strength {(scene.warpAutoStrength * 100).toFixed(0)}%</span>
           <input type="range" min="0" max="1" step="0.05" bind:value={scene.warpAutoStrength}
-            disabled={!scene.autoDepth}
+            disabled={!scene.autoDepth} onchange={persistScale}
             title="Magnification strength of the graded auto-depth (0 = off, 1 = full)" />
         </div>
       {/if}
       <button class="pd-scale-reset" type="button"
-        onclick={() => { scene.xScale = 1; scene.zScale = 1; scene.autoDepth = false; if (hasWarp) scene.warpBakeScale = { radial: 1, depth: 1 }; }}>1:1 true scale</button>
+        onclick={() => { scene.xScale = 1; scene.zScale = 1; scene.autoDepth = false; if (hasWarp) scene.warpBakeScale = { radial: 1, depth: 1 }; persistScale(); }}>1:1 true scale</button>
     </div>
   {/if}
   <!-- Bake tools right under the scale gear: a quick Rebuild + an adjustable
