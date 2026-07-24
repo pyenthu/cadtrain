@@ -151,6 +151,33 @@
       <span class="sv-sub">ƒ</span>
       <input type="number" step="0.1" min={0} max={4} bind:value={scene.warpFreq} onchange={commitWarp} disabled={!scene.warpEnabled} />
     </div>
+    <!-- DEPTH RULER (VIEW-ONLY) — a vertical depth scale beside the part: a tick
+         line at `Dist` from the drilling axis, `Azim`° around it, ticks every
+         `Step` (0 = auto). Tick Z's track the Auto-depth (DTX) magnification so
+         depths stay registered to the geometry. Off by default → nothing drawn. -->
+    <div class="sv-row sv-row-toggles">
+      <label class="sv-check" title="Depth ruler — a vertical tick scale beside the part. Tick depths track the Auto-depth (DTX) magnification so they stay registered to the geometry.">
+        <input type="checkbox" bind:checked={scene.rulerOn} />
+        Ruler
+      </label>
+    </div>
+    {#if scene.rulerOn}
+      <div class="sv-row sv-light" title="Ruler distance from the part axis (world units)">
+        <span class="sv-label">Dist</span>
+        <input class="sv-range" type="range" min="2" max="150" step="1" bind:value={scene.rulerDistance} />
+        <span class="sv-sub-val">{scene.rulerDistance.toFixed(0)}</span>
+      </div>
+      <div class="sv-row sv-light" title="Ruler azimuth around the drilling (Z) axis — 0°=front (+Y), 90°=+X">
+        <span class="sv-label">Azim</span>
+        <input class="sv-range" type="range" min="0" max="360" step="5" bind:value={scene.rulerAzimuth} />
+        <span class="sv-sub-val">{scene.rulerAzimuth.toFixed(0)}°</span>
+      </div>
+      <div class="sv-row sv-light" title="Depth between ticks (true-depth units); 0 = auto (nice step)">
+        <span class="sv-label">Step</span>
+        <input type="number" step="1" min="0" bind:value={scene.rulerTickStep} />
+        {#if scene.rulerTickStep !== 0}<button class="sv-mini" type="button" title="Auto step" onclick={() => (scene.rulerTickStep = 0)}>auto</button>{/if}
+      </div>
+    {/if}
   </div>
 {/if}
 
