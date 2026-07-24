@@ -645,7 +645,7 @@ export function executeTfRecipe(
   tf: any,
   t: any,
   recipe: TfRecipe,
-  opts: { cutaway?: boolean; warpViewScale?: { radial?: number; depth?: number; dtx?: DtxLut } } = {},
+  opts: { cutaway?: boolean; warpViewScale?: { radial?: number; depth?: number; dtx?: DtxLut; verticalDtx?: boolean; verticalMaxDepth?: number } } = {},
 ): TfDemoResult {
   const instrs = recipe?.instrs ?? [];
   if (instrs.length === 0) throw new TfUnsupportedError('(empty recipe)');

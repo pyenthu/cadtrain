@@ -26,8 +26,9 @@
 import * as helpers from './manifold-helpers';
 import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from './manifold-mesh';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive-sandbox';
-import { finalizeManifold, type RenderMaterial, type PartColorLUT } from './render-helpers';
+import { finalizeManifold, lazyPartsOf, type RenderMaterial, type PartColorLUT } from './render-helpers';
 import { serializeComponentResult, type SerializedComponentResult, type SerializedGeometry } from './mesh-serial';
+import { warpManifoldAlongSpline, type DtxLut } from './warp-spline';
 
 /** Pinned kernel identity — folded into the IndexedDB cache key so a client on
  *  an upgraded WASM build never serves a mesh baked by the old kernel (plan §8
@@ -92,7 +93,18 @@ export interface BakeOptions {
    *  kept, length ∝). Threaded into `sandboxArgValues` → wraps `warpSpline`. Absent
    *  / {1,1} → byte-identical. The saved part stays TRUE scale (this is view-only,
    *  so it re-bakes rather than mutating the graph). */
-  warpViewScale?: { radial?: number; depth?: number; dtx?: import('./warp-spline').DtxLut };
+  warpViewScale?: {
+    radial?: number; depth?: number; dtx?: DtxLut;
+    /** VERTICAL DTX (Change 2): a NON-warped part (no `warpSpline` in its script)
+     *  with emphasis nodes still gets the SAME along-hole z-stretch — applied as a
+     *  POST-BAKE pure-z warp along a straight vertical spline (no bend, radial x/y
+     *  preserved). "The only step is no warp." Guarded to a real-node LUT so a
+     *  generic part is untouched (byte-identical). MF path only. */
+    verticalDtx?: boolean;
+    /** Total depth of the straight vertical spline the post-bake warp bends along —
+     *  the well/stack `maxDepth`, in part-local Z units. */
+    verticalMaxDepth?: number;
+  };
   /** Axial ring spacing (world units) for a `warpSpline` bake, overriding the
    *  absolute `WARP_AXIAL_MAX_ZSPAN` constant. The rings must exist BEFORE the
    *  warp bends them (Rule 25), so this is a BAKE option, not a warp-node option.
@@ -241,6 +253,34 @@ export async function runCompiledManifold(
 
   if (!manifold || typeof manifold.getMesh !== 'function') {
     throw new Error('primitive did not return a Manifold');
+  }
+
+  // ── VERTICAL DTX (Change 2): AUTOSCALE in a NON-warped (vertical) part ─────────
+  // A vertical completion string has no `warpSpline(...)` in its script, so the DTX
+  // never rides a bend. Apply the SAME along-hole z-stretch here as a POST-BAKE warp
+  // along a STRAIGHT vertical spline: `s = lerpDtxLut(dtx, z)`, radial x/y preserved.
+  // A straight spline makes this a PURE z-remap (no bending) — the "stretch, no warp"
+  // step. This is a proper Manifold.warp (build-safe), NOT a post-bake MeshGL
+  // subdivision (Rule 25). Guarded to a valid, real-node LUT so a generic part with
+  // nothing to grade is left byte-identical.
+  const vsRaw = options.warpViewScale;
+  const vDtx = (vsRaw?.verticalDtx && vsRaw.dtx
+    && Array.isArray(vsRaw.dtx.depth) && Array.isArray(vsRaw.dtx.depthTx) && vsRaw.dtx.depth.length >= 2
+    && Number.isFinite(vsRaw.verticalMaxDepth) && (vsRaw.verticalMaxDepth as number) > 0)
+    ? { dtx: vsRaw.dtx as DtxLut, maxDepth: vsRaw.verticalMaxDepth as number } : null;
+  if (vDtx) {
+    const cp: [number, number, number][] = [[0, 0, 0], [0, 0, vDtx.maxDepth]];
+    // `originZ:0` maps ABSOLUTE part-local z through the LUT (`s = lerpDtxLut(dtx, z)`),
+    // so a short element deep down-hole magnifies at its true display depth. A
+    // multi-element well is a LIST of separate `_parts` (composing them fuses the well
+    // to its open hole — render-helpers `M.compose` gotcha), so warp EACH part and keep
+    // them separate; a single-body part warps directly.
+    const rawParts = lazyPartsOf(manifold);
+    if (rawParts.length > 1) {
+      manifold = { _parts: rawParts.map((p) => warpManifoldAlongSpline(p, cp, { dtx: vDtx.dtx, originZ: 0 })) };
+    } else {
+      manifold = warpManifoldAlongSpline(manifold, cp, { dtx: vDtx.dtx, originZ: 0 });
+    }
   }
 
   const _tFin0 = _now();

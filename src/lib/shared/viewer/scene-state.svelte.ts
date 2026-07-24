@@ -64,6 +64,15 @@ export const scene = $state({
    *  out while on. Reset to false on a new part load (same lifecycle as warpBakeScale).
    *  false ⇒ manual depth path (byte-identical). */
   autoDepth: false,
+  /** AUTOSCALE (DTX) STRENGTH — 0..1, how hard the graded warp-autoscale magnifies
+   *  short elements. PrimitiveDualCanvas scales the normalized `footprintFrac` by
+   *  this (0 ⇒ footprintFrac≈0 ⇒ identity / no magnification; 1 ⇒ a fuller
+   *  magnification), so a short element's display footprint is a FRACTION of the
+   *  total length that scales identically for a 257-unit or a 3000-m well. Only
+   *  meaningful while `autoDepth` is on; the small slider next to the Auto-depth
+   *  checkbox is enabled only then. Reset to the default on a new part load (same
+   *  lifecycle as autoDepth). */
+  warpAutoStrength: 0.4,
   /** When true, xScale/zScale are AUTO-set on each part load to normalize the
    *  displayed aspect ratio (a long thin tool reads thick + long-but-not-too-long;
    *  see PrimitiveDualScene's autoScale). Cleared the moment the user drags either

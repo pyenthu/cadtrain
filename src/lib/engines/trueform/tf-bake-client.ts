@@ -48,8 +48,10 @@ export interface TfBakeArgs {
   recipe?: import('$lib/graph/graph-to-tf').TfRecipe;
   cutaway: boolean;
   /** Non-persisted spline-aware VIEW scale for a warped part (Problem 2) — incl. the
-   *  optional AUTOSCALE `dtx` LUT. Forwarded verbatim to the worker + keyed. */
-  warpViewScale?: { radial?: number; depth?: number; dtx?: import('$lib/engines/manifold/warp-spline').DtxLut };
+   *  optional AUTOSCALE `dtx` LUT. Forwarded verbatim to the worker + keyed.
+   *  `verticalDtx`/`verticalMaxDepth` (Change 2) are carried but IGNORED by TF — the
+   *  post-bake vertical z-stretch is MF-only for now. */
+  warpViewScale?: { radial?: number; depth?: number; dtx?: import('$lib/engines/manifold/warp-spline').DtxLut; verticalDtx?: boolean; verticalMaxDepth?: number };
 }
 
 /** Per-bake timing (worker warm + build), surfaced for the badge/console. */
