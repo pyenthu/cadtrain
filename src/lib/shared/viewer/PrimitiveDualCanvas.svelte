@@ -1120,7 +1120,7 @@
       : smoothShadeAuto}
     <Canvas {createRenderer}>
       <!-- Only one of mesh/GLB is baked per tab now → centre it (offset 0). -->
-      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} {autoScaleOwner} {hasWarp} opacity={opacity ?? 1} {texture} {colorOuter} {colorInner} {material} overlays={overlays ?? []} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} />
+      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} {autoScaleOwner} {hasWarp} opacity={opacity ?? 1} {texture} {colorOuter} {colorInner} {material} warpDtx={autoDtx} overlays={overlays ?? []} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} />
     </Canvas>
     {#if showControls && SceneControls}{@const Controls = SceneControls}<Controls />{/if}
   {:else}

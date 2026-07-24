@@ -97,6 +97,24 @@ export const scene = $state({
    *  units after the view scale. Written by PrimitiveDualScene's geometry
    *  effect alongside partCenter; the strip lights span [min, max]. */
   partZExtent: { min: 0, max: 0 },
+  /** DEPTH RULER overlay — VIEW ONLY. A vertical tick scale drawn BESIDE the
+   *  part: a tick line at `rulerDistance` from the drilling (Z) axis and
+   *  `rulerAzimuth`° around it, with tick marks at regular TRUE-depth intervals
+   *  and true-depth labels. Crucially the tick Z's run through the SAME DTX
+   *  depth transform as the geometry (threaded down as `warpDtx`), so when
+   *  Auto-depth magnifies a sub-interval the ruler's ticks there spread apart to
+   *  match — depths stay registered. Off by default → nothing drawn (zero cost).
+   *  UI: the SceneControls "Ruler" section. */
+  rulerOn: false,
+  /** Radial offset (world units) of the ruler tick line from the part axis.
+   *  Same units/convention as `zStripRadius`. */
+  rulerDistance: 30,
+  /** Bearing (deg) of the ruler AROUND the Z (drilling) axis. 0° = +Y (front,
+   *  camera side), 90° = +X — mirrors `zDirAngle`. */
+  rulerAzimuth: 0,
+  /** Depth between ticks (TRUE-depth units). 0 = AUTO (a "nice" 1/2/5×10ⁿ step
+   *  giving ~8 ticks across the part's depth range). */
+  rulerTickStep: 0,
   /** True rectangular AREA light along Z — VIEW ONLY. Independent of
    *  `zStripLight` (the point-light strip): this is a literal
    *  `THREE.RectAreaLight` whose long (width) dimension runs ALONG the part's

@@ -31,7 +31,7 @@
   // two stacked PrimitiveCanvas + PrimitiveGlbCanvas (was 2 contexts per tab
   // → the WebGL-context leak). Chrome (camera / lights) mirrors ComponentScene.
   import { T, useThrelte } from '@threlte/core';
-  import { OrbitControls, Edges } from '@threlte/extras';
+  import { OrbitControls, Edges, HTML } from '@threlte/extras';
   import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
   import { VertexNormalsHelper } from 'three/examples/jsm/helpers/VertexNormalsHelper.js';
   import * as THREE from 'three';
@@ -44,6 +44,8 @@
   import { getMaterialTexture } from '$lib/shared/viewer/material-textures';
   import { materialPreset } from '$lib/shared/viewer/material-preset';
   import { partitionTrianglesByAlpha } from '$lib/shared/viewer/vertex-alpha-partition';
+  import { rulerTicks, rulerXY, niceRulerStep } from '$lib/shared/viewer/ruler';
+  import type { Dtx } from '$lib/wells/dtx';
 
   let {
     geo = null,
@@ -65,6 +67,7 @@
     colorOuter = undefined,
     colorInner = undefined,
     material = undefined,
+    warpDtx = undefined,
   }: {
     geo?: any;            // { full, cutVC } from /api/primitives/preview
     /** A WARPED part bakes its radial/depth exaggeration PRE-warp (Problem 2), so
@@ -116,6 +119,11 @@
      *  neutral { metalness:0, roughness:0.5 } → byte-identical to the pre-preset
      *  material, so Manifold/BREP call-sites that pass nothing are unchanged. */
     material?: string;
+    /** DEPTH RULER (VIEW-ONLY): the SAME DTX LUT PrimitiveDualCanvas rides on
+     *  the geometry bake (`autoDtx`), threaded down so the ruler's tick Z's use
+     *  ONE source of truth. Present only when Auto-depth is on for a warped part;
+     *  undefined ⇒ the ruler places ticks linearly (z == depth). */
+    warpDtx?: Dtx;
     smoothShade?: boolean;  // EXPERIMENT: smooth-shade the LIVE mesh (use baked
     // calculateNormals(3, 60) vertex normals instead of flatShading face-derived
     // normals). Gated per-primitive at the canvas layer (currently r_weld_extrude
@@ -897,6 +905,72 @@
     invalidate(); // request a frame so the rect-light change renders live
   });
 
+  // --- DEPTH RULER overlay (VIEW-ONLY) ---------------------------------------
+  // A vertical tick scale beside the part. Placed at the SCENE ROOT in world
+  // units (like the light strip), so `rulerDistance` reads in world units
+  // (matching zStripRadius). Each tick's TRUE depth `d` maps to a DISPLAY depth
+  // (DTX-remapped via `warpDtx` when Auto-depth is on, else linear), then into
+  // the SAME world frame the live mesh renders in: worldZ = (displayZ + meshPosZ)
+  // · effZScale — so the ticks register with the geometry (and, under Auto-depth,
+  // spread apart exactly where the geometry magnifies). The DISPLAYED label
+  // always shows the TRUE depth. Nothing is built when scene.rulerOn is off.
+  function formatDepth(d: number): string {
+    return Number.isInteger(d) ? String(d) : (Math.round(d * 10) / 10).toString();
+  }
+  let rulerModel = $derived.by(() => {
+    if (!scene.rulerOn || !bbox) return null;
+    const effZs = hasWarp ? 1 : scene.zScale;   // geometry's view Z-scale
+    const effXs = hasWarp ? 1 : scene.xScale;   // geometry's view radial scale
+    const meshPosZ = -sep / 2;                  // the live-mesh group's Z offset
+    const dtx = warpDtx;                        // present only under Auto-depth
+    // TRUE-depth domain: the DTX's own domain when remapping (its endpoints are
+    // preserved, so it matches the geometry span), else the mesh's local Z extent.
+    const localMinZ = bbox.cz - bbox.ez / 2;
+    const localMaxZ = bbox.cz + bbox.ez / 2;
+    const usableDtx = dtx && dtx.depth.length >= 2 ? dtx : undefined;
+    const dMin = usableDtx ? usableDtx.depth[0] : localMinZ;
+    const dMax = usableDtx ? usableDtx.depth[usableDtx.depth.length - 1] : localMaxZ;
+    const span = dMax - dMin;
+    if (!(span > 0)) return null;
+    const step = scene.rulerTickStep > 0 ? scene.rulerTickStep : niceRulerStep(span);
+    const ticks = rulerTicks(dMin, dMax, step, usableDtx);
+    if (ticks.length === 0) return null;
+    const { x, y } = rulerXY(scene.rulerDistance, scene.rulerAzimuth);
+    // Radial unit direction (outward from the axis) for the tick marks + labels.
+    const rr = Math.hypot(x, y) || 1;
+    const ux = x / rr, uy = y / rr;
+    // Tick-mark length ~ a quarter of the part's (scaled) radius, with a floor.
+    const radius = (Math.max(bbox.ex, bbox.ey) * effXs) / 2 || 1;
+    const tickLen = Math.max(0.6, radius * 0.25);
+    const toWorldZ = (displayZ: number) => (displayZ + meshPosZ) * effZs;
+    const worldTicks = ticks.map((t) => ({ depth: t.depth, wz: toWorldZ(t.z) }));
+    return { x, y, ux, uy, tickLen, worldTicks };
+  });
+  // ONE LineSegments geometry: the main vertical spine (top→bottom tick) + a
+  // short radial tick mark at each tick. Disposed by the effect below.
+  let rulerLineGeo = $derived.by<THREE.BufferGeometry | null>(() => {
+    const m = rulerModel;
+    if (!m || m.worldTicks.length === 0) return null;
+    const zs = m.worldTicks.map((t) => t.wz);
+    const zTop = Math.min(...zs), zBot = Math.max(...zs);
+    const pts: THREE.Vector3[] = [
+      new THREE.Vector3(m.x, m.y, zTop), new THREE.Vector3(m.x, m.y, zBot), // spine
+    ];
+    for (const t of m.worldTicks) {
+      pts.push(
+        new THREE.Vector3(m.x, m.y, t.wz),
+        new THREE.Vector3(m.x + m.ux * m.tickLen, m.y + m.uy * m.tickLen, t.wz),
+      );
+    }
+    return new THREE.BufferGeometry().setFromPoints(pts);
+  });
+  // Free the ruler geometry when it's replaced / the scene unmounts.
+  $effect(() => {
+    const g = rulerLineGeo;
+    invalidate(); // show a toggle/slider change without an orbit nudge
+    return () => { try { g?.dispose?.(); } catch { /* already gone */ } };
+  });
+
   // --- auto-fit the camera to the combined (stacked) bounding box ---
   // View axis is +Y (camera at +Y looking toward the part), up = -Z, so the
   // screen-vertical extent is the stacked Z span (2·ez + gap) and the
@@ -1170,6 +1244,41 @@
   <T is={normalsHelper} />
 {/if}
 
+<!-- DEPTH RULER overlay (VIEW-ONLY). Mounted at the SCENE ROOT in world units,
+     like the light strip: the spine + all tick marks are ONE LineSegments, and
+     each tick hangs a billboarded <HTML> label showing its TRUE depth. The tick
+     Z's track the geometry's Auto-depth (DTX) magnification (see rulerModel).
+     Nothing renders when scene.rulerOn is off → zero cost. -->
+{#if rulerModel && rulerLineGeo}
+  <T.LineSegments geometry={rulerLineGeo}>
+    <T.LineBasicMaterial color="#0f766e" />
+  </T.LineSegments>
+  {#each rulerModel.worldTicks as t (t.depth)}
+    <T.Group position={[rulerModel.x + rulerModel.ux * (rulerModel.tickLen + 0.5), rulerModel.y + rulerModel.uy * (rulerModel.tickLen + 0.5), t.wz]}>
+      <HTML center pointerEvents="none" zIndexRange={[9, 0]}>
+        <div class="ruler-lbl">{formatDepth(t.depth)}</div>
+      </HTML>
+    </T.Group>
+  {/each}
+{/if}
+
 <!-- Title + description are now DOM overlays in PrimitiveDualCanvas (.pd-stage),
      not a Threlte <HTML> overlay — the latter's wrapper rendered with
      pointer-events:auto at z-index 8 and swallowed clicks on the ⬇ GLB button. -->
+
+<style>
+  /* Depth-ruler tick label (portaled to document.body by <HTML>; Svelte still
+     scopes this because the markup is compiled by THIS component). Dark teal on
+     a translucent white chip so it reads over the white scene background. */
+  .ruler-lbl {
+    font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+    color: #0f766e;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid rgba(15, 118, 110, 0.35);
+    border-radius: 3px;
+    padding: 1px 4px;
+    white-space: nowrap;
+    pointer-events: none;
+    user-select: none;
+  }
+</style>
