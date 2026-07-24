@@ -320,18 +320,39 @@ export function emitGraph(graph: Graph, opts: EmitOptions): EmitResult {
   }
   for (const i of graph.imports) usesSet.add(i);
 
-  // GRADED WARP-AUTOSCALE nodes (view-only) — each parts_stack element's depth span,
-  // so the DTX autoscale can grade them by LENGTH (a short element magnifies). Emitted
-  // as a FLAT number array [s0,e0,s1,e1,…] (trivially regex-parseable by the client
-  // canvas) + the total maxDepth. Sparse: no parts_stack / no literal lengths ⇒ absent
-  // ⇒ the identity autoscale (byte-identical). Purely a display aid — never affects geom.
+  // GRADED WARP-AUTOSCALE (view-only), matching wellnew's calcMaxDepth + calcMagNodes:
+  //  • EMPHASIS NODES = each parts_stack (completion) element's depth span — the DTX
+  //    grades these by LENGTH so a SHORT element magnifies.
+  //  • DOMAIN (maxDepth / TD) = the DEEPEST element across the WHOLE well: parts_tables
+  //    (open-hole / casing / cement rows: top+length), the parts_stack, AND singular
+  //    Calls — all at NORMAL magnification (weight 1). WITHOUT the full domain the
+  //    completion's length wrongly becomes the whole domain, clamping the deeper strings
+  //    (the mule shoe snaps to TD, deep open-hole is lost).
+  // Emitted as a FLAT number array [s0,e0,s1,e1,…] (regex-parseable by the client canvas)
+  // + warpMaxDepth. Sparse: no parts_stack / no literal lengths ⇒ absent ⇒ identity
+  // (byte-identical). Purely a display aid — never affects the geometry.
+  const litN = (v: any): number | null =>
+    (v && v.kind === 'literal' && typeof v.value === 'number' && Number.isFinite(v.value)) ? v.value : null;
+  const bottomOf = (topV: any, lenV: any): number | null => {
+    const l = litN(lenV);
+    return l == null ? null : (litN(topV) ?? 0) + l;
+  };
   const warpNodesFlat: number[] = [];
   let warpMaxDepth = 0;
   for (const n of Object.values(graph.nodes)) {
-    if (n.type !== 'parts_stack') continue;
-    const { nodes, maxDepth } = partsStackWarpNodes(n);
-    for (const [s, e] of nodes) warpNodesFlat.push(s, e);
-    if (maxDepth > warpMaxDepth) warpMaxDepth = maxDepth;
+    if (n.type === 'parts_stack') {
+      const { nodes, maxDepth } = partsStackWarpNodes(n);           // EMPHASIS nodes (completion)
+      for (const [s, e] of nodes) warpNodesFlat.push(s, e);
+      if (maxDepth > warpMaxDepth) warpMaxDepth = maxDepth;
+    } else if (n.type === 'parts_table') {
+      for (const row of (Array.isArray(n.rows) ? n.rows : [])) {    // DOMAIN only (normal mag)
+        const b = bottomOf((row as any)?.top, (row as any)?.length);
+        if (b != null && b > warpMaxDepth) warpMaxDepth = b;
+      }
+    } else if (n.type === 'call') {
+      const b = bottomOf((n as any).args?.top, (n as any).args?.length);   // singular parts → domain
+      if (b != null && b > warpMaxDepth) warpMaxDepth = b;
+    }
   }
 
   const meta: Record<string, unknown> = {

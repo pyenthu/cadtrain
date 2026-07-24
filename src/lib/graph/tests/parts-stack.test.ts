@@ -202,6 +202,25 @@ describe('parts_stack GRADED WARP-AUTOSCALE — element spans → DTX magnifies 
     expect(res.meta.warpMaxDepth).toBe(257);
   });
 
+  it('warpMaxDepth (TD) is the DEEPEST element across the whole well, not the completion', () => {
+    // A well: the completion parts_stack (to 257) + an open-hole parts_table reaching 1070
+    // + a singular casing Call reaching 800. TD = 1070; nodes stay = the completion.
+    const g: any = {
+      nodes: {
+        r: { id: 'r', type: 'list', children: ['ps', 'oh', 'csg'] },
+        ps: { id: 'ps', type: 'parts_stack', rows: COMP },
+        oh: { id: 'oh', type: 'parts_table', src: 'bw_open_hole', columns: ['od', 'length', 'top'],
+              rows: [{ od: lit(17.5), length: lit(770), top: lit(300) }] },          // bottom 1070
+        csg: { id: 'csg', type: 'call', src: 'bw_casing', alias: 'C',
+               args: { od: lit(9.625), length: lit(800), top: lit(0) } },            // bottom 800
+      },
+      root: 'r', params: {}, imports: [], edges: [], layout: {},
+    };
+    const res = emitGraph(g, { id: 'w_full' });
+    expect(res.meta.warpMaxDepth).toBe(1070);                          // TD = deepest element (open hole)
+    expect(res.meta.warpNodes).toEqual([0, 2, 2, 242, 242, 252, 252, 257]); // emphasis = completion only
+  });
+
   it('an expr length is skipped (can\'t precompute at emit); only literal elements grade', () => {
     const withExpr = [{ src: 'bw_tubing', args: { length: { kind: 'expr', expr: 'p.len' } as any } }, { src: 'bw_packer', args: { length: lit(10) } }];
     const { nodes } = partsStackWarpNodes(stackGraph(withExpr).nodes['ps'] as any);
