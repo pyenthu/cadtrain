@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { rulerTicks, rulerXY, niceRulerStep } from './ruler';
+import { rulerTicks, rulerXY, niceRulerStep, rulerTicksWarped, type RulerFrameAt } from './ruler';
+import { splineFrameSampler } from '$lib/engines/manifold/warp-spline';
 import { autoNodes, lerpDTX } from '$lib/wells/dtx';
 
 describe('niceRulerStep', () => {
@@ -89,5 +90,60 @@ describe('rulerXY — (distance, azimuth) → (x, y) around the Z axis', () => {
       const { x, y } = rulerXY(42, az);
       expect(Math.hypot(x, y)).toBeCloseTo(42, 9);
     }
+  });
+});
+
+describe('rulerTicksWarped — ticks ride the (bent) trajectory, offset ⊥ the path', () => {
+  // A STRAIGHT vertical frame: pos = (0,0,s); N = +X (side), B = +Y (up/front).
+  const straight: RulerFrameAt = (s) => ({ pos: [0, 0, s], N: [1, 0, 0], B: [0, 1, 0] });
+
+  it('azimuth 0° pushes along +B (matches the straight ruler +Y front)', () => {
+    const [t] = rulerTicksWarped([{ depth: 100, z: 40 }], straight, 30, 0);
+    expect(t.depth).toBe(100);
+    expect(t.pos[0]).toBeCloseTo(0, 9);   // no N
+    expect(t.pos[1]).toBeCloseTo(30, 9);  // +B · distance
+    expect(t.pos[2]).toBeCloseTo(40, 9);  // on-path z = station
+  });
+
+  it('azimuth 90° pushes along +N (side)', () => {
+    const [t] = rulerTicksWarped([{ depth: 0, z: 10 }], straight, 30, 90);
+    expect(t.pos[0]).toBeCloseTo(30, 9);  // +N · distance
+    expect(t.pos[1]).toBeCloseTo(0, 9);
+    expect(t.pos[2]).toBeCloseTo(10, 9);
+  });
+
+  it('the offset is always ⊥ the tangent (distance preserved off the path)', () => {
+    // A bent frame: at s the tangent tilts, but N/B stay a unit basis ⊥ it.
+    const bent: RulerFrameAt = (s) => {
+      const a = s * 0.01;
+      return { pos: [Math.sin(a) * 50, 0, s], N: [Math.cos(a), 0, -Math.sin(a)], B: [0, 1, 0] };
+    };
+    for (const s of [0, 25, 60]) {
+      const [t] = rulerTicksWarped([{ depth: s, z: s }], bent, 12, 45);
+      const p = bent(s).pos;
+      const d = Math.hypot(t.pos[0] - p[0], t.pos[1] - p[1], t.pos[2] - p[2]);
+      expect(d).toBeCloseTo(12, 6); // exactly `distance` from the on-path point
+    }
+  });
+});
+
+describe('splineFrameSampler — feeds rulerTicksWarped for a real spline', () => {
+  it('a straight vertical spline reproduces a straight ruler line (x==0)', () => {
+    // cp as [x, y, z] triples (what resampleSpline emits), purely vertical (y const).
+    const { total, frameAt } = splineFrameSampler([[0, 0, 0], [0, 0, 100]]);
+    expect(total).toBeCloseTo(100, 3);
+    const ticks = rulerTicksWarped([{ depth: 0, z: 0 }, { depth: 50, z: 50 }, { depth: 100, z: 100 }], frameAt, 20, 90);
+    // Offset azimuth 90 = +N; for a vertical planar spline N = ±X, so y stays ~0 and
+    // z tracks the station.
+    for (const t of ticks) expect(Math.abs(t.pos[1])).toBeLessThan(1e-6);
+    expect(ticks[2].pos[2]).toBeGreaterThan(ticks[0].pos[2]); // deeper tick is farther down-hole
+  });
+
+  it('a bent spline makes the ruler bend: tick x tracks the trajectory offset', () => {
+    // An L-ish spline (x,z plane, y const) that kicks out in +x as it descends.
+    const { frameAt } = splineFrameSampler([[0, 0, 0], [0, 0, 40], [40, 0, 80], [80, 0, 80]]);
+    const ticks = rulerTicksWarped([{ depth: 0, z: 0 }, { depth: 80, z: 80 }], frameAt, 5, 0);
+    // The deep tick has moved out in +x relative to the shallow one (the well bent).
+    expect(ticks[1].pos[0]).toBeGreaterThan(ticks[0].pos[0] + 10);
   });
 });

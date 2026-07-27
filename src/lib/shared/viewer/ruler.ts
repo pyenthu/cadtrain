@@ -72,3 +72,46 @@ export function rulerXY(distance: number, azimuthDeg: number): { x: number; y: n
   const a = ((azimuthDeg || 0) * Math.PI) / 180;
   return { x: distance * Math.sin(a), y: distance * Math.cos(a) };
 }
+
+type V3 = [number, number, number];
+/** A frame at arc-length `s` along the (warped) spline: the trajectory point `pos`
+ *  and a right-handed perpendicular basis (`N`, `B`). Supplied by
+ *  `warp-spline.splineFrameSampler` so the ruler follows the SAME curve as the geometry. */
+export type RulerFrameAt = (s: number) => { pos: V3; N: V3; B: V3 };
+
+/** One WARPED ruler tick: its TRUE depth (label) + its 3D world position on the
+ *  offset ruler line beside the deviated trajectory. */
+export interface RulerTickWarped { depth: number; pos: V3; }
+
+/**
+ * Warped ruler ticks — for a DEVIATED part, each tick sits on the trajectory at
+ * arc-length `s = tick.z` (the DTX display-depth), pushed PERPENDICULAR to the path by
+ * `distance` in the `azimuth` direction of the spline's local frame:
+ *   pos = P(s) + distance·(cos az·N(s) + sin az·B(s))
+ * `azimuth` mirrors `rulerXY` (0° = +B/front → cos·B? no): to match the straight-ruler
+ * convention where 0° = +Y and 90° = +X, we map cos·(frame's "up"/B-ish) — here N is the
+ * side axis and B the up axis, so azimuth 0 = +B (up/front), 90° = +N (side). The label
+ * always shows the TRUE depth. So the ruler bends with the well + stays registered.
+ */
+export function rulerTicksWarped(
+  ticks: RulerTick[],
+  frameAt: RulerFrameAt,
+  distance: number,
+  azimuthDeg: number,
+): RulerTickWarped[] {
+  const a = ((azimuthDeg || 0) * Math.PI) / 180;
+  const ca = Math.cos(a), sa = Math.sin(a);
+  return ticks.map((t) => {
+    const { pos, N, B } = frameAt(t.z);
+    // Offset in the N/B plane: azimuth 0 → +B (matches straight ruler's +Y front),
+    // 90° → +N (side). d·(sa·N + ca·B).
+    return {
+      depth: t.depth,
+      pos: [
+        pos[0] + distance * (sa * N[0] + ca * B[0]),
+        pos[1] + distance * (sa * N[1] + ca * B[1]),
+        pos[2] + distance * (sa * N[2] + ca * B[2]),
+      ] as V3,
+    };
+  });
+}

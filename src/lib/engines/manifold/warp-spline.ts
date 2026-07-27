@@ -206,6 +206,25 @@ export function spline3DFrames(cp: Pt3[]) {
   return { at, total };
 }
 
+/**
+ * Unified per-arc-length FRAME sampler for the depth-RULER overlay — returns the
+ * spline origin + a right-handed (N, B) basis at arc-length `s`, picking the SAME
+ * 3D-RMF vs planar path the WARP uses (`is3DPath`), so a ruler sampled with this
+ * registers with the warped geometry. (Exported for `$lib/shared/viewer/ruler`; a
+ * viewer file may import the engine layer.)
+ */
+export function splineFrameSampler(cp: number[][]): { total: number; frameAt: (s: number) => { pos: V3; N: V3; B: V3 } } {
+  if (is3DPath(cp)) {
+    const f = spline3DFrames(cp as Pt3[]);
+    return { total: f.total, frameAt: (s) => { const r = f.at(s); return { pos: r.pos, N: r.N, B: r.B }; } };
+  }
+  // Planar: control points are [x,(y),z] → the planar sampler wants [x,z]; N is the
+  // horizontal normal, B is world-Y (matching the warp's planar constant-Y frame).
+  const cp2: Pt2[] = cp.map((p) => [p[0], p[2]] as Pt2);
+  const s = splineSampler(cp2);
+  return { total: s.total, frameAt: (arc) => { const r = s.sampleAt(arc); return { pos: r.pos, N: frameN(r.tan), B: [0, 1, 0] as V3 }; } };
+}
+
 // ── validity sanity check (opt-in) ────────────────────────────────────────────
 
 /** Post-warp sanity check (shared with todo_sweep_self_intersection_check): a

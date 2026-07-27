@@ -809,6 +809,19 @@
     const maxDepth = parseFloat(mD[1]);
     return nodes.length && Number.isFinite(maxDepth) && maxDepth > 0 ? { nodes, maxDepth } : null;
   });
+  // The warp's SPLINE control points — parsed from the emitted `resampleSpline([[x,y,z],…])`
+  // so the depth ruler can follow the SAME deviated trajectory (warp the ruler too). A
+  // survey-mode path (surveyToXYZ, no literal points) ⇒ null ⇒ the ruler stays straight.
+  const warpSplineCp = $derived.by<number[][] | null>(() => {
+    const s = source ?? '';
+    if (!hasWarp) return null;
+    const m = s.match(/resampleSpline\(\s*(\[\s*\[[\s\S]*?\]\s*\])/);
+    if (!m) return null;
+    try {
+      const cp = JSON.parse(m[1].replace(/,(\s*[\]}])/g, '$1')); // tolerate a trailing comma
+      return (Array.isArray(cp) && cp.length >= 2 && Array.isArray(cp[0]) && cp[0].length >= 2) ? cp : null;
+    } catch { return null; }
+  });
   // NORMALIZED grade (#38e follow-up): the magnification is a FRACTION of total
   // length (footprintFrac × maxDepth), scaled by scene.warpAutoStrength, so a short
   // element reads the same on a 257-unit completion or a 3000-m well. BASE_FRAC 0.08
@@ -1151,7 +1164,7 @@
       : smoothShadeAuto}
     <Canvas {createRenderer}>
       <!-- Only one of mesh/GLB is baked per tab now → centre it (offset 0). -->
-      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} {autoScaleOwner} {hasWarp} opacity={opacity ?? 1} {texture} {colorOuter} {colorInner} {material} warpDtx={autoDtx} overlays={overlays ?? []} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} />
+      <S {geo} {geoVersion} glbUrl={glbBlobUrl} showCutaway={scene.showCutaway} {smoothShade} {autoScaleOwner} {hasWarp} opacity={opacity ?? 1} {texture} {colorOuter} {colorInner} {material} warpDtx={autoDtx} warpSpline={warpSplineCp} overlays={overlays ?? []} offset={(bakeMesh && effBakeGlb) ? sceneOffset : 0} />
     </Canvas>
     {#if showControls && SceneControls}{@const Controls = SceneControls}<Controls />{/if}
   {:else}

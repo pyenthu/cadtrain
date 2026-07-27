@@ -44,7 +44,8 @@
   import { getMaterialTexture } from '$lib/shared/viewer/material-textures';
   import { materialPreset } from '$lib/shared/viewer/material-preset';
   import { partitionTrianglesByAlpha } from '$lib/shared/viewer/vertex-alpha-partition';
-  import { rulerTicks, rulerXY, niceRulerStep } from '$lib/shared/viewer/ruler';
+  import { rulerTicks, rulerXY, niceRulerStep, rulerTicksWarped } from '$lib/shared/viewer/ruler';
+  import { splineFrameSampler } from '$lib/engines/manifold/warp-spline';
   import type { Dtx } from '$lib/wells/dtx';
 
   let {
@@ -68,6 +69,7 @@
     colorInner = undefined,
     material = undefined,
     warpDtx = undefined,
+    warpSpline = undefined,
   }: {
     geo?: any;            // { full, cutVC } from /api/primitives/preview
     /** A WARPED part bakes its radial/depth exaggeration PRE-warp (Problem 2), so
@@ -124,6 +126,12 @@
      *  ONE source of truth. Present only when Auto-depth is on for a warped part;
      *  undefined ⇒ the ruler places ticks linearly (z == depth). */
     warpDtx?: Dtx;
+    /** DEPTH RULER, WARPED variant (VIEW-ONLY): the warp's spline control points,
+     *  parsed from source in PrimitiveDualCanvas. When present the ruler follows the
+     *  SAME deviated trajectory as the geometry (built via `splineFrameSampler` +
+     *  `rulerTicksWarped`) instead of the straight `rulerXY` line. undefined ⇒ a
+     *  vertical part / survey-mode path ⇒ the straight ruler (unchanged). */
+    warpSpline?: number[][];
     smoothShade?: boolean;  // EXPERIMENT: smooth-shade the LIVE mesh (use baked
     // calculateNormals(3, 60) vertex normals instead of flatShading face-derived
     // normals). Gated per-primitive at the canvas layer (currently r_weld_extrude
@@ -923,39 +931,84 @@
     const effXs = hasWarp ? 1 : scene.xScale;   // geometry's view radial scale
     const meshPosZ = -sep / 2;                  // the live-mesh group's Z offset
     const dtx = warpDtx;                        // present only under Auto-depth
+    const usableDtx = dtx && dtx.depth.length >= 2 ? dtx : undefined;
+    // WARPED ruler: when the part bends along a spline, the ruler follows the SAME
+    // trajectory. Build the frame sampler up-front so its arc-length `total` can serve
+    // as the TRUE-depth domain when there's no DTX (a bent well's world-Z bbox is NOT
+    // its depth). With a DTX, its own preserved-endpoint domain [0, maxDepth] wins.
+    const warpActive = !!(warpSpline && warpSpline.length >= 2);
+    const sampler = warpActive ? splineFrameSampler(warpSpline as number[][]) : null;
     // TRUE-depth domain: the DTX's own domain when remapping (its endpoints are
-    // preserved, so it matches the geometry span), else the mesh's local Z extent.
+    // preserved, so it matches the geometry span); else the spline arc-length for a
+    // warped part, else the mesh's local Z extent.
     const localMinZ = bbox.cz - bbox.ez / 2;
     const localMaxZ = bbox.cz + bbox.ez / 2;
-    const usableDtx = dtx && dtx.depth.length >= 2 ? dtx : undefined;
-    const dMin = usableDtx ? usableDtx.depth[0] : localMinZ;
-    const dMax = usableDtx ? usableDtx.depth[usableDtx.depth.length - 1] : localMaxZ;
+    const dMin = usableDtx ? usableDtx.depth[0] : (warpActive ? 0 : localMinZ);
+    const dMax = usableDtx ? usableDtx.depth[usableDtx.depth.length - 1] : (warpActive ? (sampler as any).total : localMaxZ);
     const span = dMax - dMin;
     if (!(span > 0)) return null;
     const step = scene.rulerTickStep > 0 ? scene.rulerTickStep : niceRulerStep(span);
     const ticks = rulerTicks(dMin, dMax, step, usableDtx);
     if (ticks.length === 0) return null;
+    // Tick-mark length ~ a quarter of the part's (scaled) radius, with a floor.
+    const radius = (Math.max(bbox.ex, bbox.ey) * effXs) / 2 || 1;
+    const tickLen = Math.max(0.6, radius * 0.25);
+
+    // Each tick's along-hole station is the DTX display-depth relative to the top tick
+    // (`t.z − topZ`) — the identical arc-length the warp places a vertex at (warp:
+    // `s = lerpDtxLut(dtx, z−zBase)`, zBase = the part's top). The tick 3D position is
+    // that point pushed ⊥ the tangent by `rulerDistance` at `rulerAzimuth` in the
+    // spline's local frame, then dropped into the live-mesh Z-offset (effXs = effZs = 1
+    // for a warped part, so only meshPosZ applies).
+    if (warpActive && sampler) {
+      const topZ = ticks[0].z;
+      // Re-base each tick's display-depth to arc-length from the top, then let
+      // rulerTicksWarped push it ⊥ the path. Also keep the ON-PATH point (distance 0)
+      // for the spine polyline.
+      const arcTicks = ticks.map((t) => ({ depth: t.depth, z: t.z - topZ }));
+      const offTicks = rulerTicksWarped(arcTicks, sampler.frameAt, scene.rulerDistance, scene.rulerAzimuth);
+      const warpedTicks = offTicks.map((o, i) => {
+        const base = sampler.frameAt(arcTicks[i].z).pos;
+        return {
+          depth: o.depth,
+          pos: [o.pos[0], o.pos[1], o.pos[2] + meshPosZ] as [number, number, number],
+          base: [base[0], base[1], base[2] + meshPosZ] as [number, number, number],
+        };
+      });
+      return { warped: true as const, tickLen, warpedTicks };
+    }
+
     const { x, y } = rulerXY(scene.rulerDistance, scene.rulerAzimuth);
     // Radial unit direction (outward from the axis) for the tick marks + labels.
     const rr = Math.hypot(x, y) || 1;
     const ux = x / rr, uy = y / rr;
-    // Tick-mark length ~ a quarter of the part's (scaled) radius, with a floor.
-    const radius = (Math.max(bbox.ex, bbox.ey) * effXs) / 2 || 1;
-    const tickLen = Math.max(0.6, radius * 0.25);
     const toWorldZ = (displayZ: number) => (displayZ + meshPosZ) * effZs;
     const worldTicks = ticks.map((t) => ({ depth: t.depth, wz: toWorldZ(t.z) }));
-    return { x, y, ux, uy, tickLen, worldTicks };
+    return { warped: false as const, x, y, ux, uy, tickLen, worldTicks };
   });
   // ONE LineSegments geometry: the main vertical spine (top→bottom tick) + a
   // short radial tick mark at each tick. Disposed by the effect below.
   let rulerLineGeo = $derived.by<THREE.BufferGeometry | null>(() => {
     const m = rulerModel;
-    if (!m || m.worldTicks.length === 0) return null;
+    if (!m) return null;
+    const pts: THREE.Vector3[] = [];
+    if (m.warped) {
+      if (m.warpedTicks.length === 0) return null;
+      // Spine = the polyline through the OFFSET tick points (bends with the well);
+      // each tick mark connects the on-path base to the offset point.
+      for (let i = 0; i + 1 < m.warpedTicks.length; i++) {
+        const a = m.warpedTicks[i].pos, b = m.warpedTicks[i + 1].pos;
+        pts.push(new THREE.Vector3(a[0], a[1], a[2]), new THREE.Vector3(b[0], b[1], b[2]));
+      }
+      for (const t of m.warpedTicks) {
+        pts.push(new THREE.Vector3(t.base[0], t.base[1], t.base[2]), new THREE.Vector3(t.pos[0], t.pos[1], t.pos[2]));
+      }
+      return new THREE.BufferGeometry().setFromPoints(pts);
+    }
+    if (m.worldTicks.length === 0) return null;
     const zs = m.worldTicks.map((t) => t.wz);
     const zTop = Math.min(...zs), zBot = Math.max(...zs);
-    const pts: THREE.Vector3[] = [
-      new THREE.Vector3(m.x, m.y, zTop), new THREE.Vector3(m.x, m.y, zBot), // spine
-    ];
+    pts.push(new THREE.Vector3(m.x, m.y, zTop), new THREE.Vector3(m.x, m.y, zBot)); // spine
     for (const t of m.worldTicks) {
       pts.push(
         new THREE.Vector3(m.x, m.y, t.wz),
@@ -1253,13 +1306,23 @@
   <T.LineSegments geometry={rulerLineGeo}>
     <T.LineBasicMaterial color="#0f766e" />
   </T.LineSegments>
-  {#each rulerModel.worldTicks as t (t.depth)}
-    <T.Group position={[rulerModel.x + rulerModel.ux * (rulerModel.tickLen + 0.5), rulerModel.y + rulerModel.uy * (rulerModel.tickLen + 0.5), t.wz]}>
-      <HTML center pointerEvents="none" zIndexRange={[9, 0]}>
-        <div class="ruler-lbl">{formatDepth(t.depth)}</div>
-      </HTML>
-    </T.Group>
-  {/each}
+  {#if rulerModel.warped}
+    {#each rulerModel.warpedTicks as t (t.depth)}
+      <T.Group position={t.pos}>
+        <HTML center pointerEvents="none" zIndexRange={[9, 0]}>
+          <div class="ruler-lbl">{formatDepth(t.depth)}</div>
+        </HTML>
+      </T.Group>
+    {/each}
+  {:else}
+    {#each rulerModel.worldTicks as t (t.depth)}
+      <T.Group position={[rulerModel.x + rulerModel.ux * (rulerModel.tickLen + 0.5), rulerModel.y + rulerModel.uy * (rulerModel.tickLen + 0.5), t.wz]}>
+        <HTML center pointerEvents="none" zIndexRange={[9, 0]}>
+          <div class="ruler-lbl">{formatDepth(t.depth)}</div>
+        </HTML>
+      </T.Group>
+    {/each}
+  {/if}
 {/if}
 
 <!-- Title + description are now DOM overlays in PrimitiveDualCanvas (.pd-stage),
