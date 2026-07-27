@@ -76,6 +76,20 @@ carries the resume point (latest session-handoff memory, TF tab, Route C lean
 revolve, open follow-ups) and the client-side-execution design. Shipped detail →
 `docs/HISTORY.md` + session-handoff memories; roadmap → `/plan` (Rule 19).
 
+**App-platform direction (2026-07-27, host UNDECIDED — the long-term bet, `/plan`
+#983 + bundles C/D):** cadtrain is the **graph ENGINE** (node-graph → compile →
+bake → geometry, already HTTP-exposed via `/api/primitives/{compile,preview,
+bake-preview}`). The sibling repo **wellnew** (`~/Desktop/GitHub/wellnew`, iCloud
+read-only — memory `wellnew_repo`) is the **platform + panel-shell** that `/wells`
+was ported from: its `/ewell` app is a `ToolBar` + `Panel*.svelte` + runes-store
+shell, and it already has auth/signin + Postgres/prisma + multi-app. So a new
+AI-driven wells app = wellnew's customizable panels around cadtrain's engine. The
+open fork: which repo HOSTS — likely (A) wellnew consuming cadtrain's engine as a
+`bake→mesh` API (sidesteps COOP/COEP client-worker isolation). AI layer = the SVTC
+`tools.js`/`toolSchema.js` tool-calling pattern bound to panel actions + cadtrain's
+authoring endpoints (`/refine`, `/rag/prompt`), runtime model LOCAL (Rule: AI
+data-residency). Bundles C (OAuth) + D (SDK `/api/v1`) already frame it.
+
 **Tests: `bun run test` (vitest), NOT `bun test`.**
 
 ## Tech stack + commands
