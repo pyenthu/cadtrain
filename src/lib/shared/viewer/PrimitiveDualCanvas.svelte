@@ -1040,10 +1040,12 @@
           oninput={() => (scene.scaleAuto = false)}
           onchange={() => { if (hasWarp) scene.warpBakeScale = { radial: scene.xScale, depth: scene.zScale }; persistScale(); }} />
       </div>
-      <div class="pd-scale-row" class:pd-scale-dim={hasWarp && scene.autoDepth}>
+      <div class="pd-scale-row">
         <span class="pd-scale-lbl">Z-depth ×{scene.zScale.toFixed(2)}</span>
+        <!-- Z-depth stays ACTIVE under Auto-depth (user 2026-07-27): the DTX normalizes
+             the depth DISTRIBUTION, and this scales the normalized LENGTH overall — they
+             compose (s = dtx(z) · zScale). -->
         <input type="range" min="0.05" max="2" step="0.05" bind:value={scene.zScale}
-          disabled={hasWarp && scene.autoDepth}
           oninput={() => (scene.scaleAuto = false)}
           onchange={() => { if (hasWarp) scene.warpBakeScale = { radial: scene.xScale, depth: scene.zScale }; persistScale(); }} />
       </div>

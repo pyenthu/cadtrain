@@ -333,7 +333,7 @@ export function warpManifoldAlongSpline(
       // of the linear `(z−zBase)·yScale` — a detail-dense sub-interval magnifies
       // (occupies more arc-length) while total length holds (LUT anchored). Radial
       // offsets (x·N + y·B) are untouched so sections stay ⊥ the tangent.
-      const s = opts.stretch ? ((z - z0) / zLen) * total * yScale : (opts.dtx ? lerpDtxLut(opts.dtx, z - zBase) : (z - zBase) * yScale);
+      const s = opts.stretch ? ((z - z0) / zLen) * total * yScale : (opts.dtx ? lerpDtxLut(opts.dtx, z - zBase) * yScale : (z - zBase) * yScale);
       const { pos, N, B } = at(s);
       p[0] = pos[0] + x * N[0] + y * B[0];
       p[1] = pos[1] + x * N[1] + y * B[1];
@@ -346,7 +346,7 @@ export function warpManifoldAlongSpline(
     const { sampleAt, total } = splineSampler(flat);
     out = mm.warp((p: number[]) => {
       const x = p[0] * xDia, y = p[1] * xDia, z = p[2];
-      const s = opts.stretch ? ((z - z0) / zLen) * total * yScale : (opts.dtx ? lerpDtxLut(opts.dtx, z - zBase) : (z - zBase) * yScale);
+      const s = opts.stretch ? ((z - z0) / zLen) * total * yScale : (opts.dtx ? lerpDtxLut(opts.dtx, z - zBase) * yScale : (z - zBase) * yScale);
       const { pos, tan } = sampleAt(s);
       const N = frameN(tan);
       p[0] = pos[0] + x * N[0];
@@ -416,7 +416,7 @@ export function warpMeshJS(
   for (let i = 0; i < positions.length; i += 3) {
     const x = positions[i] * xDia, y = positions[i + 1] * xDia, z = positions[i + 2];
     // AUTOSCALE (DTX): DTX-remapped along-hole station (see warpManifoldAlongSpline).
-    const s = opts.stretch ? ((z - z0) / zLen) * total * yScale : (opts.dtx ? lerpDtxLut(opts.dtx, z - zBase) : (z - zBase) * yScale);
+    const s = opts.stretch ? ((z - z0) / zLen) * total * yScale : (opts.dtx ? lerpDtxLut(opts.dtx, z - zBase) * yScale : (z - zBase) * yScale);
 
     let N: V3, B: V3, T: V3, pos: V3;
     if (use3D) {

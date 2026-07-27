@@ -72,14 +72,15 @@ describe('primitive sandbox — AUTOSCALE (DTX) warpSpline threading', () => {
     expect(sandboxArgValues()[warpIdx]).toBe(warpManifoldAlongSpline);
   });
 
-  it('manual depth stretches along the path; AUTO (dtx) DROPS the depth multiplier', () => {
+  it('manual depth stretches along the path; AUTO (dtx) COMPOSES with the depth', () => {
     const manual = sandboxArgValues({ depth: 5 })[warpIdx] as any;
     const auto = sandboxArgValues({ dtx: identity, depth: 5 })[warpIdx] as any;
     // Manual depth=5: the part's z∈[0,10] stretches to ~50 along the vertical spline.
     expect(zExtent(manual(fakeManifold(part()), vertCP))).toBeCloseTo(50, 1);
-    // AUTO with an identity DTX: the manual depth (5) is DROPPED (DTX reparametrizes
-    // the station, it doesn't scale the curve) → true along-hole depth ~10.
-    expect(zExtent(auto(fakeManifold(part()), vertCP))).toBeCloseTo(10, 1);
+    // AUTO with an identity DTX + depth=5: the DTX normalizes the distribution and the
+    // manual depth STILL scales the normalized length (s = dtx(z)·5) — they COMPOSE
+    // (user 2026-07-27), so an identity DTX + depth 5 == the manual depth 5 → ~50.
+    expect(zExtent(auto(fakeManifold(part()), vertCP))).toBeCloseTo(50, 1);
   });
 
   it('radial (depth=1) with a dtx still applies + a degenerate LUT falls back to manual', () => {

@@ -61,23 +61,22 @@ export const SANDBOX_ARG_NAMES: string[] = [
 export function sandboxArgValues(viewScale?: { radial?: number; depth?: number; dtx?: DtxLut; verticalDtx?: boolean; verticalMaxDepth?: number }): any[] {
   const vr = (Number.isFinite(viewScale?.radial) && (viewScale!.radial as number) > 0) ? (viewScale!.radial as number) : 1;
   const vd = (Number.isFinite(viewScale?.depth) && (viewScale!.depth as number) > 0) ? (viewScale!.depth as number) : 1;
-  // AUTOSCALE (DTX) mode: a valid LUT replaces the manual uniform `depth` scale —
-  // it reparametrizes the along-hole station (magnifies detail-dense intervals),
-  // so the `depth`→yScale/splineScale multipliers are DROPPED (they'd double-count:
-  // DTX doesn't scale the curve). Radial (vr) still applies. Absent/degenerate → the
-  // MANUAL path (byte-identical when {1,1}).
+  // AUTOSCALE (DTX) COMPOSES with the manual scale (user 2026-07-27): the DTX
+  // reparametrizes the along-hole station (normalizes the DISTRIBUTION — magnify short,
+  // compress long, total preserved), and the manual Z-depth (vd) then scales that
+  // normalized LENGTH overall (`s = lerpDtxLut(dtx, z) * yScale` in warp-spline), while
+  // splineScale (vd) stretches the trajectory to match. So vd applies in BOTH the DTX and
+  // the plain path; the DTX is just ADDED when present. Radial (vr) always applies too.
+  // No dtx + {1,1} → byte-identical to the un-scaled warp.
   const dtx = (viewScale?.dtx && Array.isArray(viewScale.dtx.depth) && Array.isArray(viewScale.dtx.depthTx) && viewScale.dtx.depth.length >= 2)
     ? viewScale.dtx : undefined;
   const warpFn = (vr !== 1 || vd !== 1 || dtx)
     ? (m: any, cp: any, opts: any = {}) => warpManifoldAlongSpline(m, cp, {
         ...opts,
         xDiaScale: (Number.isFinite(opts?.xDiaScale) ? opts.xDiaScale : 1) * vr,
-        ...(dtx
-          ? { dtx, yScale: (Number.isFinite(opts?.yScale) ? opts.yScale : 1), splineScale: (Number.isFinite(opts?.splineScale) ? opts.splineScale : 1) }
-          : {
-              yScale: (Number.isFinite(opts?.yScale) ? opts.yScale : 1) * vd,
-              splineScale: (Number.isFinite(opts?.splineScale) ? opts.splineScale : 1) * vd,
-            }),
+        yScale: (Number.isFinite(opts?.yScale) ? opts.yScale : 1) * vd,
+        splineScale: (Number.isFinite(opts?.splineScale) ? opts.splineScale : 1) * vd,
+        ...(dtx ? { dtx } : {}),
       })
     : warpManifoldAlongSpline;
   return [
