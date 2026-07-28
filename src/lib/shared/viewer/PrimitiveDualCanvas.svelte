@@ -1027,11 +1027,8 @@
   <button class="pd-scale-btn" type="button" class:on={scaleMenuOpen}
     title="Diameter / depth view scale"
     onclick={() => (scaleMenuOpen = !scaleMenuOpen)}>⚙ scale</button>
-  <!-- Fit-vertical (#11): frame the WHOLE part length. Auto-on for long parts
-       at load (bug #10 — long parts cut off until you scroll). -->
-  <button class="pd-fit-btn" type="button" class:on={scene.fitLength}
-    title="Fit the whole part length in view + centre the Z slider (toggle)"
-    onclick={() => { scene.fitLength = !scene.fitLength; scene.zFocus = 0; scene.scaleAuto = true; }}>⇕ fit</button>
+  <!-- Fit-vertical (#11) now lives INSIDE the scale menu (below) — one home for
+       view-framing, no standalone button. Auto-on for long parts at load. -->
   <!-- Shade mode (Smooth/Auto/Flat) lives in the gear Shade control now — the
        canvas ◐ quick-toggle was removed 2026-06-18 to keep one home. -->
   <!-- Bake-backend badge — REPORTS which kernel produced the live mesh; it is not
@@ -1082,6 +1079,13 @@
             title="Magnification strength of the graded auto-depth (0 = off, 1 = full)" />
         </div>
       {/if}
+      <!-- Fit whole length — moved in here from the standalone ⇕ button (one home
+           for view-framing). Toggles framing the WHOLE part length + centres Z. -->
+      <label class="pd-scale-auto" title="Fit the whole part length in view + centre the Z slider (toggle)">
+        <input type="checkbox" checked={scene.fitLength}
+          onchange={() => { scene.fitLength = !scene.fitLength; scene.zFocus = 0; scene.scaleAuto = true; }} />
+        ⇕ Fit whole length
+      </label>
       <button class="pd-scale-reset" type="button"
         onclick={() => { scene.xScale = 1; scene.zScale = 1; scene.autoDepth = false; if (hasWarp) scene.warpBakeScale = { radial: 1, depth: 1 }; persistScale(); }}>1:1 true scale</button>
     </div>
@@ -1209,14 +1213,6 @@
   }
   .pd-scale-btn:hover { background: #fff; border-color: #cc2222; color: #a02520; }
   .pd-scale-btn.on { background: #fef2f2; border-color: #cc2222; color: #a02520; }
-  .pd-fit-btn {
-    position: absolute; top: 30px; left: 76px; z-index: 6;
-    padding: 2px 8px; border: 1px solid #d6d3d1; border-radius: 4px;
-    background: rgba(255,255,255,0.9); color: #57534e; cursor: pointer;
-    font: 600 10px Arial; letter-spacing: 0.3px;
-  }
-  .pd-fit-btn:hover { background: #fff; border-color: #cc2222; color: #a02520; }
-  .pd-fit-btn.on { background: #fef2f2; border-color: #cc2222; color: #a02520; }
   .pd-shade-btn {
     position: absolute; top: 30px; left: 130px; z-index: 6;
     padding: 2px 8px; border: 1px solid #d6d3d1; border-radius: 4px;
@@ -1225,7 +1221,7 @@
   }
   .pd-shade-btn:hover { background: #fff; border-color: #6366f1; color: #4338ca; }
   .pd-backend-badge {
-    position: absolute; top: 30px; left: 175px; z-index: 6;
+    position: absolute; bottom: 24px; left: 12px; z-index: 6;
     padding: 2px 8px; border-radius: 4px; font: 700 10px Arial; letter-spacing: 0.3px;
     pointer-events: auto; cursor: pointer; user-select: none;
   }
