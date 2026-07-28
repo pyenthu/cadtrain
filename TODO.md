@@ -13,15 +13,11 @@
 
 ## Engines (MF · TF · BREP)
 - **BREP per-part / nested colours NOT rendered** (`bw_packer` all-brown) — `__tagNest` is MF-only; implement per-subpart colour tagging in the BREP executor. (#997)
-- **BREP normals** — WIRED (E5: `brep-adapter` runs OCCT tris through `creaseAwareCornerNormals`, flatShading off for BREP; end-to-end test pinned). Only a visual "reads-smooth" eyeball owed. (#993)
 - **BREP client-side bake** (E2/E3/#39) — NOT STARTED. Server compiles → pooled warm client OCCT worker builds+meshes + `.cut()` cutaway. `brep-client.ts` is a stub. Verify HEADLESS.
 - **BREP-native warp** (E4/#988) — `MakePipeShell` spline sweep (PROVEN: `w_deviated_casing` vol==MF; ⚠ the cut is section-BEFORE-sweep). LEFT: land into the bake pipeline · curvature-adaptive spine · warped-solid cutaway. Depends on E2.
 - **BREP curved hollow swept-boolean** — SVG-500 FIXED (`#B-bore-extend`, merged): `/api/brep/svg` now degrades to uncut instead of throwing + `sectionCut` guarded; bore-extend added as MF/TF parity (OCCT's exact boolean already tolerates coincident caps, so no χ win). REMAINING: an actual cutaway REVEAL on a swept-boolean (needs the annular section — MF/TF-only for BREP; replicad won't sweep a holed face).
 - **Curvature-adaptive axial meshing** — shared `κ→Δz` (`planAxialStations`) EXISTS; **TF done**, **MF + BREP need wiring** (MF bake must call its own folder's model; BREP `nSpine`). Not new math. (#988/#944)
 - **TF native `r_loft` builder** — `g_barrel`/waist/flare/ogive/scurve blank on TF (native-only); add `op:'loft'` from `scaleAt(t)`; verify vs the MF oracle. (#989)
-- **TF geometry cache** — IndexedDB mesh cache keyed on the recipe hash (TF rebuilds every bake; matters for /wells N-element bakes).
-- **#46 Graph→TF compiler** — structural-hash two-tier recompile; per-subpart material.
-- **#51 TF welded-mesh builder** + NURBS smoothing (`taubin`/`laplacianSmoothed`).
 - **Manifold↔TF consistency** — converge warp densification · share graph-lowering (`consumed-set`/`stack_ref`/`poly_repeat`) · port bore-extend to MF hollow sweeps. (`manifold-vs-tf-audit.md`)
 - **`compose` toggle** — expose the opt-in `MF_Compose`/`weld` that fuses to one solid (default is separate parts). Mirror in TF.
 - **E1 LEFT** — `engines/types.ts` common `Engine` interface (deferred, design with user).
@@ -30,7 +26,7 @@
 - **SVG smooth shading** — Lambert-shade from the shared crease-aware corner normals; extend `PrimitiveSvgView`+`svg-emit`, NO fork. ⚠ namespace gradient ids. (#985)
 - **SVG_BASIC tab** — well-schematic SVG: offset walls ⊥ the projected centerline tangent (wellnew/SVTC model), not a projected mesh. Reuse `CompJsonSilhouette` + `wson-2d.ts`. (#1010, `svg-warp-projection.md` Option 2). *(Generic SVG warp-shear already fixed by Option 1.)*
 - **BREP_SVG tab** — shade from BREP boundary surfaces (OCCT HLR outline + per-face Lambert), not a triangle soup. (#990)
-- **#998 WGPU tab** — WIRED (`4698416`): a `wgpu` tab lazy-mounts the WebGpuView scaffold (WebGPU inits + clears the canvas = proof-of-life). LEFT: render the OCCT boundary — feed `brep-to-svg`'s polylines (add a `format:'polylines'` mode to `/api/brep/svg`) + WGSL fills. Off critical path.
+- **#998 WGPU tab** — WIRED + boundary render SHIPPED (`44a9121`): `/api/brep/svg` `format:'polylines'` mode (headless-tested) + WebGpuView fetches & rasterizes the OCCT true-boundary via a WGSL line pipeline (aspect-fit + Y-flip). GPU draw (silhouette on-screen) = visual eyeball. Off critical path.
 - **SVG tab is the last `/preview` caller** — needs `segmentsFloor` in the client worker; move the SVG bake + headless callers off-thread.
 - **#65 Radial/Z-scale as build-time PARAMS** (warp-aware, arc-length not world-z). LEFT: UI (spline-mode toggle + warp-scale sliders); model/emit/bake shipped.
 - **TF section shows no INNER colours** — `{op:'cutaway'}` must colour exposed faces `SECTION_INNER`.
@@ -41,7 +37,7 @@
 - **#940 Modularize GraphEditorPane — Phase 4** — pull remaining state/actions onto `controller.svelte.ts` + a `GraphCommand` undo layer; NodeCard per-type split. Inline (subagents stall on GEP).
 - **#52 Modularize RightPane** — extract per-tab bodies (large component → HMR skips it).
 - **Material/texture** (deprioritized) — **#61** material system · **#63** SVG `<pattern>` textures · **#76** material texture map. *(Graph-wide default-colour chip PARKED — un-overridden parts keep the built-in red/grey fallback; re-add only if that annoys.)*
-- **#75 Auto-layout FORCE params** — force pass DONE (`forceLayoutGraph` tension/repulsion/iterations/idealLength in `composition/composition-layout.ts`, 6 tests). LEFT: wire the tension + repulsion dials into the GEP auto-layout toolbar (inline — subagents stall on GEP).
+- **#75 Auto-layout FORCE params** — DONE (`23ff9ed`): `forceLayoutGraph` + the tension/repulsion dials wired into the CanvasMenu ⚙ layout menu (persisted; same ↶ undo). Only the live "looks-good" tune is a visual eyeball.
 - **#20 typed expression outputs** · **#11/#31 expression-as-builder + visual editor** · **#36 warp node** (repeat-as-sweep · varying-section r_sweep · spline as generic point-source · subpart colours).
 - **`w_multi_string_dev` — drop the 9 linear sections**, keep only the multi-part warp. (#986) ⚠ writes the shared prod volume — attended only.
 - Smaller: Section "show cutter" wedge overlay · in-canvas controls screen-fixed · multi-input compact connectors · #18 r_surface_grid · #21 sweep_demo · #17 loop toolbar.
