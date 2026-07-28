@@ -33,4 +33,24 @@ describe('computeOrbitTarget', () => {
     expect(computeOrbitTarget({ x: 0, y: 0, z: NaN as unknown as number })).toEqual([0, 0, 0]);
     expect(computeOrbitTarget({ x: 0, y: 0, z: 10 }, NaN as unknown as number)).toEqual([0, 0, 10]);
   });
+
+  it('keeps the target ON-AXIS (x=y=0) at ANY zFocus and ANY off-axis part centre', () => {
+    // The load-bearing invariant for a tall Z-down well: panning down the bore
+    // (zFocus) or an off-axis bbox centre must NEVER move the look-at off the
+    // drilling axis — otherwise the part drifts off-centre while orbiting (#74).
+    // Sweep a grid of off-axis centres × pan depths and assert x=y=0 throughout,
+    // with z tracking (centre.z + zFocus) exactly.
+    for (const cx of [-9, 0, 4.2, 30]) {
+      for (const cy of [-11, 0, 3, 55]) {
+        for (const cz of [0, 0.5, 120, 2999.7]) {
+          for (const zFocus of [-500, -30, 0, 30, 500]) {
+            const t = computeOrbitTarget({ x: cx, y: cy, z: cz }, zFocus);
+            expect(t[0]).toBe(0);
+            expect(t[1]).toBe(0);
+            expect(t[2]).toBeCloseTo(cz + zFocus, 10);
+          }
+        }
+      }
+    }
+  });
 });
