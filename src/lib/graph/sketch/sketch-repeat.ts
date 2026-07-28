@@ -19,8 +19,8 @@
  *    iteration boundaries → rel-mode prototype ops tile seamlessly (threads);
  *  - `scaleX/scaleY` (a final multiply in compileSketch) keep working unchanged.
  */
-import type { ArgValue, NodeId, SketchOpEntry, SketchRepeatNode, SketchRepeatRef, SketchExprListRef } from '$lib/graph/composition-graph-types';
-import type { SketchOp } from '$lib/graph/sketch';
+import type { ArgValue, NodeId, SketchOpEntry, SketchRepeatNode, SketchRepeatRef, SketchExprListRef } from '$lib/graph/composition/composition-graph-types';
+import type { SketchOp } from '$lib/graph/sketch/sketch';
 
 /** Evaluate one ArgValue to a number against a scope. Injected so the client
  *  preview reuses its own `evalArg` (param scope + expr evaluator) — keeps this

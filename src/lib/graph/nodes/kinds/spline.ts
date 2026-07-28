@@ -4,7 +4,7 @@
  *   emit  ← composition-emit.ts (returns null)   ·  validate ← (no arm → [])
  *   size  ← geom.ts:90 { w, h: 40 }
  */
-import type { SplineNode } from '../../composition-graph-types';
+import type { SplineNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind } from '../node-kind';
 
 export const SplineKind: NodeKind<SplineNode> = {

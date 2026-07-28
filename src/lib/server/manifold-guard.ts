@@ -20,7 +20,7 @@
  * see `"400"` and never reset. We check both.
  */
 import { error, type HttpError } from '@sveltejs/kit';
-import { isManifoldFatalTrap, describeManifoldError } from '$lib/graph/manifold-trap';
+import { isManifoldFatalTrap, describeManifoldError } from '$lib/graph/primitive/manifold-trap';
 import { resetManifold } from '$lib/engines/manifold/manifold-helpers';
 
 /** SvelteKit's `error()` produces `{ status, body: { message } }`. */

@@ -120,14 +120,14 @@
     type CsgOp,
     type MvNode,
     type RotNode,
-  } from '$lib/graph/composition-graph';
-  import { emitGraph, consumedByCall } from '$lib/graph/composition-emit';
+  } from '$lib/graph/composition/composition-graph';
+  import { emitGraph, consumedByCall } from '$lib/graph/composition/composition-emit';
   // (resolveWiredSplinePoints / resampleSpline moved to spline-state.svelte.ts — #940 spline cut)
   // (emitProfileGraph moved to profile-preview-state.svelte.ts with the resolve effect — #940 CUT 2)
-  import { validateGraphBake } from '$lib/graph/composition-bake';
-  import { autoLayoutGraph } from '$lib/graph/composition-layout';
-  import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/graph/sketch';
-  import { sketchColLayout, sketchEntryH } from '$lib/graph/sketch-layout';
+  import { validateGraphBake } from '$lib/graph/composition/composition-bake';
+  import { autoLayoutGraph } from '$lib/graph/composition/composition-layout';
+  import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/graph/sketch/sketch';
+  import { sketchColLayout, sketchEntryH } from '$lib/graph/sketch/sketch-layout';
   // Pure socket / card / position geometry (P1/G1 extraction — see
   // docs/plans/modularize.md). These take captured state (graph, pan/zoom,
   // CARD_Y0, PARAM_W, cardObstacles, sketch.sketchOpsScrollTop) as explicit args.
@@ -172,7 +172,7 @@
   import ExpressionsMenu from './expr/ExpressionsMenu.svelte';
   import TypeDefinerPopover from '$lib/shared/types/TypeDefinerPopover.svelte';
   import AutoWireSuggestPanel from './AutoWireSuggestPanel.svelte';
-  import type { ExprDef } from '$lib/graph/composition-graph-types';
+  import type { ExprDef } from '$lib/graph/composition/composition-graph-types';
   // Sketch NODE CARD render arm (Phase E Step 2, block 1). Takes the ONE per-pane
   // `sketch` SketchState instance; only SETS sketch.sketchExprPop (the coord
   // ƒ-popover still renders in the shell — the Phase-E-revert fix).

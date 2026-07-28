@@ -13,9 +13,9 @@ import {
   inferGraphOutputStruct,
   checkOutputFeeds,
   POLYGON_POINTS,
-} from '../wire-check';
-import { listOfPoints } from '../struct-type';
-import type { Graph } from '../composition-graph-types';
+} from '$lib/graph/wire/wire-check';
+import { listOfPoints } from '$lib/graph/port/struct-type';
+import type { Graph } from '$lib/graph/composition/composition-graph-types';
 
 /** A minimal graph holding ONE expr instance + def with a single named output. */
 function graphWithOutput(formula: string, shape?: 'list' | 'auto'): Graph {

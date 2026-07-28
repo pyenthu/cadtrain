@@ -10,15 +10,15 @@
 
 // Chord-affine inverse, used by the spline `ctrl`→`pts` migration in
 // hydrateGraph (absolute legacy control points → chord-relative through-points).
-import { absToChord } from '$lib/graph/sketch';
+import { absToChord } from '$lib/graph/sketch/sketch';
 
 import type {
   Graph, GraphNode, ContainerNode, LayoutXY, Viewport, PolygonNode, PolygonEntry,
   PolyRepeatNode, SketchNode, ArgValue, GraphExpr, ExprDef, ExprOut, ParamSchema,
-} from '$lib/graph/composition-graph-types';
-import { newNodeId, asLiteral, hasKind } from '$lib/graph/composition-graph-types';
-import { setLayout, defaultCallPosition, collectEdges } from '$lib/graph/composition-graph-mutate';
-import { deriveInputNames } from '$lib/graph/graph-exprs';
+} from '$lib/graph/composition/composition-graph-types';
+import { newNodeId, asLiteral, hasKind } from '$lib/graph/composition/composition-graph-types';
+import { setLayout, defaultCallPosition, collectEdges } from '$lib/graph/composition/composition-graph-mutate';
+import { deriveInputNames } from '$lib/graph/expr/graph-exprs';
 
 /** DEFAULT-FILL the params map on load (#38 complex params). A NUMBER param is
  *  passed through UNTOUCHED (byte-identical — no `kind`, no default synthesis),

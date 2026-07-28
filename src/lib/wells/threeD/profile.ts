@@ -17,7 +17,7 @@
  */
 
 import { dot, cross, multiply, sqrt, subtract } from 'mathjs';
-import { sphPoint, minCurvatureStep, type XYZ } from '$lib/graph/survey-to-xyz';
+import { sphPoint, minCurvatureStep, type XYZ } from '$lib/graph/survey/survey-to-xyz';
 
 function normalize(v: number[]): number[] {
   const n = Math.sqrt(v.reduce((s, x) => s + x * x, 0));

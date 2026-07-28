@@ -38,7 +38,7 @@
  *   }
  */
 
-import type { Graph, GraphNode, ArgValue, NodeId } from '$lib/graph/composition-graph';
+import type { Graph, GraphNode, ArgValue, NodeId } from '$lib/graph/composition/composition-graph';
 
 /** Render an ArgValue (literal / expr / param) into a JS expression
  *  string. Mirrors the renderer in composition-emit.ts; pure transform. */

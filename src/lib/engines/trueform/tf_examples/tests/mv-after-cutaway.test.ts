@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { graphToTf } from '$lib/engines/trueform/graph-to-tf';
 import { executeTfRecipe } from '../execute';
 import { ensureTf } from '$lib/engines/trueform/trueform-client';
-import type { Graph, ArgValue } from '$lib/graph/composition-graph-types';
+import type { Graph, ArgValue } from '$lib/graph/composition/composition-graph-types';
 
 /**
  * REGRESSION (mv-after-cutaway TF bug). A translate/rotate that WRAPS a whole ROOT

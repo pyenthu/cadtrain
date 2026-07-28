@@ -14,7 +14,7 @@
  * through). Emit is NOT rerouted in Phase 0 — descriptors carry `emitExpr` for
  * their unit tests + as the verbatim source Phase 1 will wire in.
  */
-import type { Graph, GraphNode, NodeId, ArgValue } from '../composition-graph-types';
+import type { Graph, GraphNode, NodeId, ArgValue } from '$lib/graph/composition/composition-graph-types';
 
 /** Emit context threaded through every node's emitExpr — replaces the closure
  *  vars (`ref`, `emitValueExpr`, `varNames`, `listProducers`, `nodes`) currently

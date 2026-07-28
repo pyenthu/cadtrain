@@ -6,8 +6,8 @@ import {
   applyToSource,
   newNodeId,
   type TreeNode,
-} from '../composition-tree';
-import { partHashId } from '../part-id';
+} from '$lib/graph/composition/composition-tree';
+import { partHashId } from '$lib/graph/part/part-id';
 
 // emitNode stamps each Call `__tag(<expr>, partHashId(fn))` so the
 // color-by-source LUT (analyzeAssembly) matches the bake's mesh originalIDs.

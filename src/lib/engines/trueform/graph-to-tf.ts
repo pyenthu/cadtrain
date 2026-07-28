@@ -42,11 +42,11 @@ import type {
   ExprDef,
   SplineNode,
 } from './composition-graph-types';
-import { STACK_REF_PARAM, resolveEffectiveAppearance } from '$lib/graph/composition-graph-mutate';
+import { STACK_REF_PARAM, resolveEffectiveAppearance } from '$lib/graph/composition/composition-graph-mutate';
 import { resolveProfile } from '$lib/shared/profiles/profile-presets';
-import * as mathLib from '$lib/graph/math-lib';
-import { orderExprDef, compileListFormula } from '$lib/graph/graph-exprs';
-import { isImperative, compileImperative } from '$lib/graph/expr-imperative';
+import * as mathLib from '$lib/graph/expr/math-lib';
+import { orderExprDef, compileListFormula } from '$lib/graph/expr/graph-exprs';
+import { isImperative, compileImperative } from '$lib/graph/expr/expr-imperative';
 // The SINGLE source of truth for a parts_table RowMaterial → `{ outer, opacity,
 // material }` — the same mapping composition-emit stamps into meta.instanceColors, so
 // MF and TF paint a row identically. Pure fn (no UI/WASM); read-only reuse.

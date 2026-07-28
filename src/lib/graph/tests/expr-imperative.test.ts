@@ -1,8 +1,8 @@
 // Imperative loop model (#11 accumulator style) — parse/serialize/compile, and
 // proof the imperative spiral evals to the SAME points as the functional map form.
 import { describe, it, expect } from 'vitest';
-import { parseImperative, serializeImperative, serializeStatements, compileImperative, validateImperative, isImperative, bodyStatements, splitStatements, importLiteralPointList, type ImpIf, type ImperativeProgram } from '../expr-imperative';
-import { compileListFormula } from '../graph-exprs';
+import { parseImperative, serializeImperative, serializeStatements, compileImperative, validateImperative, isImperative, bodyStatements, splitStatements, importLiteralPointList, type ImpIf, type ImperativeProgram } from '$lib/graph/expr/expr-imperative';
+import { compileListFormula } from '$lib/graph/expr/graph-exprs';
 
 const tau = 2 * Math.PI;
 function evalList(js: string, vars: Record<string, number>): [number, number][] {

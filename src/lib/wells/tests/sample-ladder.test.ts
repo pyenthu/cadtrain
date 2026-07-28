@@ -41,8 +41,8 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { emitGraph } from '$lib/graph/composition-emit';
-import { hydrateGraph } from '$lib/graph/composition-graph-hydrate';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
+import { hydrateGraph } from '$lib/graph/composition/composition-graph-hydrate';
 import { wsonToGraph, SEGMENTS_PARAM } from '../wson-to-graph';
 import { parseWson, isDeviated, type Wson } from '../wson';
 

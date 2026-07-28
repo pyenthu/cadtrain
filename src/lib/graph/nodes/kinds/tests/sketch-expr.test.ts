@@ -3,7 +3,7 @@ import { SketchKind } from '../sketch';
 import { SketchRepeatKind } from '../sketch-repeat';
 import { ExprKind } from '../expr';
 import type { EmitCtx, SizeConsts } from '../../node-kind';
-import type { SketchNode, SketchRepeatNode, ExprNode, ArgValue } from '../../../composition-graph-types';
+import type { SketchNode, SketchRepeatNode, ExprNode, ArgValue } from '$lib/graph/composition/composition-graph-types';
 
 const lit = (v: number): ArgValue => ({ kind: 'literal', value: v });
 const par = (p: string): ArgValue => ({ kind: 'param', param: p });

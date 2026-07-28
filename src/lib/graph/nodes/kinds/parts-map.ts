@@ -19,7 +19,7 @@
  * record row is therefore emitted verbatim by `ctx.emitValue`, needing no
  * ArgValue change.
  */
-import type { PartsMapNode } from '../../composition-graph-types';
+import type { PartsMapNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, type ValidationError, err, checkArg } from '../node-kind';
 
 /** A JS identifier we allow as a loop-var name; anything else falls back to 's'. */

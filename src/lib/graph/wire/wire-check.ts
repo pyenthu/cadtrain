@@ -26,9 +26,9 @@ import {
   listOfPoints,
   type FeedCheck,
   type StructType,
-} from '$lib/graph/struct-type';
-import { isImperative } from '$lib/graph/expr-imperative';
-import type { Graph, NodeId, ExprNode } from '$lib/graph/composition-graph-types';
+} from '$lib/graph/port/struct-type';
+import { isImperative } from '$lib/graph/expr/expr-imperative';
+import type { Graph, NodeId, ExprNode } from '$lib/graph/composition/composition-graph-types';
 
 // ── consumer slot table ───────────────────────────────────────────────────────
 

@@ -9,7 +9,7 @@
  *
  * `exprBlockVar` is the ctx binding (graph-exprs.ts, passed in to avoid a cycle).
  */
-import type { PolygonNode } from '../../composition-graph-types';
+import type { PolygonNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind } from '../node-kind';
 
 export const PolygonKind: NodeKind<PolygonNode> = {

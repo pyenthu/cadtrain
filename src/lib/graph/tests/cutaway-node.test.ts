@@ -8,13 +8,13 @@
  * and survives a serialise → hydrate round-trip. Headless (no WASM).
  */
 import { describe, it, expect } from 'vitest';
-import { newGraph, hydrateGraph } from '../composition-graph-hydrate';
+import { newGraph, hydrateGraph } from '$lib/graph/composition/composition-graph-hydrate';
 import {
   addCall, addCutaway, addCutawayPlaceholder,
   setCutawayChild, setCutawayAz, setCutawayOffset, removeNode,
-} from '../composition-graph-mutate';
-import { asLiteral, asParam } from '../composition-graph-types';
-import { emitGraph, validateGraph } from '../composition-emit';
+} from '$lib/graph/composition/composition-graph-mutate';
+import { asLiteral, asParam } from '$lib/graph/composition/composition-graph-types';
+import { emitGraph, validateGraph } from '$lib/graph/composition/composition-emit';
 
 /** A shaft → cutaway(shaft) graph. Returns the ids we assert on. */
 function buildCutawayGraph(opts: { az?: number; offset?: number } = {}) {

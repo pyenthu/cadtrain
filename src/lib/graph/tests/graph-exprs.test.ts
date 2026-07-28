@@ -15,11 +15,11 @@ import {
   parseExpr,
   rewriteExprRefs,
   exprVarName,
-} from '../graph-exprs';
-import { newGraph, addCall, addParam } from '../composition-graph';
-import { asExpr } from '../composition-graph-types';
-import { emitGraph } from '../composition-emit';
-import type { GraphExpr } from '../composition-graph-types';
+} from '$lib/graph/expr/graph-exprs';
+import { newGraph, addCall, addParam } from '$lib/graph/composition/composition-graph';
+import { asExpr } from '$lib/graph/composition/composition-graph-types';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
+import type { GraphExpr } from '$lib/graph/composition/composition-graph-types';
 
 describe('graph-exprs — reference extraction', () => {
   it('extracts only e.* references (not p.* or bare symbols)', () => {

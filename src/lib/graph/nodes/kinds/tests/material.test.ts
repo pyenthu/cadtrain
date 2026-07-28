@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { MaterialKind } from '../material';
 import type { EmitCtx } from '../../node-kind';
-import type { Graph, MaterialNode } from '../../../composition-graph-types';
+import type { Graph, MaterialNode } from '$lib/graph/composition/composition-graph-types';
 
 const node = (name?: string): MaterialNode => ({ id: 'mat1', type: 'material', name } as MaterialNode);
 const ctx = (): EmitCtx => ({

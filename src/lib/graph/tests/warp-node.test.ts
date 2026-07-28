@@ -9,15 +9,15 @@
  * is the SPLINE_BAKE_URL-gated block at the bottom.
  */
 import { describe, it, expect } from 'vitest';
-import { newGraph, hydrateGraph } from '../composition-graph-hydrate';
+import { newGraph, hydrateGraph } from '$lib/graph/composition/composition-graph-hydrate';
 import {
   addSpline, setSplinePoints, addCall, addWarp, addWarpPlaceholder,
   setWarpChild, setWarpPath, setWarpRefine, setWarpStretch, setWarpValidate,
   removeNode,
-} from '../composition-graph-mutate';
-import { asExpr, asLiteral } from '../composition-graph-types';
-import { exprBlockMember } from '../graph-exprs';
-import { emitGraph, validateGraph } from '../composition-emit';
+} from '$lib/graph/composition/composition-graph-mutate';
+import { asExpr, asLiteral } from '$lib/graph/composition/composition-graph-types';
+import { exprBlockMember } from '$lib/graph/expr/graph-exprs';
+import { emitGraph, validateGraph } from '$lib/graph/composition/composition-emit';
 
 /** A box → spline → warp(box along spline) graph. Returns the ids we assert on. */
 function buildWarpGraph(opts: { refine?: number; stretch?: boolean; validate?: boolean } = {}) {

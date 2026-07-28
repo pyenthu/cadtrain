@@ -15,7 +15,7 @@
  * GraphEditorPane at once, so each needs its own history — same reason WireState
  * / SketchState are classes (memory: per-instance reactive state = a CLASS).
  */
-import type { Graph } from '$lib/graph/composition-graph-types';
+import type { Graph } from '$lib/graph/composition/composition-graph-types';
 
 const CAP = 100; // ring-cap the undo depth so a long session can't grow unbounded
 

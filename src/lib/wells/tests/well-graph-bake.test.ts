@@ -9,7 +9,7 @@ import { readFileSync } from 'node:fs';
 import { parseWson, type Wson } from '../wson';
 import { wellBakeSpec, wellMaxRadius, WELL_PART_NAME } from '../well-graph-bake';
 import { axialSpanForSurvey } from '../axial-density';
-import type { SurveyStation } from '$lib/graph/survey-to-xyz';
+import type { SurveyStation } from '$lib/graph/survey/survey-to-xyz';
 
 const sample = (slug: string): Wson =>
   parseWson(readFileSync(`src/lib/wells/samples/${slug}.wson`, 'utf8')).wson;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { resolveDepColors, analyzeParts } from '../part-colors';
-import { partHashId } from '$lib/graph/part-id';
+import { partHashId } from '$lib/graph/part/part-id';
 
 const SRC: Record<string, string> = {
   r_revolve: `export const meta = { id:'r_revolve', kind:'prim' };\nexport function r_revolve(p){ return null; }`,

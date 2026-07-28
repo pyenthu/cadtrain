@@ -32,7 +32,7 @@ import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, rm, stat, unlink, writeFile, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { volumePath } from './volume';
-import { ENGINE_HASH } from '$lib/graph/engine-hash';
+import { ENGINE_HASH } from '$lib/graph/composition/engine-hash';
 
 const CACHE_DIR = 'cache';
 /** SHA-256 hex truncated to 16 chars — 64-bit collision space. */

@@ -11,8 +11,8 @@
  * Headless by design (CLAUDE.md Rule 26): no browser, no volume, no geometry bake.
  */
 import { describe, expect, it, vi } from 'vitest';
-import { emitGraph } from '$lib/graph/composition-emit';
-import { hydrateGraph } from '$lib/graph/composition-graph-hydrate';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
+import { hydrateGraph } from '$lib/graph/composition/composition-graph-hydrate';
 import { deriveCementSegments, wsonToGraph } from '../wson-to-graph';
 import { lintWson } from '../wson';
 import type { Wson } from '../wson';

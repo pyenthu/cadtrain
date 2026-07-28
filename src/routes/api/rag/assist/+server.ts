@@ -1,7 +1,7 @@
 import { json, error } from '@sveltejs/kit';
 import { env } from '$env/dynamic/private';
 import { createAnthropicClient } from '$lib/server/anthropic-api';
-import { toClaudeTools, toolListText } from '$lib/graph/editor-tools-schema';
+import { toClaudeTools, toolListText } from '$lib/graph/editor/editor-tools-schema';
 
 /**
  * POST /api/rag/assist — ONE Claude call per turn for the context-aware ✨

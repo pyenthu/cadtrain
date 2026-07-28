@@ -28,10 +28,10 @@
  */
 import type { Wson } from './wson';
 import { wsonToGraph } from './wson-to-graph';
-import { hydrateGraph } from '$lib/graph/composition-graph-hydrate';
-import { emitGraph } from '$lib/graph/composition-emit';
+import { hydrateGraph } from '$lib/graph/composition/composition-graph-hydrate';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
 import { axialSpanForSurvey } from './axial-density';
-import type { SurveyStation } from '$lib/graph/survey-to-xyz';
+import type { SurveyStation } from '$lib/graph/survey/survey-to-xyz';
 
 /** The bake identity of a well. `name` must satisfy the compile endpoint's
  *  `/^[a-z_][a-z0-9_]*$/i`, so it is derived, not taken from the well name. */

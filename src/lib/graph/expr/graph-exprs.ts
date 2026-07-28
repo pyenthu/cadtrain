@@ -36,7 +36,7 @@
 // numeric preview will add `evaluateDependencies` if/when needed.
 import { create, parseDependencies, type MathNode } from 'mathjs';
 const { parse } = create(parseDependencies);
-import type { GraphExpr, ExprDef, ExprParam, ExprConst, ExprVar, ExprOut, ExprOutShape } from '$lib/graph/composition-graph-types';
+import type { GraphExpr, ExprDef, ExprParam, ExprConst, ExprVar, ExprOut, ExprOutShape } from '$lib/graph/composition/composition-graph-types';
 import {
   ALLOWED_FUNCTIONS,
   ALLOWED_CONSTANTS,
@@ -48,7 +48,7 @@ import {
   buildAllowedInputs,
   isIdentSafe,
   type AllowedInputs,
-} from '$lib/graph/expr-schema';
+} from '$lib/graph/expr/expr-schema';
 
 // ─── the e.<name> emit convention ───────────────────────────────────────────
 

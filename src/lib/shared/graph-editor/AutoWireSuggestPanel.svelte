@@ -6,9 +6,9 @@
    * applies them with one click. Draggable popover; opened from the ✨ rail
    * button. Plan: docs/plans/typed-ports.md ("Generative capability").
    */
-  import { autoWireSuggestions } from '$lib/graph/port-suggest';
-  import { addPolygonExprListRef } from '$lib/graph/composition-graph';
-  import { portType } from '$lib/graph/port-types';
+  import { autoWireSuggestions } from '$lib/graph/port/port-suggest';
+  import { addPolygonExprListRef } from '$lib/graph/composition/composition-graph';
+  import { portType } from '$lib/graph/port/port-types';
   import { clampDragPos } from './popover-clamp';
 
   let { graph, setGraph, onClose }: {

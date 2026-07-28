@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { newGraph, addCall, addPolygon, type CallNode, type PolygonNode } from '../composition-graph';
-import { dispatchEditorTool, readEditorState } from '../editor-tools';
+import { newGraph, addCall, addPolygon, type CallNode, type PolygonNode } from '$lib/graph/composition/composition-graph';
+import { dispatchEditorTool, readEditorState } from '$lib/graph/editor/editor-tools';
 
 /**
  * Pure-fn tests for the Phase-1 editor tool dispatcher. Build a tiny graph, run

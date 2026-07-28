@@ -6,15 +6,15 @@
  * per-row material → instanceColors), the mutate family, and hydrate round-trip.
  */
 import { describe, it, expect } from 'vitest';
-import { emitGraph } from '../composition-emit';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
 import {
   addPartsStackRow, insertPartsStackRowAbove, setPartsStackRowSrc, setPartsStackRowArg,
   setPartsStackRowTop, setPartsStackRowMaterial,
   removePartsStackRow, duplicatePartsStackRow, movePartsStackRow, hydrateGraph,
-} from '../composition-graph';
+} from '$lib/graph/composition/composition-graph';
 import { partsStackRowVar, partsStackWarpNodes } from '../nodes/kinds/parts-stack';
 import { autoNodes, lerpDTX } from '$lib/wells/dtx';
-import type { Graph, PartsStackRow } from '../composition-graph-types';
+import type { Graph, PartsStackRow } from '$lib/graph/composition/composition-graph-types';
 
 const lit = (v: number | string | boolean) => ({ kind: 'literal', value: v } as const);
 

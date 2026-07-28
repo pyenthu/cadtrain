@@ -9,7 +9,7 @@
  * regex computeConsumedSet used, so the polygon+revolve pair shows ONE output,
  * not two.
  */
-import type { CallNode, NodeId } from '../../composition-graph-types';
+import type { CallNode, NodeId } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, checkArg } from '../node-kind';
 
 export const CallKind: NodeKind<CallNode> = {

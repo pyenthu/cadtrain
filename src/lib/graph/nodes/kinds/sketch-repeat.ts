@@ -6,7 +6,7 @@
  *   validate ← none today → []
  *   size  ← geom.ts:413 (fixed 252 wide; height = heads + bindings + one row per op)
  */
-import type { SketchRepeatNode } from '../../composition-graph-types';
+import type { SketchRepeatNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind } from '../node-kind';
 
 export const SketchRepeatKind: NodeKind<SketchRepeatNode> = {

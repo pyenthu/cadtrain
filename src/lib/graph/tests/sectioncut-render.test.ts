@@ -22,8 +22,8 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { initManifold, cyl, tube, sectionCut, tagManifold } from '$lib/engines/manifold/manifold-helpers';
 import { finalizeManifold } from '$lib/engines/manifold/render-helpers';
-import { triSourceIds, partHashId, SECTION_ID } from '../part-id';
-import type { PartColorLUT } from '../part-lut-types';
+import { triSourceIds, partHashId, SECTION_ID } from '$lib/graph/part/part-id';
+import type { PartColorLUT } from '$lib/graph/part/part-lut-types';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';
 import { analyzeParts, resolveDepColors } from '$lib/server/part-colors';
 import { runCompiledManifold } from '$lib/engines/manifold/bake-worker-core';

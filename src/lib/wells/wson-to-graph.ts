@@ -33,9 +33,9 @@
  * NO FALLBACK: an untranslatable well throws `WsonTranslateError`. We never
  * emit a stand-in shape — a wrong well is worse than a visible error.
  */
-import type { ArgValue, CallNode, ContainerNode, Graph, GraphNode, MvNode, NodeId, ParamSchema, SplineNode, WarpNode } from '$lib/graph/composition-graph-types';
-import { asExpr, asLiteral, asParam } from '$lib/graph/composition-graph-types';
-import { exprBlockMember } from '$lib/graph/graph-exprs';
+import type { ArgValue, CallNode, ContainerNode, Graph, GraphNode, MvNode, NodeId, ParamSchema, SplineNode, WarpNode } from '$lib/graph/composition/composition-graph-types';
+import { asExpr, asLiteral, asParam } from '$lib/graph/composition/composition-graph-types';
+import { exprBlockMember } from '$lib/graph/expr/graph-exprs';
 import { normaliseKey, resolveStructural } from './registry';
 import { buildTrajectory } from './assemble';
 import { isDeviated, recomputeAutoTops } from './wson';

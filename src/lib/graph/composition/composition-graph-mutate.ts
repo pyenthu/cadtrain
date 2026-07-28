@@ -17,8 +17,8 @@ import type {
   GraphNode, ParamSchema, Edge, LayoutXY, Viewport, Graph, MaterialNode, PartAppearance,
   PartsMapNode,
   PartsTableNode, RowMaterial, PartsStackNode, PartsStackRow,
-} from '$lib/graph/composition-graph-types';
-import { newNodeId, asLiteral, asParam, asExpr } from '$lib/graph/composition-graph-types';
+} from '$lib/graph/composition/composition-graph-types';
+import { newNodeId, asLiteral, asParam, asExpr } from '$lib/graph/composition/composition-graph-types';
 
 /** Update a node's canvas position. Pure (returns new graph). */
 export function setLayout(graph: Graph, id: NodeId, xy: LayoutXY): Graph {

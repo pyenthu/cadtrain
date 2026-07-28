@@ -4,7 +4,7 @@
  *   size  ← geom.ts:351  (FIXED 40×40 CSG-operator circle — NOT auto-fit)
  * Byte-for-byte transcription of the existing switch/if arms.
  */
-import type { MethodNode } from '../../composition-graph-types';
+import type { MethodNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, has, err } from '../node-kind';
 
 export const MethodKind: NodeKind<MethodNode> = {

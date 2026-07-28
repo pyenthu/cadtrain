@@ -9,8 +9,8 @@ import { describe, expect, it } from 'vitest';
 import {
   newGraph, addCall, addMaterialNode, updateMaterialNode, removeMaterialNode,
   bindMaterial, unbindMaterial, resolveEffectiveAppearance, hydrateGraph,
-} from '../composition-graph';
-import { emitGraph } from '../composition-emit';
+} from '$lib/graph/composition/composition-graph';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
 
 function graphWithOnePart() {
   let g = newGraph();

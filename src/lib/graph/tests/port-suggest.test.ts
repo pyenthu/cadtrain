@@ -13,13 +13,13 @@ import {
   addExprDefParam, setExprDefParamName,
   addExprDefOutput, setExprDefOutputName, setExprDefOutputFormula, setExprDefOutputShape,
   addPolygon, addPolygonExprListRef,
-} from '../composition-graph';
+} from '$lib/graph/composition/composition-graph';
 import {
   portTypeOfExprOutput,
   graphOutputs,
   openInputSlots,
   autoWireSuggestions,
-} from '../port-suggest';
+} from '$lib/graph/port/port-suggest';
 
 // ── portTypeOfExprOutput ──────────────────────────────────────────────────────
 

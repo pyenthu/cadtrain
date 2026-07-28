@@ -25,13 +25,13 @@
  */
 import { createHash } from 'node:crypto';
 import { transformSync } from 'esbuild';
-import { ENGINE_HASH } from '$lib/graph/engine-hash';
+import { ENGINE_HASH } from '$lib/graph/composition/engine-hash';
 import * as helpers from '$lib/engines/manifold/manifold-helpers';
-import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive-sandbox';
+import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive/primitive-sandbox';
 import { compileProfileBuild } from './profile-fn';
 import { recognizeComposite } from './recognize-composite';
-import { partHashId } from '$lib/graph/part-id';
-import { paramKeysOf } from '$lib/graph/param-keys';
+import { partHashId } from '$lib/graph/part/part-id';
+import { paramKeysOf } from '$lib/graph/composition/param-keys';
 import { extractMetaFromSource } from '$lib/server/primitives-meta';
 
 /**

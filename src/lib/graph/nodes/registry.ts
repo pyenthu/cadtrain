@@ -7,7 +7,7 @@
  * `kindOf`, everything else falls through. Phase 1+ fills in the rest and the
  * `undefined` return goes away.
  */
-import type { GraphNode } from '../composition-graph-types';
+import type { GraphNode } from '$lib/graph/composition/composition-graph-types';
 import type { NodeKind } from './node-kind';
 import { CallKind, MethodKind, TxfmnKind, MaterialKind, MvKind, RotKind, SplineKind, WarpKind, CutawayKind, ContainerKind, StackKind, RepeatKind, PolygonKind, PolyRepeatKind, SketchKind, SketchRepeatKind, ExprKind, PartsMapKind, PartsTableKind, PartsStackKind } from './kinds';
 

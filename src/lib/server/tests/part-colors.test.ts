@@ -1,7 +1,7 @@
 import { beforeEach, describe, it, expect } from 'vitest';
 import { analyzeParts, resolveDepColors } from '../part-colors';
 import { _resetDepSourceCacheForTest } from '../primitive-loader';
-import { partHashId } from '$lib/graph/part-id';
+import { partHashId } from '$lib/graph/part/part-id';
 
 // A minimal recognizable composed part: two named instances whose calls are
 // declared in meta.uses, combined with .add — exactly the shape

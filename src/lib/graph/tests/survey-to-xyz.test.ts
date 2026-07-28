@@ -11,10 +11,10 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
-import { surveyToXYZ, buildMinCurvatureSampler, minCurvatureStep, sphPoint, type SurveyStation, type XYZ } from '../survey-to-xyz';
+import { surveyToXYZ, buildMinCurvatureSampler, minCurvatureStep, sphPoint, type SurveyStation, type XYZ } from '$lib/graph/survey/survey-to-xyz';
 import { WellProfile } from '$lib/wells/threeD/profile';
-import { emitSplineBlocks } from '../composition-emit';
-import type { Graph, SplineNode } from '../composition-graph-types';
+import { emitSplineBlocks } from '$lib/graph/composition/composition-emit';
+import type { Graph, SplineNode } from '$lib/graph/composition/composition-graph-types';
 
 const len = (a: XYZ) => Math.hypot(a[0], a[1], a[2]);
 const dist = (a: XYZ, b: XYZ) => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);

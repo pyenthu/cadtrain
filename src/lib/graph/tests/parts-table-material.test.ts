@@ -15,10 +15,10 @@
  *               ABSENT / all-null ⇒ NO instanceColors ⇒ byte-identical emit.
  */
 import { describe, it, expect } from 'vitest';
-import { emitGraph } from '../composition-emit';
-import { setPartsTableRowMaterial, setPartsTableMaterial, hydrateGraph } from '../composition-graph';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
+import { setPartsTableRowMaterial, setPartsTableMaterial, hydrateGraph } from '$lib/graph/composition/composition-graph';
 import { partsTableRowVar } from '../nodes/kinds/parts-table';
-import type { Graph, ArgValue, RowMaterial } from '../composition-graph-types';
+import type { Graph, ArgValue, RowMaterial } from '$lib/graph/composition/composition-graph-types';
 
 const lit = (v: number | string | boolean): ArgValue => ({ kind: 'literal', value: v });
 

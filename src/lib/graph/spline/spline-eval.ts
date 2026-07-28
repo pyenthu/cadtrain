@@ -22,10 +22,10 @@
  * cycle failure → `[]`, so the caller shows an "expression has no points yet"
  * state instead of crashing the popup / WASM core).
  */
-import { emitExprBlocks } from '$lib/graph/composition-emit';
-import * as mathLib from '$lib/graph/math-lib';
-import type { Graph, ArgValue } from '$lib/graph/composition-graph';
-import type { Vec3 } from '$lib/graph/spline-resample';
+import { emitExprBlocks } from '$lib/graph/composition/composition-emit';
+import * as mathLib from '$lib/graph/expr/math-lib';
+import type { Graph, ArgValue } from '$lib/graph/composition/composition-graph';
+import type { Vec3 } from '$lib/graph/spline/spline-resample';
 
 // Math primitives injected as BARE names — index-aligned name/value lists, the
 // same single source of truth the primitive sandbox uses (primitive-sandbox.ts).

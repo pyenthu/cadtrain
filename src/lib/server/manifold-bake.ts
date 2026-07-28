@@ -21,7 +21,7 @@ import { join } from 'path';
 // gets populated. A second-init (private to this module) would leave
 // the helpers' M as null and the geom would throw when called.
 import { initManifold, getCutBox, tagManifold } from '$lib/engines/manifold/manifold-helpers';
-import { SECTION_ID, triSourceIds } from '../graph/part-id';
+import { SECTION_ID, triSourceIds } from '../graph/part/part-id';
 
 const STATIC_DIR = join(process.cwd(), 'static', 'components');
 

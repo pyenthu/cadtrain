@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { exportGlbClient } from '../glb-client';
+import { exportGlbClient } from '$lib/graph/primitive/glb-client';
 
 // three's GLTFExporter reads its assembled Blob back through FileReader, which
 // Node lacks. Node HAS Blob, so a 6-line shim is enough — no jsdom needed.

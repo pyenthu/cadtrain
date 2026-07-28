@@ -2,7 +2,7 @@
 // a `return`. Verifies the dense spiral one-liner and the broken-down
 // multi-line form compile to the SAME points, and that `return`/blocks validate.
 import { describe, it, expect } from 'vitest';
-import { compileListFormula, parseAndValidateBare } from '../graph-exprs';
+import { compileListFormula, parseAndValidateBare } from '$lib/graph/expr/graph-exprs';
 
 const tau = 2 * Math.PI;
 function evalList(js: string, vars: Record<string, number>): [number, number][] {

@@ -7,9 +7,9 @@
  * (modularize: the node-palette cut) so the graph-construction logic is unit-
  * testable in isolation and the shell shrinks toward orchestration-only.
  */
-import type { Graph, ArgValue } from '$lib/graph/composition-graph-types';
-import { asLiteral, asExpr } from '$lib/graph/composition-graph-types';
-import { addCall, addPolygon, addSketch } from '$lib/graph/composition-graph-mutate';
+import type { Graph, ArgValue } from '$lib/graph/composition/composition-graph-types';
+import { asLiteral, asExpr } from '$lib/graph/composition/composition-graph-types';
+import { addCall, addPolygon, addSketch } from '$lib/graph/composition/composition-graph-mutate';
 
 export type SolidOp = 'revolve' | 'extrude' | 'loft' | 'sweep';
 

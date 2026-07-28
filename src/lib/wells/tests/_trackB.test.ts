@@ -30,7 +30,7 @@ import { wsonToGraph } from '../wson-to-graph';
 import { wellBakeSpec, wellMaxRadius } from '../well-graph-bake';
 import { axialSpanForSurvey, minRadiusOfCurvature } from '../axial-density';
 import { analyzeParts } from '$lib/server/part-colors';
-import type { SurveyStation } from '$lib/graph/survey-to-xyz';
+import type { SurveyStation } from '$lib/graph/survey/survey-to-xyz';
 
 const MAIN = '/Users/neerajsethi/code/cadtrain';
 // The CURRENT dep-resolved compiled MF script for well 4 (14 elements, warped).

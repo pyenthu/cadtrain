@@ -10,7 +10,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { PartsTableKind, partsTableRowVar, orderedRowKeys } from '../parts-table';
-import type { Graph, PartsTableNode, ArgValue } from '../../../composition-graph-types';
+import type { Graph, PartsTableNode, ArgValue } from '$lib/graph/composition/composition-graph-types';
 
 const lit = (v: number | string | boolean): ArgValue => ({ kind: 'literal', value: v });
 const par = (p: string): ArgValue => ({ kind: 'param', param: p });

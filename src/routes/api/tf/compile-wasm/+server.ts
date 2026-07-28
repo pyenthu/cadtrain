@@ -1,6 +1,6 @@
 import { json, error } from '@sveltejs/kit';
 import { graphToTf } from '$lib/engines/trueform/graph-to-tf';
-import { recipeToWasm, recipeToBytes, recipeOpCount, RECIPE_FMT } from '$lib/graph/tf-wat-emit';
+import { recipeToWasm, recipeToBytes, recipeOpCount, RECIPE_FMT } from '$lib/graph/expr/tf-wat-emit';
 
 // POST /api/tf/compile-wasm — compile a part's composition GRAPH → a TrueForm
 // instruction RECIPE (graphToTf) → an OPAQUE WASM module carrying that recipe

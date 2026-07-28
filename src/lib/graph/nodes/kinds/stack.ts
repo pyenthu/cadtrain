@@ -11,7 +11,7 @@
  * emit-time helper — no EmitCtx binding needed. `listProducers` (which children
  * produce a bare JS array) + `emitValue` come from the ctx.
  */
-import type { ContainerNode, NodeId, ArgValue } from '../../composition-graph-types';
+import type { ContainerNode, NodeId, ArgValue } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, has, err } from '../node-kind';
 import { containerSize } from './container';
 

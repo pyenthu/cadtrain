@@ -8,7 +8,7 @@
   per-top intent callbacks; imports nothing from GEP.
 -->
 <script lang="ts">
-  import type { ArgValue } from '$lib/graph/composition-graph-types';
+  import type { ArgValue } from '$lib/graph/composition/composition-graph-types';
 
   let {
     src,

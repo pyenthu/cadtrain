@@ -22,8 +22,8 @@
  * node id + row index, exactly like exprBlockMember), so a downstream wire can
  * target ONE row without depending on emit's var-name assignment.
  */
-import type { NodeId, ArgValue } from '../../composition-graph-types';
-import type { PartsTableNode, RowMaterial } from '../../composition-graph-types';
+import type { NodeId, ArgValue } from '$lib/graph/composition/composition-graph-types';
+import type { PartsTableNode, RowMaterial } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, type ValidationError, err, checkArg, has } from '../node-kind';
 
 /** The loop-body arg-map for a WIRED parts_table (#38c): each declared column →

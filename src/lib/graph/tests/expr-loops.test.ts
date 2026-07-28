@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { parseLoops, serializeLoops } from '../expr-loops';
+import { parseLoops, serializeLoops } from '$lib/graph/expr/expr-loops';
 
 const SPIRAL = [
   'outer(i) = [(r0 + growth*i/NPts)*cos(i*turns*tau/NPts), (r0 + growth*i/NPts)*sin(i*turns*tau/NPts)]',

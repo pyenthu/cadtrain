@@ -7,7 +7,7 @@ import {
   recipeOpCount,
   RECIPE_FMT,
   RECIPE_OFFSET,
-} from '../tf-wat-emit';
+} from '$lib/graph/expr/tf-wat-emit';
 import { graphToTf, type TfRecipe } from '$lib/engines/trueform/graph-to-tf';
 
 /**

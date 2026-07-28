@@ -1,8 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { resolveWiredSplinePoints } from '../spline-eval';
-import type { Graph, ExprDef } from '../composition-graph-types';
-import { asLiteral, asExpr, asParam } from '../composition-graph-types';
-import { exprBlockMember } from '../graph-exprs';
+import { resolveWiredSplinePoints } from '$lib/graph/spline/spline-eval';
+import type { Graph, ExprDef } from '$lib/graph/composition/composition-graph-types';
+import { asLiteral, asExpr, asParam } from '$lib/graph/composition/composition-graph-types';
+import { exprBlockMember } from '$lib/graph/expr/graph-exprs';
 
 /** A graph with one expr def (a list<point3> output) + an instance + a spline.
  *  Mirrors __spline_pointsexpr_verify.test.ts. `defParams` become the def's

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { spliceNodeIntoWire, canSplice, canSpliceInto, inputSlotOf, spliceWireKey, type SpliceWire } from '../wire-splice';
-import type { Graph } from '$lib/graph/composition-graph';
+import type { Graph } from '$lib/graph/composition/composition-graph';
 
 /** Minimal graph builder — root is a list container `r`. Mirrors
  *  wire-delete.test.ts; nodes carry just enough for the splice mutators +

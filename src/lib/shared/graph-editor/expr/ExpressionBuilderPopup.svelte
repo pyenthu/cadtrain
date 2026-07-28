@@ -26,14 +26,14 @@
 -->
 <script lang="ts">
   import { clampToViewport, clampDragPos } from '../popover-clamp';
-  import { isIdentSafe, ALLOWED_FUNCTIONS, ALLOWED_CONSTANTS } from '$lib/graph/expr-schema';
-  import { parseAndValidateBare } from '$lib/graph/graph-exprs';
-  import { inferStructure, structLabel } from '$lib/graph/struct-type';
-  import type { ExprDef, ExprOutShape, ExprOutElem } from '$lib/graph/composition-graph-types';
+  import { isIdentSafe, ALLOWED_FUNCTIONS, ALLOWED_CONSTANTS } from '$lib/graph/expr/expr-schema';
+  import { parseAndValidateBare } from '$lib/graph/expr/graph-exprs';
+  import { inferStructure, structLabel } from '$lib/graph/port/struct-type';
+  import type { ExprDef, ExprOutShape, ExprOutElem } from '$lib/graph/composition/composition-graph-types';
   import ExpressionSrcPane, { type Completion } from './ExpressionSrcPane.svelte';
   import ExprImperativeBlocks from './ExprImperativeBlocks.svelte';
-  import { parseLoops } from '$lib/graph/expr-loops';
-  import { isImperative, validateImperative } from '$lib/graph/expr-imperative';
+  import { parseLoops } from '$lib/graph/expr/expr-loops';
+  import { isImperative, validateImperative } from '$lib/graph/expr/expr-imperative';
 
   let {
     def,

@@ -22,6 +22,6 @@
  *   • composition-graph-mutate.ts  — mutators + queries + topoOrder
  */
 
-export * from '$lib/graph/composition-graph-types';
-export * from '$lib/graph/composition-graph-hydrate';
-export * from '$lib/graph/composition-graph-mutate';
+export * from '$lib/graph/composition/composition-graph-types';
+export * from '$lib/graph/composition/composition-graph-hydrate';
+export * from '$lib/graph/composition/composition-graph-mutate';

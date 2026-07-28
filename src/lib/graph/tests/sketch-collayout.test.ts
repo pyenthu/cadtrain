@@ -13,7 +13,7 @@ import {
   sketchEntryH,
   SKETCH_COL_W,
   SKETCH_COL_GAP,
-} from '../sketch-layout';
+} from '$lib/graph/sketch/sketch-layout';
 
 /** A mixed op list — lines (45) + a fillet (24) + a spline (45) + a chamfer (24). */
 const mixed = () => [

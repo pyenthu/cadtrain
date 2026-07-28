@@ -21,7 +21,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import * as THREE from 'three';
 import { projectScene, shadeAndEmit, projectedDegenerate, type ProjectedScene } from '../svg-emit';
 import { buildSvgCamera } from '../svg-camera';
-import { warpVertex } from '$lib/graph/warp-geom';
+import { warpVertex } from '$lib/graph/warp/warp-geom';
 import { warpMeshJS } from '$lib/engines/manifold/warp-spline';
 
 // --- minimal SVG element stub (project uses `environment: 'node'`, no jsdom) ---

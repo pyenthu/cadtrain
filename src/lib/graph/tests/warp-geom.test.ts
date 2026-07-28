@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { warpVertex } from '../warp-geom';
+import { warpVertex } from '$lib/graph/warp/warp-geom';
 
 // The warp baked into the Manifold geometry MUST match the old render-time
 // shader EXACTLY: disp = amp * sin(z * freq); axis 'x' → x += disp, axis 'y'

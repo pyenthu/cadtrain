@@ -8,12 +8,12 @@
  *    must yield the SAME numeric ops as `expandSketchOps`.
  */
 import { describe, expect, it } from 'vitest';
-import { expandSketchOps, type EvalArg } from '../sketch-repeat';
-import { compileSketch, type SketchOp } from '../sketch';
-import { asLiteral, asExpr, newGraph } from '../composition-graph';
-import { addSketch, addSketchRepeat, setSketchRepeatAdvance, setSketchRepeatCount } from '../composition-graph';
-import { emitGraph } from '../composition-emit';
-import type { SketchOpEntry, SketchRepeatNode, SketchRepeatRef, NodeId } from '../composition-graph-types';
+import { expandSketchOps, type EvalArg } from '$lib/graph/sketch/sketch-repeat';
+import { compileSketch, type SketchOp } from '$lib/graph/sketch/sketch';
+import { asLiteral, asExpr, newGraph } from '$lib/graph/composition/composition-graph';
+import { addSketch, addSketchRepeat, setSketchRepeatAdvance, setSketchRepeatCount } from '$lib/graph/composition/composition-graph';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
+import type { SketchOpEntry, SketchRepeatNode, SketchRepeatRef, NodeId } from '$lib/graph/composition/composition-graph-types';
 
 // Local evalArg mirroring the editor's (literal | param | expr with `with(p)`).
 const evalArg: EvalArg = (a: any, p) => {

@@ -3,7 +3,7 @@
  * translator (TODO #46, v0). Small hand-built graphs; pure, no WASM.
  */
 import { describe, it, expect } from 'vitest';
-import type { Graph } from '$lib/graph/composition-graph-types';
+import type { Graph } from '$lib/graph/composition/composition-graph-types';
 import { graphToTf, tfRecipeText, compositeSrcsOf, type TfInstr, type ResolveComposite } from '../graph-to-tf';
 
 /** Minimal graph scaffold — only the fields the translator reads. */

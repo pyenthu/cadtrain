@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { CallKind } from '../call';
 import type { EmitCtx } from '../../node-kind';
-import type { Graph, CallNode, ArgValue } from '../../../composition-graph-types';
+import type { Graph, CallNode, ArgValue } from '$lib/graph/composition/composition-graph-types';
 
 const lit = (v: number): ArgValue => ({ kind: 'literal', value: v });
 const par = (p: string): ArgValue => ({ kind: 'param', param: p });
