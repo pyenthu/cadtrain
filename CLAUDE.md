@@ -26,11 +26,14 @@ Subdirectory CLAUDE.md files (auto-loaded in-subtree): `src/routes/api/`
 - **One editor, two surfaces.** `src/lib/shared/GraphEditorPane.svelte` is THE
   CAD editor. `/graph-editor` mounts it full-screen (`?id=&embed=1`);
   `/primitives` is a sidebar + multi-tab wrapper mounting N panes.
-- **Composition graph**: `src/lib/graph/composition-graph.ts` — nodes
+- **Composition graph**: `src/lib/graph/composition/composition-graph.ts` — nodes
   `Call / Container / Method / Mv / Rot / Repeat / Polygon / PolyRepeat`,
   `ArgValue = literal | expr | param`. Graph → source via
-  `composition-emit*.ts` (parts carry `meta.graph` + emitted body); bake via
-  `composition-bake.ts` + server bake cache (`src/lib/server/bake-cache.ts`).
+  `composition/composition-emit*.ts` (parts carry `meta.graph` + emitted body); bake via
+  `composition/composition-bake.ts` + server bake cache (`src/lib/server/bake-cache.ts`).
+  (The 39 loose `graph/` root files were modularized into concern subfolders 2026-07-28,
+  #995 — `composition/ expr/ primitive/ sketch/ spline/ port/ part/ editor/ csg/ survey/
+  warp/ wire/ profile/`; see `src/lib/graph/CLAUDE.md`.)
 - **Engines**: `src/lib/graph/stdlib/` (active: `r_cuboid`, `r_loft`,
   `r_weld_extrude` — used by g_cube/g_spiral/g_star/g_barrel — and `r_revolve`,
   the sole revolve engine, 12 consumers) + `src/lib/graph/stdlib/stale/`
