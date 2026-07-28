@@ -12,7 +12,6 @@
 - **#43 · CHAT→WELLS AI** — RAG-grounded chat that creates/edits wells + a training/correction log (chat corrections · well-edit tuples · full-well snapshots) → LOCAL model (`webllm`, `ai_data_residency_local_first`). First safe headless increment: the register store + RAG-for-chat retrieval reusing the existing corpus. Deep-dive SVTC `src/lib/ai/` first.
 
 ## Engines (MF · TF · BREP)
-- **BREP per-part / nested colours NOT rendered** (`bw_packer` all-brown) — `__tagNest` is MF-only; implement per-subpart colour tagging in the BREP executor. (#997)
 - **BREP client-side bake** (E2/E3/#39) — NOT STARTED. Server compiles → pooled warm client OCCT worker builds+meshes + `.cut()` cutaway. `brep-client.ts` is a stub. Verify HEADLESS.
 - **BREP-native warp** (E4/#988) — `MakePipeShell` spline sweep (PROVEN: `w_deviated_casing` vol==MF; ⚠ the cut is section-BEFORE-sweep). LEFT: land into the bake pipeline · curvature-adaptive spine · warped-solid cutaway. Depends on E2.
 - **BREP curved hollow swept-boolean** — SVG-500 FIXED (`#B-bore-extend`, merged): `/api/brep/svg` now degrades to uncut instead of throwing + `sectionCut` guarded; bore-extend added as MF/TF parity (OCCT's exact boolean already tolerates coincident caps, so no χ win). REMAINING: an actual cutaway REVEAL on a swept-boolean (needs the annular section — MF/TF-only for BREP; replicad won't sweep a holed face).
@@ -26,7 +25,7 @@
 - **SVG smooth shading** — Lambert-shade from the shared crease-aware corner normals; extend `PrimitiveSvgView`+`svg-emit`, NO fork. ⚠ namespace gradient ids. (#985)
 - **SVG_BASIC tab** — well-schematic SVG: offset walls ⊥ the projected centerline tangent (wellnew/SVTC model), not a projected mesh. Reuse `CompJsonSilhouette` + `wson-2d.ts`. (#1010, `svg-warp-projection.md` Option 2). *(Generic SVG warp-shear already fixed by Option 1.)*
 - **BREP_SVG tab** — shade from BREP boundary surfaces (OCCT HLR outline + per-face Lambert), not a triangle soup. (#990)
-- **#998 WGPU tab** — WIRED + boundary render SHIPPED (`44a9121`): `/api/brep/svg` `format:'polylines'` mode (headless-tested) + WebGpuView fetches & rasterizes the OCCT true-boundary via a WGSL line pipeline (aspect-fit + Y-flip). GPU draw (silhouette on-screen) = visual eyeball. Off critical path.
+- **WGPU tab — SHIPPED** (plan 1012): boundary render + white bg + steel-fill shading under the teal outline. LEFT = a human eyeball on the GPU draw (headless can't run WebGPU). Off critical path.
 - **SVG tab is the last `/preview` caller** — needs `segmentsFloor` in the client worker; move the SVG bake + headless callers off-thread.
 - **#65 Radial/Z-scale as build-time PARAMS** (warp-aware, arc-length not world-z). LEFT: UI (spline-mode toggle + warp-scale sliders); model/emit/bake shipped.
 - **TF section shows no INNER colours** — `{op:'cutaway'}` must colour exposed faces `SECTION_INNER`.
@@ -39,6 +38,7 @@
 - **Material/texture** (deprioritized) — **#61** material system · **#63** SVG `<pattern>` textures · **#76** material texture map. *(Graph-wide default-colour chip PARKED — un-overridden parts keep the built-in red/grey fallback; re-add only if that annoys.)*
 - **#20 typed expression outputs** · **#11/#31 expression-as-builder + visual editor** · **#36 warp node** (repeat-as-sweep · varying-section r_sweep · spline as generic point-source · subpart colours).
 - **`w_multi_string_dev` — drop the 9 linear sections**, keep only the multi-part warp. (#986) ⚠ writes the shared prod volume — attended only.
+- **Section card = multiple inputs** (in flight, worktree agent) — the `✂ section` (sectionCut) node accepts only ONE wired solid; make it take N inputs (section each / mirror the container's multi-input socket), single-input emit byte-identical.
 - Smaller: Section "show cutter" wedge overlay · in-canvas controls screen-fixed · multi-input compact connectors · #18 r_surface_grid · #21 sweep_demo · #17 loop toolbar.
 
 ## /design + AI
