@@ -199,6 +199,51 @@ export function t_empty(p) { return undefined; }`;
   }, OCCT_TIMEOUT);
 });
 
+describe('/api/brep/svg — format:"polylines" (WGPU tab, #998)', () => {
+  it('{ kind:"revolve", …, format:"polylines" } → raw polylines + finite bbox, NO svg', async () => {
+    const { data } = await callPost({ kind: 'revolve', profile: CYL, format: 'polylines' });
+    expect(data.supported, `expected supported:true, got ${JSON.stringify(data).slice(0, 200)}`).toBe(true);
+    // Polylines instead of the SVG string.
+    expect(data.svg, 'polylines mode must NOT return an svg string').toBeUndefined();
+    expect(Array.isArray(data.polylines), 'polylines must be an array').toBe(true);
+    expect(data.polylines.length, 'non-empty polylines').toBeGreaterThanOrEqual(1);
+    // Every point is a finite [x,y] pair.
+    for (const pl of data.polylines) {
+      expect(pl.length).toBeGreaterThanOrEqual(2);
+      for (const p of pl) {
+        expect(p.length).toBe(2);
+        expect(Number.isFinite(p[0]) && Number.isFinite(p[1])).toBe(true);
+      }
+    }
+    // Finite bbox with minX < maxX (and minY < maxY).
+    const { minX, minY, maxX, maxY } = data.bbox;
+    expect([minX, minY, maxX, maxY].every(Number.isFinite), 'bbox finite').toBe(true);
+    expect(minX, 'bbox minX < maxX').toBeLessThan(maxX);
+    expect(minY, 'bbox minY < maxY').toBeLessThan(maxY);
+    // meta: timing + edge/point counts.
+    expect(typeof data.meta?.ms).toBe('number');
+    expect(data.meta?.mode).toBe('edges');
+    expect(data.meta?.edges).toBe(data.polylines.length);
+  }, OCCT_TIMEOUT);
+
+  it('{ source, …, format:"polylines" } → executes the graph→OCCT solid, projects polylines', async () => {
+    const { data } = await callPost({ source: CSG_SRC, paramValues: { a: 4, b: 2 }, format: 'polylines' });
+    expect(data.supported, `expected supported:true, got ${JSON.stringify(data).slice(0, 200)}`).toBe(true);
+    expect(data.svg).toBeUndefined();
+    expect(data.polylines.length).toBeGreaterThanOrEqual(1);
+    expect(data.bbox.minX).toBeLessThan(data.bbox.maxX);
+  }, OCCT_TIMEOUT);
+
+  it('absent format still returns the byte-identical SVG string (no regression)', async () => {
+    const svgResp = await callPost({ kind: 'revolve', profile: CYL });
+    const explicit = await callPost({ kind: 'revolve', profile: CYL, format: 'svg' });
+    expect(typeof svgResp.data.svg).toBe('string');
+    expect(svgResp.data.polylines).toBeUndefined();
+    // Any non-'polylines' format value falls through to the SVG default.
+    expect(explicit.data.svg, 'non-polylines format → SVG default').toBe(svgResp.data.svg);
+  }, OCCT_TIMEOUT);
+});
+
 describe('/api/brep/svg — request validation', () => {
   it('neither input shape → supported:false with guidance', async () => {
     const { data } = await callPost({});

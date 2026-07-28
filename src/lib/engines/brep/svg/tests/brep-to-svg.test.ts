@@ -6,7 +6,7 @@
  * solid's triangle count — proving it is edges, not a projected triangle soup.
  */
 import { describe, it, expect } from 'vitest';
-import { brepRevolveToSvg, brepSolidToSvg } from '../brep-to-svg';
+import { brepRevolveToSvg, brepSolidToSvg, brepRevolveToPolylines } from '../brep-to-svg';
 import { revolveBrep } from '../../brep-occt';
 
 // A solid cylinder half-section (r 0.01→2, z 0→6), same family as the #997 test.
@@ -98,5 +98,50 @@ describe('brep-to-svg: fallback + fill modes', () => {
     const svg = await brepSolidToSvg(solid, {});
     expect(svg.startsWith('<svg')).toBe(true);
     expect(countGeom(svg).elements).toBeGreaterThanOrEqual(1);
+  });
+});
+
+// ── #998 — raw polyline accessor (WGPU GPU line-render feed) ──────────────────
+describe('brep-to-svg: format:"polylines" raw accessor', () => {
+  it('cylinder → non-empty polylines of finite [x,y] points + a finite bbox (minX<maxX)', async () => {
+    const { polylines, bbox, meta } = await brepRevolveToPolylines(CYL);
+
+    // A non-empty array of polylines, each a non-empty array of [x,y] pairs.
+    expect(Array.isArray(polylines), 'polylines must be an array').toBe(true);
+    expect(polylines.length, 'must project ≥1 boundary polyline').toBeGreaterThanOrEqual(1);
+    let totalPts = 0;
+    for (const pl of polylines) {
+      expect(Array.isArray(pl) && pl.length >= 2, 'each polyline is ≥2 points').toBe(true);
+      for (const p of pl) {
+        expect(p.length, 'each point is [x,y]').toBe(2);
+        expect(Number.isFinite(p[0]) && Number.isFinite(p[1]), 'point coords finite').toBe(true);
+        totalPts++;
+      }
+    }
+
+    // A finite, non-degenerate bbox — minX strictly < maxX (the fit source).
+    expect(Number.isFinite(bbox.minX) && Number.isFinite(bbox.maxX), 'bbox x finite').toBe(true);
+    expect(Number.isFinite(bbox.minY) && Number.isFinite(bbox.maxY), 'bbox y finite').toBe(true);
+    expect(bbox.minX, 'bbox must have width (minX<maxX)').toBeLessThan(bbox.maxX);
+    expect(bbox.minY, 'bbox must have height (minY<maxY)').toBeLessThan(bbox.maxY);
+
+    // meta echoes the edge projection + point count.
+    expect(meta.mode).toBe('edges');
+    expect(meta.edges).toBe(polylines.length);
+    expect(meta.points).toBe(totalPts);
+  });
+
+  it('polyline points lie inside the edge-mode SVG viewBox (same 2D frame, no re-projection)', async () => {
+    const { polylines, bbox } = await brepRevolveToPolylines(CYL);
+    // The edge-mode SVG's viewBox is the same bounds padded by the default margin (2),
+    // proving the polylines share the SVG's projected space rather than a fresh one.
+    const svg = await brepRevolveToSvg(CYL, { mode: 'edges' });
+    const vb = /viewBox="([^"]+)"/.exec(svg)![1].trim().split(/\s+/).map(Number);
+    const [vx, vy, vw, vh] = vb;
+    expect(bbox.minX).toBeGreaterThanOrEqual(vx - 1e-3);
+    expect(bbox.maxX).toBeLessThanOrEqual(vx + vw + 1e-3);
+    expect(bbox.minY).toBeGreaterThanOrEqual(vy - 1e-3);
+    expect(bbox.maxY).toBeLessThanOrEqual(vy + vh + 1e-3);
+    void polylines;
   });
 });
