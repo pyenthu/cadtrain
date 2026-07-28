@@ -222,6 +222,61 @@ function projectEdgePolylines(
   return { polylines, bbox: { minX, minY, maxX, maxY } };
 }
 
+/**
+ * Project the solid's FRONT-FACING surface triangles to 2D fill rings via the
+ * SAME ortho projector `projectEdgePolylines` uses — so the filled regions land
+ * in the IDENTICAL 2D frame as the edge polylines (no re-projection, no drift).
+ * Each ring is a triangle `[[x,y],[x,y],[x,y]]`; drawn together their UNION reads
+ * as the filled silhouette the `fill:'silhouette'` SVG mode paints. A per-ring
+ * Lambert shade (0..1, the same crease-aware normalizer `meshLambertAssembly`
+ * uses) rides along for optional per-region shading. Back-facing triangles are
+ * culled. This is the fill sibling of the raw-polyline accessor (#999 — the WGPU
+ * shading pass). Meshing/degenerate failure degrades to an EMPTY fill set so the
+ * outline still renders (never throws).
+ */
+function projectFillPolygons(
+  replicad: any,
+  solid: any,
+  opts: BrepSvgOpts,
+): { fills: [number, number][][]; shades: number[] } {
+  try {
+    const proj = orthoProjector(replicad, opts.camera);
+    const mesh = solid.mesh({ tolerance: 0.01, angularTolerance: 0.12 });
+    const V: number[] = mesh?.vertices ?? [];
+    const Tr: number[] = mesh?.triangles ?? [];
+    if (Tr.length < 3 || V.length < 9) return { fills: [], shades: [] };
+    // Crease-aware smoothed per-corner normals — smooth curves, hard creases (the
+    // exact-kernel shading pass the 3D BREP view + meshLambertAssembly share).
+    const cn = creaseAwareCornerNormals(V, Tr, DEFAULT_CREASE_ANGLE);
+    const light = norm(opts.light ?? [0.35, 1, -0.55]);
+    const ambient = opts.ambient ?? 0.35;
+    const fills: [number, number][][] = [];
+    const shades: number[] = [];
+    const nt = (Tr.length / 3) | 0;
+    for (let t = 0; t < nt; t++) {
+      const ia = Tr[t * 3], ib = Tr[t * 3 + 1], ic = Tr[t * 3 + 2];
+      const pa: Vec3 = [V[ia * 3], V[ia * 3 + 1], V[ia * 3 + 2]];
+      const pb: Vec3 = [V[ib * 3], V[ib * 3 + 1], V[ib * 3 + 2]];
+      const pc: Vec3 = [V[ic * 3], V[ic * 3 + 1], V[ic * 3 + 2]];
+      const o = t * 9;
+      const N = norm([
+        cn[o] + cn[o + 3] + cn[o + 6],
+        cn[o + 1] + cn[o + 4] + cn[o + 7],
+        cn[o + 2] + cn[o + 5] + cn[o + 8],
+      ]);
+      if (dot(N, proj.viewDir) >= 0) continue; // back-facing → cull
+      const shade = clamp(Math.abs(dot(N, light)), ambient, 1);
+      const qa = proj.project({ x: pa[0], y: pa[1], z: pa[2] });
+      const qb = proj.project({ x: pb[0], y: pb[1], z: pb[2] });
+      const qc = proj.project({ x: pc[0], y: pc[1], z: pc[2] });
+      if (![qa[0], qa[1], qb[0], qb[1], qc[0], qc[1]].every(Number.isFinite)) continue;
+      fills.push([qa, qb, qc]);
+      shades.push(shade);
+    }
+    return { fills, shades };
+  } catch { return { fills: [], shades: [] }; }
+}
+
 /** FALLBACK — direct edge projection (line-art, no fill). The `fill:'lambert'`
  *  path is handled by meshLambertAssembly; this is `mode:'edges'` + HLR recovery. */
 function edgeAssembly(replicad: any, solid: any, opts: BrepSvgOpts): SvgAssembly {
@@ -370,15 +425,26 @@ export interface BrepPolylinesResult {
   /** Projected boundary as an array of polylines; each polyline an array of `[x,y]`
    *  points in the SAME 2D space the `mode:'edges'` SVG paths use. */
   polylines: number[][][];
-  /** Tight 2D bounds of all polyline points (NO viewBox margin) — the fit source. */
+  /** #999 — filled SILHOUETTE regions: front-facing surface triangles projected
+   *  through the SAME ortho frame as `polylines` (each ring `[[x,y],[x,y],[x,y]]`).
+   *  Drawn UNDER the outline they read as a filled silhouette. Empty when the solid
+   *  won't mesh (outline-only, as before). */
+  fills: number[][][];
+  /** Optional per-fill Lambert shade (0..1), parallel to `fills` — a soft steel
+   *  shading value the GPU fill can modulate by. Empty iff `fills` is empty. */
+  fillShades: number[];
+  /** Tight 2D bounds over BOTH polylines AND fills (NO viewBox margin) — the fit
+   *  source. Union so every drawn vertex (outline + fill) lies inside. */
   bbox: BrepBBox;
-  meta: { mode: 'edges'; edges: number; points: number };
+  meta: { mode: 'edges'; edges: number; points: number; fills: number };
 }
 
 /**
  * Project a prebuilt OCCT solid's TRUE boundary to raw 2D polylines (the edge
- * projection the SVG path emits, exposed as points). Pure-ish: only the already-
- * initialised replicad/OCCT singleton. The caller owns the solid's lifetime.
+ * projection the SVG path emits, exposed as points) PLUS the filled silhouette
+ * triangles (#999). Both share the ortho frame; `bbox` is unioned over the two so
+ * fills never fall outside it. Pure-ish: only the already-initialised replicad/OCCT
+ * singleton. The caller owns the solid's lifetime.
  */
 export async function brepSolidToPolylines(
   solid: any,
@@ -386,9 +452,20 @@ export async function brepSolidToPolylines(
 ): Promise<BrepPolylinesResult> {
   const replicad: any = await import('replicad');
   const { polylines, bbox } = projectEdgePolylines(replicad, solid, opts.camera);
+  const { fills, shades } = projectFillPolygons(replicad, solid, opts);
+  // Union the fill vertices into the bbox so the fit covers every drawn vertex.
+  let { minX, minY, maxX, maxY } = bbox;
+  for (const ring of fills) for (const [x, y] of ring) {
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (y < minY) minY = y; if (y > maxY) maxY = y;
+  }
   let points = 0;
   for (const pl of polylines) points += pl.length;
-  return { polylines, bbox, meta: { mode: 'edges', edges: polylines.length, points } };
+  return {
+    polylines, fills, fillShades: shades,
+    bbox: { minX, minY, maxX, maxY },
+    meta: { mode: 'edges', edges: polylines.length, points, fills: fills.length },
+  };
 }
 
 /**

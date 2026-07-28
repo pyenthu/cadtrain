@@ -145,3 +145,42 @@ describe('brep-to-svg: format:"polylines" raw accessor', () => {
     void polylines;
   });
 });
+
+// ── #999 — fill polygon accessor (WGPU shading pass feed) ────────────────────
+describe('brep-to-svg: format:"polylines" fills (silhouette shading feed)', () => {
+  it('cylinder → non-empty fills of finite [x,y] triangle rings, each a valid triangle', async () => {
+    const { fills, fillShades, bbox, meta } = await brepRevolveToPolylines(CYL);
+
+    expect(Array.isArray(fills), 'fills must be an array').toBe(true);
+    expect(fills.length, 'a meshable cylinder must project ≥1 fill region').toBeGreaterThanOrEqual(1);
+    for (const ring of fills) {
+      expect(Array.isArray(ring), 'each fill is a ring of points').toBe(true);
+      expect(ring.length, 'each fill ring is a triangle (≥3 points)').toBeGreaterThanOrEqual(3);
+      for (const p of ring) {
+        expect(p.length, 'each fill point is [x,y]').toBe(2);
+        expect(Number.isFinite(p[0]) && Number.isFinite(p[1]), 'fill point coords finite').toBe(true);
+      }
+    }
+    // meta echoes the fill-region count.
+    expect(meta.fills).toBe(fills.length);
+
+    // Optional per-region shade — present, parallel to fills, in 0..1.
+    expect(Array.isArray(fillShades), 'fillShades must be an array').toBe(true);
+    expect(fillShades.length, 'fillShades parallel to fills').toBe(fills.length);
+    for (const s of fillShades) expect(s >= 0 && s <= 1, `shade ${s} must be 0..1`).toBe(true);
+
+    // bbox is a sanity guard for the fill containment test below.
+    expect(bbox.minX).toBeLessThan(bbox.maxX);
+    expect(bbox.minY).toBeLessThan(bbox.maxY);
+  });
+
+  it('every fill vertex lies INSIDE the same bbox as the polylines (one 2D frame)', async () => {
+    const { polylines, fills, bbox } = await brepRevolveToPolylines(CYL);
+    const eps = 1e-4;
+    // Both the outline polylines AND the fills must be contained by the unioned bbox.
+    const within = (x: number, y: number) =>
+      x >= bbox.minX - eps && x <= bbox.maxX + eps && y >= bbox.minY - eps && y <= bbox.maxY + eps;
+    for (const pl of polylines) for (const [x, y] of pl) expect(within(x, y), 'polyline vertex in bbox').toBe(true);
+    for (const ring of fills) for (const [x, y] of ring) expect(within(x, y), 'fill vertex in bbox').toBe(true);
+  });
+});

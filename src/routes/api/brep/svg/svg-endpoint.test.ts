@@ -239,8 +239,47 @@ describe('/api/brep/svg — format:"polylines" (WGPU tab, #998)', () => {
     const explicit = await callPost({ kind: 'revolve', profile: CYL, format: 'svg' });
     expect(typeof svgResp.data.svg).toBe('string');
     expect(svgResp.data.polylines).toBeUndefined();
+    expect(svgResp.data.fills, 'SVG default carries no fills').toBeUndefined();
     // Any non-'polylines' format value falls through to the SVG default.
     expect(explicit.data.svg, 'non-polylines format → SVG default').toBe(svgResp.data.svg);
+  }, OCCT_TIMEOUT);
+});
+
+// ── #999 — fills alongside polylines (WGPU shading feed) ─────────────────────
+describe('/api/brep/svg — format:"polylines" fills (#999)', () => {
+  it('{ kind:"revolve", …, format:"polylines" } → fills + fillShades within the polylines bbox', async () => {
+    const { data } = await callPost({ kind: 'revolve', profile: CYL, format: 'polylines' });
+    expect(data.supported, `expected supported:true, got ${JSON.stringify(data).slice(0, 200)}`).toBe(true);
+    // polylines still present + unchanged shape (no #998 regression).
+    expect(Array.isArray(data.polylines) && data.polylines.length).toBeTruthy();
+    // fills: a non-empty array of finite [x,y] triangle rings.
+    expect(Array.isArray(data.fills), 'fills must be an array').toBe(true);
+    expect(data.fills.length, 'meshable revolve → ≥1 fill region').toBeGreaterThanOrEqual(1);
+    const { minX, minY, maxX, maxY } = data.bbox;
+    const eps = 1e-4;
+    for (const ring of data.fills) {
+      expect(ring.length).toBeGreaterThanOrEqual(3);
+      for (const p of ring) {
+        expect(p.length).toBe(2);
+        expect(Number.isFinite(p[0]) && Number.isFinite(p[1])).toBe(true);
+        // In the SAME frame → inside the (unioned) polylines bbox.
+        expect(p[0] >= minX - eps && p[0] <= maxX + eps && p[1] >= minY - eps && p[1] <= maxY + eps, 'fill vertex in bbox').toBe(true);
+      }
+    }
+    // fillShades: parallel to fills, each 0..1.
+    expect(Array.isArray(data.fillShades)).toBe(true);
+    expect(data.fillShades.length).toBe(data.fills.length);
+    for (const s of data.fillShades) expect(s >= 0 && s <= 1).toBe(true);
+    // meta echoes the fill count.
+    expect(data.meta.fills).toBe(data.fills.length);
+  }, OCCT_TIMEOUT);
+
+  it('{ source, …, format:"polylines" } → fills present for a CSG solid', async () => {
+    const { data } = await callPost({ source: CSG_SRC, paramValues: { a: 4, b: 2 }, format: 'polylines' });
+    expect(data.supported, `expected supported:true, got ${JSON.stringify(data).slice(0, 200)}`).toBe(true);
+    expect(Array.isArray(data.fills)).toBe(true);
+    expect(data.fills.length).toBeGreaterThanOrEqual(1);
+    expect(data.fillShades.length).toBe(data.fills.length);
   }, OCCT_TIMEOUT);
 });
 
