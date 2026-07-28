@@ -30,7 +30,7 @@
 - **SVG smooth shading** — Lambert-shade from the shared crease-aware corner normals; extend `PrimitiveSvgView`+`svg-emit`, NO fork. ⚠ namespace gradient ids. (#985)
 - **SVG_BASIC tab** — well-schematic SVG: offset walls ⊥ the projected centerline tangent (wellnew/SVTC model), not a projected mesh. Reuse `CompJsonSilhouette` + `wson-2d.ts`. (#1010, `svg-warp-projection.md` Option 2). *(Generic SVG warp-shear already fixed by Option 1.)*
 - **BREP_SVG tab** — shade from BREP boundary surfaces (OCCT HLR outline + per-face Lambert), not a triangle soup. (#990)
-- **#998 WGPU tab** — WebGPU raster of the OCCT true-boundary (scaffold shipped, not wired). Off critical path.
+- **#998 WGPU tab** — WIRED (`4698416`): a `wgpu` tab lazy-mounts the WebGpuView scaffold (WebGPU inits + clears the canvas = proof-of-life). LEFT: render the OCCT boundary — feed `brep-to-svg`'s polylines (add a `format:'polylines'` mode to `/api/brep/svg`) + WGSL fills. Off critical path.
 - **SVG tab is the last `/preview` caller** — needs `segmentsFloor` in the client worker; move the SVG bake + headless callers off-thread.
 - **#65 Radial/Z-scale as build-time PARAMS** (warp-aware, arc-length not world-z). LEFT: UI (spline-mode toggle + warp-scale sliders); model/emit/bake shipped.
 - **TF section shows no INNER colours** — `{op:'cutaway'}` must colour exposed faces `SECTION_INNER`.
