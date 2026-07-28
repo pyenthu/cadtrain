@@ -947,12 +947,16 @@
     </div>
     <!-- WGPU tab (#998) — WebGPU GPU-rasterizer of the OCCT boundary (sibling of
          B·SVG). Its OWN body wrapper (NOT nested in the brepsvg wrapper, which
-         hides when rightTab!=='brepsvg' — that was the blank-tab bug). Scaffold
-         today: WebGPU comes up + clears the canvas. Lazy so init only runs on open. -->
+         hides when rightTab!=='brepsvg' — that was the blank-tab bug). Fetches the
+         projected boundary polylines (format:'polylines') off the SAME baked
+         source + params B·SVG uses, and draws them as GPU line primitives. Lazy so
+         init only runs on open. -->
     <div class="ge-glb-body" class:hidden={rightTab !== 'wgpu'}>
       {#if rightTab === 'wgpu' && (active ?? true)}
         {#if WebGpuView}
-          <WebGpuView />
+          <WebGpuView
+            source={(typeof bake === 'object' && bake) ? (bake.source ?? '') : ''}
+            paramValues={brepParamValues} />
         {:else}
           <div class="ge-empty">Loading WebGPU view…</div>
         {/if}

@@ -1,8 +1,12 @@
 import { json, error } from '@sveltejs/kit';
 import { solidFromSource } from '$lib/engines/brep/brep-occt';
-import { brepSolidToSvg, brepRevolveToSvg, type BrepSvgOpts, type BrepSvgMode } from '$lib/engines/brep/svg/brep-to-svg';
+import {
+  brepSolidToSvg, brepRevolveToSvg,
+  brepSolidToPolylines, brepRevolveToPolylines,
+  type BrepSvgOpts, type BrepSvgMode, type BrepPolylinesResult,
+} from '$lib/engines/brep/svg/brep-to-svg';
 
-// POST /api/brep/svg — server-side OpenCascade (OCCT) BREP → SVG.
+// POST /api/brep/svg — server-side OpenCascade (OCCT) BREP → SVG (or raw polylines).
 //
 // The boundary-projection sibling of /api/brep/preview: it resolves + executes
 // the SAME graph→OCCT solid (via solidFromSource — the shared brep-occt executor
@@ -15,16 +19,24 @@ import { brepSolidToSvg, brepRevolveToSvg, type BrepSvgOpts, type BrepSvgMode } 
 //   { mode:'hlr'|'edges', fill:'none'|'silhouette'|'lambert', hiddenLines, margin,
 //     strokeVisible, strokeHidden, strokeWidth, fillColor, background, camera }
 //
-// Returns { supported:true, svg, meta:{ ms, mode } } on success. Parts with no
-// OCCT-buildable solid return { supported:false, reason } — the SAME isolation
-// contract as preview: every failure degrades to 200 + supported:false so the
-// BREP-SVG surface never 500s or destabilises the app.
+// Default (absent `format`) → { supported:true, svg, meta:{ ms, mode } } — the
+// byte-identical SVG string the B·SVG tab renders. With `format:'polylines'`
+// (#998 — the WGPU GPU line-render tab) → { supported:true, polylines, bbox, meta }
+// INSTEAD of the SVG: `polylines` is the RAW projected 2D boundary (an array of
+// `[x,y]`-point arrays in the SAME 2D space the edge-mode SVG paths use), `bbox`
+// the tight 2D bounds — ready to upload straight to a GPU vertex buffer. Parts
+// with no OCCT-buildable solid return { supported:false, reason } — the SAME
+// isolation contract as preview: every failure degrades to 200 + supported:false
+// so the BREP-SVG surface never 500s or destabilises the app.
 export const POST = async ({ request, fetch }) => {
   let body: any;
   try { body = await request.json(); }
   catch { throw error(400, 'invalid JSON body'); }
 
   const { kind, profile, source, paramValues } = body ?? {};
+  // #998 — raw-polyline mode: return the projected 2D boundary point arrays for
+  // the WebGPU line render instead of an SVG string. Absent/other = SVG (default).
+  const wantPolylines = body?.format === 'polylines';
 
   // Validated + defaulted subset of BrepSvgOpts (JSON can only carry a camera
   // string, not a ProjectionCamera instance). Absent / malformed fields fall to
@@ -54,15 +66,20 @@ export const POST = async ({ request, fetch }) => {
     const t0 = Date.now();
 
     // Explicit half-section → build + project the revolve solid directly (pure
-    // OCCT, no dep resolution). brepRevolveToSvg ensures OCCT + self-frees.
+    // OCCT, no dep resolution). brepRevolve* ensures OCCT + self-frees.
     if (kind === 'revolve' && Array.isArray(profile)) {
       if (profile.length < 3) return json({ supported: false, reason: 'profile must be ≥3 [r,z] points' });
+      if (wantPolylines) {
+        const pl = await brepRevolveToPolylines(profile as [number, number][], svgOpts);
+        return json({ supported: true, polylines: pl.polylines, bbox: pl.bbox, meta: { ms: Date.now() - t0, ...pl.meta } });
+      }
       const svg = await brepRevolveToSvg(profile as [number, number][], svgOpts);
       return json({ supported: true, svg, meta: { ms: Date.now() - t0, mode: modeOf(svg) } });
     }
 
     // Part source → the SAME graph→OCCT executor the preview endpoint uses,
-    // returning the composed solid, then project its boundary to SVG.
+    // returning the composed solid, then project its boundary (to SVG, or raw
+    // polylines when format:'polylines').
     if (typeof source === 'string' && source.trim()) {
       const params = (paramValues && typeof paramValues === 'object') ? paramValues : {};
       // Resolve + execute the composed solid, then project its boundary. A curved
@@ -70,21 +87,28 @@ export const POST = async ({ request, fetch }) => {
       // in OCCT on the exact cut — mirror /api/brep/preview's `cut:false` retry:
       // rebuild WITHOUT the section (noSectionCut) so the SVG degrades to the uncut
       // solid instead of failing. Each attempt owns + frees its own solid.
-      const buildAndProject = async (degrade: boolean): Promise<string | null> => {
+      const buildAndProject = async (degrade: boolean): Promise<string | BrepPolylinesResult | null> => {
         const solid = await solidFromSource(source, params, degrade ? { noSectionCut: true } : {}, fetch);
         if (!solid) return null;
         try {
-          return await brepSolidToSvg(solid, svgOpts);
+          return wantPolylines
+            ? await brepSolidToPolylines(solid, svgOpts)
+            : await brepSolidToSvg(solid, svgOpts);
         } finally {
           // We own the solid's lifetime (executeBrep kept it past its own sweep) —
           // free the WASM heap now that it is projected. Best-effort; never throws.
           try { if (typeof solid.delete === 'function') solid.delete(); } catch { /* already gone */ }
         }
       };
-      let svg: string | null;
-      try { svg = await buildAndProject(false); }
-      catch { svg = await buildAndProject(true); }   // degrade: rebuild uncut, never 500
-      if (svg == null) return json({ supported: false, reason: 'no OCCT-buildable solid in this part (BREP covers revolve / extrude / loft / CSG)' });
+      let result: string | BrepPolylinesResult | null;
+      try { result = await buildAndProject(false); }
+      catch { result = await buildAndProject(true); }   // degrade: rebuild uncut, never 500
+      if (result == null) return json({ supported: false, reason: 'no OCCT-buildable solid in this part (BREP covers revolve / extrude / loft / CSG)' });
+      if (wantPolylines) {
+        const pl = result as BrepPolylinesResult;
+        return json({ supported: true, polylines: pl.polylines, bbox: pl.bbox, meta: { ms: Date.now() - t0, ...pl.meta } });
+      }
+      const svg = result as string;
       return json({ supported: true, svg, meta: { ms: Date.now() - t0, mode: modeOf(svg) } });
     }
 

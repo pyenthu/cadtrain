@@ -190,33 +190,52 @@ function hlrAssembly(replicad: any, solid: any, opts: BrepSvgOpts): SvgAssembly 
   return { viewBox, body, mode: 'hlr' };
 }
 
-/** FALLBACK — direct edge projection (line-art, no fill). The `fill:'lambert'`
- *  path is handled by meshLambertAssembly; this is `mode:'edges'` + HLR recovery. */
-function edgeAssembly(replicad: any, solid: any, opts: BrepSvgOpts): SvgAssembly {
-  const proj = orthoProjector(replicad, opts.camera);
-  const margin = opts.margin ?? 2;
+/** Bounding box of the projected 2D boundary polylines (tight — NO viewBox margin). */
+export interface BrepBBox { minX: number; minY: number; maxX: number; maxY: number; }
+
+/**
+ * Project every boundary edge of the solid to a 2D polyline via the SAME ortho
+ * projector the `mode:'edges'` SVG path uses — the raw `[x,y]` point arrays the
+ * edge SVG `<path d>`s are built from (see `edgeAssembly`), plus the tight 2D
+ * bounds. This is the single source of both the SVG edge paths (`edgeAssembly`)
+ * and the raw-JSON polylines accessor (`brepSolidToPolylines`), so the two share
+ * one 2D frame verbatim — no re-projection, no drift.
+ */
+function projectEdgePolylines(
+  replicad: any,
+  solid: any,
+  cameraOpt: unknown,
+): { polylines: [number, number][][]; bbox: BrepBBox } {
+  const proj = orthoProjector(replicad, cameraOpt);
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const bump = (p: [number, number]) => { if (p[0] < minX) minX = p[0]; if (p[0] > maxX) maxX = p[0]; if (p[1] < minY) minY = p[1]; if (p[1] > maxY) maxY = p[1]; };
-
-  // Boundary edges.
-  const strokeVisible = opts.strokeVisible ?? '#111';
   let edges: any[] = [];
   try { edges = solid.edges; } catch { edges = []; }
-  const edgePaths: string[] = [];
+  const polylines: [number, number][][] = [];
   for (const edge of edges) {
     const pts3 = sampleEdge(edge);
     if (pts3.length < 2) continue;
     const pts2 = pts3.map((p) => { const q = proj.project(p); bump(q); return q; });
-    edgePaths.push(polyD(pts2, false));
+    polylines.push(pts2);
   }
-  if (edgePaths.length === 0) throw new Error('edge projection produced no edges');
-
   if (!Number.isFinite(minX)) { minX = 0; minY = 0; maxX = 1; maxY = 1; }
+  return { polylines, bbox: { minX, minY, maxX, maxY } };
+}
+
+/** FALLBACK — direct edge projection (line-art, no fill). The `fill:'lambert'`
+ *  path is handled by meshLambertAssembly; this is `mode:'edges'` + HLR recovery. */
+function edgeAssembly(replicad: any, solid: any, opts: BrepSvgOpts): SvgAssembly {
+  const margin = opts.margin ?? 2;
+  const { polylines, bbox } = projectEdgePolylines(replicad, solid, opts.camera);
+  if (polylines.length === 0) throw new Error('edge projection produced no edges');
+  const { minX, minY, maxX, maxY } = bbox;
+
+  const strokeVisible = opts.strokeVisible ?? '#111';
   const viewBox: [number, number, number, number] = [minX - margin, minY - margin, (maxX - minX) + 2 * margin, (maxY - minY) + 2 * margin];
   const sw = opts.strokeWidth ?? Math.max(Math.max(viewBox[2], viewBox[3]) * 0.005, 1e-3);
   let body = '';
   if (strokeVisible !== 'none') {
-    for (const d of edgePaths) body += `<path d="${d}" fill="none" stroke="${strokeVisible}" stroke-width="${fmt(sw)}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    for (const pts2 of polylines) body += `<path d="${polyD(pts2, false)}" fill="none" stroke="${strokeVisible}" stroke-width="${fmt(sw)}" stroke-linejoin="round" stroke-linecap="round"/>`;
   }
   return { viewBox, body, mode: 'edges' };
 }
@@ -337,6 +356,56 @@ export async function brepRevolveToSvg(
   for (let i = 1; i < profile.length; i++) d = d.lineTo([profile[i][0], profile[i][1]]);
   const solid = d.close().sketchOnPlane('XZ').revolve();
   return brepSolidToSvg(solid, opts);
+}
+
+// ─── RAW POLYLINE ACCESSOR (#998 — WGPU tab) ────────────────────────────────
+// The GPU line-render sibling of the SVG path: instead of emitting `<path d>`
+// strings, hand back the RAW projected 2D boundary polylines the edge-mode SVG
+// is built from, so a WebGPU pipeline can upload them straight to a vertex
+// buffer. Same ortho projector, same 2D frame (Z-down front elevation) as the
+// `mode:'edges'` SVG — NO re-projection. `mode`/`fill` are irrelevant here: the
+// boundary polylines are the edge projection regardless.
+
+export interface BrepPolylinesResult {
+  /** Projected boundary as an array of polylines; each polyline an array of `[x,y]`
+   *  points in the SAME 2D space the `mode:'edges'` SVG paths use. */
+  polylines: number[][][];
+  /** Tight 2D bounds of all polyline points (NO viewBox margin) — the fit source. */
+  bbox: BrepBBox;
+  meta: { mode: 'edges'; edges: number; points: number };
+}
+
+/**
+ * Project a prebuilt OCCT solid's TRUE boundary to raw 2D polylines (the edge
+ * projection the SVG path emits, exposed as points). Pure-ish: only the already-
+ * initialised replicad/OCCT singleton. The caller owns the solid's lifetime.
+ */
+export async function brepSolidToPolylines(
+  solid: any,
+  opts: BrepSvgOpts = {},
+): Promise<BrepPolylinesResult> {
+  const replicad: any = await import('replicad');
+  const { polylines, bbox } = projectEdgePolylines(replicad, solid, opts.camera);
+  let points = 0;
+  for (const pl of polylines) points += pl.length;
+  return { polylines, bbox, meta: { mode: 'edges', edges: polylines.length, points } };
+}
+
+/**
+ * Convenience: revolve a closed `(r,z)` half-section to its projected boundary
+ * polylines (the `brepRevolveToSvg` sibling for the `format:'polylines'` path).
+ */
+export async function brepRevolveToPolylines(
+  profile: [number, number][],
+  opts: BrepSvgOpts = {},
+): Promise<BrepPolylinesResult> {
+  await ensureOC();
+  const replicad: any = await import('replicad');
+  const { draw } = replicad;
+  let d = draw([profile[0][0], profile[0][1]]);
+  for (let i = 1; i < profile.length; i++) d = d.lineTo([profile[i][0], profile[i][1]]);
+  const solid = d.close().sketchOnPlane('XZ').revolve();
+  return brepSolidToPolylines(solid, opts);
 }
 
 /** Alias matching the task's `brepToSvg(solid, opts)` name. */
