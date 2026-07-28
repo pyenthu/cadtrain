@@ -548,7 +548,7 @@
     <button class="ge-pane-tab" class:active={rightTab === 'bake'}
       type="button" role="tab" aria-selected={rightTab === 'bake'}
       data-tip={!hasSolidProducer ? '2D preview — resolved polygon (axis at r=0 for revolve, centered for cartesian)' : 'MF_CLIENT — Manifold, baked in a browser Web Worker. The default, and the only backend on the main canvas.'}
-      onclick={() => setRightTab('bake')}>{!hasSolidProducer ? '2D preview' : 'MF_CLIENT'}</button>
+      onclick={() => setRightTab('bake')}>{!hasSolidProducer ? '2D preview' : 'MF'}</button>
     {/if}
     {#if tabOn('tf')}
     <button class="ge-pane-tab" class:active={rightTab === 'tf'}
@@ -566,7 +566,7 @@
     <button class="ge-pane-tab" class:active={rightTab === 'md'}
       type="button" role="tab" aria-selected={rightTab === 'md'}
       data-tip="MD — hand-authored drawing-descriptor markdown. Saved as meta.drawingMd."
-      onclick={() => setRightTab('md')}>MD{drawingMd ? ` · ${drawingMd.length}c` : ''}</button>
+      onclick={() => setRightTab('md')}>MD</button>
     {/if}
     {#if tabOn('svg')}
     <button class="ge-pane-tab" class:active={rightTab === 'svg'}
@@ -602,7 +602,7 @@
     <button class="ge-pane-tab mfserver" class:active={rightTab === 'mfserver'}
       type="button" role="tab" aria-selected={rightTab === 'mfserver'}
       data-tip="MF_SERVER — the SAME Manifold kernel, baked on the server via /api/primitives/preview. Rare: parity checks + diagnosing a client-bake failure. Manifold is synchronous and Node is single-threaded, so a heavy part here stalls every route until it finishes. Never opens by itself; never restored on reload."
-      onclick={() => setRightTab('mfserver')}>MF_SERVER</button>
+      onclick={() => setRightTab('mfserver')}>MF_SRVR</button>
     {/if}
   </div>
   {/if}
