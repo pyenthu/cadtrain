@@ -143,7 +143,7 @@
   // Auto-layout + push-apart actions (modularize K.65 — pure, viewport state
   // passed in via layoutCtx()). The shell keeps the thin autoLayout/pushApart
   // entry points below (they own the undoLayout snapshot + assign graph).
-  import { overlayCardObstacles, separateGraph, type LayoutContext } from './graph-layout-actions';
+  import { overlayCardObstacles, separateGraph, forceLayoutOnce, type LayoutContext } from './graph-layout-actions';
   import { buildSolidDrop, buildCallArgs } from './node-palette';
   import { PolyPreviewState } from './poly-preview-state.svelte';
   import PolyPreview from './PolyPreview.svelte';
@@ -781,6 +781,13 @@
    *  for new sessions because the top edge is far more annoying than
    *  the left/right to push nodes off-screen. */
   let boundTop = $state<BoundState>('repellant');
+  /** Force-layout dials (#75) — the two ⚙-menu sliders feeding forceLayoutGraph.
+   *  tension ↑ → wired cards settle CLOSER; repulsion ↑ → cards SPREAD. Both
+   *  default 1 (balanced) and persist to localStorage so the user's chosen
+   *  feel survives reloads (feedback_expose_dont_hide — the slider IS the
+   *  product). */
+  let layoutTension = $state(1);
+  let layoutRepulsion = $state(1);
   onMount(() => {
     try {
       const l = localStorage.getItem('ge-bound-left');
@@ -791,6 +798,10 @@
       // Explicit 'off' (user turned it off) wins over the default 'repellant'.
       if (t === 'off') boundTop = 'off';
       else if (t === 'repellant') boundTop = 'repellant';
+      const ten = Number(localStorage.getItem('ge-layout-tension'));
+      if (Number.isFinite(ten) && ten > 0) layoutTension = ten;
+      const rep = Number(localStorage.getItem('ge-layout-repulsion'));
+      if (Number.isFinite(rep) && rep > 0) layoutRepulsion = rep;
     } catch { /* localStorage blocked — fine */ }
   });
   /** Set + persist a canvas-edge boundary. Called by CanvasMenu's checkboxes;
@@ -800,6 +811,13 @@
     else if (edge === 'top') boundTop = v;
     else boundRight = v;
     try { localStorage.setItem(`ge-bound-${edge}`, v); } catch { /* ignore */ }
+  }
+  /** Set + persist a force-layout dial (#75). Called live as CanvasMenu's
+   *  sliders drag; the value stays here because forceLayout() reads it. */
+  function setLayoutDial(dial: 'tension' | 'repulsion', v: number) {
+    if (dial === 'tension') layoutTension = v;
+    else layoutRepulsion = v;
+    try { localStorage.setItem(`ge-layout-${dial}`, String(v)); } catch { /* ignore */ }
   }
   /** Run a bake now. Called by the 🔨 Bake button + initial-load + nonce
    *  bumps. Reads the current emitted source so manual bakes always
@@ -2424,6 +2442,15 @@
     undoLayout = { ...graph.layout };
     applyPushApart();
   }
+  // #75 — 🌐 Force layout. Relaxes the CURRENT positions with the FR
+  // force-organic pass (springs on wired edges + charge repulsion), driven by
+  // the two ⚙-menu dials. Same undoLayout snapshot as auto-layout / push-apart
+  // so the ↶ button restores the prior layout. REFINES the existing layout —
+  // run it after a seed (auto-layout → force) or on a hand-placed one.
+  function forceLayout() {
+    undoLayout = { ...graph.layout };
+    graph = forceLayoutOnce(graph, { tension: layoutTension, repulsion: layoutRepulsion });
+  }
   /** Build the LayoutContext (viewport + left-card state) the pure
    *  graph-layout-actions helpers need. */
   function layoutCtx(): LayoutContext {
@@ -2932,6 +2959,10 @@
       pos={canvasMenuPos}
       onAutoLayout={autoLayout}
       onPushApart={pushApart}
+      onForceLayout={forceLayout}
+      {layoutTension}
+      {layoutRepulsion}
+      onSetLayoutDial={setLayoutDial}
       {boundLeft}
       {boundTop}
       {boundRight}

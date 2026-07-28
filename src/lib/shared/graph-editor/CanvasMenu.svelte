@@ -4,15 +4,18 @@
   carves).
 
   A compact Flowbite-style dropdown anchored (position: fixed) to the ⚙ rail
-  button's bounding rect, which GEP computes and passes in as `pos`. Holds two
-  action rows (Auto-layout, Push apart) + a separator + three checkbox rows for
-  the left/top/right canvas-edge boundaries.
+  button's bounding rect, which GEP computes and passes in as `pos`. Holds three
+  action rows (Auto-layout, Push apart, Force layout) + the two force-layout
+  dials (tension / repulsion sliders, #75) + a separator + three checkbox rows
+  for the left/top/right canvas-edge boundaries.
 
   GEP OWNS the open/anchor (`canvasMenuOpen` + `canvasMenuPos` + `openCanvasMenu`)
   and the boundary STATE (`boundLeft/Top/Right`, used by pushApart) + the
-  localStorage persistence (in `onSetBound`). This component is presentational:
-  it reflects the bound values and calls back. CSS (.ge-canvas-menu* / .ge-cm-*)
-  is duplicated here from GEP so Svelte's scoped CSS applies.
+  force-layout dials (`layoutTension/Repulsion`, used by forceLayout) + the
+  localStorage persistence (in `onSetBound` / `onSetLayoutDial`). This component
+  is presentational: it reflects the values and calls back. CSS
+  (.ge-canvas-menu* / .ge-cm-*) is duplicated here from GEP so Svelte's scoped
+  CSS applies.
 -->
 <script lang="ts">
   type BoundState = 'off' | 'repellant';
@@ -21,6 +24,10 @@
     pos,
     onAutoLayout,
     onPushApart,
+    onForceLayout,
+    layoutTension,
+    layoutRepulsion,
+    onSetLayoutDial,
     boundLeft,
     boundTop,
     boundRight,
@@ -31,6 +38,13 @@
     pos: { left: number; top: number };
     onAutoLayout: () => void;
     onPushApart: () => void;
+    /** #75 — run the force-organic relax with the current dials. */
+    onForceLayout: () => void;
+    /** #75 — spring attraction dial; ↑ → wired cards settle CLOSER. */
+    layoutTension: number;
+    /** #75 — charge repulsion dial; ↑ → cards SPREAD further. */
+    layoutRepulsion: number;
+    onSetLayoutDial: (dial: 'tension' | 'repulsion', v: number) => void;
     boundLeft: BoundState;
     boundTop: BoundState;
     boundRight: BoundState;
@@ -59,6 +73,31 @@
     <span class="ge-cm-icon">🧲</span>
     <span class="ge-cm-label">Push apart</span>
   </button>
+  <button class="ge-cm-row action" type="button"
+    onclick={() => { onForceLayout(); onClose(); }}
+    title="Relax the CURRENT layout with the force-organic pass — springs pull wired cards together (tension), charge pushes every pair apart (repulsion). Tune with the two dials below.">
+    <span class="ge-cm-icon">🌐</span>
+    <span class="ge-cm-label">Force layout</span>
+  </button>
+  <!-- #75 force-layout dials — tension pulls WIRED cards closer, repulsion
+       SPREADS every pair. Drag updates the value live (persisted); the layout
+       runs when you click Force layout above. -->
+  <label class="ge-cm-row slider"
+    title="Spring pull between WIRED cards. Higher → wired cards settle CLOSER together.">
+    <span class="ge-cm-label">Tension</span>
+    <input type="range" min="0.1" max="5" step="0.1"
+      value={layoutTension}
+      oninput={(ev) => onSetLayoutDial('tension', Number((ev.currentTarget as HTMLInputElement).value))} />
+    <span class="ge-cm-val">{layoutTension.toFixed(1)}</span>
+  </label>
+  <label class="ge-cm-row slider"
+    title="Charge push between every pair of cards. Higher → cards SPREAD further apart.">
+    <span class="ge-cm-label">Repulsion</span>
+    <input type="range" min="0.1" max="5" step="0.1"
+      value={layoutRepulsion}
+      oninput={(ev) => onSetLayoutDial('repulsion', Number((ev.currentTarget as HTMLInputElement).value))} />
+    <span class="ge-cm-val">{layoutRepulsion.toFixed(1)}</span>
+  </label>
   <div class="ge-cm-sep"></div>
   <label class="ge-cm-row check"
     title="Push nodes away from the LEFT canvas edge during push-apart">
@@ -115,4 +154,16 @@
   .ge-cm-icon { width: 16px; text-align: center; font-size: 13px; line-height: 1; }
   .ge-cm-label { flex: 1 1 auto; }
   .ge-cm-sep { height: 1px; background: #f1f5f9; margin: 4px 6px; }
+  /* #75 force-layout dial rows — a label, a range slider, and the live value.
+     The label is fixed-width so both sliders align; the slider takes the rest. */
+  .ge-cm-row.slider { cursor: default; gap: 6px; padding: 4px 10px; }
+  .ge-cm-row.slider:hover { background: transparent; color: #1f2937; }
+  .ge-cm-row.slider .ge-cm-label { flex: 0 0 58px; }
+  .ge-cm-row.slider input[type='range'] {
+    flex: 1 1 auto; min-width: 0; margin: 0; cursor: pointer; accent-color: #cc2222;
+  }
+  .ge-cm-val {
+    flex: 0 0 26px; text-align: right;
+    font: 500 11px ui-monospace, Menlo, monospace; color: #6b7280;
+  }
 </style>
