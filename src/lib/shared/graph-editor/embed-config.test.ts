@@ -32,7 +32,7 @@ describe('resolveEmbedConfig — defaults reproduce the full current UI', () => 
 
   it('the default tab list matches RightPane order exactly', () => {
     expect([...ALL_TABS]).toEqual([
-      'bake', 'tf', 'source', 'md', 'svg', 'glb', 'brep', 'brepsvg', 'mfserver',
+      'bake', 'tf', 'source', 'md', 'svg', 'glb', 'brep', 'brepsvg', 'wgpu', 'mfserver',
     ]);
   });
 });
@@ -129,12 +129,13 @@ describe('engines restriction gates the engine tabs', () => {
     expect(cfg.tabs).toEqual(['tf', 'source', 'md', 'svg', 'glb']);
   });
 
-  it('brep engine owns BOTH brep tabs (mesh + brepsvg)', () => {
+  it('brep engine owns its brep tabs (mesh + brepsvg + wgpu)', () => {
     const cfg = resolveEmbedConfig({ engines: ['brep'] });
-    // brep owns brep + brepsvg; the manifold/trueform tabs are gone.
-    expect(cfg.tabs).toEqual(['source', 'md', 'svg', 'glb', 'brep', 'brepsvg']);
+    // brep owns brep + brepsvg + wgpu; the manifold/trueform tabs are gone.
+    expect(cfg.tabs).toEqual(['source', 'md', 'svg', 'glb', 'brep', 'brepsvg', 'wgpu']);
     expect(isTabVisible(cfg, 'brep')).toBe(true);
     expect(isTabVisible(cfg, 'brepsvg')).toBe(true);
+    expect(isTabVisible(cfg, 'wgpu')).toBe(true);
     expect(isTabVisible(cfg, 'bake')).toBe(false);
     expect(isTabVisible(cfg, 'tf')).toBe(false);
   });
