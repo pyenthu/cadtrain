@@ -28,7 +28,7 @@
   // Embed feature-flags: which tabs are available (RightPaneTab === RightTab).
   import type { RightPaneTab } from './embed-config';
 
-  type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'brepsvg' | 'tf' | 'mfserver';
+  type RightTab = 'bake' | 'source' | 'md' | 'svg' | 'glb' | 'brep' | 'brepsvg' | 'wgpu' | 'tf' | 'mfserver';
 
   let {
     /* ── INPUT (parent → pane) — pass STABLE references ── */
@@ -110,6 +110,15 @@
       PrimitiveSvgView = mod.default;
     } catch { /* svg view unavailable */ }
   });
+  // WGPU tab (#998) — WebGPU GPU-rasterizer of the OCCT boundary. Lazy so the raw
+  // WebGPU init only runs when the tab is opened; scaffold today (proof-of-life).
+  let WebGpuView = $state<any>(null);
+  onMount(async () => {
+    try {
+      const mod = await import('$lib/shared/graph-editor/WebGpuView.svelte');
+      WebGpuView = mod.default;
+    } catch { /* wgpu view unavailable */ }
+  });
 
   // ─── Keep the 3D canvas MOUNTED across the `bake==='loading'` sentinel ─────
   // `bake` cycles object → 'loading' → object on EVERY re-bake (first load also
@@ -144,7 +153,7 @@
       // only thread; a page reload that silently reopened it would bake a whole
       // well on the server and wedge every route. One deliberate click, always.
       if (t === 'mfserver') return;
-      if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg' || t === 'glb' || t === 'brep' || t === 'brepsvg' || t === 'tf') rightTab = t;
+      if (t === 'bake' || t === 'source' || t === 'md' || t === 'svg' || t === 'glb' || t === 'brep' || t === 'brepsvg' || t === 'wgpu' || t === 'tf') rightTab = t;
     } catch { /* localStorage blocked — fine */ }
   });
   function setRightTab(t: RightTab) {
@@ -583,6 +592,12 @@
       data-tip="BREP-SVG — server-side OpenCascade (OCCT) TRUE-boundary projection. Projects the OCCT solid's silhouette + sharp edges (hidden-line removed) to a vector SVG. The boundary sibling of the BREP mesh tab."
       onclick={() => setRightTab('brepsvg')}>B·SVG</button>
     {/if}
+    {#if tabOn('wgpu')}
+    <button class="ge-pane-tab" class:active={rightTab === 'wgpu'}
+      type="button" role="tab" aria-selected={rightTab === 'wgpu'}
+      data-tip="WGPU — WebGPU GPU-rasterizer of the OCCT true-boundary (sibling of B·SVG). Proof-of-life scaffold today (WebGPU comes up + clears the canvas); the boundary-polyline render is the next step (#998)."
+      onclick={() => setRightTab('wgpu')}>WGPU</button>
+    {/if}
     {#if tabOn('mfserver')}
     <button class="ge-pane-tab mfserver" class:active={rightTab === 'mfserver'}
       type="button" role="tab" aria-selected={rightTab === 'mfserver'}
@@ -927,6 +942,16 @@
           <div class="ge-empty">Projecting BREP → SVG…</div>
         {:else}
           <div class="ge-empty">No geometry to render yet — bake the part first.</div>
+        {/if}
+      {/if}
+      {#if rightTab === 'wgpu' && (active ?? true)}
+        <!-- WGPU (#998): WebGPU GPU-rasterizer of the OCCT boundary. Scaffold today
+             (proof-of-life: WebGPU comes up + clears the canvas). The boundary-polyline
+             render is the next step. Lazy component so raw WebGPU only inits on open. -->
+        {#if WebGpuView}
+          <WebGpuView />
+        {:else}
+          <div class="ge-empty">Loading WebGPU view…</div>
         {/if}
       {/if}
     </div>
