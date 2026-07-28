@@ -304,3 +304,117 @@ export function cbs_two(p) {
     expect(mesh!.index, 'legacy path stays indexed').toBeTruthy();
   });
 });
+
+// ── #997 — `.add`/`.union` of DIFFERENTLY-COLOURED parts keeps BOTH colours ──────
+// The reported bug: `bw_packer` = body`.add(`seal`)` rendered ALL-brown (the body
+// colour) instead of a brown body + a blue seal, because OCCT's fuse collapses the
+// two solids into ONE — and a fused OCCT solid (unlike a Manifold's mesh relation)
+// can only carry a single part tag, so the added part's colour was lost. The fix
+// keeps differently-tagged additive parts SEPARATE (a GROUP, mirroring Manifold's
+// lazy _parts) so each keeps its own colour AND geometry. This is the exact `.add`
+// path the pure/array color tests above DON'T cover — they returned an array.
+describe('brep-occt: #997 — .add keeps per-part colours (no fuse-away)', () => {
+  // A body cylinder + a wider, shorter seal ring, each an r_revolve instance with
+  // its OWN instanceColor, COMBINED WITH `.add` (the packer pattern). Pre-fix this
+  // fused to one brown solid; post-fix it stays two coloured parts.
+  const src = `export const meta = { id: 'cbs_add', name: 'cbs_add', kind: 'asm', uses: ['r_revolve'], instanceColors: { body: { outer: '#8b5a2b' }, seal: { outer: '#3366ff' } }, params: { od: { default: 4 }, length: { default: 8 } } };
+export function cbs_add(p) {
+  const bodyProf = [[0.01, 0], [p.od/2, 0], [p.od/2, p.length], [0.01, p.length]];
+  const sealProf = [[0.01, 3], [p.od/2 + 1.5, 3], [p.od/2 + 1.5, 5], [0.01, 5]];
+  const body = r_revolve({ profile: bodyProf, segments: 16 });
+  const seal = r_revolve({ profile: sealProf, segments: 16 });
+  return body.add(seal);
+}`;
+
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.02;
+  const rgb = (hex: string): [number, number, number] => {
+    const v = hex.replace('#', '');
+    return [parseInt(v.slice(0, 2), 16) / 255, parseInt(v.slice(2, 4), 16) / 255, parseInt(v.slice(4, 6), 16) / 255];
+  };
+  const distinctColours = (colors: number[] | undefined): [number, number, number][] => {
+    const out: [number, number, number][] = [];
+    for (let i = 0; i + 2 < (colors?.length ?? 0); i += 3) {
+      const c: [number, number, number] = [colors![i], colors![i + 1], colors![i + 2]];
+      if (!out.some((o) => near(o[0], c[0]) && near(o[1], c[1]) && near(o[2], c[2]))) out.push(c);
+    }
+    return out;
+  };
+  // Signed volume of a NON-INDEXED triangle soup (divergence theorem) — a decode,
+  // not an eyeball. A GROUP of two closed solids meshed separately concatenates to
+  // vol(body)+vol(seal); both closed + positively oriented → total > 0.
+  const soupVolume = (pos: number[]): number => {
+    let vol = 0;
+    for (let i = 0; i + 8 < pos.length; i += 9) {
+      const ax = pos[i], ay = pos[i + 1], az = pos[i + 2];
+      const bx = pos[i + 3], by = pos[i + 4], bz = pos[i + 5];
+      const cx = pos[i + 6], cy = pos[i + 7], cz = pos[i + 8];
+      vol += (ax * (by * cz - bz * cy) - ay * (bx * cz - bz * cx) + az * (bx * cy - by * cx)) / 6;
+    }
+    return vol;
+  };
+
+  it('body.add(seal) → TWO distinct colours (body brown + seal blue), not one flat colour', async () => {
+    const lut = analyzeParts(src);
+    expect(lut.active, 'LUT must be active for the colour path').toBe(true);
+    const mesh = await brepFromSource(src, { od: 4, length: 8 }, { partColors: lut }, stdFetch);
+    expect(mesh, 'brepFromSource should produce a mesh').toBeTruthy();
+    expect(mesh!.cut, 'uncut per-part colour path → cut:false').toBe(false);
+    expect(mesh!.colors, 'an added multi-part BREP solid must carry per-vertex colours').toBeTruthy();
+
+    // THE FIX: two colour regions from an `.add` (the pre-fix fuse gave ONE).
+    const colours = distinctColours(mesh!.colors);
+    expect(colours.length, `expected 2 colours from body.add(seal), got ${colours.length}`).toBe(2);
+    const BODY = rgb('#8b5a2b'); const SEAL = rgb('#3366ff');
+    const hasBody = colours.some((c) => near(c[0], BODY[0]) && near(c[1], BODY[1]) && near(c[2], BODY[2]));
+    const hasSeal = colours.some((c) => near(c[0], SEAL[0]) && near(c[1], SEAL[1]) && near(c[2], SEAL[2]));
+    expect(hasBody, 'the body must stay its own brown (#8b5a2b)').toBe(true);
+    expect(hasSeal, 'the added seal must keep its blue (#3366ff) — not fuse to brown').toBe(true);
+
+    // Per-part render list (#947) also carries both parts, each with its appearance.
+    expect(mesh!.parts, 'per-part mesh list must be present').toBeTruthy();
+    expect(mesh!.parts!.length, 'two additive parts → two per-part meshes').toBe(2);
+
+    // Geometry stays VALID: positive total volume, both parts non-trivial.
+    expect(soupVolume(mesh!.positions), 'added group must have positive volume').toBeGreaterThan(0);
+    for (const part of mesh!.parts!) expect(part.positions.length, 'each part has real geometry').toBeGreaterThan(0);
+  });
+
+  it('downstream `.subtract` after `.add` folds PER-ELEMENT → both colours survive a shared bore', async () => {
+    // (body.add(seal)).subtract(bore) → [body−bore, seal−bore]: each part CSG'd
+    // independently (MF per-part CSG), so BOTH colours AND the bore survive.
+    const boreSrc = `export const meta = { id: 'cbs_addsub', name: 'cbs_addsub', kind: 'asm', uses: ['r_revolve'], instanceColors: { body: { outer: '#8b5a2b' }, seal: { outer: '#3366ff' } }, params: { od: { default: 4 }, length: { default: 8 } } };
+export function cbs_addsub(p) {
+  const bodyProf = [[0.01, 0], [p.od/2, 0], [p.od/2, p.length], [0.01, p.length]];
+  const sealProf = [[0.01, 3], [p.od/2 + 1.5, 3], [p.od/2 + 1.5, 5], [0.01, 5]];
+  const boreProf = [[0.01, -1], [0.6, -1], [0.6, p.length + 1], [0.01, p.length + 1]];
+  const body = r_revolve({ profile: bodyProf, segments: 16 });
+  const seal = r_revolve({ profile: sealProf, segments: 16 });
+  const bore = r_revolve({ profile: boreProf, segments: 16 });
+  return body.add(seal).subtract(bore);
+}`;
+    const lut = analyzeParts(boreSrc);
+    const mesh = await brepFromSource(boreSrc, { od: 4, length: 8 }, { partColors: lut }, stdFetch);
+    expect(mesh!.colors, 'add-then-subtract must still carry per-vertex colours').toBeTruthy();
+    const colours = distinctColours(mesh!.colors);
+    expect(colours.length, `(body.add(seal)).subtract(bore) must keep 2 colours, got ${colours.length}`).toBe(2);
+    expect(soupVolume(mesh!.positions), 'bored add-group must still be a positive solid').toBeGreaterThan(0);
+  });
+
+  it('a SINGLE-solid part with a LUT is UNCHANGED — no spurious grouping (1 colour, still valid)', async () => {
+    // No `.add` of differently-tagged parts → NO group is ever formed → the
+    // single-solid path is byte-identical: one colour region, positive volume.
+    const oneSrc = `export const meta = { id: 'cbs_one', name: 'cbs_one', kind: 'asm', uses: ['r_revolve'], instanceColors: { body: { outer: '#8b5a2b' } }, params: { od: { default: 4 }, length: { default: 8 } } };
+export function cbs_one(p) {
+  const bodyProf = [[0.01, 0], [p.od/2, 0], [p.od/2, p.length], [0.01, p.length]];
+  const body = r_revolve({ profile: bodyProf, segments: 16 });
+  return body;
+}`;
+    const lut = analyzeParts(oneSrc);
+    const mesh = await brepFromSource(oneSrc, { od: 4, length: 8 }, { partColors: lut }, stdFetch);
+    const colours = distinctColours(mesh!.colors);
+    expect(colours.length, 'a single-solid part stays ONE colour region').toBe(1);
+    expect(near(colours[0][0], rgb('#8b5a2b')[0]) && near(colours[0][2], rgb('#8b5a2b')[2]), 'that colour is the body colour').toBe(true);
+    expect(soupVolume(mesh!.positions), 'single solid keeps positive volume').toBeGreaterThan(0);
+    expect(mesh!.parts!.length, 'exactly one per-part mesh').toBe(1);
+  });
+});
