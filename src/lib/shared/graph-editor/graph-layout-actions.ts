@@ -5,7 +5,7 @@
 // `$state`. The shell keeps the thin `autoLayout`/`undoAutoLayout`/`pushApart`
 // entry points (they own the `undoLayout` snapshot + assign `graph`).
 import { type Graph, type NodeId } from '$lib/graph/composition/composition-graph';
-import { autoLayoutGraph, forceSeparate } from '$lib/graph/composition/composition-layout';
+import { autoLayoutGraph, forceSeparate, forceLayoutGraph } from '$lib/graph/composition/composition-layout';
 import {
   nodeSize,
   outputSocketAt,
@@ -169,6 +169,23 @@ export function autoLayoutOnce(graph: Graph, ctx: LayoutContext): Graph {
     rowGap: 220,
     columnGap: 300,
     obstacles: overlayCardObstacles(ctx),
+    nodeSize: (id) => nodeSize(graph, graph.nodes[id]),
+  });
+}
+
+/** Force-organic layout (#75): relax the CURRENT node positions with the
+ *  Fruchterman-Reingold pass — springs pull WIRED cards together (tension),
+ *  charge pushes every pair apart (repulsion). REFINES the existing layout;
+ *  run it after a seed layout or on a hand-placed one the user wants to relax.
+ *  `nodeSize` is threaded so exactly-coincident cards get a deterministic nudge
+ *  apart first. Returns a NEW graph. */
+export function forceLayoutOnce(
+  graph: Graph,
+  dials: { tension: number; repulsion: number },
+): Graph {
+  return forceLayoutGraph(graph, {
+    tension: dials.tension,
+    repulsion: dials.repulsion,
     nodeSize: (id) => nodeSize(graph, graph.nodes[id]),
   });
 }
