@@ -1807,16 +1807,6 @@ export const FOLDER_TREE: FolderNode = {
                   "loc": 340
                 },
                 {
-                  "name": "well-bake-client.test.ts",
-                  "path": "src/lib/wells/tests/well-bake-client.test.ts",
-                  "loc": 153
-                },
-                {
-                  "name": "well-bake-pool.test.ts",
-                  "path": "src/lib/wells/tests/well-bake-pool.test.ts",
-                  "loc": 324
-                },
-                {
                   "name": "well-edit-core.test.ts",
                   "path": "src/lib/wells/tests/well-edit-core.test.ts",
                   "loc": 431
@@ -1888,27 +1878,6 @@ export const FOLDER_TREE: FolderNode = {
               "path": "src/lib/wells/threeD",
               "children": [
                 {
-                  "name": "parametric",
-                  "path": "src/lib/wells/threeD/parametric",
-                  "children": [
-                    {
-                      "name": "bakerPacker.ts",
-                      "path": "src/lib/wells/threeD/parametric/bakerPacker.ts",
-                      "loc": 98
-                    },
-                    {
-                      "name": "index.ts",
-                      "path": "src/lib/wells/threeD/parametric/index.ts",
-                      "loc": 99
-                    },
-                    {
-                      "name": "ParametricComponent.ts",
-                      "path": "src/lib/wells/threeD/parametric/ParametricComponent.ts",
-                      "loc": 90
-                    }
-                  ]
-                },
-                {
                   "name": "direction.ts",
                   "path": "src/lib/wells/threeD/direction.ts",
                   "loc": 212
@@ -1919,19 +1888,9 @@ export const FOLDER_TREE: FolderNode = {
                   "loc": 68
                 },
                 {
-                  "name": "manifoldCut.ts",
-                  "path": "src/lib/wells/threeD/manifoldCut.ts",
-                  "loc": 518
-                },
-                {
                   "name": "profile.ts",
                   "path": "src/lib/wells/threeD/profile.ts",
                   "loc": 129
-                },
-                {
-                  "name": "wells-bake-worker.ts",
-                  "path": "src/lib/wells/threeD/wells-bake-worker.ts",
-                  "loc": 118
                 }
               ]
             },
@@ -1981,21 +1940,6 @@ export const FOLDER_TREE: FolderNode = {
               "loc": 218
             },
             {
-              "name": "well-bake-client.ts",
-              "path": "src/lib/wells/well-bake-client.ts",
-              "loc": 159
-            },
-            {
-              "name": "well-bake-pool.ts",
-              "path": "src/lib/wells/well-bake-pool.ts",
-              "loc": 412
-            },
-            {
-              "name": "well-bake-protocol.ts",
-              "path": "src/lib/wells/well-bake-protocol.ts",
-              "loc": 90
-            },
-            {
               "name": "well-edit-core.ts",
               "path": "src/lib/wells/well-edit-core.ts",
               "loc": 277
@@ -2034,16 +1978,6 @@ export const FOLDER_TREE: FolderNode = {
               "name": "WellInspectorDock.svelte",
               "path": "src/lib/wells/WellInspectorDock.svelte",
               "loc": 504
-            },
-            {
-              "name": "WellScene.svelte",
-              "path": "src/lib/wells/WellScene.svelte",
-              "loc": 83
-            },
-            {
-              "name": "WellSchematic3D.svelte",
-              "path": "src/lib/wells/WellSchematic3D.svelte",
-              "loc": 745
             },
             {
               "name": "WellSideNav.svelte",
@@ -3105,11 +3039,6 @@ export const FOLDER_TREE: FolderNode = {
               "name": "WellSchematic2D.svelte",
               "path": "src/routes/wells/WellSchematic2D.svelte",
               "loc": 302
-            },
-            {
-              "name": "WellTimingBadge.svelte",
-              "path": "src/routes/wells/WellTimingBadge.svelte",
-              "loc": 76
             },
             {
               "name": "WellToolbar.svelte",
