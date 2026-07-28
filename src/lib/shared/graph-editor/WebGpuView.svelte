@@ -8,13 +8,16 @@
   //   1) feature-detect `navigator.gpu` → adapter → device (proof-of-life gate,
   //      unchanged from the original scaffold — a blocklisted GPU still falls
   //      back gracefully to the "WebGPU unavailable" panel).
-  //   2) build a MINIMAL line pipeline (line-list topology, a fit-transform
-  //      uniform, a light-teal fragment) once the device is up.
+  //   2) build TWO pipelines once the device is up, sharing ONE fit-transform
+  //      uniform: a line-list outline (light-teal fragment) and a triangle-list
+  //      FILL (flat steel fragment, #999) drawn UNDER it.
   //   3) whenever `source` (+ `paramValues`) changes and this tab is mounted,
   //      POST /api/brep/svg with `format:'polylines'` → the raw projected 2D
-  //      boundary polylines + bbox (the #998 endpoint mode). Expand them to a
-  //      line-list vertex buffer, fit the bbox → clip space (aspect-preserving
-  //      letterbox, Y-flip to match B·SVG's Z-down orientation), and draw.
+  //      boundary polylines + FILL silhouette triangles + bbox (the #998/#999
+  //      endpoint mode). Expand the polylines to a line-list vertex buffer and
+  //      triangulate the fills to a triangle-list buffer, fit the bbox → clip
+  //      space (aspect-preserving letterbox, Y-flip to match B·SVG's Z-down
+  //      orientation), then draw the fill first + the outline on top.
   //
   // Dependency-free: raw WebGPU API only (no `@webgpu/types`, no npm add), so
   // the production build stays green even though the WebGPU lib types are
@@ -58,6 +61,7 @@
   let busy = $state(false);          // a polyline fetch is in flight
   let hasGeometry = $state(false);   // ≥1 boundary segment currently uploaded
   let segCount = $state(0);          // line-segments drawn (human-visible count)
+  let fillTriCount = $state(0);      // fill triangles drawn under the outline (#999)
   let fetchError = $state('');       // last /api/brep/svg failure/reason (empty = none)
 
   // ── GPU handles (plain `let`, typed `any` — see header). Kept for redraw + dispose.
@@ -68,12 +72,18 @@
   let bindGroup: any = null;
   let vertexBuf: any = null;    // recreated per polyline upload
   let gpuBU: any = null;        // GPUBufferUsage flag enum (off globalThis)
+  // Fill pipeline (#999) — SHARES uniformBuf; its own bindGroup (layout:'auto').
+  let fillPipeline: any = null;
+  let fillBindGroup: any = null;
+  let fillVertexBuf: any = null; // recreated per fill upload (triangle-list)
 
   // ── Non-reactive geometry cache (a resize redraws WITHOUT refetching). ──────
   let lastFetchKey = '';                 // dedup: skip refetch when {source,params} unchanged
   let lastBBox: { minX: number; minY: number; maxX: number; maxY: number } | null = null;
   let lastVertices: Float32Array | null = null;
   let lastVertexCount = 0;
+  let lastFillVertices: Float32Array | null = null;  // triangle-list fill verts
+  let lastFillVertexCount = 0;
 
   // WGSL: a vertex shader applying the fit transform (vec4 uniform: sx, sy, tx, ty),
   // a fragment shader painting a light teal stroke. line-list topology.
@@ -85,6 +95,20 @@
     }
     @fragment fn fs() -> @location(0) vec4<f32> {
       return vec4<f32>(0.36, 0.83, 0.80, 1.0);
+    }`;
+
+  // FILL WGSL (#999): the SHADING pass drawn UNDER the teal outline. Same vertex
+  // transform (SHARES the fit uniform) but triangle-list topology + a FLAT LIGHT
+  // STEEL fragment, so the projected silhouette triangles paint a soft filled body
+  // the outline then rides on top of. No depth/blend — a flat opaque fill.
+  const FILL_WGSL = /* wgsl */ `
+    struct U { xf: vec4<f32> };
+    @group(0) @binding(0) var<uniform> u: U;
+    @vertex fn vs(@location(0) p: vec2<f32>) -> @builtin(position) vec4<f32> {
+      return vec4<f32>(p.x * u.xf.x + u.xf.z, p.y * u.xf.y + u.xf.w, 0.0, 1.0);
+    }
+    @fragment fn fs() -> @location(0) vec4<f32> {
+      return vec4<f32>(0.80, 0.82, 0.86, 1.0);
     }`;
 
   /** Expand polylines → a flat line-list vertex array (each segment = 2 verts). */
@@ -101,6 +125,24 @@
       }
     }
     return arr;
+  }
+
+  /** Triangulate fill rings → a flat triangle-list vertex array (x0,y0,x1,y1,…),
+   *  each triangle 3 verts. A TRIANGLE FAN per ring (ring[0], ring[i], ring[i+1]):
+   *  the #999 fill rings are already triangles (fan = the triangle itself), and a
+   *  fan also tiles the simple convex silhouette regions HLR produces. Dependency-
+   *  free; rings with <3 points contribute nothing. */
+  function fillsToTriangleList(fills: number[][][]): Float32Array {
+    const out: number[] = [];
+    for (const ring of fills) {
+      if (!ring || ring.length < 3) continue;
+      const a = ring[0];
+      for (let i = 1; i + 1 < ring.length; i++) {
+        const b = ring[i], c = ring[i + 1];
+        out.push(a[0], a[1], b[0], b[1], c[0], c[1]);
+      }
+    }
+    return new Float32Array(out);
   }
 
   /** bbox → clip-space fit transform (sx, sy, tx, ty), aspect-preserving letterbox.
@@ -122,8 +164,11 @@
     return [sx, sy, -cx * sx, -cy * sy];
   }
 
-  /** ONE render pass: clear to the background, then (if geometry is uploaded)
-   *  write the fit uniform + draw the boundary line-list. */
+  /** ONE render pass: clear WHITE, then (if a bbox is cached) write the SHARED fit
+   *  uniform and draw — FILL triangles FIRST (the soft steel body, #999), the teal
+   *  boundary line-list ON TOP. Both pipelines read the same uniform, so it's
+   *  written once. Missing either buffer just skips that draw (outline-only, as
+   *  before, when there are no fills). */
   function render(w: number, h: number) {
     if (!device || !ctx || !pipeline) return;
     const [r, g, b, a] = clearColor;
@@ -136,13 +181,22 @@
         storeOp: 'store',
       }],
     });
-    if (lastVertices && lastVertexCount >= 2 && lastBBox && vertexBuf) {
-      const xf = computeFit(lastBBox, w, h);
-      device.queue.writeBuffer(uniformBuf, 0, new Float32Array(xf));
-      pass.setPipeline(pipeline);
-      pass.setBindGroup(0, bindGroup);
-      pass.setVertexBuffer(0, vertexBuf);
-      pass.draw(lastVertexCount);
+    if (lastBBox) {
+      device.queue.writeBuffer(uniformBuf, 0, new Float32Array(computeFit(lastBBox, w, h)));
+      // FILL (under) — flat steel silhouette, drawn before the outline.
+      if (fillPipeline && fillBindGroup && fillVertexBuf && lastFillVertexCount >= 3) {
+        pass.setPipeline(fillPipeline);
+        pass.setBindGroup(0, fillBindGroup);
+        pass.setVertexBuffer(0, fillVertexBuf);
+        pass.draw(lastFillVertexCount);
+      }
+      // OUTLINE (on top) — the existing teal boundary line-list.
+      if (lastVertices && lastVertexCount >= 2 && vertexBuf) {
+        pass.setPipeline(pipeline);
+        pass.setBindGroup(0, bindGroup);
+        pass.setVertexBuffer(0, vertexBuf);
+        pass.draw(lastVertexCount);
+      }
     }
     pass.end();
     device.queue.submit([encoder.finish()]);
@@ -158,10 +212,28 @@
     device.queue.writeBuffer(vertexBuf, 0, vertices);
   }
 
+  /** (Re)create the fill vertex buffer for the current triangle-list verts (#999). */
+  function uploadFillVertices(vertices: Float32Array) {
+    try { fillVertexBuf?.destroy?.(); } catch { /* already gone */ }
+    fillVertexBuf = device.createBuffer({
+      size: Math.max(vertices.byteLength, 16),
+      usage: gpuBU.VERTEX | gpuBU.COPY_DST,
+    });
+    device.queue.writeBuffer(fillVertexBuf, 0, vertices);
+  }
+
+  /** Drop the cached fill geometry (keeps the fill pipeline/buffer object). */
+  function clearFill() {
+    lastFillVertices = null; lastFillVertexCount = 0; fillTriCount = 0;
+    try { fillVertexBuf?.destroy?.(); } catch { /* already gone */ }
+    fillVertexBuf = null;
+  }
+
   /** Drop any uploaded geometry (keeps the device/pipeline) and clear the canvas. */
   function clearGeometry() {
     lastVertices = null; lastVertexCount = 0; lastBBox = null;
     hasGeometry = false; segCount = 0;
+    clearFill();
     render(width, height);
   }
 
@@ -226,6 +298,23 @@
           entries: [{ binding: 0, resource: { buffer: uniformBuf } }],
         });
 
+        // Fill pipeline (#999): triangle-list, same fit uniform, flat steel fragment.
+        // Its own auto-layout bindGroup points at the SHARED uniformBuf.
+        const fillModule = dev.createShaderModule({ code: FILL_WGSL });
+        fillPipeline = dev.createRenderPipeline({
+          layout: 'auto',
+          vertex: {
+            module: fillModule, entryPoint: 'vs',
+            buffers: [{ arrayStride: 8, attributes: [{ shaderLocation: 0, offset: 0, format: 'float32x2' }] }],
+          },
+          fragment: { module: fillModule, entryPoint: 'fs', targets: [{ format }] },
+          primitive: { topology: 'triangle-list' },
+        });
+        fillBindGroup = dev.createBindGroup({
+          layout: fillPipeline.getBindGroupLayout(0),
+          entries: [{ binding: 0, resource: { buffer: uniformBuf } }],
+        });
+
         // Initial clear (proof-of-life) — the fetch effect draws geometry next.
         render(width, height);
 
@@ -243,9 +332,11 @@
     return () => {
       disposed = true;
       try { vertexBuf?.destroy?.(); } catch { /* ignore */ }
+      try { fillVertexBuf?.destroy?.(); } catch { /* ignore */ }
       try { uniformBuf?.destroy?.(); } catch { /* ignore */ }
       try { device?.destroy?.(); } catch { /* already gone */ }
       device = null; ctx = null; pipeline = null; vertexBuf = null; uniformBuf = null; bindGroup = null;
+      fillPipeline = null; fillBindGroup = null; fillVertexBuf = null;
       deviceReady = false;
     };
   });
@@ -286,6 +377,17 @@
           lastVertexCount = lastVertices.length / 2;
           segCount = lastVertexCount / 2;
           hasGeometry = lastVertexCount >= 2;
+          // FILL (#999): triangulate the silhouette regions → triangle-list buffer.
+          // Graceful — absent/empty fills leave the outline-only render untouched.
+          if (Array.isArray(data.fills) && data.fills.length) {
+            lastFillVertices = fillsToTriangleList(data.fills);
+            lastFillVertexCount = lastFillVertices.length / 2;
+            fillTriCount = (lastFillVertexCount / 3) | 0;
+            if (lastFillVertexCount >= 3) uploadFillVertices(lastFillVertices);
+            else clearFill();
+          } else {
+            clearFill();
+          }
           if (hasGeometry) { uploadVertices(lastVertices); render(w, h); }
           else clearGeometry();
         } else {
@@ -329,7 +431,7 @@
       {#if status === 'probing'}
         <span>probing WebGPU…</span>
       {:else}
-        <span title={detail}>✓ WebGPU line render{adapterInfo ? ` · ${adapterInfo}` : ''}{hasGeometry ? ` · ${segCount} segs` : ''}</span>
+        <span title={detail}>✓ WebGPU render{adapterInfo ? ` · ${adapterInfo}` : ''}{hasGeometry ? ` · ${segCount} segs` : ''}{fillTriCount ? ` · ${fillTriCount} fills` : ''}</span>
       {/if}
     </div>
   {/if}

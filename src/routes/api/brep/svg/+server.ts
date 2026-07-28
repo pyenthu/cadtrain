@@ -21,10 +21,13 @@ import {
 //
 // Default (absent `format`) → { supported:true, svg, meta:{ ms, mode } } — the
 // byte-identical SVG string the B·SVG tab renders. With `format:'polylines'`
-// (#998 — the WGPU GPU line-render tab) → { supported:true, polylines, bbox, meta }
-// INSTEAD of the SVG: `polylines` is the RAW projected 2D boundary (an array of
-// `[x,y]`-point arrays in the SAME 2D space the edge-mode SVG paths use), `bbox`
-// the tight 2D bounds — ready to upload straight to a GPU vertex buffer. Parts
+// (#998 — the WGPU GPU line-render tab) → { supported:true, polylines, fills,
+// fillShades, bbox, meta } INSTEAD of the SVG: `polylines` is the RAW projected 2D
+// boundary (an array of `[x,y]`-point arrays in the SAME 2D space the edge-mode SVG
+// paths use); `fills` (#999 — the WGPU shading pass) the filled SILHOUETTE regions
+// as front-facing surface triangles in that SAME frame (each ring `[[x,y],…]`),
+// with optional parallel `fillShades` (0..1 Lambert per region); `bbox` the tight
+// 2D bounds over BOTH — ready to upload straight to a GPU vertex buffer. Parts
 // with no OCCT-buildable solid return { supported:false, reason } — the SAME
 // isolation contract as preview: every failure degrades to 200 + supported:false
 // so the BREP-SVG surface never 500s or destabilises the app.
@@ -71,7 +74,7 @@ export const POST = async ({ request, fetch }) => {
       if (profile.length < 3) return json({ supported: false, reason: 'profile must be ≥3 [r,z] points' });
       if (wantPolylines) {
         const pl = await brepRevolveToPolylines(profile as [number, number][], svgOpts);
-        return json({ supported: true, polylines: pl.polylines, bbox: pl.bbox, meta: { ms: Date.now() - t0, ...pl.meta } });
+        return json({ supported: true, polylines: pl.polylines, fills: pl.fills, fillShades: pl.fillShades, bbox: pl.bbox, meta: { ms: Date.now() - t0, ...pl.meta } });
       }
       const svg = await brepRevolveToSvg(profile as [number, number][], svgOpts);
       return json({ supported: true, svg, meta: { ms: Date.now() - t0, mode: modeOf(svg) } });
@@ -106,7 +109,7 @@ export const POST = async ({ request, fetch }) => {
       if (result == null) return json({ supported: false, reason: 'no OCCT-buildable solid in this part (BREP covers revolve / extrude / loft / CSG)' });
       if (wantPolylines) {
         const pl = result as BrepPolylinesResult;
-        return json({ supported: true, polylines: pl.polylines, bbox: pl.bbox, meta: { ms: Date.now() - t0, ...pl.meta } });
+        return json({ supported: true, polylines: pl.polylines, fills: pl.fills, fillShades: pl.fillShades, bbox: pl.bbox, meta: { ms: Date.now() - t0, ...pl.meta } });
       }
       const svg = result as string;
       return json({ supported: true, svg, meta: { ms: Date.now() - t0, mode: modeOf(svg) } });
