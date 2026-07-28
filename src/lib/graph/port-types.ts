@@ -19,7 +19,7 @@
 import {
   checkFeed, listOfPoints, T_SCALAR,
   type StructType, type FeedCheck,
-} from './struct-type';
+} from '$lib/graph/struct-type';
 
 /** A socket's flow direction. */
 export type Direction = 'in' | 'out';

@@ -17,13 +17,13 @@
  */
 import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, sweepAnnular, boredSweep, loftStations } from '$lib/engines/manifold/manifold-mesh';
-import { resampleSpline } from './spline-resample';
-import { surveyToXYZ } from './survey-to-xyz';
+import { resampleSpline } from '$lib/graph/spline-resample';
+import { surveyToXYZ } from '$lib/graph/survey-to-xyz';
 import { resolveProfile } from '$lib/shared/profiles/profile-presets';
 import { warpManifoldAlongSpline, type DtxLut } from '$lib/engines/manifold/warp-spline';
-import { cs, extrude_csg, ext, resample } from './csg-2d';
-import { compileSketch } from './sketch';
-import * as mathLib from './math-lib';
+import { cs, extrude_csg, ext, resample } from '$lib/graph/csg-2d';
+import { compileSketch } from '$lib/graph/sketch';
+import * as mathLib from '$lib/graph/math-lib';
 
 // Math primitives injected as BARE names — `cos(x)`, `sin(x)`, `PI`, etc.
 // Single source of truth in math-lib.ts; the order here is whatever

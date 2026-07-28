@@ -13,7 +13,7 @@
  * relies on identity changes; mutations would otherwise miss the diff.)
  */
 
-import { partHashId } from './part-id';
+import { partHashId } from '$lib/graph/part-id';
 
 // ─── Types ──────────────────────────────────────────────────────────────
 

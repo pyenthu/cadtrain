@@ -39,14 +39,14 @@ import {
   resolveEffectiveAppearance,
   STACK_REF_PARAM,
   hasKind,
-} from './composition-graph';
+} from '$lib/graph/composition-graph';
 import {
   emitExprConsts, rewriteExprRefs,
   exprBlockVar, exprBlockMember, rewriteExprLocalRefs, orderExprDef, declaredNames,
   compileListFormula,
-} from './graph-exprs';
-import { isImperative, compileImperative } from './expr-imperative';
-import { inferStructure } from './struct-type';
+} from '$lib/graph/graph-exprs';
+import { isImperative, compileImperative } from '$lib/graph/expr-imperative';
+import { inferStructure } from '$lib/graph/struct-type';
 import { kindOf } from './nodes/registry';
 import type { EmitCtx } from './nodes/node-kind';
 import { partsTableRowVar, orderedRowKeys, partsTableInstanceColors } from './nodes/kinds/parts-table';

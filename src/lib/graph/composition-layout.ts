@@ -31,7 +31,7 @@ import {
   type Graph,
   type NodeId,
   type LayoutXY,
-} from './composition-graph';
+} from '$lib/graph/composition-graph';
 
 export interface AutoLayoutOptions {
   /** Horizontal spacing between depth columns (px). Default 280. */

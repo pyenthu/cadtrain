@@ -13,7 +13,7 @@
  * round-trip is the contract: serializeLoops(parseLoops(f)) re-parses to the same
  * loops. Pure + DOM-free. Plan: the loop-block visualization (#11 readability).
  */
-import { parseExpr } from './graph-exprs';
+import { parseExpr } from '$lib/graph/graph-exprs';
 
 /** One FOR loop — an iterator over a range producing a per-element body. */
 export interface LoopBlock {
