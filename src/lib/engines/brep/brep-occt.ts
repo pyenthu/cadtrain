@@ -462,7 +462,7 @@ async function executeBrep(
   const replicad: any = await import('replicad');
   const { compileSketch } = await import('$lib/graph/sketch/sketch');
   const { resampleSpline } = await import('$lib/graph/spline/spline-resample');
-  const { splineSampler, spline3DFrames } = await import('$lib/engines/manifold/warp-spline');
+  const { splineSampler, spline3DFrames, planAxialStations } = await import('$lib/engines/manifold/warp-spline');
   const { resolveProfile } = await import('$lib/shared/profiles/profile-presets');
   const {
     draw, makeBaseBox, makeCompound, drawPolysides,
@@ -952,17 +952,38 @@ async function executeBrep(
     const sStart = sOf(section.z0), sEnd = sOf(section.z1);
     if (!(sEnd > sStart)) return solidArg;
 
-    // Phase 3 — build the polyline spine over the covered arc. Sample count ≈ input
-    // path resolution over that arc (refine bumps it modestly). The polyline spine rides
-    // the SAME resampled points the Manifold warp bends along — identical fidelity, no
-    // BSpline-approximation risk (the documented MakePipeShell pathology). Spine samples
-    // are even in the PART's z, each mapped through sOf — so a DTX-magnified interval
-    // gets proportionally more spine (manual mode: even-in-z ≡ even-in-arc, unchanged).
+    // Phase 3 — build the polyline spine over the covered arc. The polyline rides
+    // the SAME resampled points the Manifold warp bends along — identical fidelity,
+    // no BSpline-approximation risk (the documented MakePipeShell pathology).
+    //
+    // CURVATURE-ADAPTIVE (TASK B): instead of sampling z UNIFORMLY, lay the spine
+    // points at the SHARED κ→Δz stations (planAxialStations) — dense where the
+    // trajectory bends, SPARSE on straight tangents — the exact model the Manifold
+    // revolve + TrueForm executor now use. `nSpine` is still computed (from the
+    // input path resolution over the covered arc, refine bumping it) as the uniform
+    // BASELINE cap; the interior stations then redistribute within [floor, nSpine]
+    // toward curvature. A straight / degenerate path just gets the minStations floor
+    // spread uniformly (≈ the old even sampling, only leaner). DTX (autoscale)
+    // reparametrizes arc so the stations register with sOf; the swept section's
+    // radial half-size sets the sagitta budget.
     const refine = Math.max(1, Math.min(8, Math.floor(opts?.refine ?? 1)));
     const step = sampler.total / Math.max(1, path.length - 1);
     const nSpine = Math.max(MIN_SPINE, Math.min(MAX_SPINE, Math.round(((sEnd - sStart) / step) * (refine > 1 ? 1.5 : 1))));
-    const spinePts: number[][] = [];
-    for (let i = 0; i <= nSpine; i++) spinePts.push(sampler.at(sOf(section.z0 + (section.z1 - section.z0) * (i / nSpine))).pos);
+    const sectRadial = sectionMaxExtent(section.outer) * vr;
+    const stations = planAxialStations(path as number[][], section.z0, section.z1, {
+      minStations: Math.max(2, Math.round(nSpine / 4)),
+      maxStations: Math.max(MIN_SPINE, Math.min(MAX_SPINE, nSpine)),
+      ...(sectRadial > 1e-9 ? { radialExtent: sectRadial } : {}),
+      ...(dtxLut ? { dtx: dtxLut } : {}),
+    });
+    // Spine z-planes = the two ENDS + the curvature-adaptive interior stations, kept
+    // z0-first / z1-last so the start-frame plant + bore end-extension stay exact.
+    const zPlanes = [
+      section.z0,
+      ...stations.filter((z) => z > section.z0 + 1e-9 && z < section.z1 - 1e-9).sort((a, b) => a - b),
+      section.z1,
+    ];
+    const spinePts: number[][] = zPlanes.map((z) => sampler.at(sOf(z)).pos);
 
     // Phase 4 — plant a 2D section loop into the start frame at pos(sStart): a local
     // (a,b) becomes a world offset on that frame's (startN, startB) axes.
