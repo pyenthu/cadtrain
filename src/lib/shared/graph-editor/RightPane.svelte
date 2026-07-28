@@ -944,10 +944,13 @@
           <div class="ge-empty">No geometry to render yet — bake the part first.</div>
         {/if}
       {/if}
+    </div>
+    <!-- WGPU tab (#998) — WebGPU GPU-rasterizer of the OCCT boundary (sibling of
+         B·SVG). Its OWN body wrapper (NOT nested in the brepsvg wrapper, which
+         hides when rightTab!=='brepsvg' — that was the blank-tab bug). Scaffold
+         today: WebGPU comes up + clears the canvas. Lazy so init only runs on open. -->
+    <div class="ge-glb-body" class:hidden={rightTab !== 'wgpu'}>
       {#if rightTab === 'wgpu' && (active ?? true)}
-        <!-- WGPU (#998): WebGPU GPU-rasterizer of the OCCT boundary. Scaffold today
-             (proof-of-life: WebGPU comes up + clears the canvas). The boundary-polyline
-             render is the next step. Lazy component so raw WebGPU only inits on open. -->
         {#if WebGpuView}
           <WebGpuView />
         {:else}
