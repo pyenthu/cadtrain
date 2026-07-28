@@ -20,6 +20,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import * as mathLib from '$lib/graph/expr/math-lib';
+import { partNestId } from '$lib/graph/part/part-id';
 import type { PartColorLUT } from '$lib/graph/part/part-lut-types';
 import type { PartAppearance } from '$lib/shared/viewer/part-appearance';
 import type { BrepPartResponse } from './brep-adapter';
@@ -514,6 +515,42 @@ async function executeBrep(
   const WRAP = Symbol('occt');
   const unwrap = (v: any) => (v && v[WRAP]) ? v[WRAP] : v;
 
+  // ── additive GROUP — differently-tagged parts kept SEPARATE, not fused (#997) ──
+  // OCCT's fuse collapses `body.add(seal)` into ONE solid whose relation can't
+  // carry two source ids (unlike Manifold's mesh relation), so a fused multi-part
+  // solid lost the added part's colour → the whole thing rendered one flat colour.
+  // Mirror Manifold's lazy `_parts` (primitive-loader autoPlace): when `.add`/`.union`
+  // combines solids that carry DIFFERENT part tags, DON'T fuse — keep them as a GROUP
+  // of independently-tagged solids. Downstream ops (`.subtract`/`.intersect`/mv/rot/
+  // sectionCut/warpSpline) fold PER-ELEMENT (each part CSG'd/transformed independently,
+  // overlapping — exactly the MF per-part CSG), so `(body.add(seal)).subtract(bore)`
+  // → [body−bore, seal−bore] each keeping its own colour AND geometry. collectShapes
+  // flattens a group to its members, so meshBrepParts meshes + tints each separately.
+  // Groups arise ONLY when part tags exist (the LUT-active colour path); with no LUT
+  // every tag is undefined → `.add` always fuses → byte-identical to before.
+  const GROUP = Symbol('brep-group');
+  const groupMembers = (v: any): any[] | null =>
+    (v && typeof v === 'object' && Array.isArray((v as any)[GROUP])) ? (v as any)[GROUP] as any[] : null;
+  const isGroup = (v: any): boolean => groupMembers(v) !== null;
+  // A GROUP proxy: responds ONLY to the boolean methods a part body chains directly
+  // (`.add`/`.union` append; `.subtract`/`.intersect` fold per-member) + the GROUP
+  // marker. Everything else (WRAP, `then`, mesh, boundingBox, …) → undefined, so
+  // `unwrap` returns the group itself and callers route through `groupMembers` /
+  // `collectShapes` (all transforms reach a group via the free fns mv/rot/… which
+  // are group-aware). Members are WRAPPED single solids, each carrying its own tag.
+  const wrapGroup = (members: any[]): any => new Proxy({}, {
+    get(_t, prop) {
+      if (prop === GROUP) return members;
+      if (prop === 'add' || prop === 'union') return (o: any) => {
+        const extra: any[] = []; collectShapes(o, extra);
+        return wrapGroup([...members, ...extra.map(wrap)]);
+      };
+      if (prop === 'subtract') return (o: any) => wrapGroup(members.map((m) => m.subtract(o)));
+      if (prop === 'intersect') return (o: any) => wrapGroup(members.map((m) => m.intersect(o)));
+      return undefined;
+    },
+  });
+
   // ── per-part color-by-source tag (#86 "Phase B" for BREP) ─────────────────
   // The Manifold path tags each named instance with `partHashId(name)` and lets
   // Manifold's mesh relation carry that id through CSG. OCCT has no such
@@ -544,6 +581,26 @@ async function executeBrep(
     } catch { /* propagation is advisory */ }
     return out;
   };
+  // __tagNest — nested-assembly instance tag (spliced by tagInstanceSources, the
+  // SAME rewrite the Manifold loader uses). For a LEAF instance (a single solid,
+  // the overwhelming case) it COLLAPSES to the parent id — byte-identical to `__tag`.
+  // For a GROUP (a multi-part additive compose surfacing one Call deeper) it PRESERVES
+  // each member and namespaces it as `partNestId(parentId, memberTag)` — mirroring
+  // manifold `tagManifoldNested` (#947) — so a part-within-a-part keeps a DISTINCT
+  // colour through the tag→LUT path (the render LUT recomputes the same partNestId).
+  // A member with no tag (an anonymous CSG piece) → the parent id (it's the instance's
+  // own body, not a separately-coloured sub-part).
+  const inPartBand = (id: number) => id >= 0x40000000 && id <= 0x7fffffff;
+  const __tagNest = (x: any, parentId: number): any => {
+    const pid = Number(parentId) >>> 0;
+    const members = groupMembers(x);
+    if (!members) return __tag(x, pid);   // leaf / single solid → collapse (== __tag)
+    return wrapGroup(members.map((m) => {
+      const u = unwrap(m);
+      const old = (u && typeof u === 'object') ? partTag.get(u) : undefined;
+      return __tag(m, (old !== undefined && inPartBand(old)) ? partNestId(pid, old) : pid);
+    }));
+  };
   // Fold a boolean op over an operand that may be a single solid, a wrapped
   // solid, an ARRAY of solids, or a `place(list)` group — mirroring Manifold,
   // where `A.add(place([b,c,d]))` unions A with every element. Without this,
@@ -566,6 +623,26 @@ async function executeBrep(
     }
     return acc;
   };
+  // Additive combine (`.add`/`.union`) with COLOUR-PRESERVING split (#997). Operands
+  // that share the base's tag — OR carry no tag (anonymous CSG, the instance's own
+  // body) — FUSE into the base, exactly as before (byte-identical when no tags exist,
+  // i.e. the whole no-LUT path). Operands with a DIFFERENT defined tag are kept SEPARATE
+  // as a GROUP so each keeps its own colour. When nothing is distinct this reduces to
+  // the old single fused solid.
+  const additiveCombine = (base: any, o: any): any => {
+    const operands: any[] = []; collectShapes(o, operands);
+    if (operands.length === 0) return wrap(base);
+    const baseTag = partTag.get(base);
+    const foldIn: any[] = [];       // same-tag or untagged → fuse into base
+    const distinct: any[] = [];     // different defined tag → keep separate
+    for (const s of operands) {
+      const tg = partTag.get(s);
+      if (tg !== undefined && tg !== baseTag) distinct.push(s); else foldIn.push(s);
+    }
+    const baseSolid = foldIn.length ? carryTag(base, combineBool(base, foldIn, 'fuse')) : base;
+    if (distinct.length === 0) return wrap(baseSolid);
+    return wrapGroup([wrap(baseSolid), ...distinct.map(wrap)]);
+  };
   function wrap(shape: any): any {
     if (!shape || typeof shape !== 'object') return shape;
     // Track every OCCT solid that flows through the executor so the boundary
@@ -577,7 +654,9 @@ async function executeBrep(
         if (prop === WRAP) return t;
         // A boolean result inherits the BASE's part tag (the tool is subtractive
         // / additive; the surface belongs to the receiver) — matches the MF rule.
-        if (prop === 'add' || prop === 'union') return (o: any) => wrap(carryTag(t, combineBool(t, o, 'fuse')));
+        // `.add`/`.union` goes through additiveCombine, which keeps differently-tagged
+        // additive parts SEPARATE (a GROUP) instead of fusing away the added colour (#997).
+        if (prop === 'add' || prop === 'union') return (o: any) => additiveCombine(t, o);
         if (prop === 'subtract') return (o: any) => wrap(carryTag(t, combineBool(t, o, 'cut')));
         if (prop === 'intersect') return (o: any) => wrap(carryTag(t, combineBool(t, o, 'intersect')));
         const val = (t as any)[prop];
@@ -916,6 +995,10 @@ async function executeBrep(
     // multi-part, only individual parts" bug (2026-07-13; mirrors the MF warpSpline
     // array fix). Map the warp over each member so every element bends along the
     // spline; each stays tagged (carryTag) so color-by-source survives.
+    // A GROUP (differently-tagged additive parts, #997) warps per-member too, staying
+    // a group so each element keeps its own colour through the deviation.
+    const gm = groupMembers(solidArg);
+    if (gm) return wrapGroup(gm.map((el) => warpSpline(el, path, opts)));
     if (Array.isArray(solidArg)) return solidArg.map((el) => warpSpline(el, path, opts));
     const solid = unwrap(solidArg);
     if (!solid || typeof solid.mesh !== 'function' || !Array.isArray(path) || path.length < 2) return solidArg;
@@ -1060,8 +1143,14 @@ async function executeBrep(
   // the first call and then uses a deleted handle → "This object has been
   // deleted" (#19). clone() FIRST (non-destructive) so the source survives for
   // the next iteration — same defensive pattern as compoundOf/stackOcct below.
-  const mv = (s: any, v: number[]) => wrap(carryTag(s, unwrap(s).clone().translate([v[0] || 0, v[1] || 0, v[2] || 0])));
-  const rot = (s: any, v: number[]) => {
+  const mv = (s: any, v: number[]): any => {
+    const gm = groupMembers(s);                       // a GROUP moves each element (#997)
+    if (gm) return wrapGroup(gm.map((m) => mv(m, v)));
+    return wrap(carryTag(s, unwrap(s).clone().translate([v[0] || 0, v[1] || 0, v[2] || 0])));
+  };
+  const rot = (s: any, v: number[]): any => {
+    const gm = groupMembers(s);                       // a GROUP rotates each element (#997)
+    if (gm) return wrapGroup(gm.map((m) => rot(m, v)));
     let sh = unwrap(s).clone();
     if (v[0]) sh = sh.rotate(v[0], [0, 0, 0], [1, 0, 0]);
     if (v[1]) sh = sh.rotate(v[1], [0, 0, 0], [0, 1, 0]);
@@ -1089,7 +1178,11 @@ async function executeBrep(
   // extrude it past both z-ends, and `.cut()` it — so BREP reproduces the same
   // sectioned solid the Manifold oracle does (previously "sectionCut is not
   // defined" failed 13 parts + every well assembly depending on bw_casing).
-  const sectionCut = (solid: any, secOpts?: { az?: number; offset?: number }) => {
+  const sectionCut = (solid: any, secOpts?: { az?: number; offset?: number }): any => {
+    // A GROUP (differently-tagged additive parts, #997) section-cuts each element so
+    // the authored half-section applies per-part and each keeps its own colour.
+    const gm = groupMembers(solid);
+    if (gm) return wrapGroup(gm.map((m) => sectionCut(m, secOpts)));
     // DEGRADE-to-uncut: the SVG endpoint's retry sets `noSectionCut` so a
     // swept-boolean whose exact cut throws still renders (the full solid).
     if (opts?.noSectionCut) return solid;
@@ -1123,7 +1216,9 @@ async function executeBrep(
   // Stack-ref offset (graded-delta z mate): stash the delta on the underlying
   // OCCT shape so stack() can read it (mirrors Manifold's `_stackRef`).
   const stackRefMap = new WeakMap<object, number>();
-  const withStackRef = (s: any, offset?: number) => {
+  const withStackRef = (s: any, offset?: number): any => {
+    const gm = groupMembers(s);                       // a GROUP records the delta on each member
+    if (gm) { gm.forEach((m) => withStackRef(m, offset)); return s; }
     const u = unwrap(s);
     if (u && typeof u === 'object') { try { stackRefMap.set(u, Number(offset) || 0); } catch { /* */ } }
     return s;
@@ -1150,10 +1245,12 @@ async function executeBrep(
   };
   const sketch = (ops: any[], segs = 64) => compileSketch(ops, segs);
 
-  // Collect wrapped OCCT solids out of any return value (shape | array | stack).
+  // Collect wrapped OCCT solids out of any return value (shape | array | GROUP | stack).
   const collectShapes = (v: any, into: any[]) => {
     if (!v) return;
     if (Array.isArray(v)) { v.forEach((x) => collectShapes(x, into)); return; }
+    const gm = groupMembers(v);   // a GROUP (#997) flattens to its member solids
+    if (gm) { gm.forEach((m) => collectShapes(m, into)); return; }
     const s = unwrap(v);
     if (s && typeof s.mesh === 'function' && typeof s.cut === 'function') into.push(s);
   };
@@ -1201,10 +1298,11 @@ async function executeBrep(
     p, sketch, r_revolve, r_weld_extrude, r_loft, r_extrude, r_cuboid, r_sweep,
     resampleSpline, resolveProfile, sectionCut, warpSpline,
     mv, rot, place, withStackRef, stackOcct, compoundOf, compoundOf,
-    // BREP tags whole OCCT solids (no mesh-run relation to preserve), so __tagNest
-    // COLLAPSES to the parent id exactly like __tag — the nested-material feature
-    // (#947) is Manifold-only for now. This keeps BREP byte-identical to pre-#947.
-    __tag, __tag,
+    // __tag collapses to one id; __tagNest is a REAL nest-tagger now (#997): it
+    // collapses a leaf (single solid) to the parent id — byte-identical to __tag —
+    // but namespaces a GROUP's members via partNestId so a multi-part instance keeps
+    // its own sub-part colours one Call deeper (mirrors manifold tagManifoldNested).
+    __tag, __tagNest,
     ...MATH_VALUES,
   ];
   function bodyOf(src: string): string | null {
