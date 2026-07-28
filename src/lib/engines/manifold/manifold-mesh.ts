@@ -17,6 +17,15 @@
  * get OUTWARD normals on the swept band.
  */
 
+// The SHARED curvature-adaptive station model (κ→Δz, planAxialStations). Used by
+// subdivideProfileAxial when a warp spline is supplied so a revolve's axial rings
+// cluster at bends and stay sparse on straight tangents — instead of the uniform
+// max-Z-span cap. warp-spline imports `sweepFrames` back from this module (mutual,
+// function-scoped only), so ESM resolves the cycle: neither symbol is touched at
+// module-init, only inside functions. This is the same shared model TrueForm's
+// executor already consumes via densifyProfileAxial (tf_examples/execute.ts).
+import { densifyProfileAxial } from './warp-spline';
+
 /** One welded patch: interleaved xyz vertices + flat triangle indices. */
 export type Patch = { verts: Float32Array; tris: Uint32Array };
 
@@ -113,6 +122,24 @@ export function getCircSegCap(): number | null { return _circSegCap; }
 /** Set the circumferential segment cap (≥3; ≤0/null clears it). */
 export function setCircSegCap(v: number | null): void { _circSegCap = (v != null && v >= 3) ? Math.floor(v) : null; }
 
+// CURVATURE-ADAPTIVE axial spline — the durable warp-density source (Rule 25 +
+// the bake-worker-core:55 TODO). When set to a warp trajectory (the SAME control
+// points the later `warpSpline` bends along), the axial dial switches from a
+// UNIFORM max-Z-span cap to the shared κ→Δz model (planAxialStations via
+// densifyProfileAxial): rings cluster where the trajectory bends and stay sparse
+// on straight tangents — exactly what TrueForm's executor does. null = OFF →
+// the uniform `_axialMaxZSpan` path (byte-identical). Set race-safely around the
+// SYNCHRONOUS geom build (same discipline as `_axialMaxZSpan`), restored after.
+let _axialSpline: readonly number[][] | null = null;
+/** Read the active curvature-adaptive warp spline (null = uniform mode). */
+export function getAxialSpline(): readonly number[][] | null { return _axialSpline; }
+/** Set the curvature-adaptive warp spline (≥2 control points; null/short clears it
+ *  → uniform max-Z-span mode). The points are `[x,y,z]` (or planar `[x,z]`), the
+ *  same trajectory the warp bends along. */
+export function setAxialSpline(cp: readonly number[][] | null): void {
+  _axialSpline = (Array.isArray(cp) && cp.length >= 2) ? cp : null;
+}
+
 /**
  * Densify a closed (r,z) profile loop along Z: insert COLLINEAR interior points
  * on each edge so no edge spans more than `maxZSpan` in Z (capped at
@@ -122,13 +149,31 @@ export function setCircSegCap(v: number | null): void { _circSegCap = (v != null
  * solid is unchanged geometrically, only denser. `maxZSpan` null/≤0 → input
  * returned unchanged. Horizontal edges (Δz≈0: caps) get no extra points; only
  * Z-spanning edges (the side walls a sine actually bends) are densified.
+ *
+ * CURVATURE-ADAPTIVE mode: pass a warp spline `cp` (the trajectory the later warp
+ * bends along) to place rings at the SHARED κ→Δz stations (densifyProfileAxial →
+ * planAxialStations) instead of the uniform `maxZSpan` — dense at bends, sparse on
+ * straight tangents, the same model TrueForm's executor uses. A straight / absent
+ * `cp` (or one that adds nothing) falls back to the uniform path, so every existing
+ * 3-arg caller is byte-identical.
  */
 export function subdivideProfileAxial(
   profile: [number, number][],
   maxZSpan: number | null,
   maxSegPerEdge = 64,
+  cp?: readonly number[][] | null,
 ): [number, number][] {
   if (!Array.isArray(profile) || profile.length < 2) return profile;
+  // Curvature-adaptive: delegate to the shared model when a real warp spline is
+  // supplied. maxSegPerEdge doubles as the per-profile station cap (so the same
+  // dial still bounds the blow-up). Only accepted when it actually adds rings —
+  // a straight spline returns ~minStations, which we still take over the uniform
+  // path since the caller explicitly asked for spline mode; but a no-op (nothing
+  // added) drops through to the uniform/identity logic below.
+  if (cp && Array.isArray(cp) && cp.length >= 2) {
+    const dense = densifyProfileAxial(profile, cp as any, { maxStations: Math.max(2, Math.floor(maxSegPerEdge)) });
+    if (Array.isArray(dense) && dense.length > profile.length) return dense as [number, number][];
+  }
   if (maxZSpan == null || !(maxZSpan > 0)) return profile;
   const cap = Math.max(1, Math.floor(maxSegPerEdge));
   const N = profile.length;
@@ -178,8 +223,10 @@ export function revolveProfile(
   // along long-Z edges so a later Manifold.warp bends the side walls as a smooth
   // sine, not faceted chords. Geometrically identical (points on the straight
   // edge) → bbox/volume unchanged; just more rings. Dial: _axialMaxZSpan (null
-  // disables → byte-identical to the pre-change revolve).
-  const prof = subdivideProfileAxial(profile, _axialMaxZSpan, _axialMaxSegPerEdge);
+  // disables → byte-identical to the pre-change revolve). When `_axialSpline` is
+  // set (a warp trajectory), rings are placed CURVATURE-ADAPTIVELY instead of at
+  // the uniform max-Z-span — dense at bends, sparse on straight tangents.
+  const prof = subdivideProfileAxial(profile, _axialMaxZSpan, _axialMaxSegPerEdge, _axialSpline);
   // Clamp to the bake's circumferential cap (preview seg override / coarse-drag)
   // so the pane "seg" + draft-seg actually coarsen welded revolves.
   let segN = Math.max(3, Math.floor(segments));

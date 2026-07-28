@@ -15,7 +15,7 @@ import Module from 'manifold-3d';
 // Build-time axial (Z) densification for smooth warp — shared with the welded
 // revolve path (revolveProfile). manifold-mesh imports nothing from here (it
 // reads the wasm singleton off globalThis), so this import is acyclic.
-import { subdivideProfileAxial, getAxialMaxZSpan, getAxialMaxSegPerEdge, revolveProfile, weldAndBuild } from './manifold-mesh';
+import { subdivideProfileAxial, getAxialMaxZSpan, getAxialMaxSegPerEdge, getAxialSpline, revolveProfile, weldAndBuild } from './manifold-mesh';
 import { triSourceIds, partNestId } from '$lib/graph/part/part-id';
 // Trap detection lives in `manifold-trap.ts` — no `manifold-3d` import there, so
 // the MAIN-THREAD bake-client can use it without pulling the WASM module in.
@@ -606,8 +606,9 @@ export function revolve(contourJson: string, _unused1?: number, _unused2?: numbe
   }
   // Densify the contour along Z (same build-time dial as the welded revolve) so
   // a later Manifold.warp bends the side walls smoothly. Collinear interpolation
-  // → identical solid, just more axial rings. null dial → unchanged contour.
-  const dense = subdivideProfileAxial(pts, getAxialMaxZSpan(), getAxialMaxSegPerEdge());
+  // → identical solid, just more axial rings. null dial → unchanged contour. A set
+  // `_axialSpline` switches to curvature-adaptive station placement (dense at bends).
+  const dense = subdivideProfileAxial(pts, getAxialMaxZSpan(), getAxialMaxSegPerEdge(), getAxialSpline());
   const cs = new CS([dense]);
   // CrossSection.revolve sweeps around the Y axis of the cross-section
   // (then maps Y → Z in the resulting manifold), matching the Z-down

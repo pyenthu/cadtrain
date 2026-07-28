@@ -27,6 +27,11 @@
  */
 import { resolveProfile } from '$lib/shared/profiles/profile-presets';
 import { revolveProfile, weldAndBuild } from '$lib/engines/manifold/manifold-mesh';
+// CURVATURE-ADAPTIVE profile densifier (the SHARED κ→Δz model — planAxialStations
+// under the hood, the exact function TrueForm's executor uses). Type-checked here;
+// at RUNTIME the sandbox strips this import and injects `densifyProfileAxial` by
+// name (see primitive-sandbox.ts), same as revolveProfile / weldAndBuild above.
+import { densifyProfileAxial } from '$lib/engines/manifold/warp-spline';
 
 export const meta = {
   id: 'r_revolve',
@@ -125,8 +130,10 @@ export function r_revolve(profile: any, segments: number, zSegments?: number, ax
   }
   // A deviation path IMPLIES axial resolution: with only top+bottom rings a bend
   // would be a single faceted chord. If the caller left zSegments at 0, auto-pick
-  // a ring count from the path's own length (~1 unit/segment, floored at 32,
-  // capped at 256) so the trajectory reads as a smooth curve.
+  // a ring-count CAP from the path's own length (~1 unit/segment, floored at 32,
+  // capped at 256). This bounds the curvature-adaptive station count below so a
+  // very long survey can't over-refine — the stations themselves are placed by
+  // curvature (dense at bends, sparse on straight), not uniformly.
   let zSegEff = zSegments;
   if (dev && (!zSegEff || zSegEff < 1)) {
     let len = 0;
@@ -140,42 +147,63 @@ export function r_revolve(profile: any, segments: number, zSegments?: number, ax
   }
 
   // OPT-IN axial (Z) segmentation (Rule 25 — build-time, on the 2D profile,
-  // NEVER a post-bake MeshGL rewrite). When zSegments ≥ 1, densify the (r,z)
-  // profile along Z BEFORE the revolve: insert COLLINEAR interior points so the
-  // side wall gains ~zSegments axial RINGS across the profile's full Z-span.
-  // Because every inserted point sits exactly on the original straight edge the
-  // revolved solid is geometrically IDENTICAL (same bbox + volume) — just denser
-  // along Z — so the tube looks smoother AND a later Manifold.warp bends it as a
-  // smooth curve instead of collapsing a top-only/bottom-only ring pair.
+  // NEVER a post-bake MeshGL rewrite). Two ways in:
   //
-  // This mirrors manifold-mesh's `subdivideProfileAxial`, but INLINED: that
-  // helper is a max-Z-SPAN dial (a module global set by the warp-preview path)
-  // and is NOT one of the names the primitive sandbox injects, so an stdlib
-  // engine can't import it at runtime — the logic lives here as a self-contained
-  // closure. zSegments falsy / undefined / < 1 → `pts` passes through untouched
-  // → byte-identical to the pre-change revolve (Rule 21: 12 consumers).
+  //  • DEVIATION PATH present → CURVATURE-ADAPTIVE. Insert rings at the SHARED
+  //    κ→Δz stations (densifyProfileAxial → planAxialStations): dense where the
+  //    trajectory bends, SPARSE on straight tangents — the exact model TrueForm's
+  //    executor uses for a revolve-tree warp child (tf_examples/execute.ts,
+  //    densifyRevolveTree). The axisPath IS the curvature spline (its [x,y,z]
+  //    knots align with the profile z), so a vertical-then-kick-off well clusters
+  //    its rings at the dogleg instead of wasting a uniform ~32 on the straight
+  //    run. densifyProfileAxial is sandbox-injected (unlike subdivideProfileAxial),
+  //    so this stdlib engine CALLS the shared model rather than re-deriving it.
+  //
+  //  • No path, explicit zSegments ≥ 1 → UNIFORM. Insert COLLINEAR interior points
+  //    so the side wall gains ~zSegments evenly-spaced axial RINGS across the
+  //    profile's full Z-span (a straight tube has no curvature to cluster on, so
+  //    even spacing is right AND keeps this back-compat path byte-identical).
+  //
+  // Every inserted point sits exactly on the original straight edge → the revolved
+  // solid is geometrically IDENTICAL (same bbox + volume), just denser along Z, so
+  // a later Manifold.warp bends it smoothly instead of collapsing a top/bottom-only
+  // ring pair. No path AND zSegments falsy/< 1 → `pts` passes through untouched →
+  // byte-identical to the pre-change revolve (Rule 21: 12 consumers).
   let prof = pts;
-  const zn = Math.floor(Number(zSegEff) || 0);
-  if (zn >= 1 && Array.isArray(pts) && pts.length >= 2) {
-    let zmin = Infinity, zmax = -Infinity;
-    for (const p of pts) { const z = p[1]; if (z < zmin) zmin = z; if (z > zmax) zmax = z; }
-    const span = zmax - zmin;
-    if (span > 0) {
-      const maxZSpan = span / zn; // ⇒ a full-span side edge gets ~zn slices
-      const cap = Math.max(zn, 1); // let one full-span edge reach zn splits
-      const dense: [number, number][] = [];
-      const N = pts.length;
-      for (let k = 0; k < N; k++) {
-        const [r0, z0] = pts[k];
-        const [r1, z1] = pts[(k + 1) % N]; // walk the CLOSED loop (last→first too)
-        dense.push([r0, z0]); // edge start — the unique loop vert
-        const n = Math.min(cap, Math.max(1, Math.ceil(Math.abs(z1 - z0) / maxZSpan)));
-        for (let s = 1; s < n; s++) {
-          const t = s / n; // linear in BOTH r and z → point stays on the edge
-          dense.push([r0 + (r1 - r0) * t, z0 + (z1 - z0) * t]);
+  if (dev) {
+    // The deviation path IS the curvature spline — its knots [x,y,z] follow the
+    // same curve the per-vertex shear below applies. densifyProfileAxial measures
+    // that curvature and clusters the profile's axial rings at the bends; a
+    // straight (no-curvature) path just gets the shared model's minStations
+    // baseline. Bounded by the auto ring count (`zSegEff`) so a very long survey
+    // can't over-refine. `dense.length > pts.length` guards the straight/no-op case.
+    const cp = dev.zs.map((z, i): [number, number, number] => [dev.xs[i], dev.ys[i], z]);
+    const cap = Math.max(2, Math.floor(Number(zSegEff) || 32));
+    const dense = densifyProfileAxial(pts, cp, { maxStations: cap });
+    if (Array.isArray(dense) && dense.length > pts.length) prof = dense;
+  } else {
+    const zn = Math.floor(Number(zSegEff) || 0);
+    if (zn >= 1 && Array.isArray(pts) && pts.length >= 2) {
+      let zmin = Infinity, zmax = -Infinity;
+      for (const p of pts) { const z = p[1]; if (z < zmin) zmin = z; if (z > zmax) zmax = z; }
+      const span = zmax - zmin;
+      if (span > 0) {
+        const maxZSpan = span / zn; // ⇒ a full-span side edge gets ~zn slices
+        const cap = Math.max(zn, 1); // let one full-span edge reach zn splits
+        const dense: [number, number][] = [];
+        const N = pts.length;
+        for (let k = 0; k < N; k++) {
+          const [r0, z0] = pts[k];
+          const [r1, z1] = pts[(k + 1) % N]; // walk the CLOSED loop (last→first too)
+          dense.push([r0, z0]); // edge start — the unique loop vert
+          const n = Math.min(cap, Math.max(1, Math.ceil(Math.abs(z1 - z0) / maxZSpan)));
+          for (let s = 1; s < n; s++) {
+            const t = s / n; // linear in BOTH r and z → point stays on the edge
+            dense.push([r0 + (r1 - r0) * t, z0 + (z1 - z0) * t]);
+          }
         }
+        prof = dense;
       }
-      prof = dense;
     }
   }
   const patch = revolveProfile(prof, seg);

@@ -24,7 +24,7 @@
  */
 
 import * as helpers from './manifold-helpers';
-import { setAxialMaxZSpan, getAxialMaxZSpan, setCircSegCap, getCircSegCap } from './manifold-mesh';
+import { setAxialMaxZSpan, getAxialMaxZSpan, setAxialSpline, getAxialSpline, setCircSegCap, getCircSegCap } from './manifold-mesh';
 import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive/primitive-sandbox';
 import { finalizeManifold, lazyPartsOf, type RenderMaterial, type PartColorLUT } from './render-helpers';
 import { serializeComponentResult, type SerializedComponentResult, type SerializedGeometry } from './mesh-serial';
@@ -50,9 +50,13 @@ import { warpManifoldAlongSpline, type DtxLut } from './warp-spline';
 export const KERNEL_VERSION = 'manifold-3d@3.4.1+cut2'; // +cap1: ear-clip r_sweep end caps (fanCap3D, manifold-mesh) — WAS a transitive engine import NOT in scriptHash, needing a manual kernel bump (now auto via ENGINE_HASH, N4). +nrm4: crease-aware render normals under vert ceiling. +cut2: sectionCut refines the CUT RESULT, not just the wedge (#64 bridging triangle) — same transitive-import problem, now auto-covered
 
 /** Max profile Z-span (world units) a WARP-NODE bake allows before re-lathing an
- *  extra axial ring — the density source for a lean revolve under `warpSpline`.
- *  Constant heuristic (spike-validated on a 30-long tube: ~20 rings, smooth).
- *  TODO: curvature-adaptive via planAxialStations for long/gently-curved wells. */
+ *  extra axial ring — the UNIFORM density source for a lean revolve under
+ *  `warpSpline`. Constant heuristic (spike-validated on a 30-long tube: ~20 rings,
+ *  smooth). CURVATURE-ADAPTIVE upgrade: pass `axialSpline` (the warp trajectory)
+ *  and the revolve's rings are placed by the shared κ→Δz model (planAxialStations)
+ *  instead — dense at bends, sparse on straight — via the `_axialSpline` dial set
+ *  below. Absent → this uniform constant (byte-identical). This is the same shared
+ *  model TrueForm's executor already consumes. */
 const WARP_AXIAL_MAX_ZSPAN = 1.5;
 
 /** Render options — the subset of /api/primitives/preview's request body that
@@ -116,6 +120,15 @@ export interface BakeOptions {
    *  `undefined` ⇒ the constant (byte-identical to before).
    *  `null` ⇒ NO axial densification (correct for a straight/vertical path). */
   axialMaxZSpan?: number | null;
+  /** CURVATURE-ADAPTIVE warp density (opt-in): the warp TRAJECTORY control points
+   *  `[x,y,z]` (or planar `[x,z]`) — the SAME spline the part's `warpSpline` bends
+   *  along. When supplied, the revolve's axial rings are placed by the shared κ→Δz
+   *  model (planAxialStations) — clustered at bends, sparse on straight tangents —
+   *  instead of the UNIFORM `axialMaxZSpan` cap. This is the durable fix the
+   *  WARP_AXIAL_MAX_ZSPAN TODO called for, using the same model TrueForm consumes.
+   *  Absent / < 2 points ⇒ uniform mode (byte-identical). Pairs naturally with a
+   *  finite `axialMaxZSpan` (curvature wins; the span is the straight-run fallback). */
+  axialSpline?: number[][] | null;
 }
 
 const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
@@ -237,6 +250,14 @@ export async function runCompiledManifold(
   if (warpArg && warpArg.freq > 0) setAxialMaxZSpan((2 * Math.PI / warpArg.freq) / 16);
   else if (hasAxialOverride) setAxialMaxZSpan(axialOverride);
   else if (smoothWarp) setAxialMaxZSpan(WARP_AXIAL_MAX_ZSPAN);
+  // CURVATURE-ADAPTIVE dial (opt-in): the warp trajectory, if supplied, switches
+  // the revolve's axial densification from the uniform span above to the shared
+  // κ→Δz model (planAxialStations, dense at bends / sparse on straight). Set +
+  // restored on the SAME race-safe window as the span dial (sync build only).
+  const splineArg = (Array.isArray(options.axialSpline) && options.axialSpline.length >= 2)
+    ? options.axialSpline : undefined;
+  const splinePrev = splineArg !== undefined ? getAxialSpline() : undefined;
+  if (splineArg !== undefined) setAxialSpline(splineArg);
 
   const _now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
   const _tBuild0 = _now();
@@ -248,6 +269,7 @@ export async function runCompiledManifold(
   } finally {
     if (segArg !== undefined) { helpers.setCircularSegmentCount(segPrev as number); helpers.setCircularSegmentCap(capPrev as number | null); setCircSegCap(weldCapPrev ?? null); }
     if (axialPrev !== undefined) setAxialMaxZSpan(axialPrev);
+    if (splineArg !== undefined) setAxialSpline(splinePrev ?? null);
   }
   const _tBuild = _now() - _tBuild0;
 
