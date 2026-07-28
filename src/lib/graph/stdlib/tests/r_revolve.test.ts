@@ -37,12 +37,17 @@ const TUBE = (rIn: number, rOut: number, H: number): [number, number][] => [
 
 /** Distinct z values present in a built Manifold's vertices (rounded). */
 function distinctZ(m: any): number {
+  return distinctZValues(m).length;
+}
+
+/** SORTED distinct z-values (the axial ring planes) present in a built Manifold. */
+function distinctZValues(m: any): number[] {
   const mesh = m.getMesh();
   const vp = mesh.vertProperties as Float32Array;
   const np = mesh.numProp;
   const set = new Set<number>();
   for (let i = 0; i < vp.length / np; i++) set.add(Math.round(vp[i * np + 2] / 1e-5));
-  return set.size;
+  return [...set].map((k) => k * 1e-5).sort((a, b) => a - b);
 }
 
 /** Max |radius| = sqrt(x²+y²) over all verts — for the warp-collapse check. */
@@ -210,12 +215,23 @@ describe('r_revolve — axisPath deviation (the deviated well tube)', () => {
     expect(ringDiameterAtZ(dev, 0)).toBeCloseTo(2 * R, 0);
   });
 
-  it('a deviation path auto-picks axial rings when zSegments is 0 (smooth, not faceted)', () => {
+  it('a deviation path auto-picks axial rings CURVATURE-ADAPTIVELY when zSegments is 0 (dense at the dogleg, sparse on the straight run)', () => {
     setAxialMaxZSpan(null);
     const R = 1.2, H = 30;
+    // vertical 0→12 (straight tangent), then kicks off 12→30 (the dogleg).
     const path: [number, number, number][] = [[0, 0, 0], [0, 0, 12], [3, 0, 22], [9, 0, 30]];
     const dev = r_revolve(CYL(R, H), 96, 0 /* auto */, path);
-    // auto density from path length (~32) ⇒ many interior z-rings, not just 2.
-    expect(distinctZ(dev)).toBeGreaterThanOrEqual(32);
+    const zs = distinctZValues(dev);
+    // Real interior rings exist (not just the 2 profile end-rings → it reads as a
+    // smooth curve, not one faceted chord).
+    expect(zs.length).toBeGreaterThan(8);
+    // CURVATURE-ADAPTIVE (the whole point of wiring the shared planAxialStations
+    // model in): the bending half (z>12) carries a HIGHER ring density — rings per
+    // unit z — than the equal-length straight run (z<12). Uniform spacing (the old
+    // behaviour) would make these equal; a strict inequality proves curvature is
+    // driving placement, clustering rings at the dogleg and thinning the tangent.
+    const nStraight = zs.filter((z) => z > 0.02 && z < 12 - 0.02).length;
+    const nBend = zs.filter((z) => z > 12 + 0.02 && z < H - 0.02).length;
+    expect(nBend / (H - 12)).toBeGreaterThan(nStraight / 12);
   });
 });

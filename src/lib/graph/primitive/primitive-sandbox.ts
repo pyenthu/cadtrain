@@ -20,7 +20,7 @@ import { gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, sweepA
 import { resampleSpline } from '$lib/graph/spline/spline-resample';
 import { surveyToXYZ } from '$lib/graph/survey/survey-to-xyz';
 import { resolveProfile } from '$lib/shared/profiles/profile-presets';
-import { warpManifoldAlongSpline, type DtxLut } from '$lib/engines/manifold/warp-spline';
+import { warpManifoldAlongSpline, densifyProfileAxial, type DtxLut } from '$lib/engines/manifold/warp-spline';
 import { cs, extrude_csg, ext, resample } from '$lib/graph/csg/csg-2d';
 import { compileSketch } from '$lib/graph/sketch/sketch';
 import * as mathLib from '$lib/graph/expr/math-lib';
@@ -38,7 +38,7 @@ export const SANDBOX_ARG_NAMES: string[] = [
   'M', 'CS', 'cyl', 'tube', 'mv', 'rot', 'place', 'zMin', 'zMax', 'zLen', 'ref', 'head', 'tail', 'mate', 'align', 'stack', 'overlay', 'withStackRef', 'CIRCULAR_SEGMENTS_DEFAULT', 'CIRCULAR_SEGMENTS_COMPOSE',
   'initManifold', 'setCircularSegmentMode', 'getCutBox', 'empty',
   'helix_band', 'revolve', 'profile_extrude',
-  'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile', 'sweepAlongPath', 'sweepAnnular', 'boredSweep', 'loftStations', 'resampleSpline', 'surveyToXYZ', 'resolveProfile', 'warpSpline', 'sectionCut',
+  'gridPatch', 'capFan', 'weldAndBuild', 'revolveProfile', 'sweepAlongPath', 'sweepAnnular', 'boredSweep', 'loftStations', 'resampleSpline', 'surveyToXYZ', 'resolveProfile', 'warpSpline', 'sectionCut', 'densifyProfileAxial',
   'cs', 'extrude_csg', 'ext', 'resample',
   'sketch',
   '__tag', '__tagNest',
@@ -84,7 +84,7 @@ export function sandboxArgValues(viewScale?: { radial?: number; depth?: number; 
     helpers.CIRCULAR_SEGMENTS_DEFAULT, helpers.CIRCULAR_SEGMENTS_COMPOSE,
     helpers.initManifold, helpers.setCircularSegmentMode, helpers.getCutBox, helpers.empty,
     helpers.helix_band, helpers.revolve, helpers.profile_extrude,
-    gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, sweepAnnular, boredSweep, loftStations, resampleSpline, surveyToXYZ, resolveProfile, warpFn, helpers.sectionCut,
+    gridPatch, capFan, weldAndBuild, revolveProfile, sweepAlongPath, sweepAnnular, boredSweep, loftStations, resampleSpline, surveyToXYZ, resolveProfile, warpFn, helpers.sectionCut, densifyProfileAxial,
     cs, extrude_csg, ext, resample,
     compileSketch,
     helpers.tagManifold, helpers.tagManifoldNested,

@@ -150,6 +150,48 @@ export function t_place(p) {
   });
 });
 
+// ── TASK B — curvature-adaptive MakePipeShell spine ──────────────────────────
+// The BREP warpSpline sweep used to sample its spine UNIFORMLY in z; it now lays
+// the spine points at the SHARED κ→Δz stations (planAxialStations) — the same
+// model the Manifold revolve + TrueForm executor use. These pin: a deviated
+// warpSpline tube still bakes a VALID solid at parity with the Manifold oracle,
+// and the spine stations follow curvature (sparse straight tangent, dense dogleg).
+describe('brep-occt: curvature-adaptive warp spine (TASK B)', () => {
+  it('deviated warpSpline hollow tube — curvature-adaptive spine bakes a valid solid at MF-oracle parity', async () => {
+    const src = `export const meta = { id: 't_warp', name: 't_warp', kind: 'asm', uses: ['r_revolve'], params: { od: { default: 3 }, id: { default: 2.4 }, length: { default: 30 } } };
+export function t_warp(p) {
+  const prof = [[p.id/2, 0], [p.od/2, 0], [p.od/2, p.length], [p.id/2, p.length]];
+  const tube = r_revolve({ profile: prof, segments: 48 });
+  // vertical 0→12 (straight tangent), then kicks off 12→30 (the dogleg).
+  return warpSpline(tube, [[0,0,0],[0,0,12],[3,0,22],[9,0,30]], { originZ: 0 });
+}`;
+    // Looser tol than the 0.06 straight cases: BREP sweeps EXACT curves (its bent
+    // annulus ≈ the true π(1.5²−1.2²)·30 ≈ 76.3) while the MF ORACLE bends a FACETED
+    // mesh (uniform-span rings → a chordal volume shortfall on the dogleg), so the
+    // two differ by ~11% by construction (exact vs faceted), not from a spine bug.
+    // The pin still catches a genus-wrong / collapsed-bore result (that would be off
+    // by >50%). BREP being the HIGHER (exact) volume confirms the sweep is clean.
+    const { brepVol, mfVol } = await assertParity('t_warp', src, 0.15);
+    // A bent OD3/ID2.4 hollow tube, ~30 of arc: annular volume ≈ π(1.5²−1.2²)·30 ≈ 76.
+    expect(brepVol, 'deviated BREP tube must be a real hollow solid').toBeGreaterThan(60);
+    expect(mfVol).toBeGreaterThan(50);
+  });
+
+  it('the spine stations follow curvature: sparse on the straight tangent, dense at the dogleg', async () => {
+    // The BREP spine is [z0, ...planAxialStations(path, z0, z1, clamp), z1]. Assert
+    // the shared model clusters those interior stations at the bend — the exact
+    // property that makes the deviated sweep FEWER spine points on the straight run
+    // and MORE at the dogleg (OCCT internals aren't observable, so pin the model).
+    const { planAxialStations } = await import('$lib/engines/manifold/warp-spline');
+    const path = [[0, 0, 0], [0, 0, 12], [3, 0, 22], [9, 0, 30]]; // vertical, then kick-off
+    const stations = planAxialStations(path as any, 0, 30, { minStations: 3, maxStations: 40, radialExtent: 1.5 });
+    expect(stations.length).toBeGreaterThan(3);
+    const nStraight = stations.filter((z) => z > 0.5 && z < 11.5).length;
+    const nBend = stations.filter((z) => z > 12.5 && z < 29.5).length;
+    expect(nBend / (30 - 12)).toBeGreaterThan(nStraight / 12); // κ drives spine density
+  });
+});
+
 // ── #997 — CUT half-section honours colorOuter / colorInner ──────────────────
 describe('brep-occt: cut half-section vertex colours (#997)', () => {
   // A solid cylinder half-section: outer cylindrical wall → colorOuter; the two
