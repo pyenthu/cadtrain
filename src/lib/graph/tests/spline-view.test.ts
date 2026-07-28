@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { planeAxes, applyPlaneLock, pointsBbox, gridFor, snapCoord, snapVec3, parsePointsInput } from '../spline-view';
-import type { Vec3 } from '../spline-resample';
+import { planeAxes, applyPlaneLock, pointsBbox, gridFor, snapCoord, snapVec3, parsePointsInput } from '$lib/graph/spline/spline-view';
+import type { Vec3 } from '$lib/graph/spline/spline-resample';
 
 describe('planeAxes', () => {
   it('maps each plane to its in-plane + locked axes', () => {

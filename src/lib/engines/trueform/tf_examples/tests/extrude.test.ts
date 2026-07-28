@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { buildExtrudeMesh, buildExtrudeGrid, type Pt2 } from '../extrude';
 import { graphToTf, type TfInstr } from '$lib/engines/trueform/graph-to-tf';
-import type { Graph } from '$lib/graph/composition-graph-types';
+import type { Graph } from '$lib/graph/composition/composition-graph-types';
 
 /**
  * Guards the PURE welded-extrude builder `buildExtrudeMesh` (behind

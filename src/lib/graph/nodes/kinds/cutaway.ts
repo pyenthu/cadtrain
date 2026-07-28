@@ -3,7 +3,7 @@
  *   emit  ← composition-emit.ts: sectionCut(child, { az, offset })
  *   validate ← child + checkArg(az) + checkArg(offset)   ·   size ← geom.ts { w, h: 112 }
  */
-import type { CutawayNode } from '../../composition-graph-types';
+import type { CutawayNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, has, err, checkArg } from '../node-kind';
 
 export const CutawayKind: NodeKind<CutawayNode> = {

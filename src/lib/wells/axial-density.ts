@@ -20,7 +20,7 @@
  *
  * Pure — no Manifold, no DOM. Tested headless.
  */
-import { minCurvatureStep, sphPoint, type SurveyStation } from '$lib/graph/survey-to-xyz';
+import { minCurvatureStep, sphPoint, type SurveyStation } from '$lib/graph/survey/survey-to-xyz';
 
 /** Sagitta tolerance as a fraction of the well's largest radius. 0.4% matches
  *  the `refineToTolerance` convention already used for round-silhouette

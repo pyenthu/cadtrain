@@ -6,7 +6,7 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';
-import { SANDBOX_ARG_NAMES, sandboxArgValues } from '../primitive-sandbox';
+import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive/primitive-sandbox';
 import { initManifold } from '$lib/engines/manifold/manifold-helpers';
 
 beforeAll(async () => { await initManifold(); }, 120_000);

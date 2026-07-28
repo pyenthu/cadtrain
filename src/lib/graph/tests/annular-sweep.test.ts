@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeAll } from 'vitest';
 import { initManifold } from '$lib/engines/manifold/manifold-helpers';
 import { sweepAnnular, sweepAlongPath } from '$lib/engines/manifold/manifold-mesh';
-import { resampleSpline } from '../spline-resample';
+import { resampleSpline } from '$lib/graph/spline/spline-resample';
 
 type V2 = [number, number];
 type V3 = [number, number, number];

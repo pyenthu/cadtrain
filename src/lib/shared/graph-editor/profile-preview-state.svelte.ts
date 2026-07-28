@@ -24,8 +24,8 @@
  * constructed during component init (top of GEP's `<script>`), so the `$effect`
  * is tied to that component's lifecycle (registered + torn down with the pane).
  */
-import { emitProfileGraph } from '$lib/graph/composition-emit-profile';
-import type { Graph } from '$lib/graph/composition-graph';
+import { emitProfileGraph } from '$lib/graph/composition/composition-emit-profile';
+import type { Graph } from '$lib/graph/composition/composition-graph';
 import type { PolyPreviewState } from './poly-preview-state.svelte';
 
 type Mode = 'revolve' | 'cartesian';

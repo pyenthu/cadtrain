@@ -38,7 +38,7 @@ import {
   addMv,
   addRot,
   addMethod,
-} from './composition-graph';
+} from '$lib/graph/composition/composition-graph';
 
 /** Optional UI context the pure graph can't carry (selection + active tab). */
 export type EditorContext = {

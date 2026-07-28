@@ -8,7 +8,7 @@
  * affect a hash computed only over captured files).
  */
 import { describe, it, expect } from 'vitest';
-import { hashEngineSources, ENGINE_HASH, ENGINE_SOURCES } from '../engine-hash';
+import { hashEngineSources, ENGINE_HASH, ENGINE_SOURCES } from '$lib/graph/composition/engine-hash';
 
 describe('hashEngineSources — pure content hash', () => {
   const fixture: Record<string, string> = {

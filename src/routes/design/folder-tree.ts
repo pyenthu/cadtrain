@@ -897,197 +897,197 @@ export const FOLDER_TREE: FolderNode = {
             },
             {
               "name": "composition-bake.ts",
-              "path": "src/lib/graph/composition-bake.ts",
+              "path": "src/lib/graph/composition/composition-bake.ts",
               "loc": 90
             },
             {
               "name": "composition-emit-profile.ts",
-              "path": "src/lib/graph/composition-emit-profile.ts",
+              "path": "src/lib/graph/composition/composition-emit-profile.ts",
               "loc": 273
             },
             {
               "name": "composition-emit.ts",
-              "path": "src/lib/graph/composition-emit.ts",
+              "path": "src/lib/graph/composition/composition-emit.ts",
               "loc": 860
             },
             {
               "name": "composition-graph-hydrate.ts",
-              "path": "src/lib/graph/composition-graph-hydrate.ts",
+              "path": "src/lib/graph/composition/composition-graph-hydrate.ts",
               "loc": 573
             },
             {
               "name": "composition-graph-mutate.ts",
-              "path": "src/lib/graph/composition-graph-mutate.ts",
+              "path": "src/lib/graph/composition/composition-graph-mutate.ts",
               "loc": 2551
             },
             {
               "name": "composition-graph-types.ts",
-              "path": "src/lib/graph/composition-graph-types.ts",
+              "path": "src/lib/graph/composition/composition-graph-types.ts",
               "loc": 823
             },
             {
               "name": "composition-graph.ts",
-              "path": "src/lib/graph/composition-graph.ts",
+              "path": "src/lib/graph/composition/composition-graph.ts",
               "loc": 28
             },
             {
               "name": "composition-layout.ts",
-              "path": "src/lib/graph/composition-layout.ts",
+              "path": "src/lib/graph/composition/composition-layout.ts",
               "loc": 475
             },
             {
               "name": "composition-tree.ts",
-              "path": "src/lib/graph/composition-tree.ts",
+              "path": "src/lib/graph/composition/composition-tree.ts",
               "loc": 799
             },
             {
               "name": "csg-2d.ts",
-              "path": "src/lib/graph/csg-2d.ts",
+              "path": "src/lib/graph/csg/csg-2d.ts",
               "loc": 137
             },
             {
               "name": "editor-tools-schema.ts",
-              "path": "src/lib/graph/editor-tools-schema.ts",
+              "path": "src/lib/graph/editor/editor-tools-schema.ts",
               "loc": 268
             },
             {
               "name": "editor-tools.ts",
-              "path": "src/lib/graph/editor-tools.ts",
+              "path": "src/lib/graph/editor/editor-tools.ts",
               "loc": 299
             },
             {
               "name": "engine-hash.ts",
-              "path": "src/lib/graph/engine-hash.ts",
+              "path": "src/lib/graph/composition/engine-hash.ts",
               "loc": 122
             },
             {
               "name": "expr-imperative.ts",
-              "path": "src/lib/graph/expr-imperative.ts",
+              "path": "src/lib/graph/expr/expr-imperative.ts",
               "loc": 353
             },
             {
               "name": "expr-loops.ts",
-              "path": "src/lib/graph/expr-loops.ts",
+              "path": "src/lib/graph/expr/expr-loops.ts",
               "loc": 105
             },
             {
               "name": "expr-schema.ts",
-              "path": "src/lib/graph/expr-schema.ts",
+              "path": "src/lib/graph/expr/expr-schema.ts",
               "loc": 140
             },
             {
               "name": "glb-client.ts",
-              "path": "src/lib/graph/glb-client.ts",
+              "path": "src/lib/graph/primitive/glb-client.ts",
               "loc": 119
             },
             {
               "name": "graph-exprs.ts",
-              "path": "src/lib/graph/graph-exprs.ts",
+              "path": "src/lib/graph/expr/graph-exprs.ts",
               "loc": 689
             },
             {
               "name": "manifold-trap.ts",
-              "path": "src/lib/graph/manifold-trap.ts",
+              "path": "src/lib/graph/primitive/manifold-trap.ts",
               "loc": 52
             },
             {
               "name": "math-lib.ts",
-              "path": "src/lib/graph/math-lib.ts",
+              "path": "src/lib/graph/expr/math-lib.ts",
               "loc": 51
             },
             {
               "name": "param-keys.ts",
-              "path": "src/lib/graph/param-keys.ts",
+              "path": "src/lib/graph/composition/param-keys.ts",
               "loc": 101
             },
             {
               "name": "part-id.ts",
-              "path": "src/lib/graph/part-id.ts",
+              "path": "src/lib/graph/part/part-id.ts",
               "loc": 71
             },
             {
               "name": "part-lut-types.ts",
-              "path": "src/lib/graph/part-lut-types.ts",
+              "path": "src/lib/graph/part/part-lut-types.ts",
               "loc": 27
             },
             {
               "name": "port-suggest.ts",
-              "path": "src/lib/graph/port-suggest.ts",
+              "path": "src/lib/graph/port/port-suggest.ts",
               "loc": 203
             },
             {
               "name": "port-types.ts",
-              "path": "src/lib/graph/port-types.ts",
+              "path": "src/lib/graph/port/port-types.ts",
               "loc": 234
             },
             {
               "name": "primitive-sandbox.ts",
-              "path": "src/lib/graph/primitive-sandbox.ts",
+              "path": "src/lib/graph/primitive/primitive-sandbox.ts",
               "loc": 64
             },
             {
               "name": "primitive-stub.ts",
-              "path": "src/lib/graph/primitive-stub.ts",
+              "path": "src/lib/graph/primitive/primitive-stub.ts",
               "loc": 232
             },
             {
               "name": "profile-templates.ts",
-              "path": "src/lib/graph/profile-templates.ts",
+              "path": "src/lib/graph/profile/profile-templates.ts",
               "loc": 489
             },
             {
               "name": "sketch-layout.ts",
-              "path": "src/lib/graph/sketch-layout.ts",
+              "path": "src/lib/graph/sketch/sketch-layout.ts",
               "loc": 109
             },
             {
               "name": "sketch-repeat.ts",
-              "path": "src/lib/graph/sketch-repeat.ts",
+              "path": "src/lib/graph/sketch/sketch-repeat.ts",
               "loc": 125
             },
             {
               "name": "sketch.ts",
-              "path": "src/lib/graph/sketch.ts",
+              "path": "src/lib/graph/sketch/sketch.ts",
               "loc": 280
             },
             {
               "name": "spline-eval.ts",
-              "path": "src/lib/graph/spline-eval.ts",
+              "path": "src/lib/graph/spline/spline-eval.ts",
               "loc": 87
             },
             {
               "name": "spline-resample.ts",
-              "path": "src/lib/graph/spline-resample.ts",
+              "path": "src/lib/graph/spline/spline-resample.ts",
               "loc": 173
             },
             {
               "name": "spline-view.ts",
-              "path": "src/lib/graph/spline-view.ts",
+              "path": "src/lib/graph/spline/spline-view.ts",
               "loc": 84
             },
             {
               "name": "struct-type.ts",
-              "path": "src/lib/graph/struct-type.ts",
+              "path": "src/lib/graph/port/struct-type.ts",
               "loc": 418
             },
             {
               "name": "survey-to-xyz.ts",
-              "path": "src/lib/graph/survey-to-xyz.ts",
+              "path": "src/lib/graph/survey/survey-to-xyz.ts",
               "loc": 172
             },
             {
               "name": "tf-wat-emit.ts",
-              "path": "src/lib/graph/tf-wat-emit.ts",
+              "path": "src/lib/graph/expr/tf-wat-emit.ts",
               "loc": 166
             },
             {
               "name": "warp-geom.ts",
-              "path": "src/lib/graph/warp-geom.ts",
+              "path": "src/lib/graph/warp/warp-geom.ts",
               "loc": 39
             },
             {
               "name": "wire-check.ts",
-              "path": "src/lib/graph/wire-check.ts",
+              "path": "src/lib/graph/wire/wire-check.ts",
               "loc": 110
             }
           ]

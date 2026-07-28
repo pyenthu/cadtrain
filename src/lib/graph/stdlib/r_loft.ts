@@ -34,7 +34,7 @@
  * `gridPatch` / `weldAndBuild` / `resample` / `resolveProfile` by name.
  */
 import { resolveProfile } from '$lib/shared/profiles/profile-presets';
-import { resample } from '$lib/graph/csg-2d';
+import { resample } from '$lib/graph/csg/csg-2d';
 import { gridPatch, weldAndBuild, type Patch } from '$lib/engines/manifold/manifold-mesh';
 
 export const meta = {

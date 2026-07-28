@@ -11,7 +11,7 @@
   mutators. Imports nothing from GEP / the graph.
 -->
 <script lang="ts">
-  import type { PartsStackNode, ArgValue } from '$lib/graph/composition-graph-types';
+  import type { PartsStackNode, ArgValue } from '$lib/graph/composition/composition-graph-types';
   import StackRowPopover from './StackRowPopover.svelte';
 
   let {

@@ -22,14 +22,14 @@
  * yet, so they produce nothing — that's intentional, not a silent gap.
  */
 
-import { canWire, listOf, portType } from './port-types';
+import { canWire, listOf, portType } from '$lib/graph/port/port-types';
 import type {
   Graph,
   ExprOut,
   ExprNode,
   PolygonNode,
   PolygonExprListRef,
-} from './composition-graph-types';
+} from '$lib/graph/composition/composition-graph-types';
 
 // ── 1. expr output → registry PortType id ─────────────────────────────────────
 

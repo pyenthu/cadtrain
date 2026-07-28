@@ -14,8 +14,8 @@
  *   - Single-solid parts compare directly.
  */
 import * as helpers from '$lib/engines/manifold/manifold-helpers';
-import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive-sandbox';
-import { paramKeysOf } from '$lib/graph/param-keys';
+import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive/primitive-sandbox';
+import { paramKeysOf } from '$lib/graph/composition/param-keys';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';
 import { brepFromSource } from '$lib/engines/brep/brep-occt';
 

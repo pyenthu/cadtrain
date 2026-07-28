@@ -12,31 +12,67 @@ training / pipe / rules code it used to sit beside was archived 2026-06-01
 
 **Manifold/render kernel gotchas → `../engines/manifold/CLAUDE.md`; engine layer → `../engines/CLAUDE.md`.**
 
+> **⚠ 2026-07-28 (#995) — the 39 loose root `.ts` files were MODULARIZED into
+> concern subfolders** (mechanical `git mv` + import-path rewrites, NO logic
+> change). Intra-graph imports use the `$lib/graph/<sub>/<file>` alias. Each
+> subfolder has its own one-line `CLAUDE.md`. `nodes/` · `stdlib/` · `tests/`
+> were untouched.
+
 ## Directory map
 
 ```
 src/lib/graph/
-├── composition-graph.ts     # node-graph model (Call/Container/Method/Mv/Rot/Repeat/Polygon/PolyRepeat; ArgValue literal|expr|param; hydrate + migrations)
-├── composition-emit.ts      # graph → emitted source body (meta.graph round-trip)
-├── composition-emit-profile.ts # polygon/profile emit path
-├── composition-layout.ts    # canvas auto-layout
-├── composition-bake.ts      # graph bake orchestration
-├── composition-tree.ts      # TreeNode model (docs/COMPOSITION.md)
-├── param-keys.ts            # paramKeysOf(source) — ordered meta.params keys (adaptive dispatch). Drift-snapshot machinery archived 2026-06-12 with PrimitiveView
-├── csg-2d.ts                # CrossSection helpers (cs, extrude_csg, ext, resample)
-├── sketch.ts                # M.1 sketch engine — compileSketch(ops)→(r,z) via Maker.js (line/spline/fillet/chamfer); injected into the part sandbox as `sketch(...)`. Plan: docs/plans/profile-sketcher.md
-├── inline-profile.ts        # inline-profile resolution (resolveProfile + NaN guard)
-├── profile-templates.ts     # profile preset templates
-├── primitive-sandbox.ts     # sandbox exec for part sources (injects helpers)
-├── primitive-stub.ts        # typed-create scaffolds (Extrude/Profile/Assembly stubs)
-├── part-id.ts               # hashId stamping for color-by-source
-├── math-lib.ts              # math injected into profile-fn + sandbox
-├── survey-to-xyz.ts         # deviation-survey (MD/inc/azi) → XYZ polyline for warp-along-spline
-├── manifold-trap.ts         # guards a WASM Manifold trap so it can't poison later bakes (memory manifold_trap_poison)
-├── nodes/                   # node-kind descriptor registry (in-progress modularization of per-kind emit/validate/size): registry.ts (kindOf) + node-kind.ts + kinds/*.ts (call/container/cutaway/expr/material/method/mv/polygon/poly-repeat/repeat/rot/sketch/sketch-repeat/spline/stack/txfmn/warp/parts-map). Golden-tested (nodes/emit-golden.test.ts)
-├── stdlib/                  # ACTIVE engine primitives (r_cuboid, r_loft, r_weld_extrude, r_revolve) — Rule 21
-│   └── stale/               # DEPRECATED engines (r_extrude — 0 consumers) — still resolvable (origin 'stdstale'); relocated 2026-06-28 from top-level stdstale/
-└── tests/                   # co-located unit tests — the 54 top-level specs grouped here 2026-07-12 (nodes/ + stdlib/ keep their own co-located tests)
+├── composition/             # the node-graph core + emit + bake
+│   ├── composition-graph.ts        # node-graph model (Call/Container/Method/Mv/Rot/Repeat/Polygon/PolyRepeat; hydrate + migrations)
+│   ├── composition-graph-types.ts  # graph value types + constructors (asLiteral/asExpr/asParam)
+│   ├── composition-graph-hydrate.ts# newGraph + hydrateGraph (schema migrations)
+│   ├── composition-graph-mutate.ts # graph mutation ops (add/remove/set…)
+│   ├── composition-emit.ts         # graph → emitted source body + validateGraph (meta.graph round-trip)
+│   ├── composition-emit-profile.ts # polygon/profile emit path
+│   ├── composition-bake.ts         # graph bake orchestration
+│   ├── composition-layout.ts       # canvas auto-layout
+│   ├── composition-tree.ts         # TreeNode model (docs/COMPOSITION.md)
+│   ├── engine-hash.ts              # engine-source digest (import.meta.glob → ENGINE_HASH cache-bust)
+│   └── param-keys.ts               # paramKeysOf(source) — ordered meta.params keys (adaptive dispatch)
+├── expr/                    # expression + formula language
+│   ├── graph-exprs.ts              # parse/validate/emit expr blocks
+│   ├── expr-schema.ts              # buildAllowedInputs (expr schema)
+│   ├── expr-imperative.ts          # imperative accumulator programs
+│   ├── expr-loops.ts               # loop parse/serialize
+│   ├── math-lib.ts                 # math injected into profile-fn + sandbox
+│   └── tf-wat-emit.ts              # TrueForm WAT emit
+├── primitive/              # part-source execution + scaffolds
+│   ├── primitive-sandbox.ts        # sandbox exec for part sources (injects helpers)
+│   ├── primitive-stub.ts           # typed-create scaffolds (Extrude/Profile/Assembly stubs)
+│   ├── glb-client.ts               # client-side GLB export
+│   └── manifold-trap.ts            # guards a WASM Manifold trap so it can't poison later bakes
+├── sketch/                 # M.1 sketch engine
+│   ├── sketch.ts                   # compileSketch(ops)→(r,z) via Maker.js; sandbox `sketch(...)`
+│   ├── sketch-layout.ts            # sketch column layout
+│   └── sketch-repeat.ts            # sketch repeat expansion
+├── spline/                # spline geometry
+│   ├── spline-eval.ts              # resolve wired spline points
+│   ├── spline-resample.ts          # resample / arc-length
+│   └── spline-view.ts              # plane axes + snap + bbox helpers
+├── port/                  # typed-port wiring
+│   ├── port-types.ts               # port type registry + canWire
+│   ├── port-suggest.ts             # wiring suggestions
+│   └── struct-type.ts              # composite/struct types
+├── part/                  # part identity + colour
+│   ├── part-id.ts                  # hashId stamping for color-by-source (SECTION_ID, triSourceIds)
+│   └── part-lut-types.ts           # part colour-LUT types
+├── editor/                # editor tool API
+│   ├── editor-tools.ts             # dispatchEditorTool + readEditorState
+│   └── editor-tools-schema.ts      # editor tool schema
+├── csg/csg-2d.ts          # CrossSection helpers (cs, extrude_csg, ext, resample)
+├── survey/survey-to-xyz.ts# deviation-survey (MD/inc/azi) → XYZ polyline for warp-along-spline
+├── warp/warp-geom.ts      # warp vertex geometry
+├── wire/wire-check.ts     # wire validation
+├── profile/profile-templates.ts # profile preset templates
+├── nodes/                  # node-kind descriptor registry: registry.ts (kindOf) + node-kind.ts + kinds/*.ts (call/container/cutaway/expr/material/method/mv/polygon/poly-repeat/repeat/rot/sketch/sketch-repeat/spline/stack/txfmn/warp/parts-map). Golden-tested
+├── stdlib/                 # ACTIVE engine primitives (r_cuboid, r_loft, r_weld_extrude, r_revolve) — Rule 21
+│   └── stale/               # DEPRECATED engines (r_extrude — 0 consumers) — still resolvable (origin 'stdstale')
+└── tests/                  # co-located unit tests — the top-level specs grouped here 2026-07-12 (nodes/ + stdlib/ keep their own)
 ```
 
 Archived (2026-06-01, in `archive/src/lib/cad/`): `exporter.ts` (SVG

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resampleSpline, denseSampleSpline, splineArcLength, type Vec3 } from '../spline-resample';
+import { resampleSpline, denseSampleSpline, splineArcLength, type Vec3 } from '$lib/graph/spline/spline-resample';
 
 /** Chord length between consecutive points of a polyline. */
 function gaps(pts: Vec3[]): number[] {

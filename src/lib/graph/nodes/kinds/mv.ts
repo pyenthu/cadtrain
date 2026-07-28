@@ -3,7 +3,7 @@
  * into mv/rot, so this is what a hydrated graph actually carries).
  *   emit  ← composition-emit.ts:599   ·  validate ← :133   ·  size ← geom.ts:355 (40×40)
  */
-import type { MvNode } from '../../composition-graph-types';
+import type { MvNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, has, err, checkArgs } from '../node-kind';
 
 export const MvKind: NodeKind<MvNode> = {

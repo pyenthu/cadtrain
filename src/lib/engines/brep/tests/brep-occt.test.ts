@@ -15,8 +15,8 @@ import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { bakeMF, bakeBREP, defaultParamObject } from '../brep-audit';
 import { revolveBrep, brepFromSource } from '../brep-occt';
 import { analyzeParts } from '$lib/server/part-colors';
-import { hydrateGraph } from '$lib/graph/composition-graph-hydrate';
-import { emitGraph } from '$lib/graph/composition-emit';
+import { hydrateGraph } from '$lib/graph/composition/composition-graph-hydrate';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
 import sweepTubeDemo from '../../../../../tests/golden/graph/sweep_tube_demo.json';
 
 // The inline parts below only depend on the stdlib engines. The MF compiler

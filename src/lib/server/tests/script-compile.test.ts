@@ -4,7 +4,7 @@ import {
   buildPrimitiveGeom,
   _resetDepSourceCacheForTest,
 } from '../primitive-loader';
-import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive-sandbox';
+import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive/primitive-sandbox';
 import * as helpers from '$lib/engines/manifold/manifold-helpers';
 
 // PR1 — /api/primitives/compile + script cache.

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { PolygonKind } from '../polygon';
 import { PolyRepeatKind } from '../poly-repeat';
 import type { EmitCtx, SizeConsts } from '../../node-kind';
-import type { PolygonNode, PolyRepeatNode, ArgValue } from '../../../composition-graph-types';
+import type { PolygonNode, PolyRepeatNode, ArgValue } from '$lib/graph/composition/composition-graph-types';
 
 const lit = (v: number): ArgValue => ({ kind: 'literal', value: v });
 const par = (p: string): ArgValue => ({ kind: 'param', param: p });

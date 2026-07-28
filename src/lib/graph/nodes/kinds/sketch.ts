@@ -11,9 +11,9 @@
  * are ctx bindings (passed in to avoid a cycle). `sketchColLayout` is a cad-layer
  * import (allowed), reproducing the sketchCols column-count from the layout slot.
  */
-import type { SketchNode, NodeId } from '../../composition-graph-types';
+import type { SketchNode, NodeId } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, type ValidationError, checkArg } from '../node-kind';
-import { sketchColLayout } from '../../sketch-layout';
+import { sketchColLayout } from '$lib/graph/sketch/sketch-layout';
 
 export const SketchKind: NodeKind<SketchNode> = {
   type: 'sketch',

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { newGraph } from '$lib/graph/composition-graph-hydrate';
+import { newGraph } from '$lib/graph/composition/composition-graph-hydrate';
 import { buildSolidDrop, buildCallArgs, POLY_EXTRUDE_DEFAULT } from '../node-palette';
 
 const nodesArr = (g: ReturnType<typeof newGraph>) => Object.values(g.nodes) as any[];

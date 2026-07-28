@@ -22,7 +22,7 @@
 -->
 <script lang="ts">
   import { paramPos, CARD_X0, CARD_PAD, CARD_TITLE_H, PARAM_H } from './geom';
-  import { STACK_REF_PARAM } from '$lib/graph/composition-graph';
+  import { STACK_REF_PARAM } from '$lib/graph/composition/composition-graph';
   import { dragNumber } from '$lib/shared/ui/dragNumber';
   import { DeleteConfirm } from './delete-confirm.svelte';
 

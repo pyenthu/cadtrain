@@ -24,10 +24,10 @@
     parseImperative, serializeImperative, serializeStatements, bodyStatements,
     importLiteralPointList,
     type ImperativeProgram, type ImpStatement, type ImpIf, type ImpAssign,
-  } from '$lib/graph/expr-imperative';
-  import { parseLoops, type LoopForm } from '$lib/graph/expr-loops';
+  } from '$lib/graph/expr/expr-imperative';
+  import { parseLoops, type LoopForm } from '$lib/graph/expr/expr-loops';
   import ExpressionSrcPane, { type Completion } from './ExpressionSrcPane.svelte';
-  import { ALLOWED_FUNCTIONS, ALLOWED_CONSTANTS } from '$lib/graph/expr-schema';
+  import { ALLOWED_FUNCTIONS, ALLOWED_CONSTANTS } from '$lib/graph/expr/expr-schema';
 
   let { formula = $bindable(), variables = [], onAddVariable }:
     { formula: string; variables?: string[]; onAddVariable?: () => void } = $props();

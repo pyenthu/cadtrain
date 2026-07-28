@@ -6,7 +6,7 @@
  *   validate ← none today → []
  *   size  ← geom.ts:408 (fixed 240 wide; height grows with the bindings rows)
  */
-import type { PolyRepeatNode } from '../../composition-graph-types';
+import type { PolyRepeatNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind } from '../node-kind';
 
 export const PolyRepeatKind: NodeKind<PolyRepeatNode> = {

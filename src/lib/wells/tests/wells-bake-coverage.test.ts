@@ -30,7 +30,7 @@ import { parseWson, isDeviated, type Wson } from '../wson';
 import { wellBakeSpec } from '../well-graph-bake';
 import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { runCompiledManifold } from '$lib/engines/manifold/bake-worker-core';
-import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive-sandbox';
+import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive/primitive-sandbox';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PART A — translate + emit coverage (pure)

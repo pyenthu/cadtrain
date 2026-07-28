@@ -21,9 +21,9 @@ import {
   setExprInputBinding,
   clearExprInputBinding,
   asLiteral,
-} from '../composition-graph';
-import { deriveInputNames } from '../graph-exprs';
-import type { ExprDef, ExprNode } from '../composition-graph-types';
+} from '$lib/graph/composition/composition-graph';
+import { deriveInputNames } from '$lib/graph/expr/graph-exprs';
+import type { ExprDef, ExprNode } from '$lib/graph/composition/composition-graph-types';
 
 const defOf = (g: any, id: string): ExprDef => (g.exprDefs ?? []).find((d: ExprDef) => d.id === id)!;
 

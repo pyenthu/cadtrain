@@ -16,10 +16,10 @@
  *                   `_parts`, distinct volumes/bboxes, nothing composed → NO fusion.
  */
 import { describe, it, expect, beforeAll, beforeEach } from 'vitest';
-import { emitGraph } from '../composition-emit';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
 import { initManifold, cyl } from '$lib/engines/manifold/manifold-helpers';
 import { buildPrimitiveGeom, _resetDepSourceCacheForTest } from '$lib/server/primitive-loader';
-import type { Graph, ArgValue } from '../composition-graph-types';
+import type { Graph, ArgValue } from '$lib/graph/composition/composition-graph-types';
 
 const lit = (v: number | string | boolean): ArgValue => ({ kind: 'literal', value: v });
 const par = (p: string): ArgValue => ({ kind: 'param', param: p });

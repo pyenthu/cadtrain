@@ -11,10 +11,10 @@
  * wrappers transitively.
  */
 import { describe, it, expect } from 'vitest';
-import { removeNode } from '../composition-graph';
-import { validateGraph, emitGraph } from '../composition-emit';
-import type { Graph, GraphNode, NodeId } from '../composition-graph-types';
-import { asLiteral, asExpr } from '../composition-graph-types';
+import { removeNode } from '$lib/graph/composition/composition-graph';
+import { validateGraph, emitGraph } from '$lib/graph/composition/composition-emit';
+import type { Graph, GraphNode, NodeId } from '$lib/graph/composition/composition-graph-types';
+import { asLiteral, asExpr } from '$lib/graph/composition/composition-graph-types';
 
 /** Every node id `n` references as an INPUT — the independent scanner the
  *  assertions use to prove NO node still points at the deleted id (mirrors the

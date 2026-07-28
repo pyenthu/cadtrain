@@ -17,14 +17,14 @@
   chrome classes are duplicated from GEP so Svelte's scoped CSS applies.
 -->
 <script lang="ts">
-  import { sketchEntryH } from '$lib/graph/sketch-layout';
+  import { sketchEntryH } from '$lib/graph/sketch/sketch-layout';
   import { sketchSockR, sketchSockZ, sketchSockVal } from './geom';
   import { argStr, argFrom } from './args';
   import {
     addSketchOp, setSketchOpField, moveSketchOp, removeSketchOp, addSketchRepeat,
     addSketchExprList,
     type Graph,
-  } from '$lib/graph/composition-graph';
+  } from '$lib/graph/composition/composition-graph';
   import { DeleteConfirm } from './delete-confirm.svelte';
   import type { SketchState } from './sketch-state.svelte';
   import type { WireState } from './wire-state.svelte';

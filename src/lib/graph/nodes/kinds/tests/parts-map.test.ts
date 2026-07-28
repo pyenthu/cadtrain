@@ -11,8 +11,8 @@
 import { describe, it, expect } from 'vitest';
 import { PartsMapKind } from '../parts-map';
 import type { EmitCtx } from '../../node-kind';
-import type { Graph, PartsMapNode, ArgValue } from '../../../composition-graph-types';
-import { emitGraph } from '../../../composition-emit';
+import type { Graph, PartsMapNode, ArgValue } from '$lib/graph/composition/composition-graph-types';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
 
 const par = (p: string): ArgValue => ({ kind: 'param', param: p });
 const ex = (e: string): ArgValue => ({ kind: 'expr', expr: e });

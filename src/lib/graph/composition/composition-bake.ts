@@ -27,8 +27,8 @@
  *   validateGraphBake(graph, opts) → Promise<GraphBakeCheck>
  *   emitSource(graph, id)          → string
  */
-import { emitGraph } from './composition-emit';
-import type { Graph } from './composition-graph';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
+import type { Graph } from '$lib/graph/composition/composition-graph';
 
 /** Result of the graph validity check. `ok:false` means the graph does not
  *  resolve (missing dep, cycle, unparseable source) — a real, reportable error;

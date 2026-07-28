@@ -19,8 +19,8 @@
  * (a PURE fn of id + index) so color-by-source paints it, exactly like a parts_table
  * row. Rows are INLINE ArgValues, so the node consumes NO graph-node inputs.
  */
-import type { NodeId } from '../../composition-graph-types';
-import type { PartsStackNode } from '../../composition-graph-types';
+import type { NodeId } from '$lib/graph/composition/composition-graph-types';
+import type { PartsStackNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, type ValidationError, err, checkArg } from '../node-kind';
 import { rowMaterialEntry, type RowInstanceColor } from './parts-table';
 

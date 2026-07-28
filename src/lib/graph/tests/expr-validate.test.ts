@@ -6,7 +6,7 @@
  * math passes clean.
  */
 import { describe, expect, it } from 'vitest';
-import { parseExpr, validateExpr, buildExprSchema, parseAndValidate } from '../graph-exprs';
+import { parseExpr, validateExpr, buildExprSchema, parseAndValidate } from '$lib/graph/expr/graph-exprs';
 
 const schema = buildExprSchema(['od', 'id', 'len'], ['wall', 'gap']);
 

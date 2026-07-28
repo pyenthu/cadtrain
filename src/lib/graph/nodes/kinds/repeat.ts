@@ -7,7 +7,7 @@
  *   validate ← :158 (empty-body / children / count / modifiers / bindings, in order)
  *   size  ← geom.ts:371 ({ w, max(110, 64 + (parts+1)*24) } — header + one row per part)
  */
-import type { RepeatNode } from '../../composition-graph-types';
+import type { RepeatNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, type ValidationError, has, err, checkArg } from '../node-kind';
 
 export const RepeatKind: NodeKind<RepeatNode> = {

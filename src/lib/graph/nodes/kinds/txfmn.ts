@@ -8,7 +8,7 @@
  * exercised pre-hydrate + by unit tests. Phase 1 adds the trivial MvKind/RotKind
  * (the ones the runtime actually hits). The transcription here is still correct.
  */
-import type { TxfmnNode } from '../../composition-graph-types';
+import type { TxfmnNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, has, err, checkArgs, isLiteralZero } from '../node-kind';
 
 export const TxfmnKind: NodeKind<TxfmnNode> = {

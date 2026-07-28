@@ -24,7 +24,7 @@ import {
   asLiteral,
   type Graph,
   type NodeId,
-} from '$lib/graph/composition-graph';
+} from '$lib/graph/composition/composition-graph';
 
 /** Identifies the ONE input slot a wire feeds — what "delete this wire" clears. */
 export type WireRef =

@@ -5,7 +5,7 @@
  *   emit  ← never in the render tree (returns null)   ·  validate ← no arm today (→ [])
  *   size  ← geom.ts:358  (label-fit pill: max(128, 88 + label.length*7.5) × 30)
  */
-import type { MaterialNode } from '../../composition-graph-types';
+import type { MaterialNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind } from '../node-kind';
 
 export const MaterialKind: NodeKind<MaterialNode> = {

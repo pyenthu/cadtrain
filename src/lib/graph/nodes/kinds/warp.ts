@@ -6,7 +6,7 @@
  *          a part inside a transparent open-hole stays independent; #36b multi-input warp).
  *   validate ← each child + checkArg(path) + checkArg(refine)   ·   size ← grows per child.
  */
-import type { WarpNode } from '../../composition-graph-types';
+import type { WarpNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, has, err, checkArg } from '../node-kind';
 
 /** The warp's input solids — `children[]` when present (multi), else the legacy

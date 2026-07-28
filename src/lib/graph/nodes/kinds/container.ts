@@ -13,7 +13,7 @@
  * container. The root branch of `size` DOES run (nodeSize sizes the ▶ Output
  * card), hence the `ctx.root` compare below.
  */
-import type { ContainerNode } from '../../composition-graph-types';
+import type { ContainerNode } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, type SizeCtx, has, err } from '../node-kind';
 
 /** Shared container footprint (list / stack / group). The root container is the

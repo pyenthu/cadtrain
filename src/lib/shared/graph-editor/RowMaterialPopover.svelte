@@ -11,7 +11,7 @@
   closes on ×/outside/Escape (the scrim). Mirrors docs/plans/refs/parts-table-card.png.
 -->
 <script lang="ts">
-  import type { RowMaterial } from '$lib/graph/composition-graph-types';
+  import type { RowMaterial } from '$lib/graph/composition/composition-graph-types';
   import { MATERIAL_PRESET_NAMES, materialPreset } from '$lib/shared/viewer/material-preset';
 
   let {

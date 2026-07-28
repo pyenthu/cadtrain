@@ -29,7 +29,7 @@ import {
   getBoreExtFactor,
   setBoreExtFactor,
 } from '$lib/engines/manifold/manifold-mesh';
-import { resampleSpline } from '../spline-resample';
+import { resampleSpline } from '$lib/graph/spline/spline-resample';
 
 type V2 = [number, number];
 type V3 = [number, number, number];

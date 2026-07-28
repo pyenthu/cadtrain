@@ -18,10 +18,10 @@ import {
   addExprDefOutput, setExprDefOutputName, setExprDefOutputFormula, setExprDefOutputShape,
   setExprInputBinding, addPolygon, addPolygonExprListRef, addPolygonExprList, addCall, setCallArg,
   asParam, asLiteral,
-} from '../composition-graph';
-import { emitGraph } from '../composition-emit';
-import { compileListFormula, parseAndValidateBare, exprBlockVar } from '../graph-exprs';
-import { buildAllowedInputs } from '../expr-schema';
+} from '$lib/graph/composition/composition-graph';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
+import { compileListFormula, parseAndValidateBare, exprBlockVar } from '$lib/graph/expr/graph-exprs';
+import { buildAllowedInputs } from '$lib/graph/expr/expr-schema';
 
 // The canonical Case-1 spiral profile as ONE list<point> output formula:
 // two index-maps (outer edge forward, inner edge reversed) joined with concat.

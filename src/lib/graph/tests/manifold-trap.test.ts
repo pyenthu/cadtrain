@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from 'vitest';
-import { isManifoldFatalTrap, describeManifoldError } from '../manifold-trap';
+import { isManifoldFatalTrap, describeManifoldError } from '$lib/graph/primitive/manifold-trap';
 import { initManifold, resetManifold, cyl } from '$lib/engines/manifold/manifold-helpers';
 
 describe('isManifoldFatalTrap', () => {

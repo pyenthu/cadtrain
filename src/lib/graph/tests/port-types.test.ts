@@ -3,8 +3,8 @@ import {
   canFeed, canWire, portType, registerPortType, allPortTypes,
   defineRecordType, listOf, structColor, canFeedStruct,
   PT_SCALAR, PT_LIST_POINT, PT_LIST_POINT2, PT_LIST_POINT3, PT_GEOMETRY, type PortType,
-} from '../port-types';
-import { listOfPoints, T_SCALAR, type StructType } from '../struct-type';
+} from '$lib/graph/port/port-types';
+import { listOfPoints, T_SCALAR, type StructType } from '$lib/graph/port/struct-type';
 
 describe('port-types registry', () => {
   it('registers + looks up the 3 core types by id', () => {

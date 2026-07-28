@@ -6,7 +6,7 @@ import {
   buildRotateStubFromProfile,
   metaParamEntry,
   type StubParam,
-} from '../primitive-stub';
+} from '$lib/graph/primitive/primitive-stub';
 // The SAME validator /api/primitives/save runs — esbuild-transpiles the meta
 // literal then evals it. A generated stub that throws here is exactly the 400
 // ("source missing valid meta") the user hit. So "extractMetaFromSource doesn't

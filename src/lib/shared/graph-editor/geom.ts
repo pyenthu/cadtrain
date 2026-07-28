@@ -21,8 +21,8 @@ import {
   type NodeId,
   type MvNode,
   type RotNode,
-} from '$lib/graph/composition-graph';
-import { sketchColLayout, SKETCH_COL_W, SKETCH_COL_GAP } from '$lib/graph/sketch-layout';
+} from '$lib/graph/composition/composition-graph';
+import { sketchColLayout, SKETCH_COL_W, SKETCH_COL_GAP } from '$lib/graph/sketch/sketch-layout';
 import { kindOf } from '$lib/graph/nodes/registry';
 import type { SizeConsts } from '$lib/graph/nodes/node-kind';
 

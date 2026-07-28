@@ -7,7 +7,7 @@
  * `[x,y,z][]`) — it only decides how the editor DRAWS + constrains dragging.
  */
 
-import type { Vec3 } from './spline-resample';
+import type { Vec3 } from '$lib/graph/spline/spline-resample';
 
 /** The four editor views: free 3D orbit + three flat orthographic planes. */
 export type SplineView = 'free' | 'xy' | 'yz' | 'xz';

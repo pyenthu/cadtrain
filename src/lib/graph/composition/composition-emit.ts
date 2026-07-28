@@ -39,18 +39,18 @@ import {
   resolveEffectiveAppearance,
   STACK_REF_PARAM,
   hasKind,
-} from './composition-graph';
+} from '$lib/graph/composition/composition-graph';
 import {
   emitExprConsts, rewriteExprRefs,
   exprBlockVar, exprBlockMember, rewriteExprLocalRefs, orderExprDef, declaredNames,
   compileListFormula,
-} from './graph-exprs';
-import { isImperative, compileImperative } from './expr-imperative';
-import { inferStructure } from './struct-type';
-import { kindOf } from './nodes/registry';
-import type { EmitCtx } from './nodes/node-kind';
-import { partsTableRowVar, orderedRowKeys, partsTableInstanceColors } from './nodes/kinds/parts-table';
-import { partsStackRowVar, partsStackInstanceColors, partsStackWarpNodes } from './nodes/kinds/parts-stack';
+} from '$lib/graph/expr/graph-exprs';
+import { isImperative, compileImperative } from '$lib/graph/expr/expr-imperative';
+import { inferStructure } from '$lib/graph/port/struct-type';
+import { kindOf } from '$lib/graph/nodes/registry';
+import type { EmitCtx } from '$lib/graph/nodes/node-kind';
+import { partsTableRowVar, orderedRowKeys, partsTableInstanceColors } from '$lib/graph/nodes/kinds/parts-table';
+import { partsStackRowVar, partsStackInstanceColors, partsStackWarpNodes } from '$lib/graph/nodes/kinds/parts-stack';
 
 export interface EmitOptions {
   /** The assembly id (becomes meta.id + the export function name). */

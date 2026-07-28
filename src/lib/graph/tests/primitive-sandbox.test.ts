@@ -9,7 +9,7 @@
  * lists, which is exactly the kind of edit that drifts.
  */
 import { describe, it, expect } from 'vitest';
-import { SANDBOX_ARG_NAMES, sandboxArgValues } from '../primitive-sandbox';
+import { SANDBOX_ARG_NAMES, sandboxArgValues } from '$lib/graph/primitive/primitive-sandbox';
 import { warpManifoldAlongSpline, type DtxLut } from '$lib/engines/manifold/warp-spline';
 
 describe('primitive sandbox — NAMES/VALUES index alignment', () => {

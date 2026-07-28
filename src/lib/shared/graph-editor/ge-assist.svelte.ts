@@ -33,8 +33,8 @@ import {
   type FixErrorInput,
   type PostTurn,
 } from './ge-assist';
-import type { Graph } from '$lib/graph/composition-graph';
-import type { EditorContext } from '$lib/graph/editor-tools';
+import type { Graph } from '$lib/graph/composition/composition-graph';
+import type { EditorContext } from '$lib/graph/editor/editor-tools';
 
 export { MAX_STEPS };
 export type { AssistStep, AssistRunResult, AnthMessage, PostTurn, FixErrorInput };

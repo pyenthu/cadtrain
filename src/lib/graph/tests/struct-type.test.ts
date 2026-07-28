@@ -10,7 +10,7 @@ import {
   inferStructure, structLabel, checkFeed,
   listOfPoints, T_SCALAR, T_LIST_POINT2, T_LIST_POINT3,
   type StructType,
-} from '../struct-type';
+} from '$lib/graph/port/struct-type';
 
 /** Convenience — infer + label in one shot (throws if inference errored). */
 function label(formula: string): string {

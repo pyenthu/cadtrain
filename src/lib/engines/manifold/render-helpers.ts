@@ -10,11 +10,11 @@ import * as THREE from 'three';
 // component files can import them without depending on this file. Re-exported
 // here for back-compat with anything still importing them from this file.
 import { getCutBox, tagManifold } from './manifold-helpers';
-import { SECTION_ID, triSourceIds } from '$lib/graph/part-id';
-import { warpVertex, type WarpSpec } from '$lib/graph/warp-geom';
-import type { PartColorLUT } from '$lib/graph/part-lut-types';
+import { SECTION_ID, triSourceIds } from '$lib/graph/part/part-id';
+import { warpVertex, type WarpSpec } from '$lib/graph/warp/warp-geom';
+import type { PartColorLUT } from '$lib/graph/part/part-lut-types';
 import type { PartAppearance, PartMesh } from '$lib/shared/viewer/part-appearance';
-export type { PartColorLUT } from '$lib/graph/part-lut-types';
+export type { PartColorLUT } from '$lib/graph/part/part-lut-types';
 export type { PartAppearance, PartMesh } from '$lib/shared/viewer/part-appearance';
 
 export { CIRCULAR_SEGMENTS_DEFAULT, CIRCULAR_SEGMENTS_COMPOSE, setCircularSegmentMode, initManifold } from './manifold-helpers';

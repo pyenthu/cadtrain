@@ -19,7 +19,7 @@
  * (poly/point/i) are bare + survive. Returns null when it isn't this shape (caller
  * falls back to the functional path).
  */
-import { compileListFormula, parseAndValidateBare, parseExpr } from './graph-exprs';
+import { compileListFormula, parseAndValidateBare, parseExpr } from '$lib/graph/expr/graph-exprs';
 
 export interface ImpAssign { kind: 'assign'; name: string; expr: string; }
 export interface ImpAppend { kind: 'append'; list: string; expr: string; }

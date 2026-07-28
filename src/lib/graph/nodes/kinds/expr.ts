@@ -11,7 +11,7 @@
  * the injected `ctx.exprDefs` — the reason expr was deferred until the SizeCtx
  * carried it.
  */
-import type { ExprNode, ArgValue } from '../../composition-graph-types';
+import type { ExprNode, ArgValue } from '$lib/graph/composition/composition-graph-types';
 import { type NodeKind, checkArg } from '../node-kind';
 
 export const ExprKind: NodeKind<ExprNode> = {

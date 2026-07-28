@@ -28,8 +28,8 @@ import {
   setTxfmnAxis,
   setTxfmnChild,
   hydrateGraph,
-} from '../composition-graph';
-import { emitGraph } from '../composition-emit';
+} from '$lib/graph/composition/composition-graph';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
 
 describe('composition-graph — mule_shoe case study (Phase A)', () => {
   it('starts with an empty root list', () => {
@@ -99,8 +99,8 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
   });
 
   it('stack spreads Repeat-with-op-list children (Step 7.6)', async () => {
-    const { addCall, addRepeat, setRepeatOp, asLiteral, addContainer, appendContainerChild } = await import('../composition-graph');
-    const { emitGraph } = await import('../composition-emit');
+    const { addCall, addRepeat, setRepeatOp, asLiteral, addContainer, appendContainerChild } = await import('$lib/graph/composition/composition-graph');
+    const { emitGraph } = await import('$lib/graph/composition/composition-emit');
     let g = newGraph();
     // dt_box single + Repeat × 3 of dt_joint (as a list) + dt_pin single,
     // all stacked end-to-end. Expected emit: stack([A, ...R, B])
@@ -120,8 +120,8 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
   });
 
   it('Repeat node emits switch on op: stack / list / place (Step 7.5)', async () => {
-    const { addCall, addRepeat, setRepeatOp, asLiteral } = await import('../composition-graph');
-    const { emitGraph } = await import('../composition-emit');
+    const { addCall, addRepeat, setRepeatOp, asLiteral } = await import('$lib/graph/composition/composition-graph');
+    const { emitGraph } = await import('$lib/graph/composition/composition-emit');
     let g = newGraph();
     const c = addCall(g, 'dt_joint'); g = c.graph;
     // Default op === 'stack' (no op field present)
@@ -140,8 +140,8 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
   });
 
   it('Repeat with multiple parts emits place([...]) as the per-iteration unit (repeat-enhance)', async () => {
-    const { addCall, addRepeat, addRepeatChild, setRepeatOp, asLiteral } = await import('../composition-graph');
-    const { emitGraph } = await import('../composition-emit');
+    const { addCall, addRepeat, addRepeatChild, setRepeatOp, asLiteral } = await import('$lib/graph/composition/composition-graph');
+    const { emitGraph } = await import('$lib/graph/composition/composition-emit');
     let g = newGraph();
     const a = addCall(g, 'dt_box'); g = a.graph;
     const b = addCall(g, 'dt_pin'); g = b.graph;
@@ -155,8 +155,8 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
   });
 
   it('Repeat single part + no modifiers stays byte-identical (no place wrapper)', async () => {
-    const { addCall, addRepeat, asLiteral } = await import('../composition-graph');
-    const { emitGraph } = await import('../composition-emit');
+    const { addCall, addRepeat, asLiteral } = await import('$lib/graph/composition/composition-graph');
+    const { emitGraph } = await import('$lib/graph/composition/composition-emit');
     let g = newGraph();
     const a = addCall(g, 'dt_box'); g = a.graph;
     const r = addRepeat(g, a.id, asLiteral(3)); g = r.graph;
@@ -173,8 +173,8 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
     // to the origin). addRepeatChild now promotes the wired id to its outermost
     // transform wrapper, so the z survives.
     const { addCall, addRepeat, setRepeatOp, asLiteral, wrapInTransform,
-      setTransformAxisValue, addRepeatChild, hydrateGraph } = await import('../composition-graph');
-    const { emitGraph } = await import('../composition-emit');
+      setTransformAxisValue, addRepeatChild, hydrateGraph } = await import('$lib/graph/composition/composition-graph');
+    const { emitGraph } = await import('$lib/graph/composition/composition-emit');
     let g = newGraph();
     const a = addCall(g, 'g_cube'); g = a.graph;
     const w = wrapInTransform(g, a.id, 'mv'); g = w.graph;       // inline ⇄
@@ -194,8 +194,8 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
 
   it('Repeat with a plain Call (no inline transform) stays byte-identical (txfmn promote)', async () => {
     // Guard: the promote must be a no-op when the part has no wrapper.
-    const { addCall, addRepeat, setRepeatOp, asLiteral, addRepeatChild } = await import('../composition-graph');
-    const { emitGraph } = await import('../composition-emit');
+    const { addCall, addRepeat, setRepeatOp, asLiteral, addRepeatChild } = await import('$lib/graph/composition/composition-graph');
+    const { emitGraph } = await import('$lib/graph/composition/composition-emit');
     let g = newGraph();
     const a = addCall(g, 'g_cube'); g = a.graph;
     const r = addRepeat(g, '', asLiteral(3)); g = r.graph;
@@ -207,8 +207,8 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
   });
 
   it('Repeat per-part modifiers wrap each part independently (repeat-enhance)', async () => {
-    const { addCall, addRepeat, addRepeatChild, addPartModifier, setRepeatOp, asLiteral, asExpr } = await import('../composition-graph');
-    const { emitGraph } = await import('../composition-emit');
+    const { addCall, addRepeat, addRepeatChild, addPartModifier, setRepeatOp, asLiteral, asExpr } = await import('$lib/graph/composition/composition-graph');
+    const { emitGraph } = await import('$lib/graph/composition/composition-emit');
     let g = newGraph();
     const a = addCall(g, 'dt_box'); g = a.graph;
     const b = addCall(g, 'dt_pin'); g = b.graph;
@@ -225,8 +225,8 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
   });
 
   it('Repeat bodyExpr overrides the wired body verbatim with i/N in scope (repeat-enhance)', async () => {
-    const { addCall, addRepeat, setRepeatBodyExpr, asLiteral } = await import('../composition-graph');
-    const { emitGraph } = await import('../composition-emit');
+    const { addCall, addRepeat, setRepeatBodyExpr, asLiteral } = await import('$lib/graph/composition/composition-graph');
+    const { emitGraph } = await import('$lib/graph/composition/composition-emit');
     let g = newGraph();
     const a = addCall(g, 'dt_box'); g = a.graph;
     const r = addRepeat(g, a.id, asLiteral(4)); g = r.graph;
@@ -238,8 +238,8 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
   });
 
   it('per-part appearance: set/prune mutator + emit + hydrate round-trip (#13)', async () => {
-    const { addCall, setPartAppearance, hydrateGraph } = await import('../composition-graph');
-    const { emitGraph } = await import('../composition-emit');
+    const { addCall, setPartAppearance, hydrateGraph } = await import('$lib/graph/composition/composition-graph');
+    const { emitGraph } = await import('$lib/graph/composition/composition-emit');
     let g = newGraph();
     const a = addCall(g, 'dt_box'); g = a.graph;
     g = setPartAppearance(g, a.id, { colorOuter: '#112233', material: 'steel' });
@@ -264,8 +264,8 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
   });
 
   it('per-part VIEW scale: setViewScale capture + emit + hydrate round-trip', async () => {
-    const { addCall, setViewScale, hydrateGraph } = await import('../composition-graph');
-    const { emitGraph } = await import('../composition-emit');
+    const { addCall, setViewScale, hydrateGraph } = await import('$lib/graph/composition/composition-graph');
+    const { emitGraph } = await import('$lib/graph/composition/composition-emit');
     let g = newGraph();
     const a = addCall(g, 'dt_box'); g = a.graph;
     // manual=true → the current scale persists onto the graph.
@@ -300,8 +300,8 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
   });
 
   it('named material TEXTURE (G-MAT2): emit + hydrate round-trip', async () => {
-    const { addCall, hydrateGraph } = await import('../composition-graph');
-    const { emitGraph } = await import('../composition-emit');
+    const { addCall, hydrateGraph } = await import('$lib/graph/composition/composition-graph');
+    const { emitGraph } = await import('$lib/graph/composition/composition-emit');
     let g = newGraph();
     const a = addCall(g, 'dt_box'); g = a.graph;
     (g as any).texture = 'cement';
@@ -325,7 +325,7 @@ describe('composition-graph — mule_shoe case study (Phase A)', () => {
   });
 
   it('legacy Repeat {child} hydrates to children:[child] (repeat-enhance fold)', async () => {
-    const { hydrateGraph } = await import('../composition-graph');
+    const { hydrateGraph } = await import('$lib/graph/composition/composition-graph');
     // A serialised graph in the OLD single-`child` shape.
     const serialised = {
       nodes: {
@@ -643,7 +643,7 @@ describe('composition-graph — TxfmnNode (transform card)', () => {
 
 describe('composition-graph — patterned Repeat (#7)', () => {
   it('a plain Repeat (no modifiers/bindings/loopVar) emits byte-identically to today', async () => {
-    const { addCall, addRepeat, setRepeatOp, asLiteral } = await import('../composition-graph');
+    const { addCall, addRepeat, setRepeatOp, asLiteral } = await import('$lib/graph/composition/composition-graph');
     let g = newGraph();
     const c = addCall(g, 'dt_box'); g = c.graph;
     const r = addRepeat(g, c.id, asLiteral(3)); g = setRepeatOp(r.graph, r.id, 'list');
@@ -654,7 +654,7 @@ describe('composition-graph — patterned Repeat (#7)', () => {
   });
 
   it('modifiers fold innermost-first into a per-index arrow with N + i in scope', async () => {
-    const { addCall, addRepeat, setRepeatOp, addRepeatModifier, setRepeatModifierAxis, asLiteral, asExpr } = await import('../composition-graph');
+    const { addCall, addRepeat, setRepeatOp, addRepeatModifier, setRepeatModifierAxis, asLiteral, asExpr } = await import('$lib/graph/composition/composition-graph');
     let g = newGraph();
     const c = addCall(g, 'dt_box'); g = c.graph;
     const r = addRepeat(g, c.id, asLiteral(4)); g = setRepeatOp(r.graph, r.id, 'list');
@@ -669,7 +669,7 @@ describe('composition-graph — patterned Repeat (#7)', () => {
   });
 
   it('loopVar + bindings appear in the emitted closure', async () => {
-    const { addCall, addRepeat, setRepeatOp, setRepeatLoopVar, addRepeatBinding, setRepeatBindingName, setRepeatBindingValue, addRepeatModifier, setRepeatModifierAxis, asLiteral, asExpr } = await import('../composition-graph');
+    const { addCall, addRepeat, setRepeatOp, setRepeatLoopVar, addRepeatBinding, setRepeatBindingName, setRepeatBindingValue, addRepeatModifier, setRepeatModifierAxis, asLiteral, asExpr } = await import('$lib/graph/composition/composition-graph');
     let g = newGraph();
     const c = addCall(g, 'dt_box'); g = c.graph;
     const r = addRepeat(g, c.id, asLiteral(6)); g = setRepeatOp(r.graph, r.id, 'list');
@@ -684,7 +684,7 @@ describe('composition-graph — patterned Repeat (#7)', () => {
   });
 
   it('repeat modifier mutators add/move/set-kind/remove immutably', async () => {
-    const { addCall, addRepeat, addRepeatModifier, setRepeatModifierKind, moveRepeatModifier, removeRepeatModifier, asLiteral } = await import('../composition-graph');
+    const { addCall, addRepeat, addRepeatModifier, setRepeatModifierKind, moveRepeatModifier, removeRepeatModifier, asLiteral } = await import('$lib/graph/composition/composition-graph');
     let g = newGraph();
     const c = addCall(g, 'dt_box'); g = c.graph;
     const r = addRepeat(g, c.id, asLiteral(2)); g = r.graph;

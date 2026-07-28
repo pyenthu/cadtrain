@@ -2,7 +2,7 @@ import { describe, it, expect, beforeAll } from 'vitest';
 import { buildLoftGrid, buildLoftMesh, loftScaleAt, type Pt2 } from '../loft';
 import { executeTfRecipe, recipeHasUnsupported } from '../execute';
 import { graphToTf, type TfInstr, type TfRecipe } from '$lib/engines/trueform/graph-to-tf';
-import type { Graph } from '$lib/graph/composition-graph-types';
+import type { Graph } from '$lib/graph/composition/composition-graph-types';
 import * as helpers from '$lib/engines/manifold/manifold-helpers';
 import { r_loft as mfLoft } from '$lib/graph/stdlib/r_loft';
 

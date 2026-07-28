@@ -5,7 +5,7 @@ import {
   axialSpanForSurvey, minRadiusOfCurvature, sagForSpan,
   MIN_AXIAL_SPAN, MAX_AXIAL_SPAN,
 } from '../axial-density';
-import type { SurveyStation } from '$lib/graph/survey-to-xyz';
+import type { SurveyStation } from '$lib/graph/survey/survey-to-xyz';
 
 const vertical: SurveyStation[] = [
   { md: 0, dev: 0, az: 0 }, { md: 500, dev: 0, az: 0 }, { md: 1000, dev: 0, az: 0 },

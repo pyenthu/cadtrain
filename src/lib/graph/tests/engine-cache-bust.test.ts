@@ -18,7 +18,7 @@ import { resolve } from 'node:path';
 import { hashBakeKey } from '$lib/server/bake-cache';
 import { compilePrimitiveScript } from '$lib/server/primitive-loader';
 import { bakeCacheKey } from '$lib/engines/manifold/bake-worker-core';
-import { ENGINE_HASH } from '../engine-hash';
+import { ENGINE_HASH } from '$lib/graph/composition/engine-hash';
 
 // A real leaf engine (no meta.uses) so compile needs no dep fetch.
 const R_CUBOID = readFileSync(resolve('src/lib/graph/stdlib/r_cuboid.ts'), 'utf8');

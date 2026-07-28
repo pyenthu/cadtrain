@@ -8,8 +8,8 @@
  * embeds meta.graph.layout) differs. A real edit (an arg) DOES change the body.
  */
 import { describe, it, expect } from 'vitest';
-import { emitGraph } from '../composition-emit';
-import type { Graph } from '../composition-graph-types';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
+import type { Graph } from '$lib/graph/composition/composition-graph-types';
 
 const callGraph = (size: number, layout: Record<string, { x: number; y: number }>): Graph =>
   ({

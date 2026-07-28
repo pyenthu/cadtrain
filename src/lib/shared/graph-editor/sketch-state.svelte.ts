@@ -42,11 +42,11 @@ import {
   asExpr,
   type Graph,
   type NodeId,
-} from '$lib/graph/composition-graph';
-import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/graph/sketch';
-import { expandSketchOps } from '$lib/graph/sketch-repeat';
-import { compileListFormula } from '$lib/graph/graph-exprs';
-import { sketchColLayout } from '$lib/graph/sketch-layout';
+} from '$lib/graph/composition/composition-graph';
+import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/graph/sketch/sketch';
+import { expandSketchOps } from '$lib/graph/sketch/sketch-repeat';
+import { compileListFormula } from '$lib/graph/expr/graph-exprs';
+import { sketchColLayout } from '$lib/graph/sketch/sketch-layout';
 import { sketchCols, CARD_PAD, CARD_TITLE_H, PARAM_H, PARAM_GAP } from './geom';
 import { evalArg, sketchParamScope, argToDraftStr } from './args';
 import { releaseImplicitCapture } from './pointer-capture';

@@ -20,10 +20,10 @@ import {
   setExprInputBinding,
   asParam,
   asLiteral,
-} from '../composition-graph';
-import { emitGraph, emitExprBlocks } from '../composition-emit';
-import { exprBlockVar, orderExprDef } from '../graph-exprs';
-import type { ExprDef } from '../composition-graph-types';
+} from '$lib/graph/composition/composition-graph';
+import { emitGraph, emitExprBlocks } from '$lib/graph/composition/composition-emit';
+import { exprBlockVar, orderExprDef } from '$lib/graph/expr/graph-exprs';
+import type { ExprDef } from '$lib/graph/composition/composition-graph-types';
 
 /** Index of the first `const <name> =` declaration in the emitted body. */
 const declAt = (body: string, name: string) => body.indexOf(`const ${name} =`);

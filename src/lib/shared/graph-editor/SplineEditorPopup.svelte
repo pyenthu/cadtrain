@@ -16,8 +16,8 @@
   import { Canvas } from '@threlte/core';
   import SplineScene from './SplineScene.svelte';
   import { clampDragPos } from './popover-clamp';
-  import { splineArcLength, type Vec3 } from '$lib/graph/spline-resample';
-  import { parsePointsInput, pointsBbox, gridFor, snapVec3, type SplineView } from '$lib/graph/spline-view';
+  import { splineArcLength, type Vec3 } from '$lib/graph/spline/spline-resample';
+  import { parsePointsInput, pointsBbox, gridFor, snapVec3, type SplineView } from '$lib/graph/spline/spline-view';
 
   let {
     pos,

@@ -19,8 +19,8 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import * as mathLib from '$lib/graph/math-lib';
-import type { PartColorLUT } from '$lib/graph/part-lut-types';
+import * as mathLib from '$lib/graph/expr/math-lib';
+import type { PartColorLUT } from '$lib/graph/part/part-lut-types';
 import type { PartAppearance } from '$lib/shared/viewer/part-appearance';
 import type { BrepPartResponse } from './brep-adapter';
 
@@ -86,7 +86,7 @@ export async function extractRevolveProfile(
   source: string,
   paramValues: Record<string, number> = {},
 ): Promise<[number, number][] | null> {
-  const { compileSketch } = await import('$lib/graph/sketch');
+  const { compileSketch } = await import('$lib/graph/sketch/sketch');
   // Param list is `(p)` for parts with params, `()` for paramless parts — match
   // either. Body is everything up to the final brace (the function is last).
   const m = source.match(/export\s+function\s+\w+\s*\([^)]*\)\s*\{([\s\S]*)\}\s*$/);
@@ -423,8 +423,8 @@ async function executeBrep(
 ): Promise<BrepMesh | any | null> {
   await ensureOC();
   const replicad: any = await import('replicad');
-  const { compileSketch } = await import('$lib/graph/sketch');
-  const { resampleSpline } = await import('$lib/graph/spline-resample');
+  const { compileSketch } = await import('$lib/graph/sketch/sketch');
+  const { resampleSpline } = await import('$lib/graph/spline/spline-resample');
   const { splineSampler, spline3DFrames } = await import('$lib/engines/manifold/warp-spline');
   const { resolveProfile } = await import('$lib/shared/profiles/profile-presets');
   const {

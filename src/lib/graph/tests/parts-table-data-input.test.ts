@@ -20,10 +20,10 @@
  *                  dataInput round-trips through hydrate/serialise + clears cleanly.
  */
 import { describe, it, expect } from 'vitest';
-import { emitGraph } from '../composition-emit';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
 import { PartsTableKind, partsTableInstanceColors } from '../nodes/kinds/parts-table';
-import { hydrateGraph, setPartsTableDataInput } from '../composition-graph';
-import type { Graph, ArgValue, PartsTableNode } from '../composition-graph-types';
+import { hydrateGraph, setPartsTableDataInput } from '$lib/graph/composition/composition-graph';
+import type { Graph, ArgValue, PartsTableNode } from '$lib/graph/composition/composition-graph-types';
 
 const lit = (v: number | string | boolean): ArgValue => ({ kind: 'literal', value: v });
 

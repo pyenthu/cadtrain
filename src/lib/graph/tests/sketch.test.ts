@@ -7,9 +7,9 @@
  * corners stay sharp. These tests pin that behaviour.
  */
 import { describe, it, expect } from 'vitest';
-import { compileSketch, chordToAbs, absToChord, type SketchOp } from '../sketch';
-import { hydrateGraph, collectEdges, setSketchScale, type Graph } from '../composition-graph';
-import { validateGraph } from '../composition-emit';
+import { compileSketch, chordToAbs, absToChord, type SketchOp } from '$lib/graph/sketch/sketch';
+import { hydrateGraph, collectEdges, setSketchScale, type Graph } from '$lib/graph/composition/composition-graph';
+import { validateGraph } from '$lib/graph/composition/composition-emit';
 
 type Pt = [number, number];
 const CORNERS: Pt[] = [[0, 0], [2, 0], [2, 2], [0, 2]];

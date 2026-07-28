@@ -13,7 +13,7 @@
 import { describe, it, expect } from 'vitest';
 import { assemblePartColorMesh, assemblePartMeshList, partAppearanceFromLut, type BrepSubMesh } from '../brep-occt';
 import { brepResponseToGeo } from '../brep-adapter';
-import type { PartColorLUT } from '$lib/graph/part-lut-types';
+import type { PartColorLUT } from '$lib/graph/part/part-lut-types';
 import type { PartAppearance } from '$lib/shared/viewer/part-appearance';
 
 /** '#rrggbb' → [r,g,b] in 0..1 — mirrors brep-occt's cutHexToRgb so the test

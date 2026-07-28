@@ -15,7 +15,7 @@
   Mirrors docs/plans/refs/parts-table-card.png (PART · OUT · columns · row tools).
 -->
 <script lang="ts">
-  import type { PartsTableNode, ArgValue, RowMaterial } from '$lib/graph/composition-graph-types';
+  import type { PartsTableNode, ArgValue, RowMaterial } from '$lib/graph/composition/composition-graph-types';
   import RowMaterialPopover from './RowMaterialPopover.svelte';
 
   interface Props {

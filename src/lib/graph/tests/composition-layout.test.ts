@@ -22,8 +22,8 @@ import {
   asLiteral,
   type Graph,
   type NodeId,
-} from '../composition-graph';
-import { autoLayoutGraph, forceSeparate } from '../composition-layout';
+} from '$lib/graph/composition/composition-graph';
+import { autoLayoutGraph, forceSeparate } from '$lib/graph/composition/composition-layout';
 
 // ─── helpers ────────────────────────────────────────────────────────────
 

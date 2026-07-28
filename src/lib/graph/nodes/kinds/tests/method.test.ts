@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { MethodKind } from '../method';
 import type { EmitCtx } from '../../node-kind';
-import type { Graph, MethodNode } from '../../../composition-graph-types';
+import type { Graph, MethodNode } from '$lib/graph/composition/composition-graph-types';
 
 const node: MethodNode = { id: 'm1', type: 'method', op: 'subtract', obj: 'a', arg: 'b' };
 const ctx = (): EmitCtx => ({

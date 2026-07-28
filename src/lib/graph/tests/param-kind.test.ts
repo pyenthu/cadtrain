@@ -24,9 +24,9 @@ import {
   type NumberParam,
   type RecordParam,
   type ListParam,
-} from '../composition-graph';
-import { emitGraph } from '../composition-emit';
-import { PT_LIST_GEOMETRY, portType, canWire } from '../port-types';
+} from '$lib/graph/composition/composition-graph';
+import { emitGraph } from '$lib/graph/composition/composition-emit';
+import { PT_LIST_GEOMETRY, portType, canWire } from '$lib/graph/port/port-types';
 
 const numberP: NumberParam = { default: 9.625, min: 0, max: 20, step: 0.1 };
 const recordP: RecordParam = { kind: 'record', typeId: 'Casing', default: { od: 9.625, wall: 0.545 } };
