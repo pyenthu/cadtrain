@@ -751,7 +751,7 @@
     <div class="ge-svg-body" class:hidden={rightTab !== 'svg'}>
       {#if rightTab === 'svg'}
         {#if PrimitiveSvgView && svgMeshJson}
-          <PrimitiveSvgView meshJson={svgMeshJson} name={exemplarId} active={rightTab === 'svg'} res={svgRes} onSetRes={setSvgRes} busy={svgMeshBusy} />
+          <PrimitiveSvgView meshJson={svgMeshJson} name={exemplarId} active={rightTab === 'svg'} res={svgRes} onSetRes={setSvgRes} busy={svgMeshBusy} source={bake?.source ?? ''} />
         {:else if svgMeshBusy}
           <div class="ge-empty">Baking SVG…</div>
         {:else}

@@ -60,10 +60,17 @@
     res = 'coarse',
     onSetRes = undefined,
     busy = false,
+    source = '',
   }: {
     meshJson?: SerializedComponentResult | null;
     name?: string;
     active?: boolean;
+    /** The emitted part source — read ONLY to detect a WARP (`resampleSpline`).
+     *  A warped part bakes its radial/depth exaggeration PRE-frame into the warp
+     *  (like the 3D pane, #999), so the SVG must NOT re-apply the world-space
+     *  `[sX,sX,sZ]` on top — that shears the bent cross-sections. Absent ⇒ treated
+     *  as un-warped (identity, byte-identical to before). */
+    source?: string;
     /** Bake resolution shown in the toolbar toggle. 'coarse' = 32-segment bake
      *  (default, fast/light), 'high' = full 256. The actual bake (segments) is
      *  driven by the parent via onSetRes — this component only renders the
@@ -264,7 +271,12 @@
     // View-only exaggeration [xScale, xScale, zScale] — mirrors PrimitiveDualScene
     // so the SVG frames long thin tools the same way the 3D pane does. Applied to
     // POSITIONS only (lighting stays in unscaled local space).
-    const sX = scene.xScale, sZ = scene.zScale;
+    // #999 pre-frame rule, extended to the SVG projection: a WARPED part already
+    // bakes its exaggeration into the warp geometry, so re-applying the world-space
+    // anisotropic scale to the BENT mesh shears the cross-sections. Use identity for
+    // a warped part (the 3D pane does the same via `hasWarp ? 1 : scene.xScale`).
+    const hasWarp = /resampleSpline\s*\(/.test(source ?? '');
+    const sX = hasWarp ? 1 : scene.xScale, sZ = hasWarp ? 1 : scene.zScale;
     // Back-face cull halves the fill count on a CLOSED solid (visually identical).
     // OFF for the cutaway: its exposed inner walls face away yet must render.
     const backfaceCull = !useCut;
