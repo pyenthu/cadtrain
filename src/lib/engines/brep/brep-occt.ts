@@ -158,6 +158,11 @@ export interface MeshOpts {
    *  the along-hole station via the DTX transform. Absent/{1,1}/no-dtx → byte-identical.
    *  `verticalDtx`/`verticalMaxDepth` (Change 2) are carried but IGNORED by BREP (MF-only). */
   warpViewScale?: { radial?: number; depth?: number; dtx?: import('$lib/engines/manifold/warp-spline').DtxLut; verticalDtx?: boolean; verticalMaxDepth?: number };
+  /** DEGRADE-to-uncut: when true, a body `sectionCut(...)` is a passthrough (the
+   *  solid is NOT half-sectioned). The /api/brep/svg endpoint sets this on its
+   *  retry so a swept-boolean whose exact section-cut throws degrades to the full
+   *  uncut solid instead of failing — the SVG twin of preview's `cut:false` retry. */
+  noSectionCut?: boolean;
 }
 
 /** Legacy cut-arm vertex colours — the historical BREP red (outer skin) / grey
@@ -165,6 +170,38 @@ export interface MeshOpts {
  *  the corresponding colour override, so an un-coloured cut stays byte-identical. */
 const LEGACY_CUT_OUTER: [number, number, number] = [0.8, 0.06, 0.06];
 const LEGACY_CUT_INNER: [number, number, number] = [0.45, 0.45, 0.45];
+
+// ── BORE-EXTEND — defect-2 prevention for a WARPED hollow swept-boolean ────────
+// A hollow warped tube is `sweep(outer).subtract(sweep(bore))` (warpSpline).
+// Riding the SAME spine, the bore's end caps land COINCIDENT with — and, on a
+// curved spine, TILTED against — the outer's end caps. OCCT's exact subtract of
+// two coaxial swept solids that share a cap PLANE leaves a coplanar-face sliver:
+// the solid still bakes, but the LATER half-section cutaway (`.cut(box)` in
+// meshBrepSolid, or a body `sectionCut`) THROWS on the degenerate coincidence.
+// PREVENTION (never create a coincident cap), the exact-kernel twin of
+// manifold-mesh.extendPathEnds / TF tf_examples.extendPathEnds: punch the
+// SUBTRAHEND (bore) sweep's spine PAST BOTH ends along its end tangents so the
+// bore's caps clear the outer caps → no coincident caps → clean genus-1 (χ=0)
+// through-pipe → a cutaway that meshes. The margin is DERIVED from the swept
+// section's (view-scaled) enclosing radius × this factor ("expose dials, don't
+// hide constants"); `setBrepBoreExtFactor(0)` disables it (tests exhibit the
+// coincident-cap corruption the extension prevents).
+let _brepBoreExtFactor = 2;
+/** Read the BREP bore-extend factor (× the swept section's view-scaled radius). */
+export function getBrepBoreExtFactor(): number { return _brepBoreExtFactor; }
+/** Set the BREP bore-extend factor (≥0). Larger = more clearance, never less
+ *  clean; 0 disables the extension (coincident caps — the defect-2 case). */
+export function setBrepBoreExtFactor(f: number): void { _brepBoreExtFactor = (Number.isFinite(f) && f >= 0) ? f : 0; }
+
+/** Max distance any section vertex reaches from the in-frame origin — the swept
+ *  section's enclosing radius, which bounds how far a tilted end cap can offset
+ *  along the tangent. DERIVES the default bore-extend margin (mirrors
+ *  manifold-mesh.sectionMaxExtent). */
+function sectionMaxExtent(loop: [number, number][]): number {
+  let m = 0;
+  for (const p of loop) { const r = Math.hypot(p[0], p[1]); if (r > m) m = r; }
+  return m || 1;
+}
 
 /** '#rrggbb' (or bare 'rrggbb') → [r,g,b] floats in 0..1; `fallback` on a
  *  missing/malformed string. Mirrors render-helpers `hexToRgb` so the BREP cut
@@ -931,34 +968,61 @@ async function executeBrep(
     // (a,b) becomes a world offset on that frame's (startN, startB) axes.
     const startFrame = sampler.at(sStart);
     const startPos = startFrame.pos, startN = startFrame.N, startB = startFrame.B;
-    const toWorld = (a: number, b: number) => [
-      startPos[0] + startN[0] * a + startB[0] * b,
-      startPos[1] + startN[1] * a + startB[1] * b,
-      startPos[2] + startN[2] * a + startB[2] * b,
-    ];
-
-    // Phase 5 — pipe a planted loop along the spine.
-    const sweepLoop = (loop: [number, number][]) => {
+    // Phase 5 — pipe a planted section loop along a spine. `spine` is the polyline
+    // the section rides; `originPos` is where the loop is planted (the spine's FIRST
+    // vertex, so the profile sits at the sweep start — mirrors the working outer
+    // sweep). The section's (a,b) still lands on the START frame's (startN, startB)
+    // axes: a straight extrapolation past the ends keeps the tangent — and thus the
+    // frame — parallel, so reusing startN/startB is exact for the extended bore.
+    const sweepLoopOn = (loop: [number, number][], spine: number[][], originPos: number[]) => {
       const spineEdges: any[] = [];
-      for (let i = 0; i < spinePts.length - 1; i++) spineEdges.push(makeLine(spinePts[i], spinePts[i + 1]));
+      for (let i = 0; i < spine.length - 1; i++) spineEdges.push(makeLine(spine[i], spine[i + 1]));
       const spineWire = assembleWire(spineEdges);
+      const plant = (a: number, b: number) => [
+        originPos[0] + startN[0] * a + startB[0] * b,
+        originPos[1] + startN[1] * a + startB[1] * b,
+        originPos[2] + startN[2] * a + startB[2] * b,
+      ];
       const profileEdges: any[] = [];
       for (let i = 0; i < loop.length; i++) {
-        profileEdges.push(makeLine(toWorld(loop[i][0] * vr, loop[i][1] * vr), toWorld(loop[(i + 1) % loop.length][0] * vr, loop[(i + 1) % loop.length][1] * vr)));
+        profileEdges.push(makeLine(plant(loop[i][0] * vr, loop[i][1] * vr), plant(loop[(i + 1) % loop.length][0] * vr, loop[(i + 1) % loop.length][1] * vr)));
       }
       return genericSweep(assembleWire(profileEdges), spineWire, { forceProfileSpineOthogonality: true });
     };
+
+    // BORE-EXTEND (defect-2 prevention — see setBrepBoreExtFactor / manifold-mesh
+    // extendPathEnds): the SUBTRAHEND (bore) sweep rides the spine PUNCHED past both
+    // ends along its end tangents so its caps clear the outer caps — no coincident
+    // (tilted) cap plane → a clean genus-1 through-pipe whose half-section cutaway
+    // meshes without throwing. Margin ∝ the swept section's view-scaled radius.
+    const extendSpine = (spine: number[][], ext: number): number[][] => {
+      const n = spine.length;
+      if (n < 2 || !(ext > 0)) return spine;
+      const nrm = (v: number[]) => Math.hypot(v[0], v[1], v[2]) || 1;
+      const s0 = [spine[0][0] - spine[1][0], spine[0][1] - spine[1][1], spine[0][2] - spine[1][2]];
+      const ls = nrm(s0);
+      const head = [spine[0][0] + (s0[0] / ls) * ext, spine[0][1] + (s0[1] / ls) * ext, spine[0][2] + (s0[2] / ls) * ext];
+      const d1 = [spine[n - 1][0] - spine[n - 2][0], spine[n - 1][1] - spine[n - 2][1], spine[n - 1][2] - spine[n - 2][2]];
+      const le = nrm(d1);
+      const tail = [spine[n - 1][0] + (d1[0] / le) * ext, spine[n - 1][1] + (d1[1] / le) * ext, spine[n - 1][2] + (d1[2] / le) * ext];
+      return [head, ...spine, tail];
+    };
+    const boreExt = _brepBoreExtFactor * sectionMaxExtent(section.outer) * vr;
+    const boreSpine = extendSpine(spinePts, boreExt);
+
     try {
-      let result = sweepLoop(section.outer);
-      // Bores: sweep each inner loop + subtract on the CURVED solid. The exact OCCT
-      // kernel subtracts coaxial curved sweeps cleanly (unlike the Manifold mesh
-      // boolean's coincident-tilted-cap slivers — memory r_sweep_normals_and_twist).
+      let result = sweepLoopOn(section.outer, spinePts, startPos);
+      // Bores: sweep each inner loop along the EXTENDED spine (planted at its new
+      // start) + subtract on the CURVED solid. The exact OCCT kernel subtracts
+      // coaxial curved sweeps cleanly; the bore-extend keeps the two sweeps' end
+      // caps from sharing a plane, so the subsequent cutaway `.cut` stays valid
+      // (memory r_sweep_normals_and_twist / brep_sweep_makepipeshell_throw).
       // Single-pass annular sweep evaluated + rejected: replicad's genericSweep/
       // MakePipeShell take a single profile WIRE only (MakePipeShell.Add(face) throws),
       // and raw BRepOffsetAPI_MakePipe on an annular face uses a non-orthogonality
       // transport that mis-volumes the bend (~8× over) — so outer-sweep-then-subtract-bore
       // it is (both swept with the same orthogonality transport ⇒ coaxial, clean subtract).
-      for (const bore of section.inner) result = result.cut(sweepLoop(bore));
+      for (const bore of section.inner) result = result.cut(sweepLoopOn(bore, boreSpine, boreSpine[0]));
       // The warped/swept solid IS this part bent onto the trajectory — carry the
       // part tag so color-by-source survives the warp (the repro part warps every
       // element). Passthrough returns above keep the original tagged proxy.
@@ -1004,11 +1068,14 @@ async function executeBrep(
   // extrude it past both z-ends, and `.cut()` it — so BREP reproduces the same
   // sectioned solid the Manifold oracle does (previously "sectionCut is not
   // defined" failed 13 parts + every well assembly depending on bw_casing).
-  const sectionCut = (solid: any, opts?: { az?: number; offset?: number }) => {
+  const sectionCut = (solid: any, secOpts?: { az?: number; offset?: number }) => {
+    // DEGRADE-to-uncut: the SVG endpoint's retry sets `noSectionCut` so a
+    // swept-boolean whose exact cut throws still renders (the full solid).
+    if (opts?.noSectionCut) return solid;
     const s = unwrap(solid);
     if (!s || typeof s.cut !== 'function' || !s.boundingBox) return solid;
-    const az = Number(opts?.az ?? 180);
-    const offset = Number(opts?.offset ?? 0);
+    const az = Number(secOpts?.az ?? 180);
+    const offset = Number(secOpts?.offset ?? 0);
     if (!(az > 0) || az >= 360) return solid; // az≤0 → no cut; ≥360 → full removal (leave solid; empty is fragile in OCCT)
     const bb = s.boundingBox.bounds; // [[xmin,ymin,zmin],[xmax,ymax,zmax]]
     const MARGIN = 20;
@@ -1022,7 +1089,13 @@ async function executeBrep(
       pts.push([R * Math.cos(a), R * Math.sin(a)]);
     }
     const wedge = sketchPoly(pts, 'XY').extrude(Math.max(0.01, zlen)).translate([0, 0, z0]);
-    const cutRes = s.cut(wedge);
+    // A corrupted/degenerate solid (e.g. a coincident-cap swept-boolean the
+    // bore-extend couldn't fully clean) can make OCCT's exact `.cut` THROW a bare
+    // heap pointer. Degrade to the uncut solid instead of poisoning the whole build
+    // — the SAME "degrade to uncut" contract preview/SVG rely on, but at the source.
+    let cutRes: any;
+    try { cutRes = s.cut(wedge); }
+    catch { safeDelete(wedge); return solid; }
     safeDelete(wedge);   // private throwaway — free the bbox-spanning wedge now (16 of these in a well)
     return wrap(carryTag(solid, cutRes));   // the sectioned solid is still this part
   };

@@ -65,16 +65,27 @@ export const POST = async ({ request, fetch }) => {
     // returning the composed solid, then project its boundary to SVG.
     if (typeof source === 'string' && source.trim()) {
       const params = (paramValues && typeof paramValues === 'object') ? paramValues : {};
-      const solid = await solidFromSource(source, params, {}, fetch);
-      if (!solid) return json({ supported: false, reason: 'no OCCT-buildable solid in this part (BREP covers revolve / extrude / loft / CSG)' });
-      try {
-        const svg = await brepSolidToSvg(solid, svgOpts);
-        return json({ supported: true, svg, meta: { ms: Date.now() - t0, mode: modeOf(svg) } });
-      } finally {
-        // We own the solid's lifetime (executeBrep kept it past its own sweep) —
-        // free the WASM heap now that it is projected. Best-effort; never throws.
-        try { if (solid && typeof solid.delete === 'function') solid.delete(); } catch { /* already gone */ }
-      }
+      // Resolve + execute the composed solid, then project its boundary. A curved
+      // hollow swept-boolean whose body bakes a half-section (sectionCut) can throw
+      // in OCCT on the exact cut — mirror /api/brep/preview's `cut:false` retry:
+      // rebuild WITHOUT the section (noSectionCut) so the SVG degrades to the uncut
+      // solid instead of failing. Each attempt owns + frees its own solid.
+      const buildAndProject = async (degrade: boolean): Promise<string | null> => {
+        const solid = await solidFromSource(source, params, degrade ? { noSectionCut: true } : {}, fetch);
+        if (!solid) return null;
+        try {
+          return await brepSolidToSvg(solid, svgOpts);
+        } finally {
+          // We own the solid's lifetime (executeBrep kept it past its own sweep) —
+          // free the WASM heap now that it is projected. Best-effort; never throws.
+          try { if (typeof solid.delete === 'function') solid.delete(); } catch { /* already gone */ }
+        }
+      };
+      let svg: string | null;
+      try { svg = await buildAndProject(false); }
+      catch { svg = await buildAndProject(true); }   // degrade: rebuild uncut, never 500
+      if (svg == null) return json({ supported: false, reason: 'no OCCT-buildable solid in this part (BREP covers revolve / extrude / loft / CSG)' });
+      return json({ supported: true, svg, meta: { ms: Date.now() - t0, mode: modeOf(svg) } });
     }
 
     return json({ supported: false, reason: 'provide { kind:"revolve", profile } or { source, paramValues }' });
