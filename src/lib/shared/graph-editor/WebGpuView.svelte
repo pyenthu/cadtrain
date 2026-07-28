@@ -36,7 +36,7 @@
     /** Current param values (name → number), graph.params order — mirrors B·SVG. */
     paramValues = {} as Record<string, number>,
     /** Background clear colour [r,g,b,a] in 0..1 (the dark field the lines draw on). */
-    clearColor = [0.04, 0.09, 0.16, 1] as [number, number, number, number],
+    clearColor = [1, 1, 1, 1] as [number, number, number, number],
     width = 480,
     height = 320,
   }: {
@@ -340,7 +340,7 @@
     gap: 8px; height: 100%; min-height: 0; padding: 12px; background: #fff; }
   .wgpu-stage { position: relative; }
   .wgpu-canvas { display: block; max-width: 100%; height: auto; border: 1px solid #e5e7eb; border-radius: 6px;
-    background: #0b1220; }
+    background: #fff; }
   .wgpu-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
     font: 11px Arial; color: #94a3b8; pointer-events: none; text-align: center; padding: 8px; }
   .wgpu-meta { font: 10.5px Arial; color: #6b7280; }
