@@ -13,10 +13,10 @@
 
 ## Engines (MF · TF · BREP)
 - **BREP per-part / nested colours NOT rendered** (`bw_packer` all-brown) — `__tagNest` is MF-only; implement per-subpart colour tagging in the BREP executor. (#997)
-- **BREP renderer — interpolate vertex normals** for material shading (E5 crease-normals must reach the BREP material path). (#993)
+- **BREP normals** — WIRED (E5: `brep-adapter` runs OCCT tris through `creaseAwareCornerNormals`, flatShading off for BREP; end-to-end test pinned). Only a visual "reads-smooth" eyeball owed. (#993)
 - **BREP client-side bake** (E2/E3/#39) — NOT STARTED. Server compiles → pooled warm client OCCT worker builds+meshes + `.cut()` cutaway. `brep-client.ts` is a stub. Verify HEADLESS.
 - **BREP-native warp** (E4/#988) — `MakePipeShell` spline sweep (PROVEN: `w_deviated_casing` vol==MF; ⚠ the cut is section-BEFORE-sweep). LEFT: land into the bake pipeline · curvature-adaptive spine · warped-solid cutaway. Depends on E2.
-- **BREP curved hollow swept-boolean** — cutaway throws (mesh degrades to uncut; **SVG path `/api/brep/svg` unguarded → 500s**). Quick win **#B-bore-extend**: port the MF/TF bore-extend trick (`brep-occt.ts:961`). Annular fix is MF/TF-only (replicad won't sweep a holed face).
+- **BREP curved hollow swept-boolean** — SVG-500 FIXED (`#B-bore-extend`, merged): `/api/brep/svg` now degrades to uncut instead of throwing + `sectionCut` guarded; bore-extend added as MF/TF parity (OCCT's exact boolean already tolerates coincident caps, so no χ win). REMAINING: an actual cutaway REVEAL on a swept-boolean (needs the annular section — MF/TF-only for BREP; replicad won't sweep a holed face).
 - **Curvature-adaptive axial meshing** — shared `κ→Δz` (`planAxialStations`) EXISTS; **TF done**, **MF + BREP need wiring** (MF bake must call its own folder's model; BREP `nSpine`). Not new math. (#988/#944)
 - **TF native `r_loft` builder** — `g_barrel`/waist/flare/ogive/scurve blank on TF (native-only); add `op:'loft'` from `scaleAt(t)`; verify vs the MF oracle. (#989)
 - **TF geometry cache** — IndexedDB mesh cache keyed on the recipe hash (TF rebuilds every bake; matters for /wells N-element bakes).
