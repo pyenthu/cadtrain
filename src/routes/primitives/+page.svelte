@@ -1092,6 +1092,28 @@
   let activeKey: number | null = $state(null);
   let nextKey = 1;
 
+  // ── Tab-strip horizontal-overflow tell ─────────────────────────────────
+  // When enough part-tabs open to overflow the strip width, `overflow-x:auto`
+  // draws a horizontal scrollbar INSIDE the strip box, which clips the tab
+  // bottoms. We can't reserve that room permanently — the active tab's
+  // `margin-bottom:-1px` merge into the pane below depends on a zero-height
+  // bottom edge. So measure `scrollWidth > clientWidth` and reserve scrollbar
+  // room (`.scrolls`) only while it actually overflows.
+  let tabsEl = $state<HTMLDivElement | null>(null);
+  let tabsScroll = $state(false);
+  function measureTabsOverflow() {
+    if (tabsEl) tabsScroll = tabsEl.scrollWidth > tabsEl.clientWidth + 1;
+  }
+  $effect(() => {
+    tabs.length; // re-measure whenever a tab is added/removed
+    if (!tabsEl) return;
+    // Wait for the tabs to lay out before measuring their overflow width.
+    const raf = requestAnimationFrame(measureTabsOverflow);
+    const ro = new ResizeObserver(measureTabsOverflow); // container resize
+    ro.observe(tabsEl);
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); };
+  });
+
   /** Open `id` in a tab — activates the existing tab if one is already
    *  open, otherwise creates a new one. Tabs stay loaded in the background
    *  until closed (graph state + bake cache + zoom survive switches). */
@@ -1682,7 +1704,7 @@
     {:else}
       <!-- Tab strip — clicking flips activeKey without unmounting the iframe.
            The iframe stays loaded so flipping back to a tab is instant. -->
-      <div class="prim-tabs">
+      <div class="prim-tabs" class:scrolls={tabsScroll} bind:this={tabsEl}>
         {#if embedCfg.sidebar && sidebarCollapsed}
           <button class="prim-rail-expand inline" type="button" title="Show the primitives sidebar" onclick={toggleSidebar}>☰</button>
         {/if}
@@ -2284,10 +2306,21 @@
     display: flex; flex-wrap: nowrap; overflow-x: auto;
     border-bottom: 1px solid #e5e7eb; background: #f8fafc;
     padding: 4px 4px 0;
+    scrollbar-width: thin;              /* Firefox: slim bar */
   }
+  /* Only when the tabs overflow: grow the strip so the horizontal scrollbar
+     sits BELOW the tabs instead of clipping their bottoms. No reserved gap
+     otherwise, so the active tab still merges into the pane (margin-bottom:-1px). */
+  .prim-tabs.scrolls { padding-bottom: 9px; }
+  .prim-tabs::-webkit-scrollbar { height: 8px; }
+  .prim-tabs::-webkit-scrollbar-thumb {
+    background: #cbd5e1; border-radius: 4px;
+  }
+  .prim-tabs::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+  .prim-tabs::-webkit-scrollbar-track { background: transparent; }
   /* Inactive tabs: dimmed grey-on-grey so the active tab pops by contrast. */
   .prim-tab-wrap {
-    display: flex; align-items: center; gap: 0;
+    display: flex; align-items: center; gap: 0; flex: 0 0 auto;
     background: #e7e5e4; border: 1px solid #d6d3d1; border-bottom: 0;
     border-radius: 5px 5px 0 0; margin-right: 2px;
     padding: 0 6px 0 10px;
