@@ -37,7 +37,6 @@
 - **#940 Modularize GraphEditorPane — Phase 4** — pull remaining state/actions onto `controller.svelte.ts` + a `GraphCommand` undo layer; NodeCard per-type split. Inline (subagents stall on GEP).
 - **#52 Modularize RightPane** — extract per-tab bodies (large component → HMR skips it).
 - **Material/texture** (deprioritized) — **#61** material system · **#63** SVG `<pattern>` textures · **#76** material texture map. *(Graph-wide default-colour chip PARKED — un-overridden parts keep the built-in red/grey fallback; re-add only if that annoys.)*
-- **#75 Auto-layout FORCE params** — DONE (`23ff9ed`): `forceLayoutGraph` + the tension/repulsion dials wired into the CanvasMenu ⚙ layout menu (persisted; same ↶ undo). Only the live "looks-good" tune is a visual eyeball.
 - **#20 typed expression outputs** · **#11/#31 expression-as-builder + visual editor** · **#36 warp node** (repeat-as-sweep · varying-section r_sweep · spline as generic point-source · subpart colours).
 - **`w_multi_string_dev` — drop the 9 linear sections**, keep only the multi-part warp. (#986) ⚠ writes the shared prod volume — attended only.
 - Smaller: Section "show cutter" wedge overlay · in-canvas controls screen-fixed · multi-input compact connectors · #18 r_surface_grid · #21 sweep_demo · #17 loop toolbar.
