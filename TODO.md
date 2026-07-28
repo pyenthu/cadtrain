@@ -40,14 +40,11 @@
 - **#16 Modularize `src/lib/shared/`** (50 files) — git mv into `viewer/svg/engines/profiles/types/volume/ui`; move `graph-editor/`→`graph/editor/` FIRST (kills 76/77 layering violations). ⚠ `folder-tree.ts` 113 paths. (`todo_modularize_k65`)
 - **#940 Modularize GraphEditorPane — Phase 4** — pull remaining state/actions onto `controller.svelte.ts` + a `GraphCommand` undo layer; NodeCard per-type split. Inline (subagents stall on GEP).
 - **#52 Modularize RightPane** — extract per-tab bodies (large component → HMR skips it).
-- **#38 P2 · list<record> table editor** — `ParamsCard` "add object/row" builds a `list<record>` inline; N strings, zero card-wiring.
-- **#38c PARTS-TABLE data INPUT socket** — wire a `list<record>` → N rows (unifies parts_table with parts_map; the external-app/AI injection seam). Settle: wired supersedes inline rows.
-- **#38d PARTS-TABLE per-row material** popover (per-instance override; coordinate with the BREP per-part-colour fix / #86).
-- **Material: graph-WIDE default chip** on the output card (per-part material-on-card shipped `6bd730d`; the graph-wide default editor was dropped with the PROPERTIES table). Also **#61** texture · **#63** SVG `<pattern>` · **#76** material texture map.
+- **Material/texture** (deprioritized) — **#61** material system · **#63** SVG `<pattern>` textures · **#76** material texture map. *(Graph-wide default-colour chip PARKED — un-overridden parts keep the built-in red/grey fallback; re-add only if that annoys.)*
 - **#75 Auto-layout FORCE params** — expose connector-tension + card-repulsion dials in the menu.
 - **3D orbit — lock lookAt/target to the Z axis** (x=y=0) so tall wells stay centred; constrain to azimuth-spin OR horizontal-tilt. Files: `scene-state.svelte.ts` + `PrimitiveDualScene.svelte`.
 - **#20 typed expression outputs** · **#11/#31 expression-as-builder + visual editor** · **#36 warp node** (repeat-as-sweep · varying-section r_sweep · spline as generic point-source · subpart colours).
-- **`w_multi_string_dev` — drop the 9 linear sections**, keep only the multi-part warp (or wait for #38 P2). (#986)
+- **`w_multi_string_dev` — drop the 9 linear sections**, keep only the multi-part warp. (#986) ⚠ writes the shared prod volume — attended only.
 - Smaller: Section "show cutter" wedge overlay · in-canvas controls screen-fixed · multi-input compact connectors · #18 r_surface_grid · #21 sweep_demo · #17 loop toolbar.
 
 ## /design + AI
