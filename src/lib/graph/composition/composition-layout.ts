@@ -475,3 +475,190 @@ export function forceSeparate(graph: Graph, opts: ForceSeparateOptions): Graph {
   }
   return out;
 }
+
+// ─── force-organic layout (#75) ──────────────────────────────────────────
+// Phase 22 (docs/plans/auto-layout.md) — a Fruchterman-Reingold force pass:
+// the "interactive organic" aesthetic the plan reserves for after the
+// heuristic. PURE function: reads the graph's CURRENT node positions and
+// returns a NEW graph with refined positions (positions in → positions out).
+// No DOM, no Svelte, no Manifold — so it unit-tests headless and the GEP
+// toolbar dials can call it directly.
+//
+// Two dials, both required by #75:
+//   • (a) TENSION   — a spring/link force pulling WIRED cards toward each
+//     other. Every data-flow edge (predecessorsOf) becomes one attractive
+//     spring between its two cards.
+//   • (b) REPULSION — a charge force pushing every pair of cards apart, so
+//     overlapping / piled-up cards spread out and stop stacking.
+//
+// Both are multipliers on the classic FR force terms, so 1.0 = balanced and a
+// connected pair settles at an equilibrium distance of
+//     idealLength * (repulsion / tension) ** (1/3)
+// — raise `tension` → wired cards settle CLOSER; raise `repulsion` → they
+// SPREAD. That equilibrium is strictly monotonic in each dial, which is what
+// makes the slider legible (feedback_expose_dont_hide — the slider IS the
+// product).
+//
+// RELATIONSHIP to the other two passes in this file:
+//   • autoLayoutGraph ASSIGNS a fresh layered grid (topological columns).
+//   • forceLayoutGraph REFINES the positions already in graph.layout into an
+//     organic relaxed shape — run it AFTER a seed layout (heuristic → force,
+//     the plan's staged path) or on a hand-placed layout the user wants to
+//     relax. It never invents a position for an unplaced node.
+//   • forceSeparate is the hard overlap resolver — chain it AFTER this pass
+//     if you need a guaranteed zero-overlap result; the force pass spreads
+//     but doesn't strictly forbid residual touching on dense graphs.
+//
+// MANUAL LAYOUTS PERSIST: nothing moves unless this is explicitly invoked
+// (same contract as autoLayoutGraph / forceSeparate), and any node in
+// `pinned` is held fixed every iteration — tacked / user-locked cards and the
+// viewport-tacked PROPERTIES · PARAMS · Output cards stay put.
+
+export interface ForceLayoutOptions {
+  /** (a) Spring attraction pulling WIRED cards together — a multiplier on the
+   *  FR d²/k attractive term. Higher → wired cards settle CLOSER. Default 1.
+   *  Sane range ~0.1–5 (0 = springs off). */
+  tension?: number;
+  /** (b) Charge repulsion pushing every pair of cards apart — a multiplier on
+   *  the FR k²/d repulsive term. Higher → cards SPREAD further. Default 1.
+   *  Sane range ~0.1–5 (0 = repulsion off). */
+  repulsion?: number;
+  /** Simulation passes (cooling steps). More = closer to equilibrium, slower
+   *  (each pass is O(N²)). Default 300. Sane range ~50–600. */
+  iterations?: number;
+  /** Ideal wire length in graph px — the rest distance a BALANCED spring
+   *  (tension == repulsion) settles a connected pair at. Default 220 (≈ a
+   *  card-width of clearance between columns). Sane range ~120–400. */
+  idealLength?: number;
+  /** Nodes whose position MUST NOT move (tacked / user-locked cards + the
+   *  viewport-tacked PROPERTIES · PARAMS · Output cards). Held fixed every
+   *  iteration; they still exert forces on the movable cards. */
+  pinned?: Record<NodeId, boolean>;
+  /** Optional per-node bounding size in graph space. When given, exactly
+   *  coincident nodes get a deterministic nudge apart first (so their
+   *  center-to-center vector isn't zero and they can separate) — same trick
+   *  forceSeparate uses. No Svelte deps: the editor passes its own measured
+   *  helper. Overlap HARDENING is forceSeparate's job — chain it after. */
+  nodeSize?: (id: NodeId) => { w: number; h: number };
+}
+
+export function forceLayoutGraph(graph: Graph, opts: ForceLayoutOptions = {}): Graph {
+  const tension = Math.max(0, opts.tension ?? 1);
+  const repulsion = Math.max(0, opts.repulsion ?? 1);
+  const iterations = Math.max(1, Math.floor(opts.iterations ?? 300));
+  const k = Math.max(1, opts.idealLength ?? 220);
+  const pinned = opts.pinned ?? {};
+
+  // Snapshot positions for every node that already HAS a layout entry — this
+  // pass REFINES an existing layout; it never invents a position for an
+  // unplaced node (run autoLayoutGraph first to seed).
+  const ids: NodeId[] = [];
+  const pos: Record<NodeId, { x: number; y: number }> = {};
+  for (const id of Object.keys(graph.nodes)) {
+    const xy = graph.layout[id];
+    if (!xy) continue;
+    ids.push(id);
+    pos[id] = { x: xy.x, y: xy.y };
+  }
+  if (ids.length < 2) return graph; // nothing to relax
+
+  const idSet = new Set(ids);
+
+  // Deterministic nudge for exactly-coincident nodes so the pair vector isn't
+  // zero (otherwise repulsion has no direction). Mirrors forceSeparate.
+  if (opts.nodeSize) {
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const a = pos[ids[i]!]!, b = pos[ids[j]!]!;
+        if (Math.abs(a.x - b.x) < 0.5 && Math.abs(a.y - b.y) < 0.5) {
+          b.x += ((j * 13) % 17) - 8;
+          b.y += ((j * 17) % 13) - 6;
+        }
+      }
+    }
+  }
+
+  // Unique UNDIRECTED wire set from the data-flow edges. A pair joined by more
+  // than one edge (e.g. a method wired with obj === arg to the same node)
+  // still pulls with ONE spring — dedupe so double-wiring doesn't double the
+  // tension. Only edges between two positioned, distinct nodes count.
+  const edges: [NodeId, NodeId][] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    for (const p of predecessorsOf(graph, id)) {
+      if (p === id || !idSet.has(p)) continue;
+      const key = id < p ? `${id}|${p}` : `${p}|${id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      edges.push([id, p]);
+    }
+  }
+
+  const MIN_D = 1e-3;
+  // Cooling schedule — start at the ideal length, decay linearly toward 0 so
+  // the system settles instead of oscillating around equilibrium.
+  let temp = k;
+  const cooldown = k / (iterations + 1);
+
+  const disp: Record<NodeId, { x: number; y: number }> = {};
+  for (const id of ids) disp[id] = { x: 0, y: 0 };
+
+  for (let iter = 0; iter < iterations; iter++) {
+    for (const id of ids) { disp[id]!.x = 0; disp[id]!.y = 0; }
+
+    // (b) REPULSION — every pair pushes apart with force repulsion·k²/d.
+    for (let i = 0; i < ids.length; i++) {
+      for (let j = i + 1; j < ids.length; j++) {
+        const ai = ids[i]!, bj = ids[j]!;
+        const a = pos[ai]!, b = pos[bj]!;
+        let dx = a.x - b.x, dy = a.y - b.y;
+        let dist = Math.hypot(dx, dy);
+        if (dist < MIN_D) { dx = MIN_D; dy = 0; dist = MIN_D; }
+        const f = (repulsion * k * k) / dist;
+        const ux = dx / dist, uy = dy / dist;
+        disp[ai]!.x += ux * f; disp[ai]!.y += uy * f;
+        disp[bj]!.x -= ux * f; disp[bj]!.y -= uy * f;
+      }
+    }
+
+    // (a) TENSION — each wire pulls its two cards together with force
+    // tension·d²/k (FR attraction). Balanced against repulsion this settles
+    // the pair at k·(repulsion/tension)^(1/3).
+    for (const [u, v] of edges) {
+      const a = pos[u]!, b = pos[v]!;
+      let dx = a.x - b.x, dy = a.y - b.y;
+      let dist = Math.hypot(dx, dy);
+      if (dist < MIN_D) { dx = MIN_D; dy = 0; dist = MIN_D; }
+      const f = (tension * dist * dist) / k;
+      const ux = dx / dist, uy = dy / dist;
+      disp[u]!.x -= ux * f; disp[u]!.y -= uy * f;
+      disp[v]!.x += ux * f; disp[v]!.y += uy * f;
+    }
+
+    // Apply with the temperature cap; pinned nodes are frozen (but their
+    // forces above still shove the movable cards).
+    for (const id of ids) {
+      if (pinned[id]) continue;
+      const d = disp[id]!;
+      const mag = Math.hypot(d.x, d.y);
+      if (mag < MIN_D) continue;
+      const step = Math.min(mag, temp);
+      pos[id]!.x += (d.x / mag) * step;
+      pos[id]!.y += (d.y / mag) * step;
+    }
+    temp = Math.max(0, temp - cooldown);
+  }
+
+  // Apply via setLayout (immutable). Preserve each entry's extra fields
+  // (w / h / cols) — only x / y are refined.
+  let out = graph;
+  for (const id of ids) {
+    const prev = graph.layout[id]!;
+    out = setLayout(out, id, { ...prev, x: pos[id]!.x, y: pos[id]!.y });
+  }
+  return out;
+}
+
+// GEP TOOLBAR DIALS (tension / repulsion sliders wired to forceLayoutGraph)
+// are the inline follow-on — intentionally NOT wired here to keep this a pure,
+// headless-testable module (GraphEditorPane is edited inline, not by subagents).

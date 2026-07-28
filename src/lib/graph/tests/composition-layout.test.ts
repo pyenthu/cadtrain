@@ -23,7 +23,7 @@ import {
   type Graph,
   type NodeId,
 } from '$lib/graph/composition/composition-graph';
-import { autoLayoutGraph, forceSeparate } from '$lib/graph/composition/composition-layout';
+import { autoLayoutGraph, forceSeparate, forceLayoutGraph } from '$lib/graph/composition/composition-layout';
 
 // ─── helpers ────────────────────────────────────────────────────────────
 
@@ -361,5 +361,110 @@ describe('forceSeparate (Phase 22)', () => {
     expect(aPos.x + 100).toBeLessThanOrEqual(500);
     expect(bPos.x).toBeGreaterThanOrEqual(0);
     expect(bPos.x + 100).toBeLessThanOrEqual(500);
+  });
+});
+
+// ─── force-organic layout (#75) ──────────────────────────────────────────
+// The Fruchterman-Reingold refine pass: (a) TENSION pulls WIRED cards
+// together, (b) REPULSION spreads overlapping cards, and both dials move the
+// needle monotonically. Pure geometry — no DOM, no Manifold.
+describe('forceLayoutGraph (#75) — force-organic layout', () => {
+  const size = () => ({ w: 160, h: 120 });
+  const dist = (p: { x: number; y: number }, q: { x: number; y: number }) =>
+    Math.hypot(p.x - q.x, p.y - q.y);
+
+  /** Two Calls wired into a method (method.obj = A, method.arg = B). Seeds A
+   *  and B at the given start distance apart (on the X axis). */
+  function buildWiredPair(startGap: number): { graph: Graph; a: NodeId; b: NodeId } {
+    let g = newGraph();
+    const a = addCall(g, 'src_a'); g = a.graph;
+    const b = addCall(g, 'src_b'); g = b.graph;
+    const m = addMethod(g, 'subtract', a.id, b.id); g = m.graph;
+    g = setLayout(g, a.id, { x: 0, y: 0 });
+    g = setLayout(g, b.id, { x: startGap, y: 0 });
+    g = setLayout(g, m.id, { x: startGap / 2, y: 400 });
+    return { graph: g, a: a.id, b: b.id };
+  }
+
+  it('(a) TENSION pulls two WIRED cards CLOSER than they started', () => {
+    const { graph, a, b } = buildWiredPair(900);
+    const before = dist(graph.layout[a]!, graph.layout[b]!);
+    const out = forceLayoutGraph(graph, { tension: 1, repulsion: 1, idealLength: 220 });
+    const after = dist(out.layout[a]!, out.layout[b]!);
+    expect(before).toBeCloseTo(900, 0);
+    expect(after).toBeLessThan(before); // the spring reeled them in
+  });
+
+  it('(a) higher TENSION → wired cards settle even closer (monotonic)', () => {
+    const mk = (tension: number) => {
+      const { graph, a, b } = buildWiredPair(900);
+      const out = forceLayoutGraph(graph, { tension, repulsion: 1, idealLength: 220 });
+      return dist(out.layout[a]!, out.layout[b]!);
+    };
+    const low = mk(0.5);
+    const high = mk(3);
+    // Equilibrium ≈ k·(repulsion/tension)^(1/3): more tension → smaller gap.
+    expect(high).toBeLessThan(low);
+  });
+
+  it('(b) REPULSION separates two initially-OVERLAPPING cards', () => {
+    // Two UNWIRED calls piled almost on top of each other (boxes 160×120,
+    // centers only 30 px apart → heavy overlap).
+    let g = newGraph();
+    const a = addCall(g, 'src_a'); g = a.graph;
+    const b = addCall(g, 'src_b'); g = b.graph;
+    g = setLayout(g, a.id, { x: 0, y: 0 });
+    g = setLayout(g, b.id, { x: 30, y: 0 });
+
+    const out = forceLayoutGraph(g, { tension: 1, repulsion: 1, idealLength: 220, nodeSize: size });
+    const aP = out.layout[a.id]!, bP = out.layout[b.id]!;
+
+    // No AABB overlap on at least one axis after the pass.
+    const overlapX = Math.min(aP.x + 160, bP.x + 160) - Math.max(aP.x, bP.x);
+    const overlapY = Math.min(aP.y + 120, bP.y + 120) - Math.max(aP.y, bP.y);
+    expect(overlapX <= 0 || overlapY <= 0).toBe(true);
+    // And they genuinely moved apart from the 30 px start.
+    expect(dist(aP, bP)).toBeGreaterThan(30);
+  });
+
+  it('(b) higher REPULSION → wired cards spread further apart (monotonic)', () => {
+    const mk = (repulsion: number) => {
+      const { graph, a, b } = buildWiredPair(300);
+      const out = forceLayoutGraph(graph, { tension: 1, repulsion, idealLength: 220 });
+      return dist(out.layout[a]!, out.layout[b]!);
+    };
+    const low = mk(0.5);
+    const high = mk(3);
+    // Equilibrium ≈ k·(repulsion/tension)^(1/3): more repulsion → larger gap.
+    expect(high).toBeGreaterThan(low);
+  });
+
+  it('holds pinned nodes fixed', () => {
+    const { graph, a, b } = buildWiredPair(900);
+    const out = forceLayoutGraph(graph, { tension: 3, repulsion: 1, pinned: { [a]: true } });
+    // a is pinned → exactly where it started; b (unpinned) moved toward it.
+    expect(out.layout[a]).toEqual(graph.layout[a]);
+    expect(out.layout[b]!.x).not.toBe(graph.layout[b]!.x);
+  });
+
+  it('preserves extra layout fields (w / h / cols) — only x/y are refined', () => {
+    let g = newGraph();
+    const a = addCall(g, 'src_a'); g = a.graph;
+    const b = addCall(g, 'src_b'); g = b.graph;
+    const m = addMethod(g, 'subtract', a.id, b.id); g = m.graph;
+    g = setLayout(g, a.id, { x: 0, y: 0, cols: 2 });
+    g = setLayout(g, b.id, { x: 500, y: 0 });
+    g = setLayout(g, m.id, { x: 250, y: 300 });
+    const out = forceLayoutGraph(g, {});
+    expect(out.layout[a.id]!.cols).toBe(2); // carried through
+  });
+
+  it('is a no-op safety-wise with fewer than 2 positioned nodes', () => {
+    // A bare graph has only the root positioned → nothing to relax; the pass
+    // returns the graph untouched (same reference, position preserved).
+    const g = newGraph();
+    const out = forceLayoutGraph(g);
+    expect(out).toBe(g);
+    expect(out.layout[g.root]).toEqual(g.layout[g.root]);
   });
 });
