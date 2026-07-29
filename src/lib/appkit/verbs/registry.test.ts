@@ -45,6 +45,20 @@ describe('appkit verb registry (rung 1 — SSOT → schema → dispatch)', () =>
     expect(app.popovers[0].id).toBe('x');
   });
 
+  it('iterative-editing gui verbs (remove/move/setProp/setMeta) mutate the .app', async () => {
+    const app: any = { app: 'x', title: 'X', panels: [{ id: 'a', kind: 'text' }, { id: 'b', kind: 'list' }, { id: 'c', kind: 'form' }] };
+    await dispatch('setAppMeta', { title: 'Well Designer', docType: 'well' }, { appStore: app });
+    expect(app.title).toBe('Well Designer');
+    expect(app.docType).toBe('well');
+    await dispatch('setPanelProp', { panelId: 'a', key: 'title', value: 'Intro' }, { appStore: app });
+    expect(app.panels[0].title).toBe('Intro');
+    await dispatch('movePanel', { panelId: 'c', to: 0 }, { appStore: app });
+    expect(app.panels[0].id).toBe('c');
+    await dispatch('removePanel', { panelId: 'b' }, { appStore: app });
+    expect(app.panels.map((p: any) => p.id)).toEqual(['c', 'a']);
+    await expect(dispatch('setPanelProp', { panelId: 'nope', key: 'x', value: 1 }, { appStore: app })).rejects.toThrow(/no panel/);
+  });
+
   it('data verbs read through an injected engine (rung 3)', async () => {
     const engine = {
       list: async () => [{ id: 'w1', name: 'Well 1', params: { casings: [{ od: 9.625 }] } }],

@@ -72,6 +72,66 @@ export const GUI_VERBS: Verb[] = [
     },
   },
   {
+    name: 'removePanel',
+    group: 'gui',
+    desc: 'Remove a panel from the .app by id.',
+    params: { type: 'object', properties: { panelId: { type: 'string' } }, required: ['panelId'] },
+    handler: (a: { panelId: string }, ctx) => {
+      const app = requireApp(ctx);
+      app.panels = (app.panels ?? []).filter((p: any) => p.id !== a.panelId);
+      return { ok: true };
+    },
+  },
+  {
+    name: 'movePanel',
+    group: 'gui',
+    desc: 'Reorder a panel to a new 0-based index.',
+    params: {
+      type: 'object',
+      properties: { panelId: { type: 'string' }, to: { type: 'number' } },
+      required: ['panelId', 'to'],
+    },
+    handler: (a: { panelId: string; to: number }, ctx) => {
+      const app = requireApp(ctx);
+      const ps = (app.panels ?? []) as any[];
+      const i = ps.findIndex((p) => p.id === a.panelId);
+      if (i < 0) throw new Error(`appkit: no panel "${a.panelId}"`);
+      const [p] = ps.splice(i, 1);
+      ps.splice(Math.max(0, Math.min(a.to, ps.length)), 0, p);
+      app.panels = ps;
+      return { ok: true };
+    },
+  },
+  {
+    name: 'setPanelProp',
+    group: 'gui',
+    desc: 'Set a property on a panel (e.g. title, text, kind).',
+    params: {
+      type: 'object',
+      properties: { panelId: { type: 'string' }, key: { type: 'string' }, value: {} },
+      required: ['panelId', 'key', 'value'],
+    },
+    handler: (a: { panelId: string; key: string; value: unknown }, ctx) => {
+      const app = requireApp(ctx);
+      const p = ((app.panels ?? []) as any[]).find((x) => x.id === a.panelId);
+      if (!p) throw new Error(`appkit: no panel "${a.panelId}"`);
+      p[a.key] = a.value;
+      return { ok: true };
+    },
+  },
+  {
+    name: 'setAppMeta',
+    group: 'gui',
+    desc: 'Set the app title and/or docType.',
+    params: { type: 'object', properties: { title: { type: 'string' }, docType: { type: 'string' } } },
+    handler: (a: { title?: string; docType?: string }, ctx) => {
+      const app = requireApp(ctx);
+      if (a.title != null) app.title = a.title;
+      if (a.docType != null) app.docType = a.docType;
+      return { ok: true };
+    },
+  },
+  {
     name: 'bindAction',
     group: 'gui',
     desc: 'Bind a control (by controlId) to a verb + args.',
