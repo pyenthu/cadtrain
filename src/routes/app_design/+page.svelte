@@ -7,6 +7,7 @@
   import VisualEditor from '$lib/shared/harness/VisualEditor.svelte';
   import HarnessView from '$lib/shared/harness/HarnessView.svelte';
   import { validateManifest } from '$lib/appkit/manifest/validate';
+  import { autoDoc } from '$lib/appkit/manifest/doc';
   import { createLocalStore } from '$lib/appkit/store/local-backend';
   import type { AppManifest } from '$lib/appkit/manifest/types';
 
@@ -19,7 +20,7 @@
   let fileHandle = $state<any>(null); // File System Access handle (write-back target)
   let fileName = $state('');
   let status = $state('');
-  let preview = $state(false);
+  let view = $state<'design' | 'preview' | 'text' | 'doc'>('design');
   let prompt = $state('');
   let building = $state(false);
   let inputEl = $state<HTMLInputElement>();
@@ -29,13 +30,26 @@
   }
   const serialize = () => `${JSON.stringify($state.snapshot(app), null, 2)}\n`;
 
+  // Minimal safe Markdown → HTML for the Doc view (headings · bold · inline code · list items).
+  function mdToHtml(md: string): string {
+    const esc = md.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return esc
+      .replace(/^### (.*)$/gm, '<h3>$1</h3>')
+      .replace(/^## (.*)$/gm, '<h2>$1</h2>')
+      .replace(/^# (.*)$/gm, '<h1>$1</h1>')
+      .replace(/^\s*- (.*)$/gm, '<li>$1</li>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/`([^`]+)`/g, '<code>$1</code>')
+      .replace(/\n{2,}/g, '<br/><br/>');
+  }
+
   function load(text: string, name: string, handle: any) {
     const res = validateManifest(JSON.parse(text));
     if (!res.ok) { status = res.errors.join('; '); return; }
     app = res.app;
     fileHandle = handle;
     fileName = name;
-    preview = false;
+    view = 'design';
     status = handle ? `opened ${name}` : `opened ${name} (read-only — Save As to write)`;
   }
 
@@ -62,7 +76,7 @@
     app = { app: 'untitled', title: 'Untitled', docType: 'app', panels: [], popovers: [] };
     fileHandle = null;
     fileName = '';
-    preview = false;
+    view = 'design';
     status = 'new app — Save As to write a file';
   }
 
@@ -139,7 +153,10 @@
     <button title="Save" onclick={() => save()} disabled={!app}>💾</button>
     <button title="Save As…" onclick={() => saveAs()} disabled={!app}>⤓</button>
     <span class="sp"></span>
-    <button title="Design / Preview" class:on={preview} onclick={() => (preview = !preview)} disabled={!app}>👁</button>
+    <button title="Design (visual editor)" class:on={view === 'design'} onclick={() => (view = 'design')} disabled={!app}>✎</button>
+    <button title="Preview (run)" class:on={view === 'preview'} onclick={() => (view = 'preview')} disabled={!app}>👁</button>
+    <button title="Text (.app JSON)" class:on={view === 'text'} onclick={() => (view = 'text')} disabled={!app}>&lt;/&gt;</button>
+    <button title="Doc (Markdown)" class:on={view === 'doc'} onclick={() => (view = 'doc')} disabled={!app}>📄</button>
     <button title="Launch in a new tab" onclick={() => launch()} disabled={!app}>↗</button>
   </nav>
 
@@ -154,7 +171,7 @@
       <div class="bar">
         <strong>{app.title ?? idOf()}</strong>
         <span class="fn">{fileName || `${idOf()}.app · unsaved`}</span>
-        <span class="mode">{preview ? 'preview' : 'design'}</span>
+        <span class="mode">{view}</span>
         {#if status}<span class="status">{status}</span>{/if}
       </div>
       <div class="build">
@@ -163,7 +180,20 @@
         <button class="ai" onclick={() => build()} disabled={building || !prompt.trim()}>✨ Build with AI</button>
       </div>
       <div class="work">
-        {#if preview}<HarnessView {app} />{:else}<VisualEditor {app} />{/if}
+        {#if view === 'preview'}
+          <HarnessView {app} />
+        {:else if view === 'text'}
+          <pre class="text-view">{JSON.stringify(app, null, 2)}</pre>
+        {:else if view === 'doc'}
+          <div class="doc-view">
+            <textarea class="doc-src" value={app.doc ?? ''}
+              placeholder="Describe this app in Markdown… (leave empty → the auto-summary shows on the right)"
+              oninput={(e) => { if (app) app.doc = e.currentTarget.value; }}></textarea>
+            <div class="doc-prev">{@html mdToHtml(app.doc || autoDoc(app))}</div>
+          </div>
+        {:else}
+          <VisualEditor {app} />
+        {/if}
       </div>
     {/if}
   </main>
@@ -194,4 +224,13 @@
   .build .ai { padding: 6px 12px; border: 1px solid #7c3aed; border-radius: 6px; background: #7c3aed; color: #fff; font: 600 12px system-ui; cursor: pointer; }
   .build .ai:disabled { opacity: .5; cursor: default; }
   .work { flex: 1; min-height: 0; overflow: auto; }
+  .text-view { margin: 0; padding: 14px; font: 12px/1.5 ui-monospace, monospace; color: #0f172a; white-space: pre; height: 100%; box-sizing: border-box; }
+  .doc-view { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #e5e7eb; height: 100%; }
+  .doc-src { border: 0; padding: 14px; font: 13px/1.6 ui-monospace, monospace; resize: none; outline: none; }
+  .doc-prev { padding: 14px 18px; overflow: auto; background: #fff; line-height: 1.55; color: #0f172a; }
+  .doc-prev :global(h1) { font-size: 20px; margin: 0 0 8px; }
+  .doc-prev :global(h2) { font-size: 15px; margin: 14px 0 6px; }
+  .doc-prev :global(h3) { font-size: 13px; margin: 10px 0 4px; }
+  .doc-prev :global(code) { font: 12px ui-monospace, monospace; background: #f1f5f9; padding: 1px 4px; border-radius: 3px; }
+  .doc-prev :global(li) { margin-left: 18px; }
 </style>

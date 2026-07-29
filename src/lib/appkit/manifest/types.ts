@@ -25,14 +25,31 @@ export interface Control {
 
 export interface Panel {
   id: string;
-  /** A PanelKind: list · form · table · bake3d · svg · text · chat. */
+  /** A PanelKind: list · form · table · bake3d · svg · text · chat · … */
   kind: string;
   title?: string;
-  /** The data this panel reads (a data verb). */
+  /** The data this panel reads (a data verb; often bound to a file slot). */
   source?: Binding;
   onSelect?: Binding;
   controls?: Control[];
+  /** Grid placement (Track A) — column/row start + span. */
+  layout?: { col?: number; row?: number; w?: number; h?: number };
   [k: string]: unknown;
+}
+
+/** A named data-file the app opens at runtime (§0.5 — the app is stateless; DATA
+ *  lives in files). A component's `source` binds to a slot; verbs process that file. */
+export interface FileSlot {
+  slot: string;
+  /** Expected data-file type — '.wson' | '.asm.ts' | … (a hint for the picker). */
+  type?: string;
+  label?: string;
+}
+
+export interface AppTheme {
+  mode?: 'light' | 'dark';
+  /** Accent colour (hex or a Tailwind/Flowbite token). */
+  accent?: string;
 }
 
 export interface AppManifest {
@@ -41,5 +58,12 @@ export interface AppManifest {
   docType?: string;
   panels: Panel[];
   popovers?: Panel[];
+  /** Data-file slots the app opens (§0.5). */
+  files?: FileSlot[];
+  /** Embedded Markdown doc — travels inside the .app; feeds the design-RAG.
+   *  Auto-summarized from the structure when empty (manifest/doc.ts). */
+  doc?: string;
+  /** Theme (Track A). */
+  theme?: AppTheme;
   [k: string]: unknown;
 }
