@@ -1,80 +1,111 @@
 <script lang="ts">
-  // /app_design — the app design STUDIO. Create/select an .app, design it (visual editor
-  // + AI build), preview, and SAVE the .app file. Composes the existing pieces: the local
-  // store (load/list/save), VisualEditor (gui verbs), HarnessView (preview), and
-  // /api/app/generate (AI build). See docs/architecture/app-harness.md §15 (three surfaces).
-  import { onMount } from 'svelte';
-  import { createLocalStore } from '$lib/appkit/store/local-backend';
+  // /app_design — the app design STUDIO, a FILE EDITOR (like Word for .app files).
+  // A thin left rail: New · Open · Save · Save As · Preview · Launch. Open/Save use the
+  // native File System Access picker (default to the Desktop, where the SAMPLE working dir
+  // lives, but any location works). The AI builds the IN-MEMORY app (no server file needed),
+  // so picker-opened files build too. See docs/architecture/app-harness.md.
   import VisualEditor from '$lib/shared/harness/VisualEditor.svelte';
   import HarnessView from '$lib/shared/harness/HarnessView.svelte';
+  import { validateManifest } from '$lib/appkit/manifest/validate';
+  import { createLocalStore } from '$lib/appkit/store/local-backend';
   import type { AppManifest } from '$lib/appkit/manifest/types';
 
-  const store = createLocalStore();
+  const store = createLocalStore(); // used by Launch (copy into the SAMPLE working dir)
+  const W = typeof window !== 'undefined' ? (window as any) : undefined;
+  const hasFSA = !!W && 'showOpenFilePicker' in W;
+  const PICK = { types: [{ description: 'App file', accept: { 'application/json': ['.app'] } }], startIn: 'desktop' };
 
-  let apps = $state<Array<{ id: string; title?: string }>>([]);
-  let currentId = $state<string | null>(null);
   let app = $state<AppManifest | null>(null);
-  let newName = $state('');
+  let fileHandle = $state<any>(null); // File System Access handle (write-back target)
+  let fileName = $state('');
   let status = $state('');
   let preview = $state(false);
   let prompt = $state('');
   let building = $state(false);
+  let inputEl = $state<HTMLInputElement>();
 
-  async function refresh() {
-    apps = await store.list().catch(() => []);
+  function idOf(): string {
+    return (app?.app || fileName.replace(/\.app$/, '') || 'untitled').replace(/[^a-zA-Z0-9_-]/g, '_') || 'untitled';
   }
-  onMount(refresh);
+  const serialize = () => `${JSON.stringify($state.snapshot(app), null, 2)}\n`;
 
-  async function open(id: string) {
-    currentId = id;
-    status = '';
+  function load(text: string, name: string, handle: any) {
+    const res = validateManifest(JSON.parse(text));
+    if (!res.ok) { status = res.errors.join('; '); return; }
+    app = res.app;
+    fileHandle = handle;
+    fileName = name;
     preview = false;
-    app = await store.load(id).catch((e) => {
-      status = String(e);
-      return null as any;
-    });
+    status = handle ? `opened ${name}` : `opened ${name} (read-only — Save As to write)`;
   }
 
-  /** A blank starter manifest for a new app — design it here (AI build / visual editor). */
-  function scaffold(id: string): AppManifest {
-    return { app: id, title: id, docType: 'app', panels: [], popovers: [] };
-  }
-
-  async function createApp() {
-    const id = newName.trim().replace(/[^a-zA-Z0-9_-]/g, '_');
-    if (!id) return;
-    try {
-      await store.save?.(id, scaffold(id));
-      newName = '';
-      await refresh();
-      await open(id);
-      status = 'created ✓';
-    } catch (e) {
-      status = String(e);
+  async function openFile() {
+    status = '';
+    if (hasFSA) {
+      try {
+        const [h] = await W.showOpenFilePicker(PICK);
+        const f = await h.getFile();
+        load(await f.text(), f.name, h);
+      } catch (e: any) {
+        if (e?.name !== 'AbortError') status = String(e);
+      }
+    } else {
+      inputEl?.click();
     }
   }
+  async function onPick(e: Event) {
+    const f = (e.target as HTMLInputElement).files?.[0];
+    if (f) load(await f.text(), f.name, null);
+  }
 
+  function newApp() {
+    app = { app: 'untitled', title: 'Untitled', docType: 'app', panels: [], popovers: [] };
+    fileHandle = null;
+    fileName = '';
+    preview = false;
+    status = 'new app — Save As to write a file';
+  }
+
+  async function writeHandle(h: any) {
+    const w = await h.createWritable();
+    await w.write(serialize());
+    await w.close();
+  }
   async function save() {
-    if (!app || !currentId) return;
+    if (!app) return;
     status = 'saving…';
     try {
-      await store.save?.(currentId, $state.snapshot(app) as AppManifest);
-      status = 'saved ✓';
-      await refresh();
-    } catch (e) {
-      status = String(e);
+      if (fileHandle) { await writeHandle(fileHandle); status = `saved ${fileName}`; }
+      else await saveAs();
+    } catch (e) { status = String(e); }
+  }
+  async function saveAs() {
+    if (!app) return;
+    if (hasFSA) {
+      try {
+        const h = await W.showSaveFilePicker({ ...PICK, suggestedName: `${idOf()}.app` });
+        await writeHandle(h);
+        fileHandle = h;
+        fileName = h.name ?? `${idOf()}.app`;
+        status = `saved ${fileName}`;
+      } catch (e: any) {
+        if (e?.name !== 'AbortError') status = String(e);
+      }
+    } else {
+      await store.save?.(idOf(), $state.snapshot(app) as AppManifest);
+      status = `saved ${idOf()}.app (SAMPLE)`;
     }
   }
 
   async function build() {
-    if (!currentId || !prompt.trim()) return;
+    if (!app || !prompt.trim()) return;
     building = true;
     status = 'building…';
     try {
       const r = await fetch('/api/app/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ id: currentId, prompt }),
+        body: JSON.stringify({ app: $state.snapshot(app), prompt }),
       });
       if (!r.ok) throw new Error(await r.text());
       const j = await r.json();
@@ -87,80 +118,80 @@
       building = false;
     }
   }
+
+  async function launch() {
+    if (!app) return;
+    // /app/[id] reads the SAMPLE working dir — copy the current app there, then open it.
+    const id = idOf();
+    try {
+      await store.save?.(id, $state.snapshot(app) as AppManifest);
+      W?.open(`/app/${id}`, '_blank');
+    } catch (e) {
+      status = String(e);
+    }
+  }
 </script>
 
 <div class="studio">
-  <aside class="sidebar">
-    <h2>App Design</h2>
-    <div class="new">
-      <input bind:value={newName} placeholder="new app name" onkeydown={(e) => e.key === 'Enter' && createApp()} />
-      <button onclick={() => createApp()} disabled={!newName.trim()} title="create">＋</button>
-    </div>
-    <ul>
-      {#each apps as a (a.id)}
-        <li>
-          <button class:on={currentId === a.id} onclick={() => open(a.id)}>
-            {a.title ?? a.id}<span>/{a.id}</span>
-          </button>
-        </li>
-      {/each}
-      {#if !apps.length}<li class="empty">no apps — create one above</li>{/if}
-    </ul>
-    <a class="foot" href="/app">▶ run apps →</a>
-  </aside>
+  <nav class="rail" aria-label="App design tools">
+    <button title="New app" onclick={() => newApp()}>＋</button>
+    <button title="Open .app…" onclick={() => openFile()}>📂</button>
+    <button title="Save" onclick={() => save()} disabled={!app}>💾</button>
+    <button title="Save As…" onclick={() => saveAs()} disabled={!app}>⤓</button>
+    <span class="sp"></span>
+    <button title="Design / Preview" class:on={preview} onclick={() => (preview = !preview)} disabled={!app}>👁</button>
+    <button title="Launch in a new tab" onclick={() => launch()} disabled={!app}>↗</button>
+  </nav>
 
   <main class="canvas">
     {#if !app}
-      <div class="empty-main">Select or create an app to design.</div>
+      <div class="empty">
+        <p><strong>App Design</strong></p>
+        <p>Open a <code>.app</code> file (📂) or start a New one (＋).</p>
+        <p class="dim">Files live wherever you like — the working set is in <code>~/Desktop/SAMPLE</code>.</p>
+      </div>
     {:else}
-      <div class="toolbar">
-        <strong>{app.title ?? currentId}</strong>
-        <span class="ext">{currentId}.app</span>
-        <button class="tgl" onclick={() => (preview = !preview)}>{preview ? '✎ design' : '▶ preview'}</button>
-        <button class="save" onclick={() => save()}>Save .app</button>
-        <a class="launch" href={`/app/${currentId}`} target="_blank" rel="noopener">Launch ↗</a>
+      <div class="bar">
+        <strong>{app.title ?? idOf()}</strong>
+        <span class="fn">{fileName || `${idOf()}.app · unsaved`}</span>
+        <span class="mode">{preview ? 'preview' : 'design'}</span>
         {#if status}<span class="status">{status}</span>{/if}
       </div>
-      <div class="build-row">
+      <div class="build">
         <input bind:value={prompt} placeholder="describe what to build or change…" disabled={building}
           onkeydown={(e) => e.key === 'Enter' && build()} />
         <button class="ai" onclick={() => build()} disabled={building || !prompt.trim()}>✨ Build with AI</button>
       </div>
       <div class="work">
-        {#if preview}
-          <HarnessView {app} />
-        {:else}
-          <VisualEditor {app} />
-        {/if}
+        {#if preview}<HarnessView {app} />{:else}<VisualEditor {app} />{/if}
       </div>
     {/if}
   </main>
+
+  <input bind:this={inputEl} type="file" accept=".app,application/json" style="display:none" onchange={onPick} />
 </div>
 
 <style>
-  .studio { position: fixed; inset: 0; display: grid; grid-template-columns: 240px 1fr; font: 13px system-ui, Arial, sans-serif; color: #0f172a; background: #fff; }
-  .sidebar { border-right: 1px solid #e5e7eb; background: #f8fafc; display: flex; flex-direction: column; padding: 12px; gap: 10px; overflow: auto; }
-  .sidebar h2 { margin: 0; font-size: 15px; }
-  .new { display: flex; gap: 6px; }
-  .new input { flex: 1; min-width: 0; padding: 5px 7px; border: 1px solid #cbd5e1; border-radius: 6px; }
-  .new button { padding: 5px 10px; border: 1px solid #0369a1; border-radius: 6px; background: #0369a1; color: #fff; font-weight: 700; cursor: pointer; }
-  .sidebar ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; flex: 1; }
-  .sidebar li button { width: 100%; display: flex; justify-content: space-between; align-items: center; text-align: left; padding: 7px 9px; border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; cursor: pointer; }
-  .sidebar li button.on { border-color: #0369a1; background: #eff6ff; color: #0c4a6e; font-weight: 600; }
-  .sidebar li button span { color: #94a3b8; font: 11px ui-monospace, monospace; }
-  .sidebar .empty { color: #94a3b8; font-style: italic; padding: 6px 4px; }
-  .sidebar .foot { color: #64748b; text-decoration: none; font-size: 12px; }
+  .studio { position: fixed; inset: 0; display: grid; grid-template-columns: 52px 1fr; font: 13px system-ui, Arial, sans-serif; color: #0f172a; background: #fff; }
+  .rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; background: #0f172a; }
+  .rail button { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 17px; border: 0; border-radius: 8px; background: transparent; color: #e2e8f0; cursor: pointer; }
+  .rail button:hover:not(:disabled) { background: #1e293b; }
+  .rail button.on { background: #0369a1; color: #fff; }
+  .rail button:disabled { opacity: .35; cursor: default; }
+  .rail .sp { flex: 1; }
   .canvas { display: flex; flex-direction: column; min-width: 0; }
-  .empty-main { flex: 1; display: flex; align-items: center; justify-content: center; color: #94a3b8; font-style: italic; }
-  .toolbar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid #e5e7eb; }
-  .toolbar strong { font-size: 14px; }
-  .toolbar .ext { font: 12px ui-monospace, monospace; color: #94a3b8; }
-  .toolbar .tgl { margin-left: auto; }
-  .toolbar button { font: 600 11px system-ui; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
-  .toolbar .status { font-size: 11px; color: #16a34a; }
-  .build-row { display: flex; gap: 8px; padding: 8px 14px; border-bottom: 1px solid #eef2f6; background: #fafafa; }
-  .build-row input { flex: 1; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font: 13px system-ui; }
-  .build-row .ai { padding: 6px 12px; border: 1px solid #7c3aed; border-radius: 6px; background: #7c3aed; color: #fff; font: 600 12px system-ui; cursor: pointer; }
-  .build-row .ai:disabled { opacity: .5; cursor: default; }
+  .empty { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: #64748b; }
+  .empty p { margin: 0; }
+  .empty .dim { color: #94a3b8; font-size: 12px; }
+  .empty code { font: 12px ui-monospace, monospace; background: #f1f5f9; padding: 1px 5px; border-radius: 4px; }
+  .bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid #e5e7eb; }
+  .bar strong { font-size: 14px; }
+  .bar .fn { font: 12px ui-monospace, monospace; color: #94a3b8; }
+  .bar .mode { font: 600 10px system-ui; text-transform: uppercase; letter-spacing: .5px; color: #64748b; background: #f1f5f9; padding: 2px 7px; border-radius: 10px; }
+  .bar .status { margin-left: auto; font-size: 11px; color: #16a34a; }
+  .build { display: flex; gap: 8px; padding: 8px 14px; border-bottom: 1px solid #eef2f6; background: #fafafa; }
+  .build input { flex: 1; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font: 13px system-ui; }
+  .build .ai { padding: 6px 12px; border: 1px solid #7c3aed; border-radius: 6px; background: #7c3aed; color: #fff; font: 600 12px system-ui; cursor: pointer; }
+  .build .ai:disabled { opacity: .5; cursor: default; }
   .work { flex: 1; min-height: 0; overflow: auto; }
 </style>

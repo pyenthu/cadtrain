@@ -2,7 +2,13 @@
   import '../app.css'; // Tailwind directives — kept so flowbite-svelte
   // components (used by /vocab + future pages) still pick up their classes.
   import NavMenu from '$lib/shared/ui/NavMenu.svelte';
+  import { page } from '$app/stores';
   let { children } = $props();
+  // Hide the global NavMenu on the app-harness routes — they own their chrome
+  // (the /app_design left rail; /app/[id] is a clean preview).
+  let hideNav = $derived(
+    $page.url.pathname === '/app_design' || $page.url.pathname.startsWith('/app/'),
+  );
 
   // Top Flowbite Navbar REMOVED (2026-06-09 — redundant with the
   // /primitives tab strip + per-page chrome). Navigation between pages
@@ -11,7 +17,7 @@
 </script>
 
 <div class="layout">
-  <NavMenu />
+  {#if !hideNav}<NavMenu />{/if}
   <main class="content">
     {@render children()}
   </main>
