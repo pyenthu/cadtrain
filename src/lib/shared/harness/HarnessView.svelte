@@ -47,9 +47,26 @@
     const row = L?.row != null ? `${L.row} / span ${h}` : `span ${h}`;
     return `grid-column: ${col}; grid-row: ${row};`;
   }
+
+  /** Theme → CSS variables (consistent palette; light/dark + accent from app.theme). */
+  function themeVars(t?: { mode?: 'light' | 'dark'; accent?: string }): string {
+    const dark = t?.mode === 'dark';
+    const v: Record<string, string> = {
+      '--h-bg': dark ? '#0f172a' : '#ffffff',
+      '--h-surface': dark ? '#1e293b' : '#ffffff',
+      '--h-head': dark ? '#111827' : '#fafafa',
+      '--h-border': dark ? '#334155' : '#e5e7eb',
+      '--h-text': dark ? '#e2e8f0' : '#0f172a',
+      '--h-muted': dark ? '#94a3b8' : '#64748b',
+      '--h-accent': t?.accent ?? '#0369a1',
+    };
+    return Object.entries(v)
+      .map(([k, val]) => `${k}:${val}`)
+      .join(';');
+  }
 </script>
 
-<div class="harness">
+<div class="harness" style={themeVars(app.theme)}>
   <header class="harness-head">
     <strong>{app.title ?? app.app}</strong>
     <span class="tag">.app · {app.panels.length} panels</span>
@@ -66,12 +83,12 @@
 </div>
 
 <style>
-  .harness { display: flex; flex-direction: column; height: 100%; font: 13px/1.4 system-ui, Arial, sans-serif; color: #0f172a; }
-  .harness-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
-  .harness-head .tag { color: #64748b; font-size: 11px; }
+  .harness { display: flex; flex-direction: column; height: 100%; font: 13px/1.4 system-ui, Arial, sans-serif; color: var(--h-text); background: var(--h-bg); }
+  .harness-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--h-border); background: var(--h-head); }
+  .harness-head .tag { color: var(--h-muted); font-size: 11px; }
   .harness-grid { display: grid; grid-template-columns: repeat(12, 1fr); grid-auto-rows: minmax(120px, auto); gap: 12px; padding: 12px; flex: 1; min-height: 0; align-content: start; overflow: auto; }
-  .panel { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; display: flex; flex-direction: column; overflow: hidden; min-height: 120px; }
-  .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-bottom: 1px solid #eef2f6; background: #fafafa; font-weight: 600; }
-  .panel-head .kind { font: 600 10px system-ui; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; }
+  .panel { border: 1px solid var(--h-border); border-radius: 8px; background: var(--h-surface); display: flex; flex-direction: column; overflow: hidden; min-height: 120px; }
+  .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-bottom: 1px solid var(--h-border); background: var(--h-head); font-weight: 600; }
+  .panel-head .kind { font: 600 10px system-ui; text-transform: uppercase; letter-spacing: .4px; color: var(--h-muted); }
   .panel-body { padding: 10px; overflow: auto; flex: 1; }
 </style>
