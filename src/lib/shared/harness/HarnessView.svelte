@@ -3,7 +3,7 @@
   // via the PanelKind registry → wires every control/source to dispatch(). Knows
   // NOTHING about wells: all wells-ness lives in the .app + the verbs.
   // See docs/architecture/app-harness.md §6.
-  import type { AppManifest, Binding } from '$lib/appkit/manifest/types';
+  import type { AppManifest, Binding, EventMap } from '$lib/appkit/manifest/types';
   import { dispatch } from '$lib/appkit/verbs/dispatch';
   import { resolveArgs } from '$lib/appkit/manifest/refs';
   import PanelNode from './panels/PanelNode.svelte';
@@ -22,6 +22,15 @@
     if (!binding) return;
     const args = resolveArgs(binding.args, { active, item, params });
     return dispatch(binding.verb, args, { appStore: app as any, engine });
+  }
+
+  /** Fire a node's declarative event: run on[event] as a SEQUENCE (single or array),
+   *  in order. `on: { click: [{verb:'save'}, {verb:'bake'}] }`. */
+  async function fire(node: { on?: EventMap } | undefined, event: string, item?: unknown): Promise<void> {
+    const spec = node?.on?.[event];
+    if (!spec) return;
+    const list = Array.isArray(spec) ? spec : [spec];
+    for (const b of list) await run(b, item);
   }
 
   /** Select a doc (a list click): make it active + load its params → the form
@@ -75,7 +84,7 @@
     {#each app.panels as panel (panel.id)}
       <section class="panel" style={gridStyle(panel.layout)}>
         <div class="panel-head">{panel.title ?? panel.id}<span class="kind">{panel.kind}</span></div>
-        <div class="panel-body"><PanelNode node={panel} {run} {select} {active} {params} {onBuild} /></div>
+        <div class="panel-body"><PanelNode node={panel} {run} {fire} {select} {active} {params} {onBuild} /></div>
       </section>
     {/each}
   </div>

@@ -9,6 +9,10 @@ export interface Binding {
   args?: Record<string, unknown>;
 }
 
+/** Declarative event wiring: event name (click · select · change · …) → an action
+ *  (a verb binding) or a SEQUENCE of actions run in order. Wired by the harness. */
+export type EventMap = Record<string, Binding | Binding[]>;
+
 export interface Control {
   id?: string;
   /** 'button' | 'table' | 'field' | … (rendered by the panel component). */
@@ -20,6 +24,8 @@ export interface Control {
   onEdit?: Binding;
   add?: Binding;
   onClick?: Binding;
+  /** Declarative events (click · change · …) → action(s). */
+  on?: EventMap;
   [k: string]: unknown;
 }
 
@@ -34,6 +40,8 @@ export interface Panel {
   controls?: Control[];
   /** Component props (typed per the component's meta schema). */
   props?: Record<string, unknown>;
+  /** Declarative events (click · select · change · …) → action(s). */
+  on?: EventMap;
   /** Nested child components — rendered recursively (HTML-style encapsulation). */
   children?: Panel[];
   /** Grid placement (Track A) — column/row start + span. */

@@ -8,6 +8,7 @@ import PlaceholderPanel from './PlaceholderPanel.svelte';
 import ChatPanel from './ChatPanel.svelte';
 import Bake3dPanel from './Bake3dPanel.svelte';
 import Container from './Container.svelte';
+import Button from './Button.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: ListPanel,
@@ -19,6 +20,7 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   svg: PlaceholderPanel,
   container: Container, // holds children (nesting) — transparent wrapper
   card: Container, // holds children — bordered surface
+  button: Button, // fires on.click (a verb binding or a sequence)
 };
 
 export function panelComponent(kind: string): Component<any> {

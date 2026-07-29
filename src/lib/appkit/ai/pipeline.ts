@@ -69,6 +69,7 @@ function systemPrompt(app: AppDoc, grounding = ''): string {
     'A panel has a "kind" (list, form, table, bake3d, svg, text, chat, container, card) and may carry a "source" binding {verb, args} plus "controls".',
     'A binding references a data/mutate verb by NAME; args may use $active (the selected doc), $item (a list row), or $params (the doc params).',
     'A panel may carry "props" (typed per its kind) and "children" (nested panels — HTML-style encapsulation). A "container"/"card" panel HOLDS children: e.g. a card with children [{kind:"text", props:{text:"Casings", weight:600, size:"lg"}}, {kind:"table", ...}]. Nest freely to group related components.',
+    'A "button" panel fires declarative events: on:{ click: {verb,args} } or a SEQUENCE on:{ click: [{verb:"save"},{verb:"bake"}] } run in order. props:{label, variant:"ghost"?}. Any node may carry an "on" event map.',
     'Grid placement: a panel may carry "layout" {col,row,w,h} (12-column grid; w = column span). A theme: app.theme {mode:"light"|"dark", accent:"#hex"}.',
     '',
     'Verbs you can REFERENCE in bindings (only CALL the gui ones):',
