@@ -17,6 +17,8 @@ export interface BuildOpts {
   model?: string;
   engine?: AppEngine;
   maxSteps?: number;
+  /** Few-shot grounding from past builds (rung 4a.2 learning loop). */
+  grounding?: string;
 }
 
 export interface BuildResult {
@@ -27,7 +29,7 @@ export interface BuildResult {
 
 /** Run the Build stage: the model calls the GUI verbs to compose the .app. */
 export async function buildApp(opts: BuildOpts): Promise<BuildResult> {
-  const { prompt, app, apiKey, model = 'claude-sonnet-4-6', engine, maxSteps = 14 } = opts;
+  const { prompt, app, apiKey, model = 'claude-sonnet-4-6', engine, maxSteps = 14, grounding = '' } = opts;
   const ctx: Ctx = { appStore: app, engine };
 
   // Only the GUI verbs are CALLABLE (they mutate the .app). data/mutate verbs are
@@ -45,7 +47,7 @@ export async function buildApp(opts: BuildOpts): Promise<BuildResult> {
   const anthropic = createAnthropic({ apiKey });
   const result = await generateText({
     model: anthropic(model),
-    system: systemPrompt(app),
+    system: systemPrompt(app, grounding),
     prompt,
     tools: tools as any,
     stopWhen: stepCountIs(maxSteps),
@@ -55,9 +57,10 @@ export async function buildApp(opts: BuildOpts): Promise<BuildResult> {
   return { app, steps: result.steps?.length ?? 0, text: result.text ?? '' };
 }
 
-function systemPrompt(app: AppDoc): string {
+function systemPrompt(app: AppDoc, grounding = ''): string {
   const cur = { app: app.app, title: app.title, panels: (app.panels ?? []).map((p: any) => ({ id: p.id, kind: p.kind })) };
   return [
+    ...(grounding ? [grounding, ''] : []),
     'You build a declarative app GUI by CALLING the provided gui tools (definePanel, addControl, bindAction, patchApp).',
     'The app is a .app manifest { app, title, panels[], popovers[] }; you edit THIS app in place via the tools.',
     'A panel has a "kind" (list, form, table, bake3d, svg, text, chat) and may carry a "source" binding {verb, args} plus "controls".',
