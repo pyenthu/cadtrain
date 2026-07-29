@@ -141,20 +141,34 @@ Two AIs, two doc diets (D6, refined for codegen):
 - **Dev-time** (us/Claude building components) → the full `llms-full.txt` as reference.
 - **Action:** vendor `svelte.dev/llms-small.txt` → `docs/vendor/svelte-llms.txt`.
 
-## Sequencing (incremental — user priority 2026-07-29)
+## Sequencing (incremental — user priority 2026-07-29)  →  SHIPPED 2026-07-29
 
 - ✅ **Step 1a/b** — manifest `files/doc/theme/layout` + Text/Doc views.
-- ▶ **Step 1c** — volume-backed `AppCorpusStore` (read/write the RAG on the volume). *(pending)*
-- Then, **one increment at a time** (each: build-green + browser-verify + commit):
-  1. **Grid layout** — render panel `layout {col,row,w,h}` in a responsive grid.
-  2. **Consistent CSS + theme** — Tailwind/Flowbite look + the `theme` field.
-  3. **Component model** — `props` (+ per-component editors) · `children` (nested tree render).
-  4. **Events** — the `on` map + action sequences.
-  5. **Declarative variables** — `computed` expressions (reuse `graph/expr`).
-  6. **API calls** — generic `http`/engine verbs.
-  7. **`app_components/` reorg + registry** — first-class dir + catalog metadata.
-  8. **Component search bar** — search the catalog to add components.
-  9. **More custom components** — grow the catalog (Table · Tabs · Toolbar · File · Card · Chart…).
+- ✅ **Step 1c** — volume-backed `AppCorpusStore` (`server/app-corpus-store.ts`): the RAG at
+  `<volume>/ai/app-rag/` (builds.jsonl log + curated `golden/<name>.{md,app}` DB), prod-shared,
+  pluggable (`CADTRAIN_APP_CORPUS` = local). `buildGrounding` ranks golden→builds; `promoteGolden`
+  ready for the "★ add to RAG" button. `5485769`.
+- Each increment shipped build-green + committed:
+  1. ✅ **Grid layout** — `layout {col,row,w,h}` in a 12-col responsive grid. `46a4a7a`
+  2. ✅ **Consistent CSS + theme** — CSS-var palette + light/dark + accent (`theme`). `227f1e4`
+  3. ✅ **Component model** — `props` + `children` (recursive PanelNode; container/card). `9f0a700`
+  4. ✅ **Events** — the `on` map + action sequences (fire()) + Button. `5722de8`
+  5. ✅ **Declarative variables** — `computed` (safe interpreter `manifest/compute.ts`; `$vars`). `012b7e0`
+  6. ✅ **API calls** — the `http` verb (+ `loadData` slot verb). `a9cbfcc`
+  7. ✅ **Catalog registry** — `appkit/catalog/` (component metadata + verb projection = the SDK). `046e041`
+  8. ✅ **Component search bar** — VisualEditor searches the catalog to add components. `a4a2e85`
+  9. ✅ **More components** — grid · tabs · toolbar (`56d08b2`); **File + file-slots** data model (`c011018`).
+
+### Remaining follow-ups (not yet built)
+- **"★ add to RAG" button** — a `/api/app/promote` endpoint calling `promoteGolden(name, md, app)`
+  (the store method exists) + a rail button; auto-suggest MD from `autoDoc`.
+- **Per-component editors** (§0 bundles) — Table = Excel-like columns; a props panel driven by
+  each component's `meta.props` (the catalog already carries the schema).
+- **File in the VisualEditor** + a **slot picker** in the wiring UI (source → `loadData(slot)`).
+- **Dev-shares-prod corpus** — today the volume store is direct-FS (prod = shared; dev = `.dev-volume`
+  mirror). A proxy-backed read would let local dev see the live shared corpus too.
+- **`app_components/` physical relocation** — deferred; the headless catalog delivers discovery,
+  render/editor UI stays in `shared/harness`.
 
 ## Files (indicative)
 - `src/routes/app_design/+page.svelte` — rail view toggles (Design/Preview/Text/Doc).
