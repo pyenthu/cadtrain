@@ -1,6 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import HarnessView from '$lib/shared/harness/HarnessView.svelte';
+  import VisualEditor from '$lib/shared/harness/VisualEditor.svelte';
   import { createLocalStore } from '$lib/appkit/store/local-backend';
   import type { AppManifest } from '$lib/appkit/manifest/types';
 
@@ -12,6 +13,7 @@
   let app = $state<AppManifest | null>(null);
   let error = $state<string | null>(null);
   let saved = $state('');
+  let editMode = $state(false);
 
   $effect(() => {
     const _id = id;
@@ -53,6 +55,7 @@
   <div class="app-bar">
     <a class="back" href="/app">← apps</a>
     <span class="who">{id}.app</span>
+    <button class="mode" onclick={() => (editMode = !editMode)} disabled={!app}>{editMode ? '▶ preview' : '✎ edit'}</button>
     <button class="save" onclick={() => save()} disabled={!app}>Save .app</button>
     {#if saved}<span class="saved">{saved}</span>{/if}
   </div>
@@ -60,7 +63,11 @@
     {#if error}
       <div class="msg err">{error}</div>
     {:else if app}
-      <HarnessView {app} onBuild={build} />
+      {#if editMode}
+        <VisualEditor {app} />
+      {:else}
+        <HarnessView {app} onBuild={build} />
+      {/if}
     {:else}
       <div class="msg">Loading…</div>
     {/if}
@@ -72,7 +79,8 @@
   .app-bar { display: flex; align-items: center; gap: 12px; padding: 6px 12px; border-bottom: 1px solid #e5e7eb; background: #fff; font: 13px system-ui; }
   .app-bar .back { text-decoration: none; color: #64748b; }
   .app-bar .who { font: 600 12px ui-monospace, monospace; color: #0f172a; }
-  .app-bar .save { margin-left: auto; font: 600 11px system-ui; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
+  .app-bar .mode { margin-left: auto; font: 600 11px system-ui; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
+  .app-bar .save { font: 600 11px system-ui; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
   .app-bar .save:disabled { opacity: .5; cursor: default; }
   .app-bar .saved { font: 11px system-ui; color: #16a34a; }
   .app-body { flex: 1; min-height: 0; }
