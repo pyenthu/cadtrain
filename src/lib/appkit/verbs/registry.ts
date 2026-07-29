@@ -43,6 +43,10 @@ export interface AppEngine {
   list(opts?: { docType?: string; category?: string }): Promise<EngineDoc[]>;
   /** Bake a doc with params → geometry stats (rung 3b). Optional — not every engine bakes. */
   bake?(id: string, params?: Record<string, unknown>): Promise<{ ok: boolean; verts?: number; tris?: number }>;
+  /** A doc's source text (ENG-engine). */
+  getSource?(id: string): Promise<{ source: string }>;
+  /** Compile a doc → dep-inlined script + scriptHash (ENG-engine). */
+  compile?(id: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
 /** Runtime handles a verb handler may use. Optional so headless tests can dispatch

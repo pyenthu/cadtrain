@@ -76,6 +76,18 @@ describe('appkit verb registry (rung 1 — SSOT → schema → dispatch)', () =>
     await expect(dispatch('bake', { id: 'w2' }, { engine: { list: async () => [] } })).rejects.toThrow(/no bake/);
   });
 
+  it('engine ops: getSource + compile (ENG-engine)', async () => {
+    const engine = {
+      list: async () => [],
+      getSource: async (id: string) => ({ source: `export function ${id}(){}` }),
+      compile: async (_id: string) => ({ scriptHash: 'h' }),
+    };
+    const src = (await dispatch('getSource', { id: 'g_x' }, { engine })) as { source: string };
+    expect(src.source).toContain('export function g_x');
+    expect(await dispatch('compile', { id: 'g_x' }, { engine })).toMatchObject({ scriptHash: 'h' });
+    await expect(dispatch('getSource', { id: 'g_x' }, { engine: { list: async () => [] } })).rejects.toThrow(/no getSource/);
+  });
+
   it('errors clearly for unknown + unwired + engine-less verbs', async () => {
     await expect(dispatch('nope', {})).rejects.toThrow(/unknown verb/);
     await expect(dispatch('setParam', { id: 'x', name: 'a', value: 1 })).rejects.toThrow(/not wired/); // mutate: rung 3b+

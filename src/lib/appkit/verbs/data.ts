@@ -65,6 +65,32 @@ export const DATA_VERBS: Verb[] = [
     },
   },
   {
+    name: 'getSource',
+    group: 'data',
+    desc: "Get a document's TypeScript source.",
+    params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
+    handler: async (a: { id: string }, ctx) => {
+      const e = engine(ctx);
+      if (!e.getSource) throw new Error('appkit: engine has no getSource()');
+      return e.getSource(a.id);
+    },
+  },
+  {
+    name: 'compile',
+    group: 'data',
+    desc: 'Compile a document → the dep-inlined Manifold script + scriptHash.',
+    params: {
+      type: 'object',
+      properties: { id: { type: 'string' }, params: { type: 'object' } },
+      required: ['id'],
+    },
+    handler: async (a: { id: string; params?: Record<string, unknown> }, ctx) => {
+      const e = engine(ctx);
+      if (!e.compile) throw new Error('appkit: engine has no compile()');
+      return e.compile(a.id, a.params);
+    },
+  },
+  {
     name: 'listParts',
     group: 'data',
     desc: 'List volume parts, optionally filtered by category. Returns [{id, meta}].',
