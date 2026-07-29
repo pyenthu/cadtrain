@@ -245,4 +245,62 @@ every AI authoring run is feedback-logged; verified non-conformances promote int
 examples + verb desc + eval, re-indexed on Sync & Upgrade — all local · **D11** the RAG/feedback
 corpus is ONE provider-agnostic source of truth, shared by cloud + local (retrieval runs upstream
 of the model); if vectors are added, a single standardized local embedding model keeps the index
-portable across both paths.
+portable across both paths · **D12** two-tier — ENGINES (`src/`, Claude/dev-built, complex:
+geometry Manifold/TF/BREP + primitives + any hard functionality) exposed as verbs; APPS (`.app`,
+runtime-AI-built, thin) DRAW + WIRE engines. The verb registry is the boundary · **D13** the verb
+registry = the COMPLETE API over the engines AND the app-builder; engine-verb coverage widens as
+engines grow · **D14** per-engine RAG/LLM — federated experts, not one monolith; each engine
+carries its own knowledge (authored with Claude) · **D15** the build pipeline is structured /
+progressive / deterministic and captures every build to the corpus → a learning system; iterate
+hello-world → wells · **D16** three authoring surfaces over ONE `.app`: AI chat · native visual
+editor (rung 4b) · the rendered harness.
+
+---
+
+## 12. Build-via-AI — the two-tier model (engines vs apps)
+
+**The boundary between the two tiers is the verb registry.**
+
+- **ENGINES** (`src/`, built by **Claude / dev-time**) — the complex, heavy functionality: the
+  geometry kernels (Manifold / TF / BREP), the primitives pipeline, any hard logic. Each is
+  exposed as **verbs** (its slice of the API). "Promote complex functionality into an engine" =
+  the D5 promotion path.
+- **APPS** (`.app`, built by the **runtime AI** from prompts) — thin, declarative GUIs that
+  **draw the engines and wire them together**. An app implements no complex logic; it composes
+  verbs (a panel's `source` / `onEdit` bindings) into a GUI.
+
+So: *Claude builds engines; the AI builds apps.* "The prompt makes the function build the app."
+For the AI to draw + wire freely, the registry must expose the **full** engine API — rung 3+ keeps
+widening that coverage (list · compile · bake · preview · save · the engine-specific ops).
+
+## 13. Per-engine RAG / LLM — federated experts
+
+Each engine carries its **own** RAG corpus (and optionally a specialized LLM / prompt) — a
+**federated-expert** model, not one monolithic RAG. When the builder uses an engine it grounds on
+*that* engine's knowledge. This scales: adding an engine adds its verbs **and** its knowledge,
+self-contained; the app-builder orchestrates across experts. Per-engine RAG/LLM is authored with
+**Claude** (dev-time); the registry ties each engine's verb-group to its corpus.
+
+## 14. The progressive, deterministic build pipeline + the learning system
+
+Not one freeform call — a **structured, progressive** recipe: ordered build-steps, each
+`retrieve engine RAG → focused prompt → call verbs → verify the fragment → capture`. Deterministic
+and reproducible. Every successful step is **captured** to the app-building corpus (seed:
+`_builds.jsonl`, written by `/api/app/generate`) → retrieval grounds **future** builds → the system
+**learns** to build apps and gets more deterministic over time (the D10/D11 flywheel applied to
+*building*). **Iterate hello-world → wells:** start from a text "hello world" app and progressively
+add panels (list → form/casings → survey → 3D bake) until it is the full wells app — against the
+reference layout we already have (this repo's `wells.app` + `/wells`, SVTC, wellnew).
+
+## 15. Authoring surfaces — three hands, one `.app`
+
+```
+        ┌── AI chat (the build pipeline) ──┐
+.app ◄──┼── native visual editor (rung 4b) ─┼──►  the rendered harness
+        └──────── all edit the ONE .app ─────┘
+```
+
+Rung 4b = a **native lightweight visual `.app` editor** (palette = the PanelKinds; drag-to-place;
+bind-control-to-verb) — mining **Svelte Visual Builder** (MIT, Svelte 5, host-owns AI/data/
+persistence) for patterns rather than adopting its page-model wholesale. AI and human co-edit the
+same manifest; the AI piece is our own pipeline (residency-safe).
