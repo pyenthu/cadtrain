@@ -3,7 +3,7 @@
 // SERVER-SIDE ONLY (imports the Vercel AI SDK). Uses the SAME verb registry (SSOT) →
 // AI SDK tools, so what the AI can do can never drift from the API. D8.
 import { generateText, tool, jsonSchema, stepCountIs } from 'ai';
-import { createAnthropic } from '@ai-sdk/anthropic';
+import { resolveModel, type Provider } from './providers';
 import { VERBS, verbsByGroup, type Ctx, type AppDoc, type AppEngine } from '../verbs/registry';
 import { dispatch } from '../verbs/dispatch';
 import { toApiMd } from '../schema/to-apimd';
@@ -13,8 +13,12 @@ export interface BuildOpts {
   prompt: string;
   /** The live .app — the AI mutates it in place via the gui verbs. */
   app: AppDoc;
-  apiKey: string;
+  /** Cloud key (required for provider 'cloud'; unused for 'local'). */
+  apiKey?: string;
   model?: string;
+  /** 'cloud' (Anthropic, default) or 'local' (Ollama) — rung 5. */
+  provider?: Provider;
+  baseURL?: string;
   engine?: AppEngine;
   maxSteps?: number;
   /** Few-shot grounding from past builds (rung 4a.2 learning loop). */
@@ -29,7 +33,7 @@ export interface BuildResult {
 
 /** Run the Build stage: the model calls the GUI verbs to compose the .app. */
 export async function buildApp(opts: BuildOpts): Promise<BuildResult> {
-  const { prompt, app, apiKey, model = 'claude-sonnet-4-6', engine, maxSteps = 14, grounding = '' } = opts;
+  const { prompt, app, apiKey, model, provider, baseURL, engine, maxSteps = 14, grounding = '' } = opts;
   const ctx: Ctx = { appStore: app, engine };
 
   // Only the GUI verbs are CALLABLE (they mutate the .app). data/mutate verbs are
@@ -44,9 +48,8 @@ export async function buildApp(opts: BuildOpts): Promise<BuildResult> {
     });
   }
 
-  const anthropic = createAnthropic({ apiKey });
   const result = await generateText({
-    model: anthropic(model),
+    model: resolveModel({ provider, apiKey, model, baseURL }),
     system: systemPrompt(app, grounding),
     prompt,
     tools: tools as any,

@@ -14,8 +14,11 @@ export const POST: RequestHandler = async ({ request }) => {
   const body = (await request.json().catch(() => null)) as { id?: string; prompt?: string } | null;
   if (!body?.id || !body.prompt) throw error(400, 'missing id or prompt');
 
+  const provider = env.APP_BUILD_PROVIDER === 'local' ? 'local' : 'cloud';
   const apiKey = env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw error(503, 'ANTHROPIC_API_KEY not set (cloud build). The local WebLLM path is rung 5.');
+  if (provider === 'cloud' && !apiKey) {
+    throw error(503, 'ANTHROPIC_API_KEY not set (cloud build). Set APP_BUILD_PROVIDER=local for a local Ollama model.');
+  }
 
   let path: string;
   try {
@@ -37,7 +40,15 @@ export const POST: RequestHandler = async ({ request }) => {
 
   let out;
   try {
-    out = await buildApp({ prompt: body.prompt, app: res.app as any, apiKey, grounding });
+    out = await buildApp({
+      prompt: body.prompt,
+      app: res.app as any,
+      grounding,
+      provider,
+      apiKey,
+      model: env.APP_BUILD_MODEL,
+      baseURL: env.OLLAMA_URL,
+    });
   } catch (e) {
     throw error(502, `build failed: ${String((e as any)?.message ?? e)}`);
   }

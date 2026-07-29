@@ -45,6 +45,7 @@
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.23",
+    "@ai-sdk/openai-compatible": "^3.0.16",
     "@anthropic-ai/sdk": "^0.88.0",
     "@codemirror/autocomplete": "^6.20.3",
     "@codemirror/commands": "^6.10.4",
