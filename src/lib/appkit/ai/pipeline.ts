@@ -7,6 +7,7 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { VERBS, verbsByGroup, type Ctx, type AppDoc, type AppEngine } from '../verbs/registry';
 import { dispatch } from '../verbs/dispatch';
 import { toApiMd } from '../schema/to-apimd';
+import { sanitizeApp } from './sanitize';
 
 export interface BuildOpts {
   prompt: string;
@@ -50,6 +51,7 @@ export async function buildApp(opts: BuildOpts): Promise<BuildResult> {
     stopWhen: stepCountIs(maxSteps),
   });
 
+  sanitizeApp(app); // drop any hallucinated-verb bindings the model emitted
   return { app, steps: result.steps?.length ?? 0, text: result.text ?? '' };
 }
 
@@ -66,6 +68,7 @@ function systemPrompt(app: AppDoc): string {
     '',
     `Current app: ${JSON.stringify(cur)}`,
     '',
+    'A TEXT panel carries a "text" field and NO source. Only reference verbs that appear in the guide above — NEVER invent a verb name (e.g. there is no "static" verb).',
     'Guidance: a data app usually wants a list panel (source listDocs, onSelect loadDoc), a form panel (source getParams with id:"$active") holding a table control bound to a list<record> param with an add verb, and a bake3d panel (source bake, id:"$active"). Keep panel ids short. Do NOT explain — just call the tools to build what the user asked for.',
   ].join('\n');
 }

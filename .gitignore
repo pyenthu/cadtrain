@@ -136,3 +136,8 @@ test-results/
 # Screenshot handoff copies (scripts/last-shots.sh) — transient, hand to Read
 .shots/
 .route-c-backup/
+
+# App-harness generated artifacts (build corpus + atomic-save temp + throwaway apps)
+_builds.jsonl
+*.app.tmp
+**/examples/_*.app
