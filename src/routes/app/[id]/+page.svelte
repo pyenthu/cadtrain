@@ -33,6 +33,20 @@
       saved = String(e);
     }
   }
+
+  // The AI-build surface: a prompt → /api/app/build → the AI calls gui verbs → the
+  // returned manifest replaces `app`, so the harness re-renders what the AI built.
+  async function build(prompt: string) {
+    const r = await fetch('/api/app/generate', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id, prompt }),
+    });
+    if (!r.ok) throw new Error(await r.text());
+    const j = await r.json();
+    app = j.app;
+    saved = `AI built (${j.steps} steps)`;
+  }
 </script>
 
 <div class="app-shell">
@@ -46,7 +60,7 @@
     {#if error}
       <div class="msg err">{error}</div>
     {:else if app}
-      <HarnessView {app} />
+      <HarnessView {app} onBuild={build} />
     {:else}
       <div class="msg">Loading…</div>
     {/if}
