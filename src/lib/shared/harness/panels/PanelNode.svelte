@@ -35,4 +35,9 @@
   {/each}
 {/snippet}
 
-<Comp panel={node} {run} {fire} {select} {active} {params} {vars} {onBuild} {kids} />
+<!-- renderChild: render ONE child node (for components like Tabs that show a subset). -->
+{#snippet renderChild(child: Panel)}
+  <PanelNode node={child} {run} {fire} {select} {active} {params} {vars} {onBuild} />
+{/snippet}
+
+<Comp panel={node} {run} {fire} {select} {active} {params} {vars} {onBuild} {kids} {renderChild} />

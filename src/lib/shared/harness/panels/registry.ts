@@ -9,11 +9,15 @@ import ChatPanel from './ChatPanel.svelte';
 import Bake3dPanel from './Bake3dPanel.svelte';
 import Container from './Container.svelte';
 import Button from './Button.svelte';
+import Tabs from './Tabs.svelte';
+import Toolbar from './Toolbar.svelte';
+import Table from './Table.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: ListPanel,
   form: FormPanel,
-  table: FormPanel, // a table panel is a form with a single table control
+  table: FormPanel, // an editable list<record> table (a form with a table control)
+  grid: Table, // a read-only data GRID from any source (http/data verb)
   text: TextPanel,
   chat: ChatPanel, // the AI-build surface
   bake3d: Bake3dPanel, // bakes the active doc → stats (interactive canvas = follow-up)
@@ -21,6 +25,8 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   container: Container, // holds children (nesting) — transparent wrapper
   card: Container, // holds children — bordered surface
   button: Button, // fires on.click (a verb binding or a sequence)
+  tabs: Tabs, // tabbed container — children are tabs
+  toolbar: Toolbar, // horizontal row of children (buttons)
 };
 
 export function panelComponent(kind: string): Component<any> {
