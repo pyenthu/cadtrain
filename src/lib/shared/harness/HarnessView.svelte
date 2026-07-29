@@ -7,9 +7,12 @@
   import { dispatch } from '$lib/appkit/verbs/dispatch';
   import { resolveArgs } from '$lib/appkit/manifest/refs';
   import { panelComponent } from './panels/registry';
+  import { createClientEngine } from './client-engine';
 
   let { app }: { app: AppManifest } = $props();
 
+  // The CLIENT engine — data verbs read real parts via /api/primitives/list.
+  const engine = createClientEngine();
   // Runtime scope for $active / $item / $params refs in bindings.
   let active = $state<string | undefined>(undefined);
   let params = $state<Record<string, unknown>>({});
@@ -19,7 +22,21 @@
   async function run(binding: Binding | undefined, item?: unknown): Promise<unknown> {
     if (!binding) return;
     const args = resolveArgs(binding.args, { active, item, params });
-    return dispatch(binding.verb, args, { appStore: app as any });
+    return dispatch(binding.verb, args, { appStore: app as any, engine });
+  }
+
+  /** Select a doc (a list click): make it active + load its params → the form
+   *  panel re-renders with that doc's real params. */
+  async function select(item: any): Promise<void> {
+    const id = item?.id;
+    if (!id) return;
+    active = id;
+    try {
+      const r = (await dispatch('loadDoc', { id }, { engine })) as { params?: Record<string, unknown> };
+      params = r?.params ?? {};
+    } catch {
+      params = {};
+    }
   }
 
   // Proof that the gui-verb loop works end-to-end: definePanel mutates the live .app
@@ -45,7 +62,7 @@
       {@const Comp = panelComponent(panel.kind)}
       <section class="panel">
         <div class="panel-head">{panel.title ?? panel.id}<span class="kind">{panel.kind}</span></div>
-        <div class="panel-body"><Comp {panel} {run} /></div>
+        <div class="panel-body"><Comp {panel} {run} {select} {active} {params} /></div>
       </section>
     {/each}
   </div>

@@ -45,6 +45,17 @@ describe('appkit verb registry (rung 1 — SSOT → schema → dispatch)', () =>
     expect(app.popovers[0].id).toBe('x');
   });
 
+  it('data verbs read through an injected engine (rung 3)', async () => {
+    const engine = {
+      list: async () => [{ id: 'w1', name: 'Well 1', params: { casings: [{ od: 9.625 }] } }],
+    };
+    expect(await dispatch('listDocs', { docType: 'well' }, { engine })).toEqual([{ id: 'w1', title: 'Well 1' }]);
+    expect(await dispatch('getParams', { id: 'w1' }, { engine })).toEqual({ casings: [{ od: 9.625 }] });
+    expect(await dispatch('loadDoc', { id: 'w1' }, { engine })).toEqual({ id: 'w1', params: { casings: [{ od: 9.625 }] } });
+    await expect(dispatch('getParams', { id: 'nope' }, { engine })).rejects.toThrow(/no doc/);
+    await expect(dispatch('listDocs', {}, {})).rejects.toThrow(/needs an engine/);
+  });
+
   it('errors clearly for unknown + unwired verbs', async () => {
     await expect(dispatch('nope', {})).rejects.toThrow(/unknown verb/);
     await expect(dispatch('bake', { id: 'g_x' })).rejects.toThrow(/not wired/);

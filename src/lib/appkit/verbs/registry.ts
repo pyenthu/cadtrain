@@ -28,13 +28,28 @@ export interface AppDoc {
   [k: string]: unknown;
 }
 
-/** Runtime handles a verb handler may use. Optional for now (filled in as later
- *  layers land) so headless tests can dispatch with a partial Ctx. */
+/** A document the engine can enumerate (a volume part / well). */
+export interface EngineDoc {
+  id: string;
+  name?: string;
+  params?: Record<string, unknown>;
+  source?: string;
+}
+
+/** The capability the data/mutate verbs call — INJECTED by the environment (a client
+ *  engine that fetches /api/primitives/*, or a server engine in the AI loop). Keeps
+ *  the verbs pure + environment-agnostic. */
+export interface AppEngine {
+  list(opts?: { docType?: string; category?: string }): Promise<EngineDoc[]>;
+}
+
+/** Runtime handles a verb handler may use. Optional so headless tests can dispatch
+ *  with a partial Ctx. */
 export interface Ctx {
-  /** Load/patch a graph doc (Layer 3 + engine). */
+  /** Load/patch a graph doc (Layer 3 — mutate verbs; rung 3b). */
   docStore?: unknown;
-  /** Bake via /api/primitives/bake-preview. */
-  engine?: unknown;
+  /** Enumerate/bake docs — the injected engine (rung 3). */
+  engine?: AppEngine;
   /** The live `.app` being authored (store/). */
   appStore?: AppDoc;
 }
