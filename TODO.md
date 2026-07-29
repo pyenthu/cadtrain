@@ -38,7 +38,7 @@
 - **Material/texture** (deprioritized) — **#61** material system · **#63** SVG `<pattern>` textures · **#76** material texture map. *(Graph-wide default-colour chip PARKED — un-overridden parts keep the built-in red/grey fallback; re-add only if that annoys.)*
 - **#20 typed expression outputs** · **#11/#31 expression-as-builder + visual editor** · **#36 warp node** (repeat-as-sweep · varying-section r_sweep · spline as generic point-source · subpart colours).
 - **`w_multi_string_dev` — drop the 9 linear sections**, keep only the multi-part warp. (#986) ⚠ writes the shared prod volume — attended only.
-- **Section card = multiple inputs** — the `✂ section` (sectionCut) node accepts only ONE wired solid; make it take N inputs (section each / mirror the container's multi-input socket), single-input emit byte-identical. ⏸ WIP PRESERVED on branch `worktree-agent-a95a038b01eb94520` (`429fe4c`, code done + partial test) — agent died on the monthly spend limit. RESUME after reset: finish the multi-input test, build + vitest (baseline = 1 known brep-to-svg lambert fail), merge if green.
+- ✅ **Section card = multiple inputs** — DONE (merged `7e6c64b`): 0-1 solid byte-identical; ≥2 solids → each sectioned with the same wedge, kept as SEPARATE bodies (list producer, never fused). `cutaway.ts children[]` + emit + graph mutate API + multi-input socket UI. +7 tests (11/11 cutaway). Eyeball: drag a 2nd wire into the section input.
 - Smaller: Section "show cutter" wedge overlay · in-canvas controls screen-fixed · multi-input compact connectors · #18 r_surface_grid · #21 sweep_demo · #17 loop toolbar.
 
 ## /design + AI
