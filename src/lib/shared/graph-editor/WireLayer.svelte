@@ -550,17 +550,22 @@
                 {/each}
               {/if}
             {:else if n.type === 'cutaway'}
-              <!-- Cutaway modifier: the `solid` child wire (child output →
-                   left child socket, same as mv/rot/warp). `az`/`offset` are
+              <!-- Cutaway modifier: every wired `solid` fans into the ONE ×N
+                   left-edge socket (same compact pattern as warp). Each solid draws
+                   its own wire → its own click-to-delete hit-path (per-index, so
+                   deleting one of ≥2 removes just that solid). `az`/`offset` are
                    literals/params, not node refs, so there's no data wire. -->
-              {#if (n as any).child && graph.nodes[(n as any).child]}
-                {@const src = outSock((n as any).child)}
-                {@const tgt = inSock(n.id, 'child')}
-                {@const sw = mkWire({ kind: 'child', nodeId: n.id }, (n as any).child)}
-                {@const swKey = spliceWireKey(sw)}
-                <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
-                <path class="ge-wire-hit" class:splice-target={dragActive && spliceTargetKey === swKey} data-splice={JSON.stringify(sw)} data-splice-key={swKey} onpointerup={drop(sw)} d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit(sw.ref)}/>
-              {/if}
+              {@const cutKids = (Array.isArray((n as any).children) && (n as any).children.length) ? (n as any).children : ((n as any).child ? [(n as any).child] : [])}
+              {#each cutKids as kid, ki (ki)}
+                {#if kid && graph.nodes[kid]}
+                  {@const src = outSock(kid)}
+                  {@const tgt = inSock(n.id, cutKids.length > 1 ? `children[${ki}]` : 'child')}
+                  {@const sw = mkWire({ kind: 'cutaway-child', nodeId: n.id, index: ki }, kid)}
+                  {@const swKey = spliceWireKey(sw)}
+                  <path class="ge-wire child" d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} fill="none"/>
+                  <path class="ge-wire-hit" class:splice-target={dragActive && spliceTargetKey === swKey} data-splice={JSON.stringify(sw)} data-splice-key={swKey} onpointerup={drop(sw)} d={bezier(cardObstacles,src.x, src.y, tgt.x, tgt.y)} role="button" tabindex="-1" aria-label="delete connection" onclick={hit(sw.ref)}/>
+                {/if}
+              {/each}
             {:else if n.type === 'list' || n.type === 'stack' || n.type === 'group'}
               <!-- Container wires: each visible child of a container shows as
                    a bezier from the child's output socket → the container's

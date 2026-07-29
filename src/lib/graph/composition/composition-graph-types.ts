@@ -547,7 +547,17 @@ export type WarpNode = {
 export type CutawayNode = {
   id: NodeId;
   type: 'cutaway';
+  /** Legacy SINGLE child (one solid sectioned). Retained for byte-identical emit
+   *  of existing parts; new multi-input cutaways use `children[]`. When both are
+   *  present, `children` wins. Mirrors WarpNode's single↔multi shape. */
   child: NodeId | null;
+  /** MULTI-INPUT: section EACH wired solid SEPARATELY with the same wedge,
+   *  emitting `[sectionCut(a,{az,offset}), sectionCut(b,{az,offset}), …]` — a LIST
+   *  producer so the parent Stack / root spreads the sectioned parts as SEPARATE
+   *  bodies (they never compose, so a part inside a transparent open-hole stays
+   *  independent — same separate-parts rule as multi-input warp). Absent / ≤1
+   *  entry ⇒ the single `sectionCut(child,{…})` emit (byte-identical). */
+  children?: NodeId[];
   az: ArgValue;
   offset: ArgValue;
 };

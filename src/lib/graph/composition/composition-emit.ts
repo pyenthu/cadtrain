@@ -806,6 +806,10 @@ function computeListProducers(graph: Graph): Set<NodeId> {
     // array of per-part warps; the parent Stack / root `...`-spreads it so each
     // warped part stays a SEPARATE body (no compose → no fusion).
     if (n.type === 'warp' && Array.isArray((n as any).children) && (n as any).children.length > 1) set.add(n.id);
+    // A multi-input cutaway emits `[sectionCut(a,…), sectionCut(b,…)]` — a bare array
+    // of per-part sections; the parent Stack / root `...`-spreads it so each sectioned
+    // part stays a SEPARATE body (no compose → no fusion), same rule as multi warp.
+    if (n.type === 'cutaway' && Array.isArray((n as any).children) && (n as any).children.length > 1) set.add(n.id);
     // (Future: bare list nodes that aren't the root list, group containers, etc.)
   }
   // PROPAGATE through a SINGLE-child warp: `warpSpline(listChild, path)` maps the
