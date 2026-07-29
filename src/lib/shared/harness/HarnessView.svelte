@@ -6,6 +6,7 @@
   import type { AppManifest, Binding, EventMap } from '$lib/appkit/manifest/types';
   import { dispatch } from '$lib/appkit/verbs/dispatch';
   import { resolveArgs } from '$lib/appkit/manifest/refs';
+  import { evalComputed } from '$lib/appkit/manifest/compute';
   import PanelNode from './panels/PanelNode.svelte';
   import { createClientEngine } from './client-engine';
 
@@ -13,14 +14,18 @@
 
   // The CLIENT engine — data verbs read real parts via /api/primitives/list.
   const engine = createClientEngine();
-  // Runtime scope for $active / $item / $params refs in bindings.
+  // Runtime scope for $active / $item / $params / $vars refs in bindings.
   let active = $state<string | undefined>(undefined);
   let params = $state<Record<string, unknown>>({});
+
+  // Declarative computed variables — reactive over the live params scope. Referenced
+  // by bindings/props/text as $vars.<name> (manifest/compute.ts, reused everywhere).
+  const vars = $derived(evalComputed(app.computed, { params, active, ...params }));
 
   /** Resolve a binding's refs against the live scope, then dispatch it. */
   async function run(binding: Binding | undefined, item?: unknown): Promise<unknown> {
     if (!binding) return;
-    const args = resolveArgs(binding.args, { active, item, params });
+    const args = resolveArgs(binding.args, { active, item, params, vars });
     return dispatch(binding.verb, args, { appStore: app as any, engine });
   }
 
@@ -84,7 +89,7 @@
     {#each app.panels as panel (panel.id)}
       <section class="panel" style={gridStyle(panel.layout)}>
         <div class="panel-head">{panel.title ?? panel.id}<span class="kind">{panel.kind}</span></div>
-        <div class="panel-body"><PanelNode node={panel} {run} {fire} {select} {active} {params} {onBuild} /></div>
+        <div class="panel-body"><PanelNode node={panel} {run} {fire} {select} {active} {params} {vars} {onBuild} /></div>
       </section>
     {/each}
   </div>

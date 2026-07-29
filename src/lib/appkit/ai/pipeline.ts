@@ -71,6 +71,7 @@ function systemPrompt(app: AppDoc, grounding = ''): string {
     'A panel may carry "props" (typed per its kind) and "children" (nested panels — HTML-style encapsulation). A "container"/"card" panel HOLDS children: e.g. a card with children [{kind:"text", props:{text:"Casings", weight:600, size:"lg"}}, {kind:"table", ...}]. Nest freely to group related components.',
     'A "button" panel fires declarative events: on:{ click: {verb,args} } or a SEQUENCE on:{ click: [{verb:"save"},{verb:"bake"}] } run in order. props:{label, variant:"ghost"?}. Any node may carry an "on" event map.',
     'Grid placement: a panel may carry "layout" {col,row,w,h} (12-column grid; w = column span). A theme: app.theme {mode:"light"|"dark", accent:"#hex"}.',
+    'Computed variables: app.computed { name: "= formula" } (e.g. {"area":"= w * h", "label":"= \\"area=\\" + area"}) — arithmetic/logic; formulas reference the doc params by NAME directly (w, h, rows) or params.x, and earlier vars by name. Reference a computed value elsewhere as $vars.<name> (e.g. a text prop text:"$vars.area", or a binding arg).',
     '',
     'Verbs you can REFERENCE in bindings (only CALL the gui ones):',
     toApiMd(VERBS),

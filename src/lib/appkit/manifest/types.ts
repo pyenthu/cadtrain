@@ -72,6 +72,9 @@ export interface AppManifest {
   popovers?: Panel[];
   /** Data-file slots the app opens (§0.5). */
   files?: FileSlot[];
+  /** Declarative computed variables: name → "= formula" over params + earlier vars.
+   *  Evaluated reactively (manifest/compute.ts); referenced via $vars.<name>. */
+  computed?: Record<string, string>;
   /** Embedded Markdown doc — travels inside the .app; feeds the design-RAG.
    *  Auto-summarized from the structure when empty (manifest/doc.ts). */
   doc?: string;

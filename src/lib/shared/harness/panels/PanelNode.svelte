@@ -13,6 +13,7 @@
     select,
     active,
     params,
+    vars,
     onBuild,
   }: {
     node: Panel;
@@ -21,6 +22,7 @@
     select?: (item: unknown) => void;
     active?: string;
     params?: Record<string, unknown>;
+    vars?: Record<string, unknown>;
     onBuild?: (p: string) => Promise<void>;
   } = $props();
 
@@ -29,8 +31,8 @@
 
 {#snippet kids()}
   {#each node.children ?? [] as child (child.id)}
-    <PanelNode node={child} {run} {fire} {select} {active} {params} {onBuild} />
+    <PanelNode node={child} {run} {fire} {select} {active} {params} {vars} {onBuild} />
   {/each}
 {/snippet}
 
-<Comp panel={node} {run} {fire} {select} {active} {params} {onBuild} {kids} />
+<Comp panel={node} {run} {fire} {select} {active} {params} {vars} {onBuild} {kids} />

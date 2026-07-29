@@ -9,6 +9,8 @@ export interface RefScope {
   item?: unknown;
   /** The bound doc's live params. */
   params?: Record<string, unknown>;
+  /** Computed variables (the declarative `computed` block). */
+  vars?: Record<string, unknown>;
 }
 
 export function resolveArgs(
@@ -21,14 +23,19 @@ export function resolveArgs(
   return out;
 }
 
-function resolveRef(v: unknown, scope: RefScope): unknown {
+/** Walk a dotted path from a root; undefined-safe. Empty path → the root itself. */
+function walk(root: unknown, path: string): unknown {
+  if (!path) return root;
+  return path.split('.').reduce<any>((o, key) => (o == null ? undefined : o[key]), root);
+}
+
+/** Resolve a single value: a `$active/$item/$params/$vars[.path]` ref, else itself.
+ *  Exported so components can resolve `$vars.x` in their props/text. */
+export function resolveRef(v: unknown, scope: RefScope): unknown {
   if (typeof v !== 'string' || v[0] !== '$') return v;
   if (v === '$active') return scope.active;
   if (v === '$params') return scope.params;
-  if (v === '$item' || v.startsWith('$item.')) {
-    const path = v.slice('$item'.length).replace(/^\./, '');
-    if (!path) return scope.item;
-    return path.split('.').reduce<any>((o, key) => (o == null ? undefined : o[key]), scope.item);
-  }
+  if (v === '$item' || v.startsWith('$item.')) return walk(scope.item, v.slice('$item'.length).replace(/^\./, ''));
+  if (v === '$vars' || v.startsWith('$vars.')) return walk(scope.vars, v.slice('$vars'.length).replace(/^\./, ''));
   return v; // unknown $ref — leave as-is
 }

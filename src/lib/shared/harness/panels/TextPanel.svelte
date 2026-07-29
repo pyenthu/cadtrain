@@ -1,10 +1,17 @@
 <script lang="ts">
   // Text — honors typed props: text · size · weight · align · color · muted.
   // Props live on panel.props (component model); panel.text is the legacy shorthand.
+  // A text of "$vars.x" / "$params.y" shows the live computed/param value.
   import type { Panel } from '$lib/appkit/manifest/types';
-  let { panel }: { panel: Panel } = $props();
+  import { resolveRef } from '$lib/appkit/manifest/refs';
+  let {
+    panel,
+    params,
+    vars,
+  }: { panel: Panel; params?: Record<string, unknown>; vars?: Record<string, unknown> } = $props();
   const p = $derived((panel.props ?? {}) as Record<string, unknown>);
-  const text = $derived((p.text ?? panel.text ?? '(text)') as string);
+  const raw = $derived((p.text ?? panel.text ?? '(text)') as string);
+  const text = $derived(String(resolveRef(raw, { params, vars }) ?? ''));
   const style = $derived(
     [
       p.size ? `font-size:${sizePx(p.size as string)}` : '',
