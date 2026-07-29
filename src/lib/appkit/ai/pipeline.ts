@@ -72,6 +72,7 @@ function systemPrompt(app: AppDoc, grounding = ''): string {
     'A "button" panel fires declarative events: on:{ click: {verb,args} } or a SEQUENCE on:{ click: [{verb:"save"},{verb:"bake"}] } run in order. props:{label, variant:"ghost"?}. Any node may carry an "on" event map.',
     'Grid placement: a panel may carry "layout" {col,row,w,h} (12-column grid; w = column span). A theme: app.theme {mode:"light"|"dark", accent:"#hex"}.',
     'Computed variables: app.computed { name: "= formula" } (e.g. {"area":"= w * h", "label":"= \\"area=\\" + area"}) — arithmetic/logic; formulas reference the doc params by NAME directly (w, h, rows) or params.x, and earlier vars by name. Reference a computed value elsewhere as $vars.<name> (e.g. a text prop text:"$vars.area", or a binding arg).',
+    'API calls: the "http" verb calls any endpoint declaratively — wire it as a panel source {verb:"http", args:{url:"/api/...", pick:"items"}} or a button on.click {verb:"http", args:{url:"/api/...", method:"POST", body:{...}}}.',
     '',
     'Verbs you can REFERENCE in bindings (only CALL the gui ones):',
     toApiMd(VERBS),

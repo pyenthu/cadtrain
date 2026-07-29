@@ -4,6 +4,7 @@
 // (schema/to-aisdk.ts), the HTTP routes (routes/api/app/verb/[name]), and the
 // authoring guide (schema/to-apimd.ts). See docs/architecture/app-harness.md §2.
 import { DATA_VERBS } from './data';
+import { API_VERBS } from './api';
 import { MUTATE_VERBS } from './mutate';
 import { GUI_VERBS } from './gui';
 
@@ -72,7 +73,7 @@ export interface Verb<A = any, R = any> {
 }
 
 /** The assembled catalog. Every projection (schema / HTTP / API.md) reads from this. */
-export const VERBS: Verb[] = [...DATA_VERBS, ...MUTATE_VERBS, ...GUI_VERBS];
+export const VERBS: Verb[] = [...DATA_VERBS, ...API_VERBS, ...MUTATE_VERBS, ...GUI_VERBS];
 
 export function getVerb(name: string): Verb | undefined {
   return VERBS.find((v) => v.name === name);
