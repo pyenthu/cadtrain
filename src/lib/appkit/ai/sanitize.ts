@@ -16,12 +16,16 @@ function cleanBindings(o: any): void {
   for (const k of BINDING_KEYS) if (o[k] && !knownVerb(o[k])) delete o[k];
 }
 
-/** Drop unknown-verb bindings across panels + controls + popovers (mutates in place). */
+/** Recursively clean a panel node: its bindings + its controls + its nested children. */
+function cleanNode(p: any): void {
+  cleanBindings(p);
+  for (const c of (p?.controls as any[]) ?? []) cleanBindings(c);
+  for (const child of (p?.children as any[]) ?? []) cleanNode(child);
+}
+
+/** Drop unknown-verb bindings across panels (+ nested children) + controls + popovers (mutates in place). */
 export function sanitizeApp(app: AppDoc): AppDoc {
-  for (const p of (app.panels as any[]) ?? []) {
-    cleanBindings(p);
-    for (const c of (p.controls as any[]) ?? []) cleanBindings(c);
-  }
-  for (const p of (app.popovers as any[]) ?? []) cleanBindings(p);
+  for (const p of (app.panels as any[]) ?? []) cleanNode(p);
+  for (const p of (app.popovers as any[]) ?? []) cleanNode(p);
   return app;
 }

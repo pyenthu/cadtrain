@@ -32,6 +32,10 @@ export interface Panel {
   source?: Binding;
   onSelect?: Binding;
   controls?: Control[];
+  /** Component props (typed per the component's meta schema). */
+  props?: Record<string, unknown>;
+  /** Nested child components — rendered recursively (HTML-style encapsulation). */
+  children?: Panel[];
   /** Grid placement (Track A) — column/row start + span. */
   layout?: { col?: number; row?: number; w?: number; h?: number };
   [k: string]: unknown;

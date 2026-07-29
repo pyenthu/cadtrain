@@ -6,7 +6,7 @@
   import type { AppManifest, Binding } from '$lib/appkit/manifest/types';
   import { dispatch } from '$lib/appkit/verbs/dispatch';
   import { resolveArgs } from '$lib/appkit/manifest/refs';
-  import { panelComponent } from './panels/registry';
+  import PanelNode from './panels/PanelNode.svelte';
   import { createClientEngine } from './client-engine';
 
   let { app, onBuild }: { app: AppManifest; onBuild?: (prompt: string) => Promise<void> } = $props();
@@ -73,10 +73,9 @@
   </header>
   <div class="harness-grid">
     {#each app.panels as panel (panel.id)}
-      {@const Comp = panelComponent(panel.kind)}
       <section class="panel" style={gridStyle(panel.layout)}>
         <div class="panel-head">{panel.title ?? panel.id}<span class="kind">{panel.kind}</span></div>
-        <div class="panel-body"><Comp {panel} {run} {select} {active} {params} {onBuild} /></div>
+        <div class="panel-body"><PanelNode node={panel} {run} {select} {active} {params} {onBuild} /></div>
       </section>
     {/each}
   </div>
