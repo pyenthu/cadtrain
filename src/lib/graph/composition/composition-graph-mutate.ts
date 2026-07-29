@@ -1639,6 +1639,43 @@ export function setCutawayChild(graph: Graph, cutId: NodeId, childId: NodeId): G
   return setTransformChild(graph, cutId, childId);
 }
 
+/** Current solids wired into a cutaway — `children[]` if present, else legacy
+ *  `child` (mirrors warpKids / CutawayKind.cutawayChildren). */
+function cutawayKids(n: CutawayNode): NodeId[] {
+  if (Array.isArray(n.children) && n.children.length) return n.children.filter(Boolean) as NodeId[];
+  return n.child ? [n.child] : [];
+}
+
+/** Wire a solid into the cutaway's i-th input, GROWING `children[]` (multi-input,
+ *  mirrors setWarpChildAt). `index >= length` ⇒ APPEND (the drop slot). Keeps
+ *  `child` in sync as children[0] so any legacy single-`child` reader still sees a
+ *  solid; the kind descriptor prefers `children`. A single wired solid still emits
+ *  the byte-identical `sectionCut(child, {…})` (only ≥2 becomes the list-producer
+ *  array). */
+export function setCutawayChildAt(graph: Graph, cutId: NodeId, index: number, childId: NodeId): Graph {
+  return updateCutaway(graph, cutId, (n) => {
+    const kids = cutawayKids(n);
+    if (index >= kids.length) kids.push(childId); else kids[index] = childId;
+    return { ...n, children: kids, child: kids[0] ?? null };
+  });
+}
+
+/** Remove the cutaway's i-th input solid. Collapses back to a single `child`
+ *  (dropping the `children` array) when ≤1 remains, so the single-section emit
+ *  stays byte-identical (mirrors removeWarpChild). */
+export function removeCutawayChild(graph: Graph, cutId: NodeId, index: number): Graph {
+  return updateCutaway(graph, cutId, (n) => {
+    const kids = cutawayKids(n);
+    kids.splice(index, 1);
+    if (kids.length <= 1) {
+      const out = { ...n, child: kids[0] ?? null } as any;
+      delete out.children;
+      return out;
+    }
+    return { ...n, children: kids, child: kids[0] };
+  });
+}
+
 /** Set the cutaway's `az` — the angular sweep of the removed wedge (degrees;
  *  0 = no cut, 180 = half-section, 360 = full removal). An ArgValue so it can be
  *  literal / param / expr-driven. */
@@ -2449,6 +2486,14 @@ function warpSolidRefs(n: WarpNode): NodeId[] {
   return n.child ? [n.child] : [];
 }
 
+/** A cutaway's input solids — `children[]` (multi) when present, else the legacy
+ *  single `child` (mirrors CutawayKind.cutawayChildren so the delete scrub stays
+ *  in lockstep with what emit/validate read). */
+function cutawaySolidRefs(n: CutawayNode): NodeId[] {
+  if (Array.isArray(n.children) && n.children.length) return n.children.filter(Boolean) as NodeId[];
+  return n.child ? [n.child] : [];
+}
+
 /** True when removing everything in `gone` leaves `n` with NO producer input to
  *  act on — a transform/section/warp/method whose only solid vanishes is
  *  meaningless, so it cascade-deletes (the historical mv/rot/warp/cutaway/method
@@ -2460,12 +2505,16 @@ function orphanedByRemoval(n: GraphNode, gone: ReadonlySet<NodeId>): boolean {
   switch (n.type) {
     case 'mv': case 'rot':
       return gone.has((n as MvNode | RotNode).child);
-    case 'txfmn': case 'cutaway': {
-      const c = (n as TxfmnNode | CutawayNode).child;
+    case 'txfmn': {
+      const c = (n as TxfmnNode).child;
       return c != null && gone.has(c);
     }
     case 'warp': {
       const kids = warpSolidRefs(n as WarpNode);
+      return kids.length > 0 && kids.every((k) => gone.has(k));
+    }
+    case 'cutaway': {
+      const kids = cutawaySolidRefs(n as CutawayNode);
       return kids.length > 0 && kids.every((k) => gone.has(k));
     }
     case 'method': {
@@ -2490,13 +2539,13 @@ function exprRefsGone(expr: string, gone: ReadonlySet<NodeId>): boolean {
  *  surfaces as a `missing-node` broken-reference that greys Save). Pure — returns
  *  a NEW node only when something changed (untouched nodes keep identity). Covers
  *  every ref-bearing field shape the node kinds declare:
- *    • `children[]`  — list / stack / group / repeat (+ multi-input warp)
+ *    • `children[]`  — list / stack / group / repeat (+ multi-input warp / cutaway)
  *    • child-keyed override maps — stack `childRefs`/`childCounts`, repeat `partModifiers`
- *    • the legacy scalar warp `child`
+ *    • the legacy scalar warp / cutaway `child`
  *    • Call `__POLY__<id>` profile refs
  *    • polygon `points[]` / sketch `ops[]` `repeat-ref` + `expr-list-ref` sources
- *  (scalar `child`/`obj`/`arg` on mv/rot/txfmn/cutaway/method never reach here —
- *  those nodes orphan-cascade in `gone` instead). */
+ *  (scalar `child`/`obj`/`arg` on mv/rot/txfmn/method never reach here — those nodes
+ *  orphan-cascade in `gone` instead). */
 function scrubNodeRefs(n: GraphNode, gone: ReadonlySet<NodeId>): GraphNode {
   switch (n.type) {
     case 'list': case 'stack': case 'group': case 'repeat': {
@@ -2519,6 +2568,19 @@ function scrubNodeRefs(n: GraphNode, gone: ReadonlySet<NodeId>): GraphNode {
     }
     case 'warp': {
       const node = n as WarpNode;
+      const patch: Record<string, unknown> = {};
+      let changed = false;
+      if (Array.isArray(node.children)) {
+        const filtered = node.children.filter((c) => c && !gone.has(c));
+        if (filtered.length !== node.children.length) { patch.children = filtered; changed = true; }
+      }
+      if (node.child && gone.has(node.child)) { patch.child = null; changed = true; }
+      return changed ? ({ ...node, ...patch } as GraphNode) : n;
+    }
+    case 'cutaway': {
+      // Same multi-input scrub as warp: prune dead ids from `children[]` (a
+      // surviving cutaway that lost one of ≥2 solids) + null a dead legacy `child`.
+      const node = n as CutawayNode;
       const patch: Record<string, unknown> = {};
       let changed = false;
       if (Array.isArray(node.children)) {
@@ -2840,10 +2902,14 @@ export function topoOrder(graph: Graph): NodeId[] {
         : (node.child ? [node.child] : []);
       for (const c of kids) if (c) visit(c);
     } else if (node.type === 'cutaway') {
-      // Visit the sectioned solid first so its `const` emits before the
-      // `sectionCut(child, …)` call that consumes it (TDZ). `az`/`offset` are
-      // literals/params, not node refs, so nothing else to visit.
-      if (node.child) visit(node.child);
+      // Visit EACH sectioned solid first so its `const` emits before the
+      // `sectionCut(child, …)` call that consumes it (TDZ). A multi-input cutaway
+      // sections `children[]` (each separately); legacy single `child`. `az`/`offset`
+      // are literals/params, not node refs, so nothing else to visit.
+      const kids = (Array.isArray((node as any).children) && (node as any).children.length)
+        ? (node as any).children as NodeId[]
+        : (node.child ? [node.child] : []);
+      for (const c of kids) if (c) visit(c);
     } else if (node.type === 'repeat') {
       for (const c of node.children ?? []) visit(c);
     } else if (node.type === 'parts_table') {

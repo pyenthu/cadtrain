@@ -42,6 +42,7 @@ import {
   setSplinePointsExpr,
   setWarpPath,
   setWarpChildAt,
+  setCutawayChildAt,
   setPartsTableDataInput,
   bindMaterial,
   type Graph,
@@ -327,6 +328,20 @@ export class WireState {
     if (!from) return;
     if (from.kind === 'out' && from.nodeId !== warpId) {
       this.#setGraph(setWarpChildAt(this.#getGraph(), warpId, index, from.nodeId));
+    }
+    this.from = null; this.mouse = null;
+  };
+
+  /** Drop a solid onto a cutaway's i-th SOLID input socket (multi-input, mirrors
+   *  endWireOnWarpSolid). Any node OUTPUT can be sectioned; `index === current count`
+   *  = the append slot (grows children[]), else it rebinds that slot. ≥2 solids ⇒
+   *  each is sectioned SEPARATELY with the same wedge (no compose → no fusion). */
+  endWireOnCutawaySolid = (ev: PointerEvent, cutId: NodeId, index: number) => {
+    ev.stopPropagation();
+    const from = this.from;
+    if (!from) return;
+    if (from.kind === 'out' && from.nodeId !== cutId) {
+      this.#setGraph(setCutawayChildAt(this.#getGraph(), cutId, index, from.nodeId));
     }
     this.from = null; this.mouse = null;
   };

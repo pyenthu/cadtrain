@@ -761,6 +761,26 @@ function lowerWarpAround(
   };
 }
 
+/** Lower a CUTAWAY node given its ALREADY-LOWERED child instr — the shared core of
+ *  the single-child cutaway case in `lowerNode` AND the multi-input cutaway EXPANSION
+ *  (which lowers each child separately and re-wraps it). az≤0 ⇒ passthrough child
+ *  (no cut); az≥360 ⇒ Manifold returns empty() so TF passes the child through. Pure. */
+function lowerCutawayAround(
+  w: any,
+  childInst: TfInstr,
+  scope: Record<string, number>,
+  notes: string[],
+): TfInstr {
+  const az = evalArg(w.az, scope);
+  const offset = evalArg(w.offset, scope);
+  if (!(az > 0)) return childInst;
+  if (az >= 360) {
+    notes.push(`cutaway ${w.id}: az≥360 — Manifold returns empty(); TF passthrough child`);
+    return childInst;
+  }
+  return { op: 'cutaway', child: childInst, az, offset: Number.isFinite(offset) ? offset : 0 };
+}
+
 /** Per-ROW lowering of a `parts_table` — one synthetic Call instr per row, reusing
  *  the full engine/composite `lowerNode` path (so each row's cells flow into the
  *  template exactly as before). Returns the ordered row instrs, OR an `unsupported`
@@ -1211,21 +1231,10 @@ function lowerNode(
     }
 
     case 'cutaway': {
+      // Section the child with the authored wedge (shared `lowerCutawayAround`, the
+      // same core the multi-input cutaway EXPANSION reuses to re-wrap each part).
       const w = node as any;
-      const az = evalArg(w.az, scope);
-      const offset = evalArg(w.offset, scope);
-      const child = ref(w.child ?? '');
-      if (!(az > 0)) return child;
-      if (az >= 360) {
-        notes.push(`cutaway ${node.id}: az≥360 — Manifold returns empty(); TF passthrough child`);
-        return child;
-      }
-      return {
-        op: 'cutaway',
-        child,
-        az,
-        offset: Number.isFinite(offset) ? offset : 0,
-      };
+      return lowerCutawayAround(w, ref(w.child ?? ''), scope, notes);
     }
 
     case 'parts_map': {
@@ -1403,6 +1412,19 @@ function graphToTfInner(
       for (const c of node.children as NodeId[]) {
         for (const e of expandOutput(c)) {
           out.push({ instr: lowerWarpAround(single, e.instr, graph, scope, notes), appearance: e.appearance });
+        }
+      }
+      return out;
+    }
+    // (b′) a MULTI-INPUT cutaway → each child through expandOutput, each result
+    // re-wrapped in the single-child section (same wedge). Mirrors the Manifold emit
+    // (cutaway.ts) — each solid sectioned SEPARATELY, staying its OWN body.
+    if (node && node.type === 'cutaway' && Array.isArray(node.children) && node.children.length > 1) {
+      const single = { ...node, children: undefined };
+      const out: Expanded[] = [];
+      for (const c of node.children as NodeId[]) {
+        for (const e of expandOutput(c)) {
+          out.push({ instr: lowerCutawayAround(single, e.instr, scope, notes), appearance: e.appearance });
         }
       }
       return out;

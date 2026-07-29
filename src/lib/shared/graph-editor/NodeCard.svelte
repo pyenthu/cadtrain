@@ -1795,7 +1795,9 @@
 
               {:else if n.type === 'cutaway'}
                 {@const cu = n as any}
-                {@const cuChildWired = typeof cu.child === 'string' && !!cu.child && !!graph.nodes[cu.child]}
+                {@const cuKids = ((Array.isArray(cu.children) && cu.children.length) ? cu.children : (cu.child ? [cu.child] : [])).filter((k: string) => !!graph.nodes[k])}
+                {@const nSolids = cuKids.length}
+                {@const cuChildWired = nSolids > 0}
                 {@const azVal = cu.az?.kind === 'literal' ? Number(cu.az.value) : NaN}
                 {@const offVal = cu.offset?.kind === 'literal' ? Number(cu.offset.value) : NaN}
                 <!-- Cutaway / cross-section MODIFIER — subtracts an authored
@@ -1818,13 +1820,17 @@
                   class:armed={del.isArmed(n.id)}
                   data-tip={del.isArmed(n.id) ? 'Click again to delete' : 'Delete node'}
                   onpointerdown={(ev) => { ev.stopPropagation(); if (del.request(n.id)) onDeleteNode(n.id); }}>{del.isArmed(n.id) ? '✓' : '×'}</text>
-                <!-- SOLID (child) input — LEFT, CUTAWAY_CHILD_CY -->
-                <text x="14" y={CUTAWAY_CHILD_CY + 4} class="ge-cut-lbl" class:wired={cuChildWired}>solid</text>
+                <!-- SOLID(S) input — ONE compact ×N socket on the LEFT edge (mirrors
+                     warp #31): every wired solid fans into it (drop = APPEND another;
+                     remove a solid by clicking its wire → delete). ≥2 solids ⇒ each is
+                     sectioned SEPARATELY with the same wedge (no compose → no fusion).
+                     The ×N badge shows how many are wired. -->
+                <text x="14" y={CUTAWAY_CHILD_CY + 4} class="ge-cut-lbl" class:wired={cuChildWired}>solid{nSolids > 1 ? ` ×${nSolids}` : ''}</text>
                 <!-- svelte-ignore a11y_no_static_element_interactions -->
-                <circle role="button" tabindex="-1" class="ge-sock in child" class:wired={cuChildWired}
-                  cx="0" cy={CUTAWAY_CHILD_CY} r="6"
-                  data-tip="solid: wire the built part to section (any node's output)"
-                  onpointerup={(ev) => wire.endWireOnInput(ev, n.id, 'child')}/>
+                <ellipse role="button" tabindex="-1" class="ge-sock in child multi" class:wired={cuChildWired}
+                  cx="0" cy={CUTAWAY_CHILD_CY} rx="8" ry="6"
+                  data-tip="solids: wire one or MORE built parts to section with the SAME wedge (drop APPENDS another; each sectioned separately). Remove a solid by clicking its wire → Delete."
+                  onpointerup={(ev) => wire.endWireOnCutawaySolid(ev, n.id, cuKids.length)}/>
                 <!-- OPTS row: az (angular sweep) + offset (axial position) -->
                 <foreignObject x="10" y={CUTAWAY_CHILD_CY + 22} width={size.w - 16} height="34">
                   <div class="ge-cut-opts" xmlns="http://www.w3.org/1999/xhtml">

@@ -15,6 +15,7 @@ import {
   removeContainerChildAt,
   removeRepeatChildAt,
   removeWarpChild,
+  removeCutawayChild,
   unbindMaterial,
   setMethodInput,
   setTransformChild,
@@ -29,8 +30,9 @@ import {
 /** Identifies the ONE input slot a wire feeds — what "delete this wire" clears. */
 export type WireRef =
   | { kind: 'method'; nodeId: NodeId; slot: 'obj' | 'arg' }
-  | { kind: 'child'; nodeId: NodeId }                       // mv / rot / txfmn / cutaway single child
+  | { kind: 'child'; nodeId: NodeId }                       // mv / rot / txfmn single child
   | { kind: 'warp-child'; nodeId: NodeId; index: number }   // warp children[i] (or the single child)
+  | { kind: 'cutaway-child'; nodeId: NodeId; index: number } // cutaway children[i] (or the single child)
   | { kind: 'warp-path'; nodeId: NodeId }
   | { kind: 'repeat-child'; nodeId: NodeId; index: number }
   | { kind: 'container-child'; nodeId: NodeId; index: number }
@@ -50,6 +52,8 @@ export function unwireGraph(graph: Graph, ref: WireRef): Graph {
       return setTransformChild(graph, ref.nodeId, null as unknown as NodeId);
     case 'warp-child':
       return removeWarpChild(graph, ref.nodeId, ref.index);
+    case 'cutaway-child':
+      return removeCutawayChild(graph, ref.nodeId, ref.index);
     case 'warp-path':
       return setWarpPath(graph, ref.nodeId, null as unknown as never);
     case 'repeat-child':
@@ -96,6 +100,7 @@ export function describeWireRef(graph: Graph, ref: WireRef): string {
     case 'method': return `${ref.slot} input → ${nm(ref.nodeId)}`;
     case 'child': return `input → ${nm(ref.nodeId)}`;
     case 'warp-child': return `solid ${ref.index + 1} → warp`;
+    case 'cutaway-child': return `solid ${ref.index + 1} → section`;
     case 'warp-path': return `path → warp`;
     case 'repeat-child': return `part → repeat`;
     case 'container-child': return `output slot`;

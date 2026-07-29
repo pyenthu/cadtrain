@@ -505,8 +505,10 @@ export function inputSocketAt(graph: Graph, id: NodeId, slot: 'obj' | 'arg' | 'c
       return { x: p.x, y: p.y + warpSolidCY(i) };
     }
   }
-  // cutaway: the `solid` (child) input sits on the LEFT edge at CUTAWAY_CHILD_CY.
-  if (slot === 'child' && node.type === 'cutaway') {
+  // cutaway: `solid` inputs on the LEFT edge — the legacy single `child` OR the
+  // i-th multi-input slot `children[i]`, all fanning into ONE socket at
+  // CUTAWAY_CHILD_CY (mirrors warp's compact ×N socket; remove by clicking a wire).
+  if (node.type === 'cutaway' && (slot === 'child' || slot.startsWith('children['))) {
     return { x: p.x, y: p.y + CUTAWAY_CHILD_CY };
   }
   /* child (legacy left-edge for method/repeat) */

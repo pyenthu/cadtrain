@@ -12,7 +12,7 @@
  * for each structural wire (outSock(srcId)) alongside it.
  *
  * Only the node→node SOLID wires can be splice targets — `child` (mv / rot /
- * txfmn / cutaway / warp single child), `warp-child`, `method` (obj / arg),
+ * txfmn single child), `warp-child`, `cutaway-child`, `method` (obj / arg),
  * `container-child`, `repeat-child`. `warp-path` / `material` / `call-arg` are
  * NOT node→node solid wires you can insert a solid into, so they're rejected.
  *
@@ -23,6 +23,7 @@ import {
   setMethodInput,
   setTransformChild,
   setWarpChildAt,
+  setCutawayChildAt,
   setRepeatChildAt,
   setContainerChildAt,
   type Graph,
@@ -39,6 +40,7 @@ export type SpliceWire = { ref: WireRef; sourceId: NodeId };
 export function canSpliceInto(ref: WireRef): boolean {
   return ref.kind === 'child'
       || ref.kind === 'warp-child'
+      || ref.kind === 'cutaway-child'
       || ref.kind === 'method'
       || ref.kind === 'container-child'
       || ref.kind === 'repeat-child';
@@ -70,7 +72,7 @@ export function spliceWireKey(wire: SpliceWire): string {
   const r = wire.ref;
   const slot =
     r.kind === 'method' ? r.slot :
-    (r.kind === 'warp-child' || r.kind === 'container-child' || r.kind === 'repeat-child') ? String(r.index) :
+    (r.kind === 'warp-child' || r.kind === 'cutaway-child' || r.kind === 'container-child' || r.kind === 'repeat-child') ? String(r.index) :
     '';
   const nodeId = r.kind === 'material' ? r.partId : (r as { nodeId?: NodeId }).nodeId ?? '';
   return `${r.kind}:${nodeId}:${slot}:${wire.sourceId}`;
@@ -108,8 +110,9 @@ export function spliceNodeIntoWire(graph: Graph, draggedId: NodeId, wire: Splice
   // 1) Wire S → D (the dragged node's solid input = the old source).
   let g: Graph;
   if (D.type === 'warp') g = setWarpChildAt(graph, draggedId, 0, sourceId);
+  else if (D.type === 'cutaway') g = setCutawayChildAt(graph, draggedId, 0, sourceId);
   else if (D.type === 'method') g = setMethodInput(graph, draggedId, 'obj', sourceId);
-  else g = setTransformChild(graph, draggedId, sourceId); // mv / rot / txfmn / cutaway
+  else g = setTransformChild(graph, draggedId, sourceId); // mv / rot / txfmn
 
   // 2) Retarget T's slot → D (T now consumes D instead of S).
   switch (ref.kind) {
@@ -117,6 +120,8 @@ export function spliceNodeIntoWire(graph: Graph, draggedId: NodeId, wire: Splice
       return setTransformChild(g, ref.nodeId, draggedId);
     case 'warp-child':
       return setWarpChildAt(g, ref.nodeId, ref.index, draggedId);
+    case 'cutaway-child':
+      return setCutawayChildAt(g, ref.nodeId, ref.index, draggedId);
     case 'method':
       return setMethodInput(g, ref.nodeId, ref.slot, draggedId);
     case 'repeat-child':
