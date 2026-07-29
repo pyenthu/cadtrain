@@ -52,13 +52,17 @@ export const DATA_VERBS: Verb[] = [
   {
     name: 'bake',
     group: 'data',
-    desc: 'Bake a document with params → geometry + stats (via the engine).',
+    desc: 'Bake a document with params → geometry stats { verts, tris }.',
     params: {
       type: 'object',
       properties: { id: { type: 'string' }, params: { type: 'object' } },
       required: ['id'],
     },
-    handler: pending('bake'),
+    handler: async (a: { id: string; params?: Record<string, unknown> }, ctx) => {
+      const e = engine(ctx);
+      if (!e.bake) throw new Error('appkit: engine has no bake()');
+      return e.bake(a.id, a.params);
+    },
   },
   {
     name: 'listParts',

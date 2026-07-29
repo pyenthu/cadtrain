@@ -6,6 +6,7 @@ import FormPanel from './FormPanel.svelte';
 import TextPanel from './TextPanel.svelte';
 import PlaceholderPanel from './PlaceholderPanel.svelte';
 import ChatPanel from './ChatPanel.svelte';
+import Bake3dPanel from './Bake3dPanel.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: ListPanel,
@@ -13,7 +14,7 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   table: FormPanel, // a table panel is a form with a single table control
   text: TextPanel,
   chat: ChatPanel, // the AI-build surface
-  bake3d: PlaceholderPanel, // rung 3b: mount the 3D bake
+  bake3d: Bake3dPanel, // bakes the active doc → stats (interactive canvas = follow-up)
   svg: PlaceholderPanel,
 };
 

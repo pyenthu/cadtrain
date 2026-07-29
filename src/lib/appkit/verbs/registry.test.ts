@@ -70,9 +70,16 @@ describe('appkit verb registry (rung 1 — SSOT → schema → dispatch)', () =>
     await expect(dispatch('listDocs', {}, {})).rejects.toThrow(/needs an engine/);
   });
 
-  it('errors clearly for unknown + unwired verbs', async () => {
+  it('bake verb calls the engine (rung 3b)', async () => {
+    const engine = { list: async () => [], bake: async (id: string) => ({ ok: true, verts: 11538, tris: 3846, id }) };
+    expect(await dispatch('bake', { id: 'w2', params: {} }, { engine })).toMatchObject({ ok: true, verts: 11538, tris: 3846 });
+    await expect(dispatch('bake', { id: 'w2' }, { engine: { list: async () => [] } })).rejects.toThrow(/no bake/);
+  });
+
+  it('errors clearly for unknown + unwired + engine-less verbs', async () => {
     await expect(dispatch('nope', {})).rejects.toThrow(/unknown verb/);
-    await expect(dispatch('bake', { id: 'g_x' })).rejects.toThrow(/not wired/);
+    await expect(dispatch('setParam', { id: 'x', name: 'a', value: 1 })).rejects.toThrow(/not wired/); // mutate: rung 3b+
+    await expect(dispatch('bake', { id: 'g_x' })).rejects.toThrow(/needs an engine/); // wired, but no engine in ctx
     expect(getVerb('bake')?.group).toBe('data');
   });
 });

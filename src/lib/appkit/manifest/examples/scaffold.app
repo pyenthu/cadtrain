@@ -7,7 +7,9 @@
       "id": "chat",
       "kind": "chat",
       "title": "Build with AI",
-      "source": { "verb": "listPanelKinds" }
+      "source": {
+        "verb": "listPanelKinds"
+      }
     },
     {
       "id": "canvas",

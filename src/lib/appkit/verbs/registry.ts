@@ -41,6 +41,8 @@ export interface EngineDoc {
  *  the verbs pure + environment-agnostic. */
 export interface AppEngine {
   list(opts?: { docType?: string; category?: string }): Promise<EngineDoc[]>;
+  /** Bake a doc with params → geometry stats (rung 3b). Optional — not every engine bakes. */
+  bake?(id: string, params?: Record<string, unknown>): Promise<{ ok: boolean; verts?: number; tris?: number }>;
 }
 
 /** Runtime handles a verb handler may use. Optional so headless tests can dispatch
