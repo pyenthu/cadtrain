@@ -73,6 +73,7 @@ function systemPrompt(app: AppDoc, grounding = ''): string {
     'Grid placement: a panel may carry "layout" {col,row,w,h} (12-column grid; w = column span). A theme: app.theme {mode:"light"|"dark", accent:"#hex"}.',
     'Computed variables: app.computed { name: "= formula" } (e.g. {"area":"= w * h", "label":"= \\"area=\\" + area"}) — arithmetic/logic; formulas reference the doc params by NAME directly (w, h, rows) or params.x, and earlier vars by name. Reference a computed value elsewhere as $vars.<name> (e.g. a text prop text:"$vars.area", or a binding arg).',
     'API calls: the "http" verb calls any endpoint declaratively — wire it as a panel source {verb:"http", args:{url:"/api/...", pick:"items"}} or a button on.click {verb:"http", args:{url:"/api/...", method:"POST", body:{...}}}.',
+    'Data files (the app is STATELESS — data lives in files): declare app.files [{slot,type,label}]; add a "file" panel (props.slot) so the user opens a data file into that slot; wire any component source to it via {verb:"loadData", args:{slot:"well", pick?:"casings"}}. An app can have MULTIPLE slots.',
     '',
     'Verbs you can REFERENCE in bindings (only CALL the gui ones):',
     toApiMd(VERBS),

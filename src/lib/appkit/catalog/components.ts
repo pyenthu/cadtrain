@@ -145,6 +145,18 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
     acceptsChildren: true,
   },
   {
+    kind: 'file',
+    name: 'File',
+    description: 'Open / Save / Save As a DATA file into a slot (§0.5). Components read it via loadData.',
+    group: 'data',
+    tags: ['file', 'open', 'save', 'load', 'data', 'slot', 'import', 'picker'],
+    props: [
+      { name: 'slot', type: 'string', label: 'Slot', default: 'data' },
+      { name: 'label', type: 'string', label: 'Label' },
+      { name: 'type', type: 'string', label: 'File type hint (.wson,.json)' },
+    ],
+  },
+  {
     kind: 'chat',
     name: 'AI Chat',
     description: 'The AI-build surface — a prompt box that edits the app.',

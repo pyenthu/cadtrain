@@ -3,12 +3,13 @@
   // via the PanelKind registry → wires every control/source to dispatch(). Knows
   // NOTHING about wells: all wells-ness lives in the .app + the verbs.
   // See docs/architecture/app-harness.md §6.
-  import type { AppManifest, Binding, EventMap } from '$lib/appkit/manifest/types';
+  import type { AppManifest, Binding, EventMap, SlotValue, SlotApi } from '$lib/appkit/manifest/types';
   import { dispatch } from '$lib/appkit/verbs/dispatch';
   import { resolveArgs } from '$lib/appkit/manifest/refs';
   import { evalComputed } from '$lib/appkit/manifest/compute';
   import PanelNode from './panels/PanelNode.svelte';
   import { createClientEngine } from './client-engine';
+  import { makeSlotApi } from './slots';
 
   let { app, onBuild }: { app: AppManifest; onBuild?: (prompt: string) => Promise<void> } = $props();
 
@@ -18,6 +19,18 @@
   let active = $state<string | undefined>(undefined);
   let params = $state<Record<string, unknown>>({});
 
+  // Data-file slots (§0.5) — what the File component opens; read by the loadData verb.
+  // dataRev bumps on every slot change so data panels re-fetch (their effects read it).
+  let slots = $state<Record<string, SlotValue & { handle?: unknown }>>({});
+  let dataRev = $state(0);
+  const slotApi: SlotApi = makeSlotApi(
+    () => slots,
+    (next) => {
+      slots = next;
+      dataRev += 1;
+    },
+  );
+
   // Declarative computed variables — reactive over the live params scope. Referenced
   // by bindings/props/text as $vars.<name> (manifest/compute.ts, reused everywhere).
   const vars = $derived(evalComputed(app.computed, { params, active, ...params }));
@@ -26,7 +39,7 @@
   async function run(binding: Binding | undefined, item?: unknown): Promise<unknown> {
     if (!binding) return;
     const args = resolveArgs(binding.args, { active, item, params, vars });
-    return dispatch(binding.verb, args, { appStore: app as any, engine });
+    return dispatch(binding.verb, args, { appStore: app as any, engine, slots: $state.snapshot(slots) as any });
   }
 
   /** Fire a node's declarative event: run on[event] as a SEQUENCE (single or array),
@@ -89,7 +102,7 @@
     {#each app.panels as panel (panel.id)}
       <section class="panel" style={gridStyle(panel.layout)}>
         <div class="panel-head">{panel.title ?? panel.id}<span class="kind">{panel.kind}</span></div>
-        <div class="panel-body"><PanelNode node={panel} {run} {fire} {select} {active} {params} {vars} {onBuild} /></div>
+        <div class="panel-body"><PanelNode node={panel} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {onBuild} /></div>
       </section>
     {/each}
   </div>

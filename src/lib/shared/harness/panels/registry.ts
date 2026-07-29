@@ -12,6 +12,7 @@ import Button from './Button.svelte';
 import Tabs from './Tabs.svelte';
 import Toolbar from './Toolbar.svelte';
 import Table from './Table.svelte';
+import File from './File.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: ListPanel,
@@ -27,6 +28,7 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   button: Button, // fires on.click (a verb binding or a sequence)
   tabs: Tabs, // tabbed container — children are tabs
   toolbar: Toolbar, // horizontal row of children (buttons)
+  file: File, // open/save a DATA file into a slot (§0.5 data model)
 };
 
 export function panelComponent(kind: string): Component<any> {

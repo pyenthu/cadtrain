@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { httpCall } from './api';
+import { getVerb } from './registry';
 
 function jsonResponse(body: unknown) {
   return {
@@ -37,5 +38,24 @@ describe('httpCall', () => {
 
   it('throws without a url', async () => {
     await expect(httpCall({} as any)).rejects.toThrow(/needs a url/);
+  });
+});
+
+describe('loadData verb', () => {
+  const verb = getVerb('loadData')!;
+  const ctx = { slots: { well: { name: 'w.wson', data: { casings: [{ od: 9 }], depth: 100 } } } } as any;
+
+  it('returns the whole slot data', async () => {
+    expect(await verb.handler({ slot: 'well' }, ctx)).toEqual({ casings: [{ od: 9 }], depth: 100 });
+  });
+
+  it('pick selects a nested path (feed a grid)', async () => {
+    expect(await verb.handler({ slot: 'well', pick: 'casings' }, ctx)).toEqual([{ od: 9 }]);
+    expect(await verb.handler({ slot: 'well', pick: 'depth' }, ctx)).toBe(100);
+  });
+
+  it('undefined for an unopened slot', async () => {
+    expect(await verb.handler({ slot: 'missing' }, ctx)).toBeUndefined();
+    expect(await verb.handler({ slot: 'well' }, {} as any)).toBeUndefined();
   });
 });

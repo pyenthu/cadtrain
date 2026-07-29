@@ -58,6 +58,23 @@ export interface FileSlot {
   label?: string;
 }
 
+/** A data file opened into a slot at runtime: its name + parsed content. */
+export interface SlotValue {
+  name: string;
+  data: unknown;
+  type?: string;
+}
+
+/** The runtime slot operations the harness gives the File component (§0.5). */
+export interface SlotApi {
+  /** Open a data file (File System Access picker) into a slot. */
+  openInto(slot: string, type?: string): Promise<void>;
+  /** Write the slot's data back to its file (Save As if no handle). */
+  save(slot: string): Promise<void>;
+  /** Write the slot's data to a new file (picker). */
+  saveAs(slot: string): Promise<void>;
+}
+
 export interface AppTheme {
   mode?: 'light' | 'dark';
   /** Accent colour (hex or a Tailwind/Flowbite token). */

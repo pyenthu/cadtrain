@@ -6,19 +6,26 @@
   let {
     panel,
     run,
+    dataRev,
   }: {
     panel: Panel;
     run: (b?: Binding, item?: unknown) => Promise<unknown>;
+    /** Bumps on slot changes → re-fetch. */
+    dataRev?: number;
   } = $props();
 
   let rows = $state<any[]>([]);
   let note = $state('');
 
+  const colProp = $derived(panel.props?.columns);
   const columns = $derived(
-    ((panel.props?.columns as string[]) ?? (rows[0] ? Object.keys(rows[0]) : [])) as string[],
+    (typeof colProp === 'string'
+      ? colProp.split(',').map((s) => s.trim()).filter(Boolean)
+      : (colProp as string[]) ?? (rows[0] ? Object.keys(rows[0]) : [])) as string[],
   );
 
   $effect(() => {
+    void dataRev; // re-fetch when a slot changes
     note = '';
     rows = [];
     run(panel.source)

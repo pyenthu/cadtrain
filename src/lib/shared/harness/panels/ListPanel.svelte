@@ -5,11 +5,14 @@
     run,
     select,
     active,
+    dataRev,
   }: {
     panel: Panel;
     run: (b?: Binding, item?: unknown) => Promise<unknown>;
     select?: (item: unknown) => void;
     active?: string;
+    /** Bumps on slot changes → re-fetch. */
+    dataRev?: number;
   } = $props();
 
   let items = $state<any[]>([]);
@@ -23,6 +26,7 @@
   }
 
   $effect(() => {
+    void dataRev; // re-fetch when a slot changes
     note = '';
     items = [];
     run(panel.source)

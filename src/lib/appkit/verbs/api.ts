@@ -31,6 +31,28 @@ export async function httpCall(a: HttpArgs): Promise<unknown> {
 
 export const API_VERBS: Verb[] = [
   {
+    name: 'loadData',
+    group: 'data',
+    desc:
+      'Read the DATA a File component opened into a slot (§0.5 — the app is stateless; data ' +
+      'lives in files). { slot, pick? } → the parsed content (or a nested path via pick). Wire ' +
+      "a component's source to it: {verb:'loadData', args:{slot:'well'}}.",
+    params: {
+      type: 'object',
+      properties: {
+        slot: { type: 'string', description: 'The file-slot name (declared in app.files).' },
+        pick: { type: 'string', description: 'Dotted path to select from the file data.' },
+      },
+      required: ['slot'],
+    },
+    returns: {},
+    handler: (a: { slot: string; pick?: string }, ctx) => {
+      const data = ctx.slots?.[a.slot]?.data;
+      if (!a.pick) return data;
+      return a.pick.split('.').reduce<any>((o, k) => (o == null ? undefined : o[k]), data);
+    },
+  },
+  {
     name: 'http',
     group: 'data',
     desc:

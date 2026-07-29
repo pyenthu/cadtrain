@@ -50,6 +50,14 @@ export interface AppEngine {
   compile?(id: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>;
 }
 
+/** A DATA file the app opened into a slot (§0.5 — the app is stateless; data lives in
+ *  files). `data` is the parsed content (JSON/WSON → object; .ts/text → string). */
+export interface SlotValue {
+  name: string;
+  data: unknown;
+  type?: string;
+}
+
 /** Runtime handles a verb handler may use. Optional so headless tests can dispatch
  *  with a partial Ctx. */
 export interface Ctx {
@@ -59,6 +67,8 @@ export interface Ctx {
   engine?: AppEngine;
   /** The live `.app` being authored (store/). */
   appStore?: AppDoc;
+  /** Runtime data-file slots (§0.5) — what the File component opens; read by loadData. */
+  slots?: Record<string, SlotValue>;
 }
 
 export interface Verb<A = any, R = any> {
