@@ -35,15 +35,9 @@
     });
   }
 
-  /** A minimal starter manifest for a new app (a chat panel to build from). */
+  /** A blank starter manifest for a new app — design it here (AI build / visual editor). */
   function scaffold(id: string): AppManifest {
-    return {
-      app: id,
-      title: id,
-      docType: 'app',
-      panels: [{ id: 'chat', kind: 'chat', title: 'Build with AI', source: { verb: 'listPanelKinds' } }],
-      popovers: [],
-    };
+    return { app: id, title: id, docType: 'app', panels: [], popovers: [] };
   }
 
   async function createApp() {

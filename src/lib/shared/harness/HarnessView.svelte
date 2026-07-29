@@ -16,7 +16,6 @@
   // Runtime scope for $active / $item / $params refs in bindings.
   let active = $state<string | undefined>(undefined);
   let params = $state<Record<string, unknown>>({});
-  let demoN = $state(0);
 
   /** Resolve a binding's refs against the live scope, then dispatch it. */
   async function run(binding: Binding | undefined, item?: unknown): Promise<unknown> {
@@ -38,24 +37,12 @@
       params = {};
     }
   }
-
-  // Proof that the gui-verb loop works end-to-end: definePanel mutates the live .app
-  // (a $state proxy) → the grid re-renders. Data/mutate verbs are pending until rung 3.
-  async function addDemoPanel() {
-    demoN += 1;
-    await dispatch(
-      'definePanel',
-      { panel: { id: `demo${demoN}`, kind: 'text', title: `Demo panel ${demoN}`, text: 'Added live by the definePanel verb.' } },
-      { appStore: app as any },
-    );
-  }
 </script>
 
 <div class="harness">
   <header class="harness-head">
     <strong>{app.title ?? app.app}</strong>
     <span class="tag">.app · {app.panels.length} panels</span>
-    <button class="demo-btn" onclick={() => addDemoPanel()}>＋ Panel (verb demo)</button>
   </header>
   <div class="harness-grid">
     {#each app.panels as panel (panel.id)}
@@ -72,8 +59,6 @@
   .harness { display: flex; flex-direction: column; height: 100%; font: 13px/1.4 system-ui, Arial, sans-serif; color: #0f172a; }
   .harness-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
   .harness-head .tag { color: #64748b; font-size: 11px; }
-  .demo-btn { margin-left: auto; font: 600 11px system-ui; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; cursor: pointer; }
-  .demo-btn:hover { background: #eef2f6; }
   .harness-grid { display: grid; grid-template-columns: 220px minmax(280px, 1fr) 320px; gap: 12px; padding: 12px; flex: 1; min-height: 0; align-content: start; }
   .panel { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; display: flex; flex-direction: column; overflow: hidden; min-height: 120px; }
   .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-bottom: 1px solid #eef2f6; background: #fafafa; font-weight: 600; }
