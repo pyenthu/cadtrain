@@ -9,7 +9,7 @@
   import { panelComponent } from './panels/registry';
   import { createClientEngine } from './client-engine';
 
-  let { app }: { app: AppManifest } = $props();
+  let { app, onBuild }: { app: AppManifest; onBuild?: (prompt: string) => Promise<void> } = $props();
 
   // The CLIENT engine — data verbs read real parts via /api/primitives/list.
   const engine = createClientEngine();
@@ -62,7 +62,7 @@
       {@const Comp = panelComponent(panel.kind)}
       <section class="panel">
         <div class="panel-head">{panel.title ?? panel.id}<span class="kind">{panel.kind}</span></div>
-        <div class="panel-body"><Comp {panel} {run} {select} {active} {params} /></div>
+        <div class="panel-body"><Comp {panel} {run} {select} {active} {params} {onBuild} /></div>
       </section>
     {/each}
   </div>

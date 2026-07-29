@@ -5,15 +5,16 @@ import ListPanel from './ListPanel.svelte';
 import FormPanel from './FormPanel.svelte';
 import TextPanel from './TextPanel.svelte';
 import PlaceholderPanel from './PlaceholderPanel.svelte';
+import ChatPanel from './ChatPanel.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: ListPanel,
   form: FormPanel,
   table: FormPanel, // a table panel is a form with a single table control
   text: TextPanel,
-  bake3d: PlaceholderPanel, // rung 3: mount the 3D bake
+  chat: ChatPanel, // the AI-build surface
+  bake3d: PlaceholderPanel, // rung 3b: mount the 3D bake
   svg: PlaceholderPanel,
-  chat: PlaceholderPanel,
 };
 
 export function panelComponent(kind: string): Component<any> {
