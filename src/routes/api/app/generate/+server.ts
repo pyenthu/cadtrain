@@ -10,7 +10,7 @@ import { env } from '$env/dynamic/private';
 import { appFilePath } from '$lib/server/app-paths';
 import { validateManifest } from '$lib/appkit/manifest/validate';
 import { buildApp } from '$lib/appkit/ai/pipeline';
-import { captureBuild, retrieveGrounding, renderGrounding } from '$lib/server/app-corpus';
+import { captureBuild, buildGrounding } from '$lib/server/app-corpus';
 
 export const POST: RequestHandler = async ({ request }) => {
   const body = (await request.json().catch(() => null)) as { id?: string; app?: unknown; prompt?: string } | null;
@@ -47,7 +47,7 @@ export const POST: RequestHandler = async ({ request }) => {
     manifest = res.app;
   }
 
-  const grounding = renderGrounding(await retrieveGrounding(body.prompt));
+  const grounding = await buildGrounding(body.prompt);
 
   let out;
   try {

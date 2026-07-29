@@ -1,49 +1,29 @@
 // src/lib/server/app-corpus.ts — the app-building corpus (the learning system, rung 4a.2).
-// Every build is captured; future builds retrieve similar past builds as few-shot
-// grounding → the builder learns and gets more deterministic over time (D15). Lexical
-// retrieval, local, no embeddings (D11 v1). Server-side (fs); pure ranking is testable.
-import { appendFile, readFile } from 'node:fs/promises';
-import { join } from 'node:path';
-import { appsDir } from './app-paths';
+// Every build is captured; future builds retrieve similar past builds + CURATED golden
+// pairs as few-shot grounding → the builder learns and gets more deterministic over time
+// (D15). Lexical retrieval, local, no embeddings (D11 v1). Storage lives behind
+// AppCorpusStore (VOLUME by default — shared, prod, evolving; app-corpus-store.ts). The
+// ranking/rendering here is PURE → testable.
+import {
+  getCorpusStore,
+  type BuildRecord,
+  type GoldenPair,
+} from './app-corpus-store';
 
-export interface BuildRecord {
-  ts: number;
-  prompt: string;
-  steps: number;
-  /** A compact summary of what was built — enough to few-shot future builds. */
-  app: { app: string; panels: Array<{ id: string; kind: string; source?: unknown }> };
-}
-
-function corpusPath(): string {
-  return join(appsDir(), '_builds.jsonl');
-}
+export type { BuildRecord, GoldenPair };
 
 export async function captureBuild(rec: BuildRecord): Promise<void> {
-  try {
-    await appendFile(corpusPath(), `${JSON.stringify(rec)}\n`, 'utf8');
-  } catch {
-    /* best-effort — a corpus write must never fail the build */
-  }
+  await getCorpusStore().appendBuild(rec);
 }
 
 export async function loadCorpus(): Promise<BuildRecord[]> {
-  let raw: string;
-  try {
-    raw = await readFile(corpusPath(), 'utf8');
-  } catch {
-    return [];
-  }
-  return raw
-    .split('\n')
-    .filter(Boolean)
-    .map((l) => {
-      try {
-        return JSON.parse(l) as BuildRecord;
-      } catch {
-        return null;
-      }
-    })
-    .filter(Boolean) as BuildRecord[];
+  return getCorpusStore().loadBuilds();
+}
+
+/** Promote a build (or a hand-authored pair) into the curated golden DB (the "★ add to
+ *  RAG" flow). MD is the retrieval key; the .app is the target. */
+export async function promoteGolden(name: string, md: string, app: unknown): Promise<void> {
+  await getCorpusStore().saveGolden(name, md, app);
 }
 
 const tokenize = (s: string): Set<string> => new Set(s.toLowerCase().match(/[a-z0-9]+/g) ?? []);
@@ -64,15 +44,59 @@ export function rankBuilds(prompt: string, corpus: BuildRecord[], k = 3): BuildR
     .map((x) => x.r);
 }
 
-export async function retrieveGrounding(prompt: string, k = 3): Promise<BuildRecord[]> {
-  return rankBuilds(prompt, await loadCorpus(), k);
+/** Rank curated golden pairs by MD (description) overlap (pure → testable). */
+export function rankGolden(prompt: string, golden: GoldenPair[], k = 3): GoldenPair[] {
+  const q = tokenize(prompt);
+  return golden
+    .map((g) => ({ g, score: overlap(q, tokenize(g.md)) }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, k)
+    .map((x) => x.g);
 }
 
-/** Render retrieved builds as a few-shot grounding block for the system prompt (pure). */
-export function renderGrounding(records: BuildRecord[]): string {
-  if (!records.length) return '';
-  const lines = records.map(
-    (r) => `- "${r.prompt}" → ${JSON.stringify(r.app.panels.map((p) => ({ kind: p.kind, id: p.id })))}`,
-  );
-  return ['Similar past builds (reference these for consistency):', ...lines].join('\n');
+/** A compact structural summary of an .app — the shape we few-shot (kinds/nesting/files/
+ *  computed/theme), not the whole doc (keeps grounding small). Pure. */
+export function compactApp(app: any): Record<string, unknown> {
+  const node = (p: any): any => {
+    const o: any = { kind: p.kind, id: p.id };
+    if (p.children?.length) o.children = p.children.map(node);
+    if (p.source?.verb) o.source = p.source.verb;
+    return o;
+  };
+  const out: Record<string, unknown> = { panels: (app?.panels ?? []).map(node) };
+  if (app?.files?.length) out.files = app.files;
+  if (app?.computed) out.computed = Object.keys(app.computed);
+  if (app?.theme) out.theme = app.theme;
+  return out;
+}
+
+const firstLine = (md: string): string => (md.split('\n').find((l) => l.trim()) ?? '').replace(/^#+\s*/, '').trim();
+
+/** Render curated pairs (full structure — they're the targets) + past builds (summary)
+ *  as a few-shot grounding block for the system prompt (pure). */
+export function renderGrounding(builds: BuildRecord[], golden: GoldenPair[] = []): string {
+  const blocks: string[] = [];
+  if (golden.length) {
+    blocks.push(
+      'Curated examples — match the description, emit a similarly-STRUCTURED .app:',
+      ...golden.map((g) => `- "${firstLine(g.md)}" → ${JSON.stringify(compactApp(g.app))}`),
+    );
+  }
+  if (builds.length) {
+    if (blocks.length) blocks.push('');
+    blocks.push(
+      'Similar past builds (reference these for consistency):',
+      ...builds.map((r) => `- "${r.prompt}" → ${JSON.stringify(r.app.panels.map((p) => ({ kind: p.kind, id: p.id })))}`),
+    );
+  }
+  return blocks.join('\n');
+}
+
+/** Load + rank golden pairs (the curated DB) AND the builds log, and render the combined
+ *  few-shot grounding string. The one call the build pipeline uses. */
+export async function buildGrounding(prompt: string, k = 3): Promise<string> {
+  const store = getCorpusStore();
+  const [builds, golden] = await Promise.all([store.loadBuilds(), store.loadGolden()]);
+  return renderGrounding(rankBuilds(prompt, builds, k), rankGolden(prompt, golden, k));
 }
