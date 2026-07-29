@@ -37,6 +37,16 @@
       params = {};
     }
   }
+
+  /** CSS grid placement from a panel's declarative layout (12-col responsive grid).
+   *  No layout → auto-flow, spanning 4 columns (≈3 per row). */
+  function gridStyle(L?: { col?: number; row?: number; w?: number; h?: number }): string {
+    const w = L?.w ?? 4;
+    const h = L?.h ?? 1;
+    const col = L?.col != null ? `${L.col} / span ${w}` : `span ${w}`;
+    const row = L?.row != null ? `${L.row} / span ${h}` : `span ${h}`;
+    return `grid-column: ${col}; grid-row: ${row};`;
+  }
 </script>
 
 <div class="harness">
@@ -47,7 +57,7 @@
   <div class="harness-grid">
     {#each app.panels as panel (panel.id)}
       {@const Comp = panelComponent(panel.kind)}
-      <section class="panel">
+      <section class="panel" style={gridStyle(panel.layout)}>
         <div class="panel-head">{panel.title ?? panel.id}<span class="kind">{panel.kind}</span></div>
         <div class="panel-body"><Comp {panel} {run} {select} {active} {params} {onBuild} /></div>
       </section>
@@ -59,7 +69,7 @@
   .harness { display: flex; flex-direction: column; height: 100%; font: 13px/1.4 system-ui, Arial, sans-serif; color: #0f172a; }
   .harness-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
   .harness-head .tag { color: #64748b; font-size: 11px; }
-  .harness-grid { display: grid; grid-template-columns: 220px minmax(280px, 1fr) 320px; gap: 12px; padding: 12px; flex: 1; min-height: 0; align-content: start; }
+  .harness-grid { display: grid; grid-template-columns: repeat(12, 1fr); grid-auto-rows: minmax(120px, auto); gap: 12px; padding: 12px; flex: 1; min-height: 0; align-content: start; overflow: auto; }
   .panel { border: 1px solid #e5e7eb; border-radius: 8px; background: #fff; display: flex; flex-direction: column; overflow: hidden; min-height: 120px; }
   .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-bottom: 1px solid #eef2f6; background: #fafafa; font-weight: 600; }
   .panel-head .kind { font: 600 10px system-ui; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; }
