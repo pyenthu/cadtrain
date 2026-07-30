@@ -21,6 +21,9 @@ import { metas as bake3dMetas } from '$lib/app_components/Bake3d/meta';
 import { metas as placeholderMetas } from '$lib/app_components/Placeholder/meta';
 import { metas as fileMetas } from '$lib/app_components/File/meta';
 import { metas as chatMetas } from '$lib/app_components/Chat/meta';
+import { metas as sidebarMetas } from '$lib/app_components/Sidebar/meta';
+import { metas as vtoolbarMetas } from '$lib/app_components/VerticalToolbar/meta';
+import { metas as menuMetas } from '$lib/app_components/MenuButton/meta';
 
 export interface PropSpec {
   name: string;
@@ -64,8 +67,11 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
   ...editTableMetas,
   ...containerMetas,
   ...toolbarMetas,
+  ...vtoolbarMetas,
+  ...sidebarMetas,
   ...tabsMetas,
   ...buttonMetas,
+  ...menuMetas,
   ...textMetas,
   ...headingMetas,
   ...dividerMetas,

@@ -18,6 +18,9 @@ import File from '$lib/app_components/File/File.svelte';
 import Chat from '$lib/app_components/Chat/Chat.svelte';
 import Bake3d from '$lib/app_components/Bake3d/Bake3d.svelte';
 import Placeholder from '$lib/app_components/Placeholder/Placeholder.svelte';
+import Sidebar from '$lib/app_components/Sidebar/Sidebar.svelte';
+import VerticalToolbar from '$lib/app_components/VerticalToolbar/VerticalToolbar.svelte';
+import MenuButton from '$lib/app_components/MenuButton/MenuButton.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: List,
@@ -40,6 +43,9 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   toolbar: Toolbar, // horizontal row of children (buttons)
   row: Toolbar, // horizontal row of children
   file: File, // open/save a DATA file into a slot (§0.5 data model)
+  sidebar: Sidebar, // collapsible side panel holding children
+  vtoolbar: VerticalToolbar, // vertical icon rail (left dock)
+  menu: MenuButton, // button → dropdown menu (children = items)
 };
 
 export function panelComponent(kind: string): Component<any> {
