@@ -8,10 +8,20 @@ import {
   getCorpusStore,
   type BuildRecord,
   type GoldenPair,
+  type GoldenSlot,
   type NonConformance,
 } from './app-corpus-store';
+import {
+  tokenize,
+  overlap,
+  goldenScore,
+  slotNamesOf,
+  matchTemplate,
+  fillTemplate,
+  applyTemplate,
+} from './golden-templates';
 
-export type { BuildRecord, GoldenPair, NonConformance };
+export type { BuildRecord, GoldenPair, GoldenSlot, NonConformance };
 
 export async function captureBuild(rec: BuildRecord): Promise<void> {
   await getCorpusStore().appendBuild(rec);
@@ -43,13 +53,6 @@ export async function getPromotionCandidates(k = 12): Promise<PromotionCandidate
   return rankPromotionCandidates(builds, golden, k);
 }
 
-const tokenize = (s: string): Set<string> => new Set(s.toLowerCase().match(/[a-z0-9]+/g) ?? []);
-function overlap(a: Set<string>, b: Set<string>): number {
-  let n = 0;
-  for (const t of a) if (b.has(t)) n++;
-  return n / Math.max(1, a.size);
-}
-
 /** Rank past builds by prompt token-overlap (pure → testable). */
 export function rankBuilds(prompt: string, corpus: BuildRecord[], k = 3): BuildRecord[] {
   const q = tokenize(prompt);
@@ -61,11 +64,13 @@ export function rankBuilds(prompt: string, corpus: BuildRecord[], k = 3): BuildR
     .map((x) => x.r);
 }
 
-/** Rank curated golden pairs by MD (description) overlap (pure → testable). */
+/** Rank curated golden pairs against a prompt (pure → testable). SLOT-AWARE (#43): a TEMPLATED
+ *  golden (md with `{{slots}}`) is scored on its non-slot skeleton, so one "…{{color}}" pair
+ *  ranks for the whole family (teal/red/…); LITERAL goldens keep the exact original md-overlap
+ *  ranking. See golden-templates.ts `goldenScore`. */
 export function rankGolden(prompt: string, golden: GoldenPair[], k = 3): GoldenPair[] {
-  const q = tokenize(prompt);
   return golden
-    .map((g) => ({ g, score: overlap(q, tokenize(g.md)) }))
+    .map((g) => ({ g, score: goldenScore(prompt, g) }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score)
     .slice(0, k)
@@ -90,14 +95,38 @@ export function compactApp(app: any): Record<string, unknown> {
 
 const firstLine = (md: string): string => (md.split('\n').find((l) => l.trim()) ?? '').replace(/^#+\s*/, '').trim();
 
+/** Render ONE golden as a few-shot line. TEMPLATED goldens (#43) render two ways:
+ *   - deterministic: if `prompt` is given and matchTemplate captures the slots, show the
+ *     CONCRETELY-FILLED example (the exact target for this prompt — the strongest signal).
+ *   - otherwise: show the template verbatim ({{slots}} intact) + a note telling the model to
+ *     fill the slot(s) from the user's prompt (mechanism (a) — few-shot generalization).
+ *  Literal goldens render exactly as before. */
+function renderGoldenLine(g: GoldenPair, prompt?: string): string {
+  const names = slotNamesOf(g);
+  if (!names.length) return `- "${firstLine(g.md)}" → ${JSON.stringify(compactApp(g.app))}`;
+
+  if (prompt) {
+    const m = matchTemplate(prompt, g);
+    if (m) {
+      const filledMd = fillTemplate(firstLine(g.md), m.values);
+      const filledApp = applyTemplate(g.app, m.values);
+      const note = Object.entries(m.values).map(([k, v]) => `${k}=${v}`).join(', ');
+      return `- "${filledMd}" → ${JSON.stringify(compactApp(filledApp))} (filled ${note} from the prompt)`;
+    }
+  }
+  const slotList = names.map((n) => `{{${n}}}`).join(', ');
+  return `- "${firstLine(g.md)}" → ${JSON.stringify(compactApp(g.app))} (template — fill ${slotList} from the user's prompt)`;
+}
+
 /** Render curated pairs (full structure — they're the targets) + past builds (summary)
- *  as a few-shot grounding block for the system prompt (pure). */
-export function renderGrounding(builds: BuildRecord[], golden: GoldenPair[] = []): string {
+ *  as a few-shot grounding block for the system prompt (pure). When `prompt` is supplied,
+ *  templated goldens are shown filled-in for that prompt where they match deterministically. */
+export function renderGrounding(builds: BuildRecord[], golden: GoldenPair[] = [], prompt?: string): string {
   const blocks: string[] = [];
   if (golden.length) {
     blocks.push(
       'Curated examples — match the description, emit a similarly-STRUCTURED .app:',
-      ...golden.map((g) => `- "${firstLine(g.md)}" → ${JSON.stringify(compactApp(g.app))}`),
+      ...golden.map((g) => renderGoldenLine(g, prompt)),
     );
   }
   if (builds.length) {
@@ -165,5 +194,5 @@ export function rankPromotionCandidates(builds: BuildRecord[], golden: GoldenPai
 export async function buildGrounding(prompt: string, k = 3): Promise<string> {
   const store = getCorpusStore();
   const [builds, golden] = await Promise.all([store.loadBuilds(), store.loadGolden()]);
-  return renderGrounding(rankBuilds(prompt, builds.filter(isCleanBuild), k), rankGolden(prompt, golden, k));
+  return renderGrounding(rankBuilds(prompt, builds.filter(isCleanBuild), k), rankGolden(prompt, golden, k), prompt);
 }
