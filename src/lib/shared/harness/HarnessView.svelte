@@ -94,7 +94,6 @@
     const v: Record<string, string> = {
       '--h-bg': dark ? '#0f172a' : '#ffffff',
       '--h-surface': dark ? '#1e293b' : '#ffffff',
-      '--h-head': dark ? '#111827' : '#fafafa',
       '--h-border': dark ? '#334155' : '#e5e7eb',
       '--h-text': dark ? '#e2e8f0' : '#0f172a',
       '--h-muted': dark ? '#94a3b8' : '#64748b',
@@ -108,7 +107,7 @@
 
 <div class="harness" style={themeVars(app.theme)}>
   {#if app.css}{@html `<style>${app.css}</style>`}{/if}
-  {#if app.title}<header class="harness-head"><strong>{app.title}</strong></header>{/if}
+  <!-- No default title heading — the app owns its chrome; add a Heading/Text component for a title. -->
   <div class="harness-grid">
     {#each app.panels as panel (panel.id)}
       <!-- No panel chrome: each component renders as it intends (card = bordered, div =
@@ -123,7 +122,6 @@
 
 <style>
   .harness { display: flex; flex-direction: column; height: 100%; font: 13px/1.4 system-ui, Arial, sans-serif; color: var(--h-text); background: var(--h-bg); }
-  .harness-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--h-border); background: var(--h-head); }
   .harness-grid { display: grid; grid-template-columns: repeat(12, 1fr); grid-auto-rows: min-content; gap: 12px; padding: 12px; flex: 1; min-height: 0; align-content: start; overflow: auto; }
   /* A cell only PLACES its component — no border/padding/title. Components own their look. */
   .cell { min-width: 0; }

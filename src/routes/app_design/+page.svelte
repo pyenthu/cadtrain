@@ -5,6 +5,7 @@
   // lives, but any location works). The AI builds the IN-MEMORY app (no server file needed),
   // so picker-opened files build too. See docs/architecture/app-harness.md.
   import VisualEditor from '$lib/shared/harness/VisualEditor.svelte';
+  import AppSettings from '$lib/shared/harness/AppSettings.svelte';
   import { validateManifest } from '$lib/appkit/manifest/validate';
   import { autoDoc } from '$lib/appkit/manifest/doc';
   import { createLocalStore } from '$lib/appkit/store/local-backend';
@@ -20,6 +21,8 @@
   let fileName = $state('');
   let status = $state('');
   let view = $state<'split' | 'design' | 'preview' | 'text' | 'doc'>('split');
+  let leftTab = $state<'tree' | 'vars' | 'style' | 'data' | 'events'>('tree'); // the split's left-sidebar icon tabs
+  let aiOpen = $state(false); // the ✨ AI prompter popover (right edge of the tab strip)
   let prompt = $state('');
   let building = $state(false);
   let inputEl = $state<HTMLInputElement>();
@@ -156,26 +159,42 @@
     }
   }
 
-  async function build() {
-    if (!app || !prompt.trim()) return;
+  /** Shared AI edit: send the whole .app + a prompt to the builder, swap in the result. */
+  async function runGenerate(promptText: string): Promise<boolean> {
+    if (!app || !promptText.trim()) return false;
     building = true;
     status = 'building…';
     try {
       const r = await fetch('/api/app/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ app: $state.snapshot(app), prompt }),
+        body: JSON.stringify({ app: $state.snapshot(app), prompt: promptText }),
       });
       if (!r.ok) throw new Error(await r.text());
       const j = await r.json();
       app = j.app;
-      prompt = '';
       status = `AI built (${j.steps} steps) — Save to keep`;
+      return true;
     } catch (e) {
       status = String(e);
+      return false;
     } finally {
       building = false;
     }
+  }
+
+  async function build() {
+    if (await runGenerate(prompt)) prompt = '';
+  }
+
+  /** Component-scoped AI: the ⚙ popover's ✨ bar — the builder targets ONE component. */
+  async function scopedBuild(panelId: string, kind: string, userPrompt: string): Promise<boolean> {
+    const scoped =
+      `Modify ONLY the component with id "${panelId}" (a "${kind}") in this app. Request: ${userPrompt}\n` +
+      `Use setComponentProp / setPanelProp to change its props, style, class, events (on), or source; ` +
+      `use patchApp to add any app-level variable (computed) or event this component needs. ` +
+      `Do NOT add, remove, or restructure any other component.`;
+    return runGenerate(scoped);
   }
 
   // Preview = SERVER-rendered (same path as Launch): park the current app → iframe /app/local.
@@ -238,6 +257,8 @@
 {#snippet previewPane()}
   <div class="preview-wrap">
     <div class="preview-bar">
+      <strong class="pv-file">{fileName || `${idOf()}.app`}</strong>
+      {#if status}<span class="pv-status">{status}</span>{/if}
       <span class="pv-tag">server-rendered · /app/local/{previewToken || '…'}{previewBusy ? ' · rendering…' : ''}</span>
       <label class="pv-auto" title="re-render on every edit (else use ↻)"><input type="checkbox" bind:checked={autoCompile} /> auto-compile</label>
       <button class="pv-refresh" onclick={() => serverPreview()} disabled={previewBusy}>↻ re-render</button>
@@ -274,20 +295,44 @@
         <p class="dim">Files live wherever you like — the working set is in <code>~/Desktop/SAMPLE</code>.</p>
       </div>
     {:else}
-      <div class="bar">
-        <strong>{app.title ?? idOf()}</strong>
-        <span class="fn">{fileName || `${idOf()}.app · unsaved`}</span>
-        <span class="mode">{view}</span>
-        {#if status}<span class="status">{status}</span>{/if}
-      </div>
-      <div class="build">
-        <input bind:value={prompt} placeholder="describe what to build or change…" disabled={building}
-          onkeydown={(e) => e.key === 'Enter' && build()} />
-        <button class="ai" onclick={() => build()} disabled={building || !prompt.trim()}>✨ Build with AI</button>
-      </div>
       <div class="work" class:split={view === 'split'}>
         {#if view === 'split'}
-          <aside class="pane-left"><VisualEditor {app} /></aside>
+          <aside class="pane-left">
+            <nav class="left-tabs">
+              <button class:on={leftTab === 'tree'} onclick={() => (leftTab = 'tree')} title="Component tree">☰</button>
+              <button class:on={leftTab === 'vars'} onclick={() => (leftTab = 'vars')} title="Variables">ƒ</button>
+              <button class:on={leftTab === 'events'} onclick={() => (leftTab = 'events')} title="Events">⚡</button>
+              <button class:on={leftTab === 'style'} onclick={() => (leftTab = 'style')} title="Style">🎨</button>
+              <button class:on={leftTab === 'data'} onclick={() => (leftTab = 'data')} title="Data structures">▦</button>
+              <span class="left-spacer"></span>
+              <button class="ai-tab" class:on={aiOpen} onclick={() => (aiOpen = !aiOpen)} title="Build with AI">✨</button>
+            </nav>
+            <div class="left-body">
+              {#if leftTab === 'tree'}
+                <VisualEditor {app} onScopedBuild={scopedBuild} />
+              {:else}
+                <AppSettings {app} tab={leftTab} />
+              {/if}
+            </div>
+            {#if aiOpen}
+              <div class="ai-pop">
+                <div class="ai-h">
+                  <span>Build with AI</span>
+                  <button class="ai-x" onclick={() => (aiOpen = false)} title="close">✕</button>
+                </div>
+                <p class="ai-hint">Describe the app or a change — it edits the tree in place.</p>
+                <textarea bind:value={prompt} placeholder="e.g. add a casings table with od / id / top / bot columns"
+                  disabled={building}
+                  onkeydown={(e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') build(); }}></textarea>
+                <div class="ai-foot">
+                  <span class="ai-kbd">⌘↵ to run</span>
+                  <button class="ai" onclick={() => build()} disabled={building || !prompt.trim()}>
+                    {building ? 'building…' : '✨ Build with AI'}
+                  </button>
+                </div>
+              </div>
+            {/if}
+          </aside>
           <div class="pane-right">{@render previewPane()}</div>
         {:else if view === 'preview'}
           {@render previewPane()}
@@ -301,7 +346,7 @@
             <div class="doc-prev">{@html mdToHtml(app.doc || autoDoc(app))}</div>
           </div>
         {:else}
-          <VisualEditor {app} />
+          <VisualEditor {app} onScopedBuild={scopedBuild} />
         {/if}
       </div>
     {/if}
@@ -323,22 +368,36 @@
   .empty p { margin: 0; }
   .empty .dim { color: #94a3b8; font-size: 12px; }
   .empty code { font: 12px ui-monospace, monospace; background: #f1f5f9; padding: 1px 5px; border-radius: 4px; }
-  .bar { display: flex; align-items: center; gap: 10px; padding: 8px 14px; border-bottom: 1px solid #e5e7eb; }
-  .bar strong { font-size: 14px; }
-  .bar .fn { font: 12px ui-monospace, monospace; color: #94a3b8; }
-  .bar .mode { font: 600 10px system-ui; text-transform: uppercase; letter-spacing: .5px; color: #64748b; background: #f1f5f9; padding: 2px 7px; border-radius: 10px; }
-  .bar .status { margin-left: auto; font-size: 11px; color: #16a34a; }
-  .build { display: flex; gap: 8px; padding: 8px 14px; border-bottom: 1px solid #eef2f6; background: #fafafa; }
-  .build input { flex: 1; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 6px; font: 13px system-ui; }
-  .build .ai { padding: 6px 12px; border: 1px solid #7c3aed; border-radius: 6px; background: #7c3aed; color: #fff; font: 600 12px system-ui; cursor: pointer; }
-  .build .ai:disabled { opacity: .5; cursor: default; }
+  /* left-sidebar icon tabs */
+  .left-tabs { display: flex; align-items: center; gap: 2px; padding: 6px 6px 0; border-bottom: 1px solid #e5e7eb; background: #f8fafc; flex: 0 0 auto; }
+  .left-tabs button { width: 30px; height: 28px; display: grid; place-items: center; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #64748b; font-size: 14px; cursor: pointer; border-radius: 6px 6px 0 0; }
+  .left-tabs button:hover { background: #eef2f6; color: #0f172a; }
+  .left-tabs button.on { color: #0369a1; border-bottom-color: #0369a1; background: #fff; }
+  .left-tabs .left-spacer { flex: 1; }
+  .left-tabs .ai-tab { width: auto; padding: 0 10px; height: 24px; margin-bottom: 4px; border: 1.5px solid #a855f7; border-radius: 7px; color: #7c3aed; background: #faf5ff; font-size: 15px; }
+  .left-tabs .ai-tab:hover { background: #f3e8ff; color: #7c3aed; }
+  .left-tabs .ai-tab.on { color: #fff; background: #7c3aed; border-color: #7c3aed; }
+  .left-body { flex: 1; min-height: 0; overflow: auto; }
+  /* ✨ AI prompter — a popover anchored to the top-right of the left pane */
+  .ai-pop { position: absolute; top: 40px; right: 6px; width: 300px; z-index: 40; display: flex; flex-direction: column; gap: 8px; padding: 12px; background: #fff; border: 1px solid #d8b4fe; border-radius: 10px; box-shadow: 0 10px 30px rgba(15, 23, 42, .18); }
+  .ai-pop .ai-h { display: flex; align-items: center; justify-content: space-between; font: 700 13px system-ui; color: #0f172a; }
+  .ai-pop .ai-x { width: 22px; height: 22px; border: 0; background: transparent; color: #94a3b8; font-size: 13px; cursor: pointer; border-radius: 5px; }
+  .ai-pop .ai-x:hover { background: #f1f5f9; color: #0f172a; }
+  .ai-pop .ai-hint { margin: 0; color: #64748b; font-size: 12px; line-height: 1.4; }
+  .ai-pop textarea { min-height: 110px; padding: 9px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font: 13px system-ui; resize: vertical; }
+  .ai-pop .ai-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ai-pop .ai-kbd { color: #94a3b8; font-size: 11px; }
+  .ai-pop .ai { padding: 8px 12px; border: 1px solid #7c3aed; border-radius: 8px; background: #7c3aed; color: #fff; font: 600 13px system-ui; cursor: pointer; }
+  .ai-pop .ai:disabled { opacity: .5; cursor: default; }
   .work { flex: 1; min-height: 0; overflow: auto; }
   .work.split { display: flex; overflow: hidden; padding: 0; }
-  .work.split .pane-left { width: 380px; min-width: 280px; max-width: 46%; border-right: 1px solid #e5e7eb; overflow: auto; resize: horizontal; }
+  .work.split .pane-left { position: relative; width: 380px; min-width: 280px; max-width: 46%; border-right: 1px solid #e5e7eb; overflow: hidden; resize: horizontal; display: flex; flex-direction: column; }
   .work.split .pane-right { flex: 1; min-width: 0; overflow: hidden; }
   .preview-wrap { display: flex; flex-direction: column; height: 100%; }
   .preview-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
-  .pv-tag { font: 500 11px ui-monospace, monospace; color: #64748b; }
+  .pv-file { font-size: 13px; color: #0f172a; }
+  .pv-status { font-size: 11px; color: #16a34a; }
+  .pv-tag { font: 500 11px ui-monospace, monospace; color: #94a3b8; }
   .pv-auto { margin-left: auto; display: flex; align-items: center; gap: 5px; font: 500 11px system-ui; color: #475569; cursor: pointer; }
   .pv-refresh { padding: 3px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; font: 600 11px system-ui; cursor: pointer; }
   .pv-refresh:disabled { opacity: .5; cursor: default; }

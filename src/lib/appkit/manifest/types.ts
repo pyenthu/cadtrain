@@ -101,6 +101,10 @@ export interface AppManifest {
   /** App-local data STRUCTURES — reusable record shapes: name → fields. A component can adopt
    *  one for its columns (e.g. an editable table's `props.structure`). */
   structures?: Record<string, Array<{ name: string; type?: string }>>;
+  /** App-level named EVENTS a component can trigger — name → action expression (a verb call,
+   *  e.g. "bake($active)"). A component wires one of its DOM events (via panel.on) to fire a
+   *  named app event; the harness runs the action. Defined in the studio's Events tab. */
+  events?: Record<string, string>;
   /** Embedded Markdown doc — travels inside the .app; feeds the design-RAG.
    *  Auto-summarized from the structure when empty (manifest/doc.ts). */
   doc?: string;
