@@ -100,6 +100,11 @@ server-rendered routes + the event round-trip.
     re-renders → swaps the affected HTML (LiveView/htmx style). Partial re-render, cache-able.
   - The rule: **a verb ⇒ server; everything else ⇒ local.** Snappy local UX + a protected core.
   - *Verify:* a tab switch stays client-side (no network); clicking a list row (fires `loadDoc`) round-trips.
+  - **Rung 1 SHIPPED** — `edittable`: rows are LOCAL client `$state` (add/edit/delete instant, no
+    round-trip), seeded synchronously from server-resolved data (so they SSR). A `💾 Save` appears
+    only when `on.save` is wired and is the sole round-trip. **Persistence is deferred + targets DATA
+    FILES** (the §0.5 slot model): later, `on.save` wires to a verb that writes the slot's file
+    (local via File System Access, or the volume) — not part of rung 1.
 - **Phase 4 (later).** Interactive **3D** = a client component that does its own GLB conversion
   (deprioritized — no GLB pipeline now; `bake3d` server-renders stats until then). Optionally make the
   studio's live preview server-rendered too, so the code is protected everywhere.

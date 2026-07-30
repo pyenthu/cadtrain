@@ -12,6 +12,7 @@ import Button from './Button.svelte';
 import Tabs from './Tabs.svelte';
 import Toolbar from './Toolbar.svelte';
 import Table from './Table.svelte';
+import EditableTable from './EditableTable.svelte';
 import File from './File.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
@@ -19,6 +20,7 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   form: FormPanel,
   table: FormPanel, // an editable list<record> table (a form with a table control)
   grid: Table, // a read-only data GRID from any source (http/data verb)
+  edittable: EditableTable, // editable rows in LOCAL state (add/edit/delete client-side); on.save persists
   text: TextPanel,
   chat: ChatPanel, // the AI-build surface
   bake3d: Bake3dPanel, // bakes the active doc → stats (interactive canvas = follow-up)

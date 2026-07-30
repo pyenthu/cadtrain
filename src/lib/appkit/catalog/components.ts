@@ -80,6 +80,19 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
     wiresTo: ['data'],
   },
   {
+    kind: 'edittable',
+    name: 'Editable Table',
+    description: 'Rows editable in LOCAL client state (add/edit/delete instant, no round-trip); on.save persists to the server. Seeded from source (SSR).',
+    dataMode: 'server',
+    group: 'data',
+    tags: ['edit', 'table', 'rows', 'form', 'input', 'crud', 'spreadsheet', 'local'],
+    props: [
+      { name: 'columns', type: 'string', label: 'Columns (comma-sep)' },
+      { name: 'addLabel', type: 'string', label: 'Add-row label', default: '+ Add row' },
+    ],
+    wiresTo: ['data', 'mutate'],
+  },
+  {
     kind: 'tabs',
     name: 'Tabs',
     description: 'A tabbed container — each child is a tab (label from its title or props.labels).',

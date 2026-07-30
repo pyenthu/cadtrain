@@ -14,11 +14,23 @@ function sweep(now: number): void {
   for (const [k, v] of store) if (v.exp < now) store.delete(k);
 }
 
-/** Park an app; returns a random token to render it by. */
+/** A readable slug from the app's title/id (for the route — you can see what you point at). */
+function slugOf(app: unknown): string {
+  const a = app as { title?: string; app?: string } | null;
+  return (
+    String(a?.title || a?.app || 'app')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 40) || 'app'
+  );
+}
+
+/** Park an app; returns a READABLE token `<slug>-<short>` (route shows what it points to). */
 export function putApp(app: unknown): string {
   const now = Date.now();
   sweep(now);
-  const token = crypto.randomUUID();
+  const token = `${slugOf(app)}-${crypto.randomUUID().slice(0, 8)}`;
   store.set(token, { app, exp: now + TTL_MS });
   return token;
 }
