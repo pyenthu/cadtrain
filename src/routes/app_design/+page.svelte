@@ -25,6 +25,7 @@
   let inputEl = $state<HTMLInputElement>();
   let previewToken = $state(''); // the /app/local session the Preview iframe renders (server-side)
   let previewBusy = $state(false);
+  let autoCompile = $state(false); // re-render the preview on every edit? default OFF (manual ↻)
 
   function idOf(): string {
     return (app?.app || fileName.replace(/\.app$/, '') || 'untitled').replace(/[^a-zA-Z0-9_-]/g, '_') || 'untitled';
@@ -71,7 +72,8 @@
     app = res.app;
     fileHandle = handle;
     fileName = name;
-    view = 'design';
+    view = 'split';
+    previewToken = ''; // fresh preview for the newly-opened app
     status = handle ? `opened ${name}` : `opened ${name} (read-only — Save As to write)`;
   }
 
@@ -98,7 +100,8 @@
     app = { app: 'untitled', title: 'Untitled', docType: 'app', panels: [], popovers: [] };
     fileHandle = null;
     fileName = '';
-    view = 'design';
+    view = 'split';
+    previewToken = '';
     status = 'new app — Save As to write a file';
   }
 
@@ -180,10 +183,14 @@
     serverPreview();
   }
 
-  // Live preview: in split/preview, re-render on the SERVER (debounced) as the app is edited.
+  // Initial render when a preview view opens (once — while there's no token yet).
   $effect(() => {
-    if (!app || (view !== 'split' && view !== 'preview')) return;
-    void JSON.stringify($state.snapshot(app)); // track every edit
+    if (app && (view === 'split' || view === 'preview') && !previewToken) serverPreview();
+  });
+  // Auto-compile: re-render on every edit (debounced) ONLY when the toggle is on (default off).
+  $effect(() => {
+    if (!app || (view !== 'split' && view !== 'preview') || !autoCompile) return;
+    void JSON.stringify($state.snapshot(app)); // track edits
     const t = setTimeout(() => serverPreview(), 500);
     return () => clearTimeout(t);
   });
@@ -212,6 +219,7 @@
   <div class="preview-wrap">
     <div class="preview-bar">
       <span class="pv-tag">server-rendered · /app/local/{previewToken || '…'}{previewBusy ? ' · rendering…' : ''}</span>
+      <label class="pv-auto" title="re-render on every edit (else use ↻)"><input type="checkbox" bind:checked={autoCompile} /> auto-compile</label>
       <button class="pv-refresh" onclick={() => serverPreview()} disabled={previewBusy}>↻ re-render</button>
     </div>
     {#if previewToken}
@@ -310,7 +318,8 @@
   .preview-wrap { display: flex; flex-direction: column; height: 100%; }
   .preview-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
   .pv-tag { font: 500 11px ui-monospace, monospace; color: #64748b; }
-  .pv-refresh { margin-left: auto; padding: 3px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; font: 600 11px system-ui; cursor: pointer; }
+  .pv-auto { margin-left: auto; display: flex; align-items: center; gap: 5px; font: 500 11px system-ui; color: #475569; cursor: pointer; }
+  .pv-refresh { padding: 3px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; font: 600 11px system-ui; cursor: pointer; }
   .pv-refresh:disabled { opacity: .5; cursor: default; }
   .preview-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
   .pv-loading { flex: 1; display: grid; place-items: center; color: #94a3b8; font: 13px system-ui; font-style: italic; }

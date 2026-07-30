@@ -10,7 +10,8 @@
 
   let { app }: { app: AppManifest } = $props();
   let query = $state('');
-  let open = $state(false);
+  let searchOpen = $state(false); // the add-component search popover
+  let searchStyle = $state(''); // fixed-position style anchored to the clicked ＋
   let openPanel = $state<any>(null); // the node whose settings popover is open
   let openStyle = $state(''); // fixed-position style anchored to the ⚙ button
   let addTarget = $state<string | null>(null); // container id to add INTO (null → root)
@@ -34,17 +35,25 @@
     if (meta?.acceptsChildren) panel.children = [];
     if (addTarget) await dispatch('addChildPanel', { parentId: addTarget, panel }, store());
     else await dispatch('definePanel', { panel }, store());
-    query = '';
-    open = false;
-    addTarget = null;
+    closeSearch();
   }
 
-  function addChildTo(id: string) {
-    addTarget = id;
+  /** Open the add-component search POPOVER anchored to the clicked ＋ (target = a parent id
+   *  to add INTO, or null for the root). */
+  function openSearch(target: string | null, btn: HTMLElement) {
+    addTarget = target;
+    if (target) uncollapse(target);
     query = '';
-    open = true;
-    uncollapse(id);
-    queryEl?.focus();
+    const r = btn.getBoundingClientRect();
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    searchStyle = `top:${r.bottom + 4}px; left:${Math.max(8, Math.min(r.left, vw - 300))}px;`;
+    searchOpen = true;
+    setTimeout(() => queryEl?.focus(), 0);
+  }
+  function closeSearch() {
+    searchOpen = false;
+    addTarget = null;
+    query = '';
   }
 
   const remove = (id: string) => dispatch('removePanel', { panelId: id }, store());
@@ -181,7 +190,7 @@
       <button class="caret" class:hide={!kids.length} onclick={() => toggleCollapse(p.id)} title={shown ? 'collapse' : 'expand'}>{shown ? '▾' : '▸'}</button>
       <button class="gear" class:on={openPanel?.id === p.id} disabled={!canEdit} onclick={(e) => openSettings(p, e.currentTarget as HTMLElement)} title={canEdit ? 'settings' : 'no settings'}>⚙</button>
       <span class="kind" title={p.title ?? p.id}>{p.kind}</span>
-      {#if meta?.acceptsChildren}<button class="add-child" title="add child" onclick={() => addChildTo(p.id)}>＋</button>{/if}
+      {#if meta?.acceptsChildren}<button class="add-child" title="add child" onclick={(e) => openSearch(p.id, e.currentTarget as HTMLElement)}>＋</button>{/if}
       <button onclick={() => outdent(p.id)} disabled={depth === 0} title="promote (out of parent)">←</button>
       <button onclick={() => move(p.id, idx, -1)} disabled={idx === 0} title="up">↑</button>
       <button onclick={() => move(p.id, idx, 1)} disabled={idx === siblings.length - 1} title="down">↓</button>
@@ -197,29 +206,8 @@
 {/snippet}
 
 <div class="ve">
-  <div class="search">
-    <input
-      bind:this={queryEl}
-      class="q"
-      placeholder={addTarget ? `Search — adding INTO “${addTarget}”…` : 'Search components — div · row · text · table · button · 3d…'}
-      bind:value={query}
-      onfocus={() => (open = true)}
-      onblur={() => setTimeout(() => (open = false), 160)}
-    />
-    {#if addTarget}<button class="cancel-target" onclick={() => (addTarget = null)} title="add to root instead">to root ✕</button>{/if}
-    {#if open && results.length}
-      <ul class="results">
-        {#each results as r (r.key)}
-          <li>
-            <button onmousedown={(e) => { e.preventDefault(); addKind(r.key); }}>
-              <span class="rk">{r.name}</span>
-              <span class="rg">{r.group}</span>
-              <span class="rd">{r.description}</span>
-            </button>
-          </li>
-        {/each}
-      </ul>
-    {/if}
+  <div class="topbar">
+    <button class="add-top" onclick={(e) => openSearch(null, e.currentTarget as HTMLElement)} disabled={searchOpen} title="add a component">＋ Add</button>
   </div>
 
   <ul class="tree">
@@ -229,6 +217,30 @@
 
   <div class="hint">A tree of components (nest with ＋ on containers). Edits call the same gui verbs the AI uses.</div>
 </div>
+
+{#if searchOpen}
+  <div class="settings-backdrop" role="presentation" onclick={closeSearch}></div>
+  <div class="search-pop" style={searchStyle}>
+    <input
+      bind:this={queryEl}
+      class="q"
+      placeholder={addTarget ? `add into “${addTarget}”…` : 'search components — div · row · text · table · 3d…'}
+      bind:value={query}
+    />
+    <ul class="results">
+      {#each results as r (r.key)}
+        <li>
+          <button onmousedown={(e) => { e.preventDefault(); addKind(r.key); }}>
+            <span class="rk">{r.name}</span>
+            <span class="rg">{r.group}</span>
+            <span class="rd">{r.description}</span>
+          </button>
+        </li>
+      {/each}
+      {#if !results.length}<li class="no-res">no match</li>{/if}
+    </ul>
+  </div>
+{/if}
 
 {#if openPanel}
   {@const meta = getComponentMeta(openPanel.kind)}
@@ -249,11 +261,15 @@
 
 <style>
   .ve { display: flex; flex-direction: column; gap: 8px; padding: 10px; font: 12.5px system-ui, Arial, sans-serif; color: #0f172a; height: 100%; overflow: auto; }
-  .search { position: relative; display: flex; gap: 6px; }
-  .search .q { flex: 1; box-sizing: border-box; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 7px; font: 12.5px system-ui; }
-  .search .q:focus { outline: none; border-color: #0369a1; box-shadow: 0 0 0 3px rgba(3,105,161,.12); }
-  .cancel-target { padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; font: 600 11px system-ui; cursor: pointer; white-space: nowrap; }
-  .results { list-style: none; margin: 4px 0 0; padding: 4px; position: absolute; z-index: 20; left: 0; right: 0; top: 100%; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.10); max-height: 320px; overflow: auto; }
+  .topbar { display: flex; }
+  .add-top { padding: 6px 12px; border: 1px solid #0369a1; border-radius: 7px; background: #0369a1; color: #fff; font: 600 12.5px system-ui; cursor: pointer; }
+  .add-top:hover:not(:disabled) { filter: brightness(1.08); }
+  .add-top:disabled { opacity: .5; cursor: default; }
+  .search-pop { position: fixed; z-index: 41; width: 300px; max-height: 62vh; overflow: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 9px; box-shadow: 0 14px 40px rgba(2,6,23,.18); padding: 6px; }
+  .search-pop .q { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 7px; font: 12.5px system-ui; margin-bottom: 4px; }
+  .search-pop .q:focus { outline: none; border-color: #0369a1; box-shadow: 0 0 0 3px rgba(3,105,161,.12); }
+  .no-res { padding: 8px 9px; color: #94a3b8; font-style: italic; font-size: 12px; }
+  .results { list-style: none; margin: 0; padding: 0; }
   .results button { display: grid; grid-template-columns: auto auto 1fr; align-items: baseline; gap: 8px; width: 100%; text-align: left; padding: 6px 9px; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
   .results button:hover { background: #f1f5f9; }
   .results .rk { font-weight: 600; }
