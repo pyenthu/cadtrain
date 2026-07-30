@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { rankBuilds, rankGolden, renderGrounding, compactApp, isCleanBuild, rankPromotionCandidates, type BuildRecord, type GoldenPair } from './app-corpus';
+import { matchTemplate, applyTemplate } from './golden-templates';
 
 const rec = (prompt: string, panels: Array<{ id: string; kind: string }>): BuildRecord => ({
   ts: 0, prompt, steps: panels.length, app: { app: 'x', panels },
@@ -86,5 +87,59 @@ describe('app-corpus (rung 4a.2 learning loop)', () => {
     const g = renderGrounding(rankBuilds('wells app', corpus, 1), rankGolden('well casings', golden, 1));
     expect(g).toContain('Curated examples');
     expect(g.indexOf('Curated examples')).toBeLessThan(g.indexOf('Similar past builds'));
+  });
+});
+
+describe('parameterized / templated golden entries (#43 — one entry per family)', () => {
+  // ONE templated golden stands in for N concrete "turn the background <colour>" pairs.
+  const colorTemplate: GoldenPair = {
+    name: 'bg-color',
+    md: 'turn the background {{color}}',
+    app: { app: 'bg', panels: [{ id: 'root', kind: 'stack' }], theme: { background: '{{color}}' } },
+  };
+  // A literal (non-templated) golden mixed in to prove backward-compatibility.
+  const literal: GoldenPair = {
+    name: 'hello',
+    md: '# Hello\nA simple greeting text panel.',
+    app: { app: 'h', panels: [{ id: 'g', kind: 'text' }] },
+  };
+  const pool = [colorTemplate, literal];
+
+  it('one {{color}} golden retrieves for the WHOLE family (teal AND red)', () => {
+    expect(rankGolden('turn the background teal', pool, 1)[0].name).toBe('bg-color');
+    expect(rankGolden('make the background red', pool, 1)[0].name).toBe('bg-color');
+    // and it never mis-fires on a disjoint prompt (no shared tokens with either golden)
+    expect(rankGolden('survey depth chart zzz', pool)).toHaveLength(0);
+  });
+
+  it('non-templated goldens are UNAFFECTED (literal still retrieves by md overlap)', () => {
+    expect(rankGolden('a simple greeting', pool, 1)[0].name).toBe('hello');
+    // the whole existing suite above uses non-templated goldens and still passes → proof enough.
+  });
+
+  it('renderGrounding shows the template + a fill-note when no prompt / no exact match', () => {
+    const g1 = renderGrounding([], rankGolden('turn the background teal', pool, 1)); // no prompt arg
+    expect(g1).toContain('{{color}}');
+    expect(g1).toContain('fill {{color}} from the user');
+
+    // paraphrase → deterministic match fails → still shows the template (mechanism (a): LLM fills)
+    const g2 = renderGrounding([], rankGolden('make the background red', pool, 1), 'make the background red');
+    expect(g2).toContain('{{color}}');
+    expect(g2).toContain('template — fill');
+  });
+
+  it('renderGrounding fills DETERMINISTICALLY when the prompt matches the template exactly', () => {
+    const g = renderGrounding([], rankGolden('turn the background teal', pool, 1), 'turn the background teal');
+    expect(g).toContain('turn the background teal'); // md filled
+    expect(g).toContain('"background":"teal"'); // the target .app filled (compactApp keeps theme)
+    expect(g).toContain('filled color=teal from the prompt');
+    expect(g).not.toContain('{{color}}'); // no un-substituted placeholder remains
+  });
+
+  it('deterministic substitution produces the RIGHT target .app', () => {
+    const m = matchTemplate('turn the background teal', colorTemplate)!;
+    const target = applyTemplate(colorTemplate.app, m.values) as any;
+    expect(target.theme.background).toBe('teal');
+    expect(target.panels[0].kind).toBe('stack');
   });
 });

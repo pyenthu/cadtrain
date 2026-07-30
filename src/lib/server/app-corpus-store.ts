@@ -27,11 +27,26 @@ export interface BuildRecord {
   raw?: string;
 }
 
-/** A curated (description, structure) example — the MD is the retrieval key. */
+/** A single {{slot}} in a TEMPLATED golden — an optional enrichment (a type + an allow-list of
+ *  known values for tighter deterministic matching). Slot NAMES are always derivable from the
+ *  md's `{{name}}` placeholders (see golden-templates.ts `extractSlots`), so this metadata is
+ *  optional; when present it only sharpens matching/validation. */
+export interface GoldenSlot {
+  name: string;
+  type?: string;
+  values?: string[];
+}
+
+/** A curated (description, structure) example — the MD is the retrieval key. Optionally
+ *  TEMPLATED: md/app may carry `{{slot}}` placeholders so ONE pair stands for a whole family of
+ *  prompts (e.g. "turn the background {{color}}" covers teal/red/blue/…) instead of N
+ *  near-duplicate pairs — saves corpus space + retrieval tokens (#43). `slots` is OPTIONAL and
+ *  backward-compatible: existing literal goldens simply omit it. */
 export interface GoldenPair {
   name: string;
   md: string;
   app: unknown;
+  slots?: GoldenSlot[];
 }
 
 /** A user-flagged bad build — the NEGATIVE signal (the ⚠ Report). Reviewed to fix a component
