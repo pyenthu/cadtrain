@@ -108,8 +108,9 @@
   <div class="harness-grid">
     {#each app.panels as panel (panel.id)}
       <!-- No panel chrome: each component renders as it intends (card = bordered, div =
-           transparent, text = bare). The grid only PLACES it. -->
-      <div class="cell" style={gridStyle(panel.layout)}>
+           transparent, text = bare). The grid PLACES it + applies the component's Style
+           (props.class / props.style — the tree's Style tab). -->
+      <div class="cell {(panel.props?.class as string) ?? ''}" style="{gridStyle(panel.layout)};{(panel.props?.style as string) ?? ''}">
         <PanelNode node={panel} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {preloaded} {onBuild} />
       </div>
     {/each}

@@ -15,6 +15,7 @@
   let searchStyle = $state(''); // fixed-position style anchored to the clicked ＋
   let openPanel = $state<any>(null); // the node whose settings popover is open
   let openStyle = $state(''); // fixed-position style anchored to the ⚙ button
+  let settingsTab = $state<'props' | 'style'>('props'); // component editor tab
   let addTarget = $state<string | null>(null); // container id to add INTO (null → root)
   let collapsed = $state<Set<string>>(new Set());
   let queryEl = $state<HTMLInputElement>();
@@ -66,6 +67,7 @@
 
   function openSettings(p: any, btn: HTMLElement) {
     if (openPanel?.id === p.id) return closeSettings();
+    settingsTab = 'props';
     const r = btn.getBoundingClientRect();
     const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
     openStyle = `top:${r.bottom + 4}px; left:${Math.max(8, Math.min(r.left, vw - 320))}px;`;
@@ -248,20 +250,36 @@
   <div class="settings-backdrop" role="presentation" onclick={closeSettings}></div>
   <div class="settings-pop" style={openStyle}>
     <div class="sp-head">
-      <span class="sp-kind">{openPanel.kind} · settings</span>
+      <span class="sp-kind">{openPanel.kind}</span>
+      <div class="sp-tabs">
+        <button class:on={settingsTab === 'props'} onclick={() => (settingsTab = 'props')}>Props</button>
+        <button class:on={settingsTab === 'style'} onclick={() => (settingsTab = 'style')}>Style</button>
+      </div>
       <button class="sp-close" onclick={closeSettings} title="close">✕</button>
     </div>
     <label class="prop">
       <span class="pl">title</span>
       <input value={openPanel.title ?? ''} placeholder={openPanel.id} onchange={(e) => rename(openPanel.id, (e.currentTarget as HTMLInputElement).value)} />
     </label>
-    {#if panelEditor(openPanel.kind)}
-      {@const CustomEditor = panelEditor(openPanel.kind)}
-      <CustomEditor panel={openPanel} onProp={(name, value) => setProp(openPanel.id, name, value)} />
-    {:else if meta?.props?.length}
-      {@render propsForm(openPanel, meta)}
+    {#if settingsTab === 'props'}
+      {#if panelEditor(openPanel.kind)}
+        {@const CustomEditor = panelEditor(openPanel.kind)}
+        <CustomEditor panel={openPanel} onProp={(name, value) => setProp(openPanel.id, name, value)} />
+      {:else if meta?.props?.length}
+        {@render propsForm(openPanel, meta)}
+      {/if}
+      {#if wireableKind(openPanel.kind)}{@render wiring(openPanel)}{/if}
+    {:else}
+      <div class="wire">
+        <label class="prop"><span class="pl">CSS classes</span>
+          <input value={(openPanel.props?.class as string) ?? ''} placeholder="e.g. p-4 rounded" onchange={(e) => setProp(openPanel.id, 'class', (e.currentTarget as HTMLInputElement).value)} />
+        </label>
+        <label class="prop"><span class="pl">inline style</span>
+          <input value={(openPanel.props?.style as string) ?? ''} placeholder="e.g. padding:12px;background:#f8fafc" onchange={(e) => setProp(openPanel.id, 'style', (e.currentTarget as HTMLInputElement).value)} />
+        </label>
+        <div class="sp-note">Inline style always applies; Tailwind classes only if already in the build.</div>
+      </div>
     {/if}
-    {#if wireableKind(openPanel.kind)}{@render wiring(openPanel)}{/if}
   </div>
 {/if}
 
@@ -311,6 +329,10 @@
   .settings-pop { position: fixed; z-index: 41; width: 300px; max-height: 72vh; overflow: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 9px; box-shadow: 0 14px 40px rgba(2,6,23,.18); padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; }
   .sp-head { display: flex; align-items: center; justify-content: space-between; }
   .sp-kind { font: 600 9.5px system-ui; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; }
+  .sp-tabs { display: flex; gap: 2px; }
+  .sp-tabs button { padding: 2px 9px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #64748b; font: 600 11px system-ui; cursor: pointer; }
+  .sp-tabs button.on { color: #0369a1; border-bottom-color: #0369a1; }
+  .sp-note { color: #94a3b8; font-size: 10.5px; font-style: italic; margin-top: 2px; }
   .sp-close { border: 0; background: transparent; color: #64748b; cursor: pointer; font-size: 13px; padding: 0 2px; }
   .settings-pop .props, .settings-pop .wire { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 0; }
   .settings-pop .prop input[type=text], .settings-pop .prop select, .settings-pop .prop input[type=number] { max-width: 60%; }
