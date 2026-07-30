@@ -14,13 +14,23 @@ import { buildAppViaCli } from '$lib/appkit/ai/build-cli';
 import { captureBuild, buildGrounding } from '$lib/server/app-corpus';
 
 export const POST: RequestHandler = async ({ request }) => {
-  const body = (await request.json().catch(() => null)) as { id?: string; app?: unknown; prompt?: string } | null;
+  const body = (await request.json().catch(() => null)) as { id?: string; app?: unknown; prompt?: string; provider?: string } | null;
   if (!body?.prompt) throw error(400, 'missing prompt');
   if (!body.app && !body.id) throw error(400, 'missing app or id');
 
-  // Backend select (APP_BUILD_PROVIDER): 'cli' → claude --print subprocess (dev, bills the Max
-  // subscription) · 'local' → Ollama (dev, free) · else 'cloud' → ANTHROPIC_API_KEY (prod default).
-  const mode = env.APP_BUILD_PROVIDER === 'cli' ? 'cli' : env.APP_BUILD_PROVIDER === 'local' ? 'local' : 'cloud';
+  // Backend select: a per-request `provider` (the studio's model toggle) wins; else the
+  // APP_BUILD_PROVIDER env. 'cli' → claude --print subprocess (dev, bills the Max subscription)
+  // · 'local' → Ollama (dev, free) · 'cloud' → ANTHROPIC_API_KEY (prod default). (PHI/WebLLM
+  // runs entirely in the browser and never hits this endpoint.)
+  const req = body.provider;
+  const mode =
+    req === 'cli' || req === 'local' || req === 'cloud'
+      ? req
+      : env.APP_BUILD_PROVIDER === 'cli'
+        ? 'cli'
+        : env.APP_BUILD_PROVIDER === 'local'
+          ? 'local'
+          : 'cloud';
   const apiKey = env.ANTHROPIC_API_KEY;
   if (mode === 'cloud' && !apiKey) {
     throw error(503, 'ANTHROPIC_API_KEY not set (cloud build). Set APP_BUILD_PROVIDER=cli (claude CLI subscription) or =local (Ollama) for dev.');

@@ -6,8 +6,12 @@
 // INJECTED (this module imports no node), so appkit stays pure + testable.
 import { verbsByGroup, type Ctx } from '../verbs/registry';
 import { dispatch } from '../verbs/dispatch';
-import { systemPrompt, type BuildOpts, type BuildResult, type VerbCall } from './pipeline';
+import { systemPrompt, emitInstruction, parseVerbCalls } from './prompt';
 import { sanitizeApp } from './sanitize';
+import type { BuildOpts, BuildResult, VerbCall } from './pipeline';
+
+// Re-export so existing importers (build-cli.test.ts) keep working after the extraction.
+export { parseVerbCalls } from './prompt';
 
 /** Injected transport: run one turn, return the model's raw text. Server supplies the
  *  `claude --print` spawn (src/lib/server/claude-cli.ts); tests supply a fake. */
@@ -17,15 +21,7 @@ export type CliRunner = (prompt: string, opts: { model?: string }) => Promise<st
 export async function buildAppViaCli(opts: BuildOpts, run: CliRunner): Promise<BuildResult> {
   const { prompt, app, grounding = '', model } = opts;
   const guiNames = verbsByGroup('gui').map((v) => v.name);
-  const emit = [
-    '',
-    'OUTPUT FORMAT: respond with ONLY a JSON array of gui-verb calls that build the app —',
-    'no prose, no markdown fences, no explanation. Each element is',
-    `{"verb": "<one of: ${guiNames.join(', ')}>", "args": { ... }}.`,
-    'They run in order and mutate the app in place. Example:',
-    '[{"verb":"definePanel","args":{"panel":{"id":"t","kind":"text","props":{"text":"Hi","color":"red"}}}}]',
-  ].join('\n');
-  const full = `${systemPrompt(app, grounding, prompt)}\n\n=== REQUEST ===\n${prompt}\n${emit}`;
+  const full = `${systemPrompt(app, grounding, prompt)}\n\n=== REQUEST ===\n${prompt}\n${emitInstruction()}`;
 
   const raw = await run(full, { model });
   const calls = parseVerbCalls(raw);
@@ -46,22 +42,4 @@ export async function buildAppViaCli(opts: BuildOpts, run: CliRunner): Promise<B
   }
   sanitizeApp(app); // parity with the AI-SDK path — drop any hallucinated-verb bindings
   return { app, steps: trace.length, text: '', trace, raw };
-}
-
-/** Pull the JSON verb array out of the model's text, tolerating ```fences``` + surrounding
- *  prose. Pure → unit-testable without spawning anything. */
-export function parseVerbCalls(raw: string): Array<{ verb: string; args: unknown }> {
-  const start = raw.indexOf('[');
-  const end = raw.lastIndexOf(']');
-  if (start === -1 || end === -1 || end < start) return [];
-  let arr: unknown;
-  try {
-    arr = JSON.parse(raw.slice(start, end + 1));
-  } catch {
-    return [];
-  }
-  if (!Array.isArray(arr)) return [];
-  return arr
-    .filter((x): x is { verb: string; args?: unknown } => !!x && typeof (x as { verb?: unknown }).verb === 'string')
-    .map((x) => ({ verb: x.verb, args: x.args ?? {} }));
 }

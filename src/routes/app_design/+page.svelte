@@ -7,6 +7,7 @@
   import VisualEditor from '$lib/shared/harness/VisualEditor.svelte';
   import AppSettings from '$lib/shared/harness/AppSettings.svelte';
   import LearnPanel from '$lib/shared/harness/LearnPanel.svelte';
+  import ChatPanel from '$lib/shared/harness/ChatPanel.svelte';
   import { validateManifest } from '$lib/appkit/manifest/validate';
   import { autoDoc } from '$lib/appkit/manifest/doc';
   import { createLocalStore } from '$lib/appkit/store/local-backend';
@@ -160,32 +161,63 @@
     }
   }
 
-  /** Shared AI edit: send the whole .app + a prompt to the builder, swap in the result. */
-  async function runGenerate(promptText: string): Promise<boolean> {
-    if (!app || !promptText.trim()) return false;
+  /** Shared AI edit: send the whole .app + a prompt to the SERVER builder (provider = cloud/cli/
+   *  local, the chat's model toggle), swap in the result. */
+  async function runGenerate(promptText: string, provider?: string): Promise<{ ok: boolean; steps?: number }> {
+    if (!app || !promptText.trim()) return { ok: false };
     building = true;
     status = 'building…';
     try {
       const r = await fetch('/api/app/generate', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ app: $state.snapshot(app), prompt: promptText }),
+        body: JSON.stringify({ app: $state.snapshot(app), prompt: promptText, ...(provider ? { provider } : {}) }),
       });
       if (!r.ok) throw new Error(await r.text());
       const j = await r.json();
       app = j.app;
       status = `AI built (${j.steps} steps) — Save to keep`;
-      return true;
+      return { ok: true, steps: j.steps };
     } catch (e) {
       status = String(e);
-      return false;
+      return { ok: false };
     } finally {
       building = false;
     }
   }
 
+  /** The chat's build entry — routes by the model toggle. cli/cloud/local → the server endpoint;
+   *  PHI → the in-browser WebLLM path (client-side, zero API, runs on WebGPU). */
+  async function chatBuild(promptText: string, provider: 'cli' | 'cloud' | 'phi'): Promise<{ ok: boolean; steps?: number; error?: string }> {
+    if (!app || !promptText.trim()) return { ok: false, error: 'no app / empty prompt' };
+    if (provider === 'phi') {
+      building = true;
+      try {
+        const mod = await import('$lib/appkit/ai/webllm-build');
+        if (!mod.isWebGPUAvailable()) throw new Error('WebGPU unavailable — use Chrome/Edge desktop for Phi');
+        if (!mod.phiReady()) {
+          status = 'loading Phi (one-time ~2.4 GB)…';
+          await mod.loadPhi((p) => (status = `Phi ${Math.round(p.progress * 100)}% — ${p.text}`));
+        }
+        status = 'Phi building…';
+        const out = await mod.buildAppWithPhi(app, promptText, '');
+        app = { ...app }; // nudge reactivity after in-place dispatch
+        serverPreview();
+        status = `Phi built (${out.trace.length} steps)`;
+        return { ok: true, steps: out.trace.length };
+      } catch (e) {
+        status = String(e);
+        return { ok: false, error: String(e) };
+      } finally {
+        building = false;
+      }
+    }
+    const r = await runGenerate(promptText, provider);
+    return { ok: r.ok, steps: r.steps, error: r.ok ? undefined : status };
+  }
+
   async function build() {
-    if (await runGenerate(prompt)) prompt = '';
+    if ((await runGenerate(prompt)).ok) prompt = '';
   }
 
   /** Component-scoped AI: the ⚙ popover's ✨ bar — the builder targets ONE component. */
@@ -355,6 +387,8 @@
       </div>
     {/if}
   </main>
+
+  {#if app}<ChatPanel onBuild={chatBuild} />{/if}
 
   <input bind:this={inputEl} type="file" accept=".app,application/json" style="display:none" onchange={onPick} />
 </div>
