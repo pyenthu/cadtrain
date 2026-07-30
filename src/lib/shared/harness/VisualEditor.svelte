@@ -18,7 +18,7 @@
   let settingsTab = $state<'props' | 'style'>('props'); // component editor tab
   let appOpen = $state(false); // app-level settings popover
   let appStyle = $state('');
-  let appTab = $state<'vars' | 'style'>('vars');
+  let appTab = $state<'vars' | 'structures' | 'style'>('vars');
   let addTarget = $state<string | null>(null); // container id to add INTO (null → root)
   let collapsed = $state<Set<string>>(new Set());
   let queryEl = $state<HTMLInputElement>();
@@ -136,6 +136,24 @@
     app.computed = c;
   }
   const setTheme = (k: 'mode' | 'accent', v: string) => (app.theme = { ...(app.theme ?? {}), [k]: v });
+  // Data structures (reusable field sets)
+  const structEntries = $derived(Object.entries((app.structures ?? {}) as Record<string, Array<{ name: string }>>));
+  const addStructure = () => (app.structures = { ...(app.structures ?? {}), [`struct${structEntries.length + 1}`]: [] });
+  function renameStructure(oldName: string, newName: string) {
+    const s = { ...(app.structures ?? {}) };
+    const v = s[oldName];
+    delete s[oldName];
+    s[newName || oldName] = v;
+    app.structures = s;
+  }
+  const setFields = (name: string, csv: string) =>
+    (app.structures = { ...(app.structures ?? {}), [name]: csv.split(',').map((x) => x.trim()).filter(Boolean).map((n) => ({ name: n })) });
+  function delStructure(name: string) {
+    const s = { ...(app.structures ?? {}) };
+    delete s[name];
+    app.structures = s;
+  }
+  const fieldsCsv = (fields: Array<{ name: string }>) => (fields ?? []).map((f) => f.name).join(', ');
 
   function toggleCollapse(id: string) {
     const s = new Set(collapsed);
@@ -256,6 +274,7 @@
       <span class="sp-kind">App</span>
       <div class="sp-tabs">
         <button class:on={appTab === 'vars'} onclick={() => (appTab = 'vars')}>Variables</button>
+        <button class:on={appTab === 'structures'} onclick={() => (appTab = 'structures')}>Data</button>
         <button class:on={appTab === 'style'} onclick={() => (appTab = 'style')}>Style</button>
       </div>
       <button class="sp-close" onclick={() => (appOpen = false)} title="close">✕</button>
@@ -271,6 +290,18 @@
         {/each}
         {#if !compEntries.length}<div class="sp-note">no variables — a formula over params/vars, referenced as $vars.name</div>{/if}
         <button class="ete-add" onclick={addComputed}>＋ variable</button>
+      </div>
+    {:else if appTab === 'structures'}
+      <div class="wire">
+        {#each structEntries as [name, fields] (name)}
+          <div class="var-row">
+            <input class="vn" value={name} onchange={(e) => renameStructure(name, (e.currentTarget as HTMLInputElement).value)} />
+            <input class="vf" value={fieldsCsv(fields)} placeholder="od, id, top" onchange={(e) => setFields(name, (e.currentTarget as HTMLInputElement).value)} />
+            <button class="rm" onclick={() => delStructure(name)} title="remove">✕</button>
+          </div>
+        {/each}
+        {#if !structEntries.length}<div class="sp-note">no structures — a reusable field set; a table adopts one via its “From structure” picker</div>{/if}
+        <button class="ete-add" onclick={addStructure}>＋ structure</button>
       </div>
     {:else}
       <div class="wire">
@@ -332,7 +363,7 @@
     {#if settingsTab === 'props'}
       {#if panelEditor(openPanel.kind)}
         {@const CustomEditor = panelEditor(openPanel.kind)}
-        <CustomEditor panel={openPanel} onProp={(name, value) => setProp(openPanel.id, name, value)} />
+        <CustomEditor panel={openPanel} structures={app.structures} onProp={(name, value) => setProp(openPanel.id, name, value)} />
       {:else if meta?.props?.length}
         {@render propsForm(openPanel, meta)}
       {/if}

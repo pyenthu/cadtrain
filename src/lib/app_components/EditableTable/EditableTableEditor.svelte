@@ -5,7 +5,20 @@
   // in the tree's settings popover when present (else the generic props form). See
   // src/lib/app_components/CLAUDE.md.
   import type { Panel } from '$lib/appkit/manifest/types';
-  let { panel, onProp }: { panel: Panel; onProp: (name: string, value: unknown) => void } = $props();
+  let {
+    panel,
+    onProp,
+    structures,
+  }: {
+    panel: Panel;
+    onProp: (name: string, value: unknown) => void;
+    structures?: Record<string, Array<{ name: string }>>;
+  } = $props();
+  const structNames = $derived(Object.keys(structures ?? {}));
+  function adoptStructure(name: string) {
+    const fields = structures?.[name];
+    if (fields) onProp('columns', fields.map((f) => f.name).join(', '));
+  }
 
   const cols = $derived(
     String((panel.props?.columns as string) ?? '')
@@ -26,6 +39,15 @@
 </script>
 
 <div class="ete">
+  {#if structNames.length}
+    <label class="ete-from">
+      <span>From structure</span>
+      <select value="" onchange={(e) => { adoptStructure((e.currentTarget as HTMLSelectElement).value); (e.currentTarget as HTMLSelectElement).value = ''; }}>
+        <option value="">— pick —</option>
+        {#each structNames as n}<option value={n}>{n}</option>{/each}
+      </select>
+    </label>
+  {/if}
   <div class="ete-h">Columns</div>
   {#each cols as c, i (i)}
     <div class="ete-row">
@@ -50,6 +72,9 @@
 <style>
   .ete { display: flex; flex-direction: column; gap: 5px; margin-top: 4px; }
   .ete-h { font: 600 10px system-ui; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; }
+  .ete-from { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  .ete-from span { color: #64748b; font-size: 12px; }
+  .ete-from select { width: 58%; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 5px; font: 12px system-ui; }
   .ete-row { display: flex; align-items: center; gap: 4px; }
   .ete-row .ci { width: 16px; text-align: center; font: 600 10px system-ui; color: #94a3b8; }
   .ete-row input { flex: 1; min-width: 0; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 5px; font: 12px system-ui; }

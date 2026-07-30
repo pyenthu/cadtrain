@@ -98,6 +98,9 @@ export interface AppManifest {
   computed?: Record<string, string>;
   /** Custom app CSS injected into the harness (app-level Style). */
   css?: string;
+  /** App-local data STRUCTURES — reusable record shapes: name → fields. A component can adopt
+   *  one for its columns (e.g. an editable table's `props.structure`). */
+  structures?: Record<string, Array<{ name: string; type?: string }>>;
   /** Embedded Markdown doc — travels inside the .app; feeds the design-RAG.
    *  Auto-summarized from the structure when empty (manifest/doc.ts). */
   doc?: string;
