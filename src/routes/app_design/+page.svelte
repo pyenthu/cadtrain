@@ -156,13 +156,19 @@
 
   async function launch() {
     if (!app) return;
-    // /app/[id] reads the SAMPLE working dir — copy the current app there, then open it.
-    const id = idOf();
+    // Server-render the CURRENT app (works for a picked local file or a freshly-built one,
+    // saved or not): park it in a session → open /app/local/[token], which SSRs it.
     try {
-      await store.save?.(id, $state.snapshot(app) as AppManifest);
-      W?.open(`/app/${id}`, '_blank');
+      const r = await fetch('/api/app/session', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ app: $state.snapshot(app) }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const { token } = await r.json();
+      W?.open(`/app/local/${token}`, '_blank');
     } catch (e) {
-      status = String(e);
+      status = `launch failed: ${String((e as any)?.message ?? e)}`;
     }
   }
 </script>
