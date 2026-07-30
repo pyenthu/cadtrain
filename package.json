@@ -55,6 +55,7 @@
     "@gltf-transform/core": "^4.3.0",
     "@lezer/highlight": "^1.2.3",
     "@math.gl/core": "^4.1.0",
+    "@mlc-ai/web-llm": "^0.2.84",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@polydera/trueform": "0.9.8",
     "@threlte/core": "^8.5.9",

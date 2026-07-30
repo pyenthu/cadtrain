@@ -4,11 +4,10 @@
 // AI SDK tools, so what the AI can do can never drift from the API. D8.
 import { generateText, tool, jsonSchema, stepCountIs } from 'ai';
 import { resolveModel, type Provider } from './providers';
-import { VERBS, verbsByGroup, type Ctx, type AppDoc, type AppEngine } from '../verbs/registry';
+import { verbsByGroup, type Ctx, type AppDoc, type AppEngine } from '../verbs/registry';
 import { dispatch } from '../verbs/dispatch';
-import { toApiMd } from '../schema/to-apimd';
 import { sanitizeApp } from './sanitize';
-import { renderComponentKnowledge, collectKinds } from './component-cards';
+import { systemPrompt } from './prompt';
 
 export interface BuildOpts {
   prompt: string;
@@ -86,29 +85,3 @@ export async function buildApp(opts: BuildOpts): Promise<BuildResult> {
   return { app, steps: result.steps?.length ?? 0, text: result.text ?? '', trace };
 }
 
-export function systemPrompt(app: AppDoc, grounding = '', prompt = ''): string {
-  const cur = { app: app.app, title: app.title, panels: (app.panels ?? []).map((p: any) => ({ id: p.id, kind: p.kind })) };
-  const appKinds = collectKinds(app.panels as any);
-  return [
-    ...(grounding ? [grounding, ''] : []),
-    'You build a declarative app GUI by CALLING the provided gui tools (definePanel, addChildPanel, setComponentProp, setPanelProp, patchApp). You edit the .app manifest { app, title, panels[], popovers[] } in place.',
-    'A panel has a "kind", "props" (typed per kind — see COMPONENT KNOWLEDGE below), an optional "source" binding {verb,args} (its data), an "on" event map, "layout" {col,row,w,h} (12-col grid; w = span), and "children" (nested panels, HTML-style; a kind that HOLDS children nests via children[] or the addChildPanel verb).',
-    '',
-    renderComponentKnowledge(prompt, appKinds),
-    '',
-    'Data-component wiring: list (source listDocs, onSelect loadDoc) · form (source getParams id:"$active") · table/grid = read-only rows from a source (props.columns) · edittable = rows editable in the CLIENT (add/edit/delete instant, local — no server), seeded from source, on.save wired to a persist verb (the only round-trip) · bake3d (source bake id:"$active").',
-    'A binding references a data/mutate verb by NAME; args may use $active (the selected doc), $item (a list row), or $params (the doc params).',
-    'Events: on:{ click:{verb,args} } or a SEQUENCE on:{ click:[{verb:"save"},{verb:"bake"}] } run in order. Any node may carry an "on" event map.',
-    'Computed variables: app.computed { name:"= formula" } (arithmetic/logic over params + earlier vars) — reference elsewhere as $vars.<name>.',
-    'API calls: the "http" verb — a source {verb:"http",args:{url:"/api/...",pick:"items"}} or a button on.click {verb:"http",args:{url,method,body}}.',
-    'Data files (the app is STATELESS — data lives in files): app.files [{slot,type,label}] + a "file" panel (props.slot); wire a source via {verb:"loadData",args:{slot:"well",pick?:"casings"}}.',
-    'Theme: app.theme {mode:"light"|"dark", accent:"#hex"}.',
-    '',
-    'Verbs you can REFERENCE in bindings (only CALL the gui ones):',
-    toApiMd(VERBS),
-    '',
-    `Current app: ${JSON.stringify(cur)}`,
-    '',
-    'Only reference verbs that appear in the guide above — NEVER invent a verb name (e.g. there is no "static" verb). Keep panel ids short. Do NOT explain — just call the tools to build what the user asked for.',
-  ].join('\n');
-}
