@@ -11,7 +11,8 @@
   let { app }: { app: AppManifest } = $props();
   let query = $state('');
   let open = $state(false);
-  let openId = $state<string | null>(null); // which node's props are expanded
+  let openPanel = $state<any>(null); // the node whose settings popover is open
+  let openStyle = $state(''); // fixed-position style anchored to the ⚙ button
   let addTarget = $state<string | null>(null); // container id to add INTO (null → root)
   let collapsed = $state<Set<string>>(new Set());
   let queryEl = $state<HTMLInputElement>();
@@ -53,7 +54,14 @@
   const outdent = (id: string) => dispatch('outdentPanel', { panelId: id }, store()); // ← promote out
   const rename = (id: string, title: string) => dispatch('setPanelProp', { panelId: id, key: 'title', value: title }, store());
 
-  const toggleProps = (id: string) => (openId = openId === id ? null : id);
+  function openSettings(p: any, btn: HTMLElement) {
+    if (openPanel?.id === p.id) return closeSettings();
+    const r = btn.getBoundingClientRect();
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    openStyle = `top:${r.bottom + 4}px; left:${Math.max(8, Math.min(r.left, vw - 320))}px;`;
+    openPanel = p;
+  }
+  const closeSettings = () => (openPanel = null);
   const propVal = (p: any, name: string, dflt: unknown) => p.props?.[name] ?? dflt;
   const setProp = (id: string, name: string, value: unknown) =>
     dispatch('setComponentProp', { panelId: id, name, value }, store());
@@ -169,22 +177,18 @@
   {@const canEdit = !!meta?.props?.length || wireableKind(p.kind)}
   {@const prevNests = idx > 0 && !!getComponentMeta(siblings[idx - 1]?.kind)?.acceptsChildren}
   <li class="node" class:target={addTarget === p.id}>
-    <div class="row">
+    <div class="row" class:sel={openPanel?.id === p.id}>
       <button class="caret" class:hide={!kids.length} onclick={() => toggleCollapse(p.id)} title={shown ? 'collapse' : 'expand'}>{shown ? '▾' : '▸'}</button>
+      <button class="gear" class:on={openPanel?.id === p.id} disabled={!canEdit} onclick={(e) => openSettings(p, e.currentTarget as HTMLElement)} title={canEdit ? 'settings' : 'no settings'}>⚙</button>
       <span class="kind">{p.kind}</span>
-      <input value={p.title ?? p.id} onchange={(e) => rename(p.id, (e.currentTarget as HTMLInputElement).value)} />
+      <span class="name" title={p.title ?? p.id}>{p.title ?? p.id}</span>
       {#if meta?.acceptsChildren}<button class="add-child" title="add child" onclick={() => addChildTo(p.id)}>＋</button>{/if}
-      <button class="gear" class:on={openId === p.id} disabled={!canEdit} onclick={() => toggleProps(p.id)} title={canEdit ? 'props + wiring' : 'nothing to edit'}>⚙</button>
       <button onclick={() => outdent(p.id)} disabled={depth === 0} title="promote (out of parent)">←</button>
       <button onclick={() => move(p.id, idx, -1)} disabled={idx === 0} title="up">↑</button>
       <button onclick={() => move(p.id, idx, 1)} disabled={idx === siblings.length - 1} title="down">↓</button>
       <button onclick={() => indent(p.id)} disabled={!prevNests} title="demote (into previous)">→</button>
       <button class="rm" onclick={() => remove(p.id)} title="remove">✕</button>
     </div>
-    {#if openId === p.id && canEdit}
-      {#if meta?.props?.length}{@render propsForm(p, meta)}{/if}
-      {#if wireableKind(p.kind)}{@render wiring(p)}{/if}
-    {/if}
     {#if kids.length && shown}
       <ul class="children">
         {#each kids as c, ci (c.id)}{@render node(c, kids, ci, depth + 1)}{/each}
@@ -227,6 +231,23 @@
   <div class="hint">A tree of components (nest with ＋ on containers). Edits call the same gui verbs the AI uses.</div>
 </div>
 
+{#if openPanel}
+  {@const meta = getComponentMeta(openPanel.kind)}
+  <div class="settings-backdrop" role="presentation" onclick={closeSettings}></div>
+  <div class="settings-pop" style={openStyle}>
+    <div class="sp-head">
+      <span class="sp-kind">{openPanel.kind} · settings</span>
+      <button class="sp-close" onclick={closeSettings} title="close">✕</button>
+    </div>
+    <label class="prop">
+      <span class="pl">title</span>
+      <input value={openPanel.title ?? ''} placeholder={openPanel.id} onchange={(e) => rename(openPanel.id, (e.currentTarget as HTMLInputElement).value)} />
+    </label>
+    {#if meta?.props?.length}{@render propsForm(openPanel, meta)}{/if}
+    {#if wireableKind(openPanel.kind)}{@render wiring(openPanel)}{/if}
+  </div>
+{/if}
+
 <style>
   .ve { display: flex; flex-direction: column; gap: 8px; padding: 10px; font: 12.5px system-ui, Arial, sans-serif; color: #0f172a; height: 100%; overflow: auto; }
   .search { position: relative; display: flex; gap: 6px; }
@@ -246,11 +267,11 @@
   .node.target > .row { outline: 2px solid #0369a1; outline-offset: 1px; border-radius: 5px; }
   .row { display: flex; align-items: center; gap: 3px; padding: 1px 5px; border: 1px solid #e8edf2; border-radius: 5px; background: #fff; }
   .row:hover { border-color: #cbd5e1; }
+  .row.sel { border-color: #0369a1; background: #f0f9ff; }
   .caret { width: 15px; border: 0; background: transparent; color: #94a3b8; cursor: pointer; padding: 0; font-size: 10px; }
   .caret.hide { visibility: hidden; }
   .kind { font: 600 9px system-ui; text-transform: uppercase; color: #94a3b8; min-width: 42px; letter-spacing: .2px; }
-  .row > input { flex: 1; min-width: 40px; padding: 2px 5px; border: 1px solid transparent; border-radius: 4px; font: 12.5px system-ui; background: transparent; }
-  .row > input:hover { border-color: #eef2f6; } .row > input:focus { border-color: #bae6fd; background: #fff; outline: none; }
+  .name { flex: 1; min-width: 40px; padding: 2px 4px; font: 12.5px system-ui; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
   .row button { padding: 1px 6px; border: 1px solid #d7dee6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 11px; line-height: 1.4; }
   .row button:disabled { opacity: .3; cursor: default; }
   .add-child { color: #0369a1; border-color: #bae6fd !important; font-weight: 700; }
@@ -258,10 +279,18 @@
   .rm { color: #b91c1c; border-color: #fecaca !important; }
   .empty { padding: 8px; text-align: center; color: #94a3b8; font-style: italic; border: 1px dashed #e5e7eb; border-radius: 6px; margin-top: 4px; }
 
-  .props { display: grid; grid-template-columns: 1fr 1fr; gap: 6px 10px; padding: 8px 10px; margin: 2px 0 0 24px; border: 1px solid #eef2f6; border-radius: 6px; background: #f8fafc; }
   .prop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .prop .pl { color: #64748b; font-size: 12px; }
-  .prop input[type=text], .prop input[type=number], .prop select { width: 58%; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 5px; font: 12px system-ui; }
+  .prop input[type=text], .prop input[type=number], .prop select { flex: 1; min-width: 0; width: auto; max-width: 62%; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 5px; font: 12px system-ui; }
   .prop input[type=color] { width: 32px; height: 22px; padding: 0; border: 1px solid #cbd5e1; border-radius: 5px; }
   .hint { color: #94a3b8; font-size: 11px; font-style: italic; }
+
+  /* Settings popover (props + wiring + title) — anchored to the ⚙ button */
+  .settings-backdrop { position: fixed; inset: 0; z-index: 40; }
+  .settings-pop { position: fixed; z-index: 41; width: 300px; max-height: 72vh; overflow: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 9px; box-shadow: 0 14px 40px rgba(2,6,23,.18); padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; }
+  .sp-head { display: flex; align-items: center; justify-content: space-between; }
+  .sp-kind { font: 600 9.5px system-ui; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; }
+  .sp-close { border: 0; background: transparent; color: #64748b; cursor: pointer; font-size: 13px; padding: 0 2px; }
+  .settings-pop .props, .settings-pop .wire { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 0; }
+  .settings-pop .prop input[type=text], .settings-pop .prop select, .settings-pop .prop input[type=number] { max-width: 60%; }
 </style>

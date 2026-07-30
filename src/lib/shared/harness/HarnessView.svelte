@@ -104,16 +104,14 @@
 </script>
 
 <div class="harness" style={themeVars(app.theme)}>
-  <header class="harness-head">
-    <strong>{app.title ?? app.app}</strong>
-    <span class="tag">.app · {app.panels.length} panels</span>
-  </header>
+  {#if app.title}<header class="harness-head"><strong>{app.title}</strong></header>{/if}
   <div class="harness-grid">
     {#each app.panels as panel (panel.id)}
-      <section class="panel" style={gridStyle(panel.layout)}>
-        <div class="panel-head">{panel.title ?? panel.id}<span class="kind">{panel.kind}</span></div>
-        <div class="panel-body"><PanelNode node={panel} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {preloaded} {onBuild} /></div>
-      </section>
+      <!-- No panel chrome: each component renders as it intends (card = bordered, div =
+           transparent, text = bare). The grid only PLACES it. -->
+      <div class="cell" style={gridStyle(panel.layout)}>
+        <PanelNode node={panel} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {preloaded} {onBuild} />
+      </div>
     {/each}
   </div>
 </div>
@@ -121,10 +119,7 @@
 <style>
   .harness { display: flex; flex-direction: column; height: 100%; font: 13px/1.4 system-ui, Arial, sans-serif; color: var(--h-text); background: var(--h-bg); }
   .harness-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--h-border); background: var(--h-head); }
-  .harness-head .tag { color: var(--h-muted); font-size: 11px; }
-  .harness-grid { display: grid; grid-template-columns: repeat(12, 1fr); grid-auto-rows: minmax(120px, auto); gap: 12px; padding: 12px; flex: 1; min-height: 0; align-content: start; overflow: auto; }
-  .panel { border: 1px solid var(--h-border); border-radius: 8px; background: var(--h-surface); display: flex; flex-direction: column; overflow: hidden; min-height: 120px; }
-  .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border-bottom: 1px solid var(--h-border); background: var(--h-head); font-weight: 600; }
-  .panel-head .kind { font: 600 10px system-ui; text-transform: uppercase; letter-spacing: .4px; color: var(--h-muted); }
-  .panel-body { padding: 10px; overflow: auto; flex: 1; }
+  .harness-grid { display: grid; grid-template-columns: repeat(12, 1fr); grid-auto-rows: min-content; gap: 12px; padding: 12px; flex: 1; min-height: 0; align-content: start; overflow: auto; }
+  /* A cell only PLACES its component — no border/padding/title. Components own their look. */
+  .cell { min-width: 0; }
 </style>
