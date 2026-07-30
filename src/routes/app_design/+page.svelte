@@ -66,6 +66,26 @@
     }
   }
 
+  // ⬆ Promote the current COMPOSITION to the volume as a reusable component — appears in the
+  // tree's ＋ palette under "Saved components" (distinct from 💾 which writes the .app file, and
+  // ★ which promotes the app to the design-RAG). Stored at <volume>/app-templates/<name>.json.
+  async function promoteToVolume() {
+    if (!app?.panels?.length) return;
+    status = 'promoting to volume…';
+    try {
+      const r = await fetch('/api/app/templates', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: app.title || app.app || 'component', tree: $state.snapshot(app.panels) }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const { id } = await r.json();
+      status = `promoted “${id}” to volume — find it in ＋ Add`;
+    } catch (e) {
+      status = `promote failed: ${String((e as any)?.message ?? e)}`;
+    }
+  }
+
   function load(text: string, name: string, handle: any) {
     const res = validateManifest(JSON.parse(text));
     if (!res.ok) { status = res.errors.join('; '); return; }
@@ -242,6 +262,7 @@
     <button title="Text (.app JSON)" class:on={view === 'text'} onclick={() => (view = 'text')} disabled={!app}>&lt;/&gt;</button>
     <button title="Doc (Markdown)" class:on={view === 'doc'} onclick={() => (view = 'doc')} disabled={!app}>📄</button>
     <button title="★ Add this app to the shared design-RAG" onclick={() => promote()} disabled={!app}>★</button>
+    <button title="Promote to volume — save this composition as a reusable component" onclick={() => promoteToVolume()} disabled={!app}>📦</button>
     <button title="Launch in a new tab" onclick={() => launch()} disabled={!app}>↗</button>
   </nav>
 
