@@ -7,13 +7,13 @@ import { validateManifest } from '$lib/appkit/manifest/validate';
 import { putApp } from '$lib/server/app-session';
 
 export const POST: RequestHandler = async ({ request }) => {
-  let body: { app?: unknown };
+  let body: { app?: unknown; name?: string };
   try {
     body = await request.json();
   } catch {
-    throw error(400, 'expected JSON { app }');
+    throw error(400, 'expected JSON { app, name? }');
   }
   const res = validateManifest(body?.app);
   if (!res.ok) throw error(422, res.errors.join('; '));
-  return json({ token: putApp(res.app) });
+  return json({ token: putApp(res.app, body?.name) });
 };

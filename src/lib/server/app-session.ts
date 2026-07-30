@@ -14,11 +14,13 @@ function sweep(now: number): void {
   for (const [k, v] of store) if (v.exp < now) store.delete(k);
 }
 
-/** A readable slug from the app's title/id (for the route — you can see what you point at). */
-function slugOf(app: unknown): string {
+/** A readable slug for the route — prefer the opened FILE NAME, then the app title/id. */
+function slugOf(name: string | undefined, app: unknown): string {
   const a = app as { title?: string; app?: string } | null;
+  const raw = name || a?.title || a?.app || 'app';
   return (
-    String(a?.title || a?.app || 'app')
+    String(raw)
+      .replace(/\.app$/i, '')
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/^-+|-+$/g, '')
@@ -26,11 +28,12 @@ function slugOf(app: unknown): string {
   );
 }
 
-/** Park an app; returns a READABLE token `<slug>-<short>` (route shows what it points to). */
-export function putApp(app: unknown): string {
+/** Park an app; returns a READABLE token `<slug>-<short>` (route shows what it points to).
+ *  `name` is the opened file name (e.g. "wells.app") — preferred for the slug. */
+export function putApp(app: unknown, name?: string): string {
   const now = Date.now();
   sweep(now);
-  const token = `${slugOf(app)}-${crypto.randomUUID().slice(0, 8)}`;
+  const token = `${slugOf(name, app)}-${crypto.randomUUID().slice(0, 8)}`;
   store.set(token, { app, exp: now + TTL_MS });
   return token;
 }

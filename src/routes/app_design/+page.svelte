@@ -162,7 +162,8 @@
       const r = await fetch('/api/app/session', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ app: $state.snapshot(app) }),
+        // Prefer the opened FILE NAME for the route slug (so it reads e.g. /app/local/wells-…).
+        body: JSON.stringify({ app: $state.snapshot(app), name: fileName || app.title || app.app }),
       });
       if (!r.ok) throw new Error(await r.text());
       const { token } = await r.json();
