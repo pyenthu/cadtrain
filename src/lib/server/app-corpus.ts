@@ -93,10 +93,24 @@ export function renderGrounding(builds: BuildRecord[], golden: GoldenPair[] = []
   return blocks.join('\n');
 }
 
+/** Corpus HYGIENE gate: a raw build may TEACH future builds (ground the model) only if it did
+ *  real, non-broken work. Filters out incomplete/failed builds so a wrong or half-finished
+ *  prompt can sit in the audit log WITHOUT polluting what the model learns. Semantic quality
+ *  (a wrong-but-valid build) is a separate, human gate — golden promotion (the ★ button).
+ *   - steps < 1              → the build did nothing (empty/unparseable emit) → excluded.
+ *   - a trace with 0 ok verbs → every verb failed → excluded.
+ *  (Legacy records lacking a trace are allowed if steps > 0 — they predate trace capture.) */
+export function isCleanBuild(rec: BuildRecord): boolean {
+  if (!rec.steps || rec.steps < 1) return false;
+  if (rec.trace && !rec.trace.some((t) => t.ok)) return false;
+  return true;
+}
+
 /** Load + rank golden pairs (the curated DB) AND the builds log, and render the combined
- *  few-shot grounding string. The one call the build pipeline uses. */
+ *  few-shot grounding string. The one call the build pipeline uses. Golden is authoritative;
+ *  raw builds are a fallback and are HYGIENE-FILTERED (isCleanBuild) so failures never teach. */
 export async function buildGrounding(prompt: string, k = 3): Promise<string> {
   const store = getCorpusStore();
   const [builds, golden] = await Promise.all([store.loadBuilds(), store.loadGolden()]);
-  return renderGrounding(rankBuilds(prompt, builds, k), rankGolden(prompt, golden, k));
+  return renderGrounding(rankBuilds(prompt, builds.filter(isCleanBuild), k), rankGolden(prompt, golden, k));
 }
