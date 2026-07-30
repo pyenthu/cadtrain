@@ -27,6 +27,21 @@ export function uniquePanelId(app: AppDoc, base: string): string {
   return `${base}-${n}`;
 }
 
+/** The node whose `.children` array IS the given array (reference match) — the parent. */
+function findOwnerOfChildren(app: AppDoc, arr: any[]): any | undefined {
+  const walk = (list: any[] | undefined): any => {
+    for (const p of list ?? []) {
+      if (p?.children === arr) return p;
+      if (p?.children) {
+        const r = walk(p.children);
+        if (r) return r;
+      }
+    }
+    return undefined;
+  };
+  return walk((app.panels ?? []) as any[]);
+}
+
 /** Find a panel by id anywhere in the tree (top-level panels + nested children). */
 export function findPanel(app: AppDoc, id: string): any | undefined {
   const walk = (list: any[]): any => {
@@ -128,6 +143,38 @@ export const GUI_VERBS: Verb[] = [
       const panel = a.panel as any;
       panel.id = uniquePanelId(app, String(panel.id ?? 'p'));
       (parent.children ??= []).push(panel);
+      return { ok: true };
+    },
+  },
+  {
+    name: 'indentPanel',
+    group: 'gui',
+    desc: 'Demote a panel INTO its previous sibling (append to prevSibling.children). No-op if first in its list.',
+    params: { type: 'object', properties: { panelId: { type: 'string' } }, required: ['panelId'] },
+    handler: (a: { panelId: string }, ctx) => {
+      const loc = findContainingList(requireApp(ctx), a.panelId);
+      if (!loc || loc.index === 0) return { ok: true };
+      const prev = loc.list[loc.index - 1];
+      const [node] = loc.list.splice(loc.index, 1);
+      (prev.children ??= []).push(node);
+      return { ok: true };
+    },
+  },
+  {
+    name: 'outdentPanel',
+    group: 'gui',
+    desc: 'Promote a panel OUT of its parent (move it just after the parent in the parent\'s list). No-op at top level.',
+    params: { type: 'object', properties: { panelId: { type: 'string' } }, required: ['panelId'] },
+    handler: (a: { panelId: string }, ctx) => {
+      const app = requireApp(ctx);
+      const loc = findContainingList(app, a.panelId);
+      if (!loc || loc.list === (app.panels as any[])) return { ok: true }; // already top-level
+      const parent = findOwnerOfChildren(app, loc.list);
+      if (!parent) return { ok: true };
+      const parentLoc = findContainingList(app, parent.id);
+      if (!parentLoc) return { ok: true };
+      const [node] = loc.list.splice(loc.index, 1);
+      parentLoc.list.splice(parentLoc.index + 1, 0, node);
       return { ok: true };
     },
   },

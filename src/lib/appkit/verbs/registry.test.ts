@@ -59,6 +59,23 @@ describe('appkit verb registry (rung 1 — SSOT → schema → dispatch)', () =>
     await expect(dispatch('setPanelProp', { panelId: 'nope', key: 'x', value: 1 }, { appStore: app })).rejects.toThrow(/no panel/);
   });
 
+  it('tree ops: addChildPanel + indent/outdent move panels through the hierarchy', async () => {
+    const app: any = { app: 'x', panels: [{ id: 'card', kind: 'card', children: [] }, { id: 't', kind: 'text' }] };
+    // demote 't' INTO its previous sibling 'card'
+    await dispatch('indentPanel', { panelId: 't' }, { appStore: app });
+    expect(app.panels.map((p: any) => p.id)).toEqual(['card']);
+    expect(app.panels[0].children.map((c: any) => c.id)).toEqual(['t']);
+    // promote 't' back OUT (just after 'card')
+    await dispatch('outdentPanel', { panelId: 't' }, { appStore: app });
+    expect(app.panels.map((p: any) => p.id)).toEqual(['card', 't']);
+    // addChildPanel appends (with a unique id)
+    await dispatch('addChildPanel', { parentId: 'card', panel: { id: 'h', kind: 'heading' } }, { appStore: app });
+    expect(app.panels[0].children.map((c: any) => c.id)).toEqual(['h']);
+    // removePanel finds nested
+    await dispatch('removePanel', { panelId: 'h' }, { appStore: app });
+    expect(app.panels[0].children).toHaveLength(0);
+  });
+
   it('setComponentProp writes panel.props (incl. nested children) + deletes on null', async () => {
     const app: any = {
       app: 'x',

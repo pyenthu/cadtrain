@@ -49,12 +49,46 @@
   const remove = (id: string) => dispatch('removePanel', { panelId: id }, store());
   const move = (id: string, idx: number, delta: number) =>
     dispatch('movePanel', { panelId: id, to: idx + delta }, store());
+  const indent = (id: string) => dispatch('indentPanel', { panelId: id }, store()); // → demote into prev
+  const outdent = (id: string) => dispatch('outdentPanel', { panelId: id }, store()); // ← promote out
   const rename = (id: string, title: string) => dispatch('setPanelProp', { panelId: id, key: 'title', value: title }, store());
 
   const toggleProps = (id: string) => (openId = openId === id ? null : id);
   const propVal = (p: any, name: string, dflt: unknown) => p.props?.[name] ?? dflt;
   const setProp = (id: string, name: string, value: unknown) =>
     dispatch('setComponentProp', { panelId: id, name, value }, store());
+
+  // ── Wiring (source + events) — bind a component to a verb without hand-editing JSON ──
+  const SOURCE_KINDS = new Set(['list', 'form', 'table', 'grid', 'edittable', 'bake3d', 'svg']);
+  const DATA_VERBS = ['listDocs', 'listParts', 'loadData', 'getParams', 'bake', 'loadDoc', 'http', 'compile', 'getSource'];
+  const MUTATE_VERBS = ['setParam', 'addRow', 'removeRow', 'reorderRow', 'patchDoc', 'http'];
+  const ARG_KEY: Record<string, string> = { loadData: 'slot', http: 'url', listParts: 'category', listDocs: 'docType' };
+  const eventsFor = (kind: string): string[] => (kind === 'button' ? ['click'] : kind === 'edittable' ? ['save'] : []);
+  const wireableKind = (kind: string) => SOURCE_KINDS.has(kind) || eventsFor(kind).length > 0;
+
+  /** Build a binding's args from a single primary arg (contextual per verb). */
+  function argsFor(verb: string, arg: string): Record<string, unknown> {
+    const a = (arg ?? '').trim();
+    if (!a) return verb === 'getParams' || verb === 'bake' || verb === 'loadDoc' ? { id: '$active' } : {};
+    return { [ARG_KEY[verb] ?? 'id']: a };
+  }
+  function argOf(b: any): string {
+    if (!b?.args) return '';
+    const k = ARG_KEY[b.verb];
+    if (k) return String(b.args[k] ?? '');
+    return b.args.id && b.args.id !== '$active' ? String(b.args.id) : '';
+  }
+  const argHint = (verb: string) =>
+    ({ loadData: 'slot name', http: '/api/…', listParts: 'category', listDocs: 'docType' } as Record<string, string>)[verb] ?? '(uses $active)';
+
+  const setSource = (id: string, verb: string, arg?: string) =>
+    dispatch('setPanelProp', { panelId: id, key: 'source', value: verb ? { verb, args: argsFor(verb, arg ?? '') } : undefined }, store());
+  function setEvent(p: any, ev: string, verb: string, arg?: string) {
+    const on = { ...(p.on ?? {}) };
+    if (verb) on[ev] = { verb, args: argsFor(verb, arg ?? '') };
+    else delete on[ev];
+    return dispatch('setPanelProp', { panelId: p.id, key: 'on', value: on }, store());
+  }
 
   function toggleCollapse(id: string) {
     const s = new Set(collapsed);
@@ -93,25 +127,67 @@
   </div>
 {/snippet}
 
-{#snippet node(p, siblings, idx)}
+{#snippet wiring(p)}
+  <div class="wire">
+    {#if SOURCE_KINDS.has(p.kind)}
+      <label class="prop">
+        <span class="pl">🔌 source</span>
+        <select value={p.source?.verb ?? ''} onchange={(e) => setSource(p.id, (e.currentTarget as HTMLSelectElement).value)}>
+          <option value="">— none —</option>
+          {#each DATA_VERBS as v}<option value={v}>{v}</option>{/each}
+        </select>
+      </label>
+      {#if p.source?.verb}
+        <label class="prop">
+          <span class="pl">arg</span>
+          <input value={argOf(p.source)} placeholder={argHint(p.source.verb)} onchange={(e) => setSource(p.id, p.source.verb, (e.currentTarget as HTMLInputElement).value)} />
+        </label>
+      {/if}
+    {/if}
+    {#each eventsFor(p.kind) as ev}
+      <label class="prop">
+        <span class="pl">⚡ on {ev}</span>
+        <select value={p.on?.[ev]?.verb ?? ''} onchange={(e) => setEvent(p, ev, (e.currentTarget as HTMLSelectElement).value)}>
+          <option value="">— none —</option>
+          {#each [...DATA_VERBS, ...MUTATE_VERBS] as v}<option value={v}>{v}</option>{/each}
+        </select>
+      </label>
+      {#if p.on?.[ev]?.verb}
+        <label class="prop">
+          <span class="pl">{ev} arg</span>
+          <input value={argOf(p.on[ev])} placeholder={argHint(p.on[ev].verb)} onchange={(e) => setEvent(p, ev, p.on[ev].verb, (e.currentTarget as HTMLInputElement).value)} />
+        </label>
+      {/if}
+    {/each}
+  </div>
+{/snippet}
+
+{#snippet node(p, siblings, idx, depth)}
   {@const meta = getComponentMeta(p.kind)}
   {@const kids = p.children ?? []}
   {@const shown = !collapsed.has(p.id)}
+  {@const canEdit = !!meta?.props?.length || wireableKind(p.kind)}
+  {@const prevNests = idx > 0 && !!getComponentMeta(siblings[idx - 1]?.kind)?.acceptsChildren}
   <li class="node" class:target={addTarget === p.id}>
     <div class="row">
       <button class="caret" class:hide={!kids.length} onclick={() => toggleCollapse(p.id)} title={shown ? 'collapse' : 'expand'}>{shown ? '▾' : '▸'}</button>
       <span class="kind">{p.kind}</span>
       <input value={p.title ?? p.id} onchange={(e) => rename(p.id, (e.currentTarget as HTMLInputElement).value)} />
       {#if meta?.acceptsChildren}<button class="add-child" title="add child" onclick={() => addChildTo(p.id)}>＋</button>{/if}
-      <button class="gear" class:on={openId === p.id} disabled={!meta?.props?.length} onclick={() => toggleProps(p.id)} title={meta?.props?.length ? 'props' : 'no props'}>⚙</button>
+      <button class="gear" class:on={openId === p.id} disabled={!canEdit} onclick={() => toggleProps(p.id)} title={canEdit ? 'props + wiring' : 'nothing to edit'}>⚙</button>
+      <button onclick={() => outdent(p.id)} disabled={depth === 0} title="promote (out of parent)">←</button>
       <button onclick={() => move(p.id, idx, -1)} disabled={idx === 0} title="up">↑</button>
       <button onclick={() => move(p.id, idx, 1)} disabled={idx === siblings.length - 1} title="down">↓</button>
+      <button onclick={() => indent(p.id)} disabled={!prevNests} title="demote (into previous)">→</button>
       <button class="rm" onclick={() => remove(p.id)} title="remove">✕</button>
     </div>
-    {#if openId === p.id && meta?.props?.length}{@render propsForm(p, meta)}{/if}
+    {#if openId === p.id && canEdit}
+      {#if meta?.props?.length}{@render propsForm(p, meta)}{/if}
+      {#if wireableKind(p.kind)}{@render wiring(p)}{/if}
+    {/if}
     {#if kids.length && shown}
       <ul class="children">
-        {#each kids as c, ci (c.id)}{@render node(c, kids, ci)}{/each}
+        {#each kids as c, ci (c.id)}{@render node(c, kids, ci, depth + 1)}{/each}
       </ul>
     {/if}
   </li>
@@ -144,7 +220,7 @@
   </div>
 
   <ul class="tree">
-    {#each app.panels ?? [] as p, i (p.id)}{@render node(p, app.panels, i)}{/each}
+    {#each app.panels ?? [] as p, i (p.id)}{@render node(p, app.panels, i, 0)}{/each}
     {#if !(app.panels?.length)}<li class="empty">empty — search above to add a component</li>{/if}
   </ul>
 

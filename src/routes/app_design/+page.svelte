@@ -19,7 +19,7 @@
   let fileHandle = $state<any>(null); // File System Access handle (write-back target)
   let fileName = $state('');
   let status = $state('');
-  let view = $state<'design' | 'preview' | 'text' | 'doc'>('design');
+  let view = $state<'split' | 'design' | 'preview' | 'text' | 'doc'>('split');
   let prompt = $state('');
   let building = $state(false);
   let inputEl = $state<HTMLInputElement>();
@@ -180,6 +180,14 @@
     serverPreview();
   }
 
+  // Live preview: in split/preview, re-render on the SERVER (debounced) as the app is edited.
+  $effect(() => {
+    if (!app || (view !== 'split' && view !== 'preview')) return;
+    void JSON.stringify($state.snapshot(app)); // track every edit
+    const t = setTimeout(() => serverPreview(), 500);
+    return () => clearTimeout(t);
+  });
+
   async function launch() {
     if (!app) return;
     // Server-render the CURRENT app (works for a picked local file or a freshly-built one,
@@ -200,6 +208,20 @@
   }
 </script>
 
+{#snippet previewPane()}
+  <div class="preview-wrap">
+    <div class="preview-bar">
+      <span class="pv-tag">server-rendered · /app/local/{previewToken || '…'}{previewBusy ? ' · rendering…' : ''}</span>
+      <button class="pv-refresh" onclick={() => serverPreview()} disabled={previewBusy}>↻ re-render</button>
+    </div>
+    {#if previewToken}
+      <iframe class="preview-frame" src="/app/local/{previewToken}" title="server-rendered app preview"></iframe>
+    {:else}
+      <div class="pv-loading">{previewBusy ? 'rendering on server…' : 'preview appears as you edit'}</div>
+    {/if}
+  </div>
+{/snippet}
+
 <div class="studio">
   <nav class="rail" aria-label="App design tools">
     <button title="New app" onclick={() => newApp()}>＋</button>
@@ -207,8 +229,8 @@
     <button title="Save" onclick={() => save()} disabled={!app}>💾</button>
     <button title="Save As…" onclick={() => saveAs()} disabled={!app}>⤓</button>
     <span class="sp"></span>
-    <button title="Design (visual editor)" class:on={view === 'design'} onclick={() => (view = 'design')} disabled={!app}>✎</button>
-    <button title="Preview (server-rendered)" class:on={view === 'preview'} onclick={() => openPreview()} disabled={!app}>👁</button>
+    <button title="Design + live preview (split)" class:on={view === 'split'} onclick={() => (view = 'split')} disabled={!app}>✎</button>
+    <button title="Preview only (server-rendered)" class:on={view === 'preview'} onclick={() => openPreview()} disabled={!app}>👁</button>
     <button title="Text (.app JSON)" class:on={view === 'text'} onclick={() => (view = 'text')} disabled={!app}>&lt;/&gt;</button>
     <button title="Doc (Markdown)" class:on={view === 'doc'} onclick={() => (view = 'doc')} disabled={!app}>📄</button>
     <button title="★ Add this app to the shared design-RAG" onclick={() => promote()} disabled={!app}>★</button>
@@ -234,19 +256,12 @@
           onkeydown={(e) => e.key === 'Enter' && build()} />
         <button class="ai" onclick={() => build()} disabled={building || !prompt.trim()}>✨ Build with AI</button>
       </div>
-      <div class="work">
-        {#if view === 'preview'}
-          <div class="preview-wrap">
-            <div class="preview-bar">
-              <span class="pv-tag">server-rendered · /app/local/{previewToken || '…'}</span>
-              <button class="pv-refresh" onclick={() => serverPreview()} disabled={previewBusy}>↻ re-render</button>
-            </div>
-            {#if previewToken}
-              <iframe class="preview-frame" src="/app/local/{previewToken}" title="server-rendered app preview"></iframe>
-            {:else}
-              <div class="pv-loading">{previewBusy ? 'rendering on server…' : 'preview'}</div>
-            {/if}
-          </div>
+      <div class="work" class:split={view === 'split'}>
+        {#if view === 'split'}
+          <aside class="pane-left"><VisualEditor {app} /></aside>
+          <div class="pane-right">{@render previewPane()}</div>
+        {:else if view === 'preview'}
+          {@render previewPane()}
         {:else if view === 'text'}
           <pre class="text-view">{JSON.stringify(app, null, 2)}</pre>
         {:else if view === 'doc'}
@@ -289,6 +304,9 @@
   .build .ai { padding: 6px 12px; border: 1px solid #7c3aed; border-radius: 6px; background: #7c3aed; color: #fff; font: 600 12px system-ui; cursor: pointer; }
   .build .ai:disabled { opacity: .5; cursor: default; }
   .work { flex: 1; min-height: 0; overflow: auto; }
+  .work.split { display: flex; overflow: hidden; padding: 0; }
+  .work.split .pane-left { width: 380px; min-width: 280px; max-width: 46%; border-right: 1px solid #e5e7eb; overflow: auto; resize: horizontal; }
+  .work.split .pane-right { flex: 1; min-width: 0; overflow: hidden; }
   .preview-wrap { display: flex; flex-direction: column; height: 100%; }
   .preview-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
   .pv-tag { font: 500 11px ui-monospace, monospace; color: #64748b; }
