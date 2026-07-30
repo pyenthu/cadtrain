@@ -1,8 +1,29 @@
 import { describe, it, expect } from 'vitest';
-import { rankBuilds, rankGolden, renderGrounding, compactApp, type BuildRecord, type GoldenPair } from './app-corpus';
+import { rankBuilds, rankGolden, renderGrounding, compactApp, isCleanBuild, type BuildRecord, type GoldenPair } from './app-corpus';
 
 const rec = (prompt: string, panels: Array<{ id: string; kind: string }>): BuildRecord => ({
   ts: 0, prompt, steps: panels.length, app: { app: 'x', panels },
+});
+
+describe('app-corpus hygiene gate (isCleanBuild — wrong/incomplete builds never teach)', () => {
+  const mk = (over: Partial<BuildRecord>): BuildRecord => ({ ts: 0, prompt: 'p', steps: 1, app: { app: 'x', panels: [] }, ...over });
+  it('keeps a build that did real, non-broken work', () => {
+    expect(isCleanBuild(mk({ steps: 2, trace: [{ verb: 'definePanel', args: {}, ok: true }] }))).toBe(true);
+  });
+  it('keeps a legacy build (no trace) with steps > 0', () => {
+    expect(isCleanBuild(mk({ steps: 3 }))).toBe(true);
+  });
+  it('drops a build that did nothing (steps 0 / unparseable emit)', () => {
+    expect(isCleanBuild(mk({ steps: 0 }))).toBe(false);
+  });
+  it('drops a build whose every verb failed', () => {
+    expect(isCleanBuild(mk({ steps: 1, trace: [{ verb: 'setComponentProp', args: {}, ok: false, error: 'no panel' }] }))).toBe(false);
+  });
+  it('keeps a recovered build (a failed verb but at least one success)', () => {
+    expect(
+      isCleanBuild(mk({ steps: 2, trace: [{ verb: 'a', args: {}, ok: false, error: 'x' }, { verb: 'b', args: {}, ok: true }] })),
+    ).toBe(true);
+  });
 });
 
 describe('app-corpus (rung 4a.2 learning loop)', () => {
