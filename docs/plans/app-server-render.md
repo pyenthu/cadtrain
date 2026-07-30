@@ -49,6 +49,20 @@ load data async would render empty. Each component declares, in its catalog `met
 This is where the panel data-loading "will have to be done anyway" (user) lives — built into each
 component's functionality, driven by `meta.dataMode`.
 
+### Compute location — per-component `computeMode` (server default, client opt-in)
+
+The engine has BOTH a server path and a client path (the existing Manifold WASM worker — the `💻`
+bake). A component chooses where its **heavy compute** runs — a sibling knob to `dataMode`:
+- **`server`** (default, protected) — engine + the part's compiled script stay server-side; the client
+  gets meshes/GLB. Costs server CPU.
+- **`client`** (opt-in) — runs the WASM engine in the browser to **offload the server** / go offline.
+  **Tradeoff:** ships the WASM engine + that part's compiled script → *that part's* geometry logic is
+  exposed (compiled/opaque, runnable).
+
+Same hosted-vs-offline axis, expressed per component: protection-critical parts bake server-side;
+compute-heavy or offline-friendly ones bake client-side. Reactivity (client) is orthogonal to compute
+location (server or client).
+
 ## What's reused vs. new
 
 **Reused (unchanged):** `HarnessView.svelte` (rendered server-side via `svelte/server`), the whole
@@ -74,9 +88,18 @@ server-rendered routes + the event round-trip.
   → returns `{ html }`; `+page.svelte` = `{@html html}`) and `/app/local` (renders the POSTed
   `.app`). **HarnessView + the `.app` leave the client bundle** for these routes. *Verify:* launch a
   volume app + a local file; view-source shows HTML, not the `.app`.
-- **Phase 3 — interactivity (server-driven).** A thin client shell forwards events (click/select/
-  input) → `POST /api/app/render` (or `/event`) with `{ app|appId, panelId, event, state }` → server
-  re-renders → swaps HTML (LiveView/htmx style). *Verify:* click a list row → re-render with it selected.
+- **Phase 3 — interactivity (TWO-TIER — not everything round-trips).**
+  - **Local (client-only, instant)** — generic widget behavior with no engine/`.app` logic: tab
+    switches, expand/collapse, input typing before commit, client-side sort/filter of already-loaded
+    rows, hover/tooltips, and **`computed` re-evaluation** (the `compute.ts` evaluator is tiny +
+    generic → runs in the browser over data already present). Lives IN the generic island components;
+    never touches the server. This is standard widget behavior, **not IP**.
+  - **Server (round-trip)** — ONLY events that fire a **verb** (`dispatch`): load a doc, bake, mutate
+    data (add/remove row), anything needing the engine or that changes *what data* is shown →
+    `POST /api/app/render` (or `/event`) with `{ app|appId, panelId, event, state }` → server
+    re-renders → swaps the affected HTML (LiveView/htmx style). Partial re-render, cache-able.
+  - The rule: **a verb ⇒ server; everything else ⇒ local.** Snappy local UX + a protected core.
+  - *Verify:* a tab switch stays client-side (no network); clicking a list row (fires `loadDoc`) round-trips.
 - **Phase 4 (later).** Interactive **3D** = a client component that does its own GLB conversion
   (deprioritized — no GLB pipeline now; `bake3d` server-renders stats until then). Optionally make the
   studio's live preview server-rendered too, so the code is protected everywhere.
