@@ -180,8 +180,7 @@
     <div class="row" class:sel={openPanel?.id === p.id}>
       <button class="caret" class:hide={!kids.length} onclick={() => toggleCollapse(p.id)} title={shown ? 'collapse' : 'expand'}>{shown ? '▾' : '▸'}</button>
       <button class="gear" class:on={openPanel?.id === p.id} disabled={!canEdit} onclick={(e) => openSettings(p, e.currentTarget as HTMLElement)} title={canEdit ? 'settings' : 'no settings'}>⚙</button>
-      <span class="kind">{p.kind}</span>
-      <span class="name" title={p.title ?? p.id}>{p.title ?? p.id}</span>
+      <span class="kind" title={p.title ?? p.id}>{p.kind}</span>
       {#if meta?.acceptsChildren}<button class="add-child" title="add child" onclick={() => addChildTo(p.id)}>＋</button>{/if}
       <button onclick={() => outdent(p.id)} disabled={depth === 0} title="promote (out of parent)">←</button>
       <button onclick={() => move(p.id, idx, -1)} disabled={idx === 0} title="up">↑</button>
@@ -270,8 +269,8 @@
   .row.sel { border-color: #0369a1; background: #f0f9ff; }
   .caret { width: 15px; border: 0; background: transparent; color: #94a3b8; cursor: pointer; padding: 0; font-size: 10px; }
   .caret.hide { visibility: hidden; }
-  .kind { font: 600 9px system-ui; text-transform: uppercase; color: #94a3b8; min-width: 42px; letter-spacing: .2px; }
-  .name { flex: 1; min-width: 40px; padding: 2px 4px; font: 600 13px system-ui; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+  /* the KIND is the row label (dark, readable); the title lives in the tooltip (title=) */
+  .kind { flex: 1; min-width: 40px; padding: 2px 4px; font: 600 13px system-ui; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
   .row button { padding: 1px 6px; border: 1px solid #d7dee6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 11px; line-height: 1.4; }
   .row button:disabled { opacity: .3; cursor: default; }
   .add-child { color: #0369a1; border-color: #bae6fd !important; font-weight: 700; }
