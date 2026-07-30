@@ -117,6 +117,21 @@ server-rendered routes + the event round-trip.
   separate tier — see `docs/research/app-embedding-and-ip-protection.md`).
 - AI stays **local at runtime** in all modes (memory `ai_data_residency_local_first`) — orthogonal.
 
+## TODO — component bundles + `.app` → component (user direction 2026-07-30)
+
+Make each component a **self-contained, repeatable bundle** so it's consistent, flexible, and
+Claude-definable — and so the superapp scales:
+```
+src/lib/app_components/<Name>/
+   <Name>.svelte        render (the actual Svelte element)
+   <Name>Editor.svelte  per-component editor (e.g. Table = Excel-like)
+   meta.ts              props schema · slots · dataMode · computeMode · wiresTo · acceptsChildren
+```
+Today this is SPLIT (render in `shared/harness/panels/`, metadata in `appkit/catalog/components.ts`,
+editors are GENERIC via the tree settings popover). The bundle unifies them. **Then:** promote a saved
+`.app` (or a subtree) into a NEW first-class component (encapsulate a composition, parameterized by its
+own props/slots) — `.app` → component. That is the scalability/usability unlock.
+
 ## Files (indicative)
 
 - `src/routes/api/app/render/+server.ts` (new) · `src/routes/app/[id]/{+page.server.ts,+page.svelte}`
