@@ -19,6 +19,9 @@ export interface BuildRecord {
   steps: number;
   /** A compact summary of what was built — enough to few-shot future builds. */
   app: { app: string; panels: Array<{ id: string; kind: string; source?: unknown }> };
+  /** The ordered verb calls the model emitted (verb + args + outcome). Optional (older
+   *  records lack it). Drives debugging + the refine loop — "which verb turned it red". */
+  trace?: Array<{ verb: string; args: unknown; ok: boolean; error?: string }>;
 }
 
 /** A curated (description, structure) example — the MD is the retrieval key. */

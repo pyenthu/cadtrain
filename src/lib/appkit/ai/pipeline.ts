@@ -25,10 +25,21 @@ export interface BuildOpts {
   grounding?: string;
 }
 
+/** One gui-verb call the model made during a build — the actual action + args + outcome.
+ *  This is what turns "N steps ran" into "setComponentProp({panelId,name:'color',value:'red'})". */
+export interface VerbCall {
+  verb: string;
+  args: unknown;
+  ok: boolean;
+  error?: string;
+}
+
 export interface BuildResult {
   app: AppDoc;
   steps: number;
   text: string;
+  /** The ordered list of verb calls the model emitted (drives debugging + the learning loop). */
+  trace: VerbCall[];
 }
 
 /** Run the Build stage: the model calls the GUI verbs to compose the .app. */
@@ -39,12 +50,22 @@ export async function buildApp(opts: BuildOpts): Promise<BuildResult> {
   // Only the GUI verbs are CALLABLE (they mutate the .app). data/mutate verbs are
   // documented in the system prompt so the AI REFERENCES them in panel bindings —
   // the Build stage composes GUI, it doesn't run data.
+  const trace: VerbCall[] = [];
   const tools: Record<string, unknown> = {};
   for (const v of verbsByGroup('gui')) {
     tools[v.name] = tool({
       description: v.desc,
       inputSchema: jsonSchema(v.params as any),
-      execute: async (args: unknown) => dispatch(v.name, args, ctx),
+      execute: async (args: unknown) => {
+        try {
+          const out = await dispatch(v.name, args, ctx);
+          trace.push({ verb: v.name, args, ok: true });
+          return out;
+        } catch (e) {
+          trace.push({ verb: v.name, args, ok: false, error: String((e as any)?.message ?? e) });
+          throw e;
+        }
+      },
     });
   }
 
@@ -57,7 +78,7 @@ export async function buildApp(opts: BuildOpts): Promise<BuildResult> {
   });
 
   sanitizeApp(app); // drop any hallucinated-verb bindings the model emitted
-  return { app, steps: result.steps?.length ?? 0, text: result.text ?? '' };
+  return { app, steps: result.steps?.length ?? 0, text: result.text ?? '', trace };
 }
 
 function systemPrompt(app: AppDoc, grounding = ''): string {

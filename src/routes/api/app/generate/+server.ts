@@ -79,7 +79,8 @@ export const POST: RequestHandler = async ({ request }) => {
       app: out.app.app,
       panels: ((out.app.panels ?? []) as any[]).map((p) => ({ id: p.id, kind: p.kind, source: p.source })),
     },
+    trace: out.trace,
   });
 
-  return json({ app: out.app, steps: out.steps, text: out.text });
+  return json({ app: out.app, steps: out.steps, text: out.text, trace: out.trace });
 };
