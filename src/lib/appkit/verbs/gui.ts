@@ -19,6 +19,19 @@ function requireApp(ctx: Ctx): AppDoc {
   return ctx.appStore;
 }
 
+/** Find a panel by id anywhere in the tree (top-level panels + nested children). */
+export function findPanel(app: AppDoc, id: string): any | undefined {
+  const walk = (list: any[]): any => {
+    for (const p of list ?? []) {
+      if (p?.id === id) return p;
+      const found = p?.children ? walk(p.children) : undefined;
+      if (found) return found;
+    }
+    return undefined;
+  };
+  return walk((app.panels ?? []) as any[]);
+}
+
 /** Minimal JSON patch by dotted path — set | push | remove. Dependency-free; the
  *  eventual patchDoc impl shares this shape. */
 function applyPatch(root: AppDoc, op: string, path: string, value: unknown): void {
@@ -113,9 +126,30 @@ export const GUI_VERBS: Verb[] = [
     },
     handler: (a: { panelId: string; key: string; value: unknown }, ctx) => {
       const app = requireApp(ctx);
-      const p = ((app.panels ?? []) as any[]).find((x) => x.id === a.panelId);
+      const p = findPanel(app, a.panelId);
       if (!p) throw new Error(`appkit: no panel "${a.panelId}"`);
       p[a.key] = a.value;
+      return { ok: true };
+    },
+  },
+  {
+    name: 'setComponentProp',
+    group: 'gui',
+    desc:
+      "Set a typed PROP on a component (panel) by id — writes panel.props[name] (text, label, " +
+      'columns, align, slot, …). Finds nested children too. A null/undefined value deletes the prop.',
+    params: {
+      type: 'object',
+      properties: { panelId: { type: 'string' }, name: { type: 'string' }, value: {} },
+      required: ['panelId', 'name'],
+    },
+    handler: (a: { panelId: string; name: string; value?: unknown }, ctx) => {
+      const app = requireApp(ctx);
+      const p = findPanel(app, a.panelId);
+      if (!p) throw new Error(`appkit: no panel "${a.panelId}"`);
+      p.props ??= {};
+      if (a.value === null || a.value === undefined) delete p.props[a.name];
+      else p.props[a.name] = a.value;
       return { ok: true };
     },
   },

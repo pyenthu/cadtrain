@@ -59,6 +59,20 @@ describe('appkit verb registry (rung 1 — SSOT → schema → dispatch)', () =>
     await expect(dispatch('setPanelProp', { panelId: 'nope', key: 'x', value: 1 }, { appStore: app })).rejects.toThrow(/no panel/);
   });
 
+  it('setComponentProp writes panel.props (incl. nested children) + deletes on null', async () => {
+    const app: any = {
+      app: 'x',
+      panels: [{ id: 'card', kind: 'card', children: [{ id: 'txt', kind: 'text' }] }],
+    };
+    await dispatch('setComponentProp', { panelId: 'txt', name: 'text', value: 'Hi' }, { appStore: app });
+    expect(app.panels[0].children[0].props.text).toBe('Hi'); // found via recursion
+    await dispatch('setComponentProp', { panelId: 'txt', name: 'weight', value: '600' }, { appStore: app });
+    expect(app.panels[0].children[0].props.weight).toBe('600');
+    await dispatch('setComponentProp', { panelId: 'txt', name: 'text', value: null }, { appStore: app });
+    expect(app.panels[0].children[0].props.text).toBeUndefined(); // null deletes
+    await expect(dispatch('setComponentProp', { panelId: 'nope', name: 'x', value: 1 }, { appStore: app })).rejects.toThrow(/no panel/);
+  });
+
   it('data verbs read through an injected engine (rung 3)', async () => {
     const engine = {
       list: async () => [{ id: 'w1', name: 'Well 1', params: { casings: [{ od: 9.625 }] } }],
