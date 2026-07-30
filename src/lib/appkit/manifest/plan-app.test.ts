@@ -77,4 +77,29 @@ describe('plan.app sample', () => {
     const statuses = new Set(rows.map((r) => r.status));
     for (const s of ['open', 'done', 'active', 'todo']) expect(statuses.has(s)).toBe(true);
   });
+
+  it('carries a doc summary (feeds design-RAG + points at the prompt script)', () => {
+    expect(typeof parsed.doc).toBe('string');
+    expect(parsed.doc).toContain('plan.app.prompts.md');
+  });
+});
+
+describe('plan.app prompt script (recreatable-from-prompts, #34)', () => {
+  const prompts = readFileSync(fileURLToPath(new URL('./examples/plan.app.prompts.md', import.meta.url)), 'utf8');
+
+  it('exists next to plan.app and drives the harness AI builder', () => {
+    expect(prompts).toContain('/api/app/generate');
+    expect(prompts).toContain('builds.jsonl'); // confirms the corpus-logging claim is documented
+  });
+
+  it('has a prompt increment for every panel kind + the data wiring the app uses', () => {
+    // The verbs the builder is expected to emit for each increment.
+    for (const verb of ['setAppMeta', 'patchApp', 'definePanel', 'readVar']) {
+      expect(prompts).toContain(verb);
+    }
+    // Every panel kind in plan.app must have a covering prompt row.
+    for (const kind of (parsed.panels as any[]).map((p) => p.kind)) {
+      expect(prompts).toContain(`kind:"${kind}"`);
+    }
+  });
 });

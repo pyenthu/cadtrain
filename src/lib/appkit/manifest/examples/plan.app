@@ -2,6 +2,7 @@
   "app": "plan",
   "title": "CAD Train — Roadmap",
   "docType": "roadmap",
+  "doc": "# CAD Train — Roadmap (plan.app)\n\nA roadmap timeline that replicates the /plan Gantt on the .app harness. Bundles A–E of work are laid out on a sequence-week axis; task bars are coloured by status (open/active/done/todo) and grouped into lane swimlanes. A task table below the timeline lists the same rows.\n\n## Data\nThe roadmap lives in the app variable `tasks` — a list<record> shaped by `structures.task` (id, label, lane, start, end, status, details). The Gantt reads `tasks` directly (dataMode static); the task table sources it through the `readVar` data verb (dataMode server → server-preloaded at first paint).\n\n## Recreate from prompts\nThis app is reproducible by replaying `plan.app.prompts.md` through the harness AI builder (/api/app/generate); each prompt is one increment and is logged to the shared corpus (ai/app-rag/builds.jsonl).",
   "theme": { "mode": "light", "accent": "#0369a1" },
   "structures": {
     "task": [
