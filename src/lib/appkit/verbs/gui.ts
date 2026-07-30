@@ -3,6 +3,7 @@
 // HEADLESS today (they only touch ctx.appStore — the live, self-contained .app),
 // which is what rung 1 proves.
 import type { Verb, Ctx, AppDoc } from './registry';
+import { dedupePanelIds } from '../manifest/validate';
 
 /** Panel kinds the harness can render (Layer 4 registry). The AI may only COMPOSE
  *  these — the D1/D5 safety boundary (it never invents a new kind). */
@@ -175,6 +176,29 @@ export const GUI_VERBS: Verb[] = [
       if (!parentLoc) return { ok: true };
       const [node] = loc.list.splice(loc.index, 1);
       parentLoc.list.splice(parentLoc.index + 1, 0, node);
+      return { ok: true };
+    },
+  },
+  {
+    name: 'insertTree',
+    group: 'gui',
+    desc: 'Insert a cloned subtree (a saved component/template) into the .app — at the root or into a parent by id. Re-ids on insert so nothing collides.',
+    params: {
+      type: 'object',
+      properties: { nodes: { type: 'array' }, parentId: { type: 'string' } },
+      required: ['nodes'],
+    },
+    handler: (a: { nodes: any[]; parentId?: string }, ctx) => {
+      const app = requireApp(ctx);
+      const clones = JSON.parse(JSON.stringify(a.nodes ?? []));
+      if (a.parentId) {
+        const parent = findPanel(app, a.parentId);
+        if (!parent) throw new Error(`appkit: no panel "${a.parentId}"`);
+        (parent.children ??= []).push(...clones);
+      } else {
+        (app.panels ??= []).push(...clones);
+      }
+      dedupePanelIds(app); // re-id any collisions from the clone
       return { ok: true };
     },
   },

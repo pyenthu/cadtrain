@@ -22,6 +22,8 @@
   let addTarget = $state<string | null>(null); // container id to add INTO (null → root)
   let collapsed = $state<Set<string>>(new Set());
   let queryEl = $state<HTMLInputElement>();
+  let templates = $state<Array<{ id: string; name: string; count: number }>>([]); // saved components (.app→component)
+  let savedMsg = $state('');
 
   const results = $derived(searchCatalog(query, { type: 'component' }).slice(0, 8));
   const store = () => ({ appStore: app as any });
@@ -53,12 +55,55 @@
     const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
     searchStyle = `top:${r.bottom + 4}px; left:${Math.max(8, Math.min(r.left, vw - 300))}px;`;
     searchOpen = true;
+    fetchTemplates(); // saved components appear alongside catalog results
     setTimeout(() => queryEl?.focus(), 0);
   }
   function closeSearch() {
     searchOpen = false;
     addTarget = null;
     query = '';
+  }
+
+  // ── .app → component (save a composition; insert saved ones from the palette) ──
+  const templateResults = $derived(
+    query.trim() ? templates.filter((t) => t.name.toLowerCase().includes(query.trim().toLowerCase())) : templates,
+  );
+  async function fetchTemplates() {
+    try {
+      const r = await fetch('/api/app/templates');
+      if (r.ok) templates = (await r.json()).templates ?? [];
+    } catch {
+      /* ignore */
+    }
+  }
+  async function saveAsComponent() {
+    if (!(app.panels?.length)) return;
+    savedMsg = 'saving…';
+    try {
+      const r = await fetch('/api/app/templates', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: app.title || app.app || 'component', tree: $state.snapshot(app.panels) }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const { id } = await r.json();
+      savedMsg = `saved “${id}” — find it in ＋`;
+      await fetchTemplates();
+    } catch (e) {
+      savedMsg = `save failed: ${String((e as any)?.message ?? e)}`;
+    }
+    setTimeout(() => (savedMsg = ''), 3000);
+  }
+  async function insertTemplate(id: string) {
+    try {
+      const r = await fetch(`/api/app/templates?id=${encodeURIComponent(id)}`);
+      if (!r.ok) throw new Error(await r.text());
+      const t = await r.json();
+      await dispatch('insertTree', { nodes: t.tree, parentId: addTarget ?? undefined }, store());
+    } catch {
+      /* ignore */
+    }
+    closeSearch();
   }
 
   const remove = (id: string) => dispatch('removePanel', { panelId: id }, store());
@@ -256,8 +301,10 @@
 <div class="ve">
   <div class="topbar">
     <button class="add-top" onclick={(e) => openSearch(null, e.currentTarget as HTMLElement)} disabled={searchOpen} title="add a component">＋ Add</button>
+    <button class="save-comp" onclick={saveAsComponent} disabled={!(app.panels?.length)} title="save this composition as a reusable component">⊞ Save</button>
     <button class="app-top" class:on={appOpen} onclick={(e) => openApp(e.currentTarget as HTMLElement)} title="app settings — variables + style">⚙ App</button>
   </div>
+  {#if savedMsg}<div class="saved-msg">{savedMsg}</div>{/if}
 
   <ul class="tree">
     {#each app.panels ?? [] as p, i (p.id)}{@render node(p, app.panels, i, 0)}{/each}
@@ -329,6 +376,21 @@
       placeholder={addTarget ? `add into “${addTarget}”…` : 'search components — div · row · text · table · 3d…'}
       bind:value={query}
     />
+    {#if templateResults.length}
+      <div class="res-group">Saved components</div>
+      <ul class="results">
+        {#each templateResults as t (t.id)}
+          <li>
+            <button onmousedown={(e) => { e.preventDefault(); insertTemplate(t.id); }}>
+              <span class="rk">⊞ {t.name}</span>
+              <span class="rg">component</span>
+              <span class="rd">{t.count} top-level node{t.count === 1 ? '' : 's'}</span>
+            </button>
+          </li>
+        {/each}
+      </ul>
+      <div class="res-group">Components</div>
+    {/if}
     <ul class="results">
       {#each results as r (r.key)}
         <li>
@@ -388,7 +450,11 @@
   .add-top { padding: 6px 12px; border: 1px solid #0369a1; border-radius: 7px; background: #0369a1; color: #fff; font: 600 12.5px system-ui; cursor: pointer; }
   .add-top:hover:not(:disabled) { filter: brightness(1.08); }
   .add-top:disabled { opacity: .5; cursor: default; }
-  .app-top { margin-left: auto; padding: 6px 11px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #334155; font: 600 12.5px system-ui; cursor: pointer; }
+  .save-comp { margin-left: auto; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #334155; font: 600 12.5px system-ui; cursor: pointer; }
+  .save-comp:disabled { opacity: .5; cursor: default; }
+  .saved-msg { color: #0369a1; font-size: 11px; font-style: italic; }
+  .res-group { font: 600 9px system-ui; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; padding: 4px 9px 2px; }
+  .app-top { padding: 6px 11px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #334155; font: 600 12.5px system-ui; cursor: pointer; }
   .app-top.on { border-color: #0369a1; background: #eff6ff; color: #0369a1; }
   .app-pop { width: 320px; }
   .var-row { display: flex; align-items: center; gap: 4px; }

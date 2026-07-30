@@ -76,6 +76,17 @@ describe('appkit verb registry (rung 1 — SSOT → schema → dispatch)', () =>
     expect(app.panels[0].children).toHaveLength(0);
   });
 
+  it('insertTree clones a saved component + re-ids collisions (dedupe on insert)', async () => {
+    const app: any = { app: 'x', panels: [{ id: 'card', kind: 'card', children: [] }] };
+    const template = [{ id: 'card', kind: 'card', children: [{ id: 't', kind: 'text' }] }]; // 'card' collides
+    await dispatch('insertTree', { nodes: template }, { appStore: app });
+    expect(app.panels.map((p: any) => p.id)).toEqual(['card', 'card-2']); // the clone's dup id was re-assigned
+    expect(app.panels[1].children[0].id).toBe('t');
+    // insert into a parent by id
+    await dispatch('insertTree', { nodes: [{ id: 'x', kind: 'text' }], parentId: 'card' }, { appStore: app });
+    expect(app.panels[0].children.map((c: any) => c.id)).toEqual(['x']);
+  });
+
   it('setComponentProp writes panel.props (incl. nested children) + deletes on null', async () => {
     const app: any = {
       app: 'x',
