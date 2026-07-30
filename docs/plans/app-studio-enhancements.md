@@ -170,6 +170,15 @@ Two AIs, two doc diets (D6, refined for codegen):
 - **`app_components/` physical relocation** — deferred; the headless catalog delivers discovery,
   render/editor UI stays in `shared/harness`.
 
+## Next wave — SHIPPED 2026-07-30 (see below for what remains)
+
+Built this session: **Sidebar · Vertical toolbar · Menu button** (parallel agents) · **Popover ·
+Tooltip** (behavior-attach in PanelNode) · **Icon button** (+ searchable icon-picker editor) ·
+per-component **Props|Style tabs** · **App settings** (Variables + Style: theme/accent/`app.css`) ·
+the **component-bundle migration** (18 bundles) + per-component editors. **Remaining:** Data
+STRUCTURES tab · **server icon library** (icon backend) · **JS transform** escape hatch (future,
+task #33) · **`.app` → component** (task #31).
+
 ## Next wave — backlog (2026-07-30, from a design conversation)
 
 Bundle migration is DONE (15 bundles, `app_components/<Name>/`), plus per-component editors,
