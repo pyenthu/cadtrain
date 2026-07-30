@@ -24,6 +24,8 @@ import { metas as chatMetas } from '$lib/app_components/Chat/meta';
 import { metas as sidebarMetas } from '$lib/app_components/Sidebar/meta';
 import { metas as vtoolbarMetas } from '$lib/app_components/VerticalToolbar/meta';
 import { metas as menuMetas } from '$lib/app_components/MenuButton/meta';
+import { metas as popoverMetas } from '$lib/app_components/Popover/meta';
+import { metas as tooltipMetas } from '$lib/app_components/Tooltip/meta';
 
 export interface PropSpec {
   name: string;
@@ -75,6 +77,8 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
   ...textMetas,
   ...headingMetas,
   ...dividerMetas,
+  ...popoverMetas,
+  ...tooltipMetas,
   ...bake3dMetas,
   ...placeholderMetas,
   ...fileMetas,

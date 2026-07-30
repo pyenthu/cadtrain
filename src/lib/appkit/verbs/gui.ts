@@ -6,7 +6,7 @@ import type { Verb, Ctx, AppDoc } from './registry';
 
 /** Panel kinds the harness can render (Layer 4 registry). The AI may only COMPOSE
  *  these — the D1/D5 safety boundary (it never invents a new kind). */
-export const PANEL_KINDS = ['list', 'form', 'table', 'grid', 'edittable', 'bake3d', 'svg', 'text', 'heading', 'divider', 'chat', 'container', 'card', 'div', 'row', 'col', 'button', 'tabs', 'toolbar', 'file', 'sidebar', 'vtoolbar', 'menu'] as const;
+export const PANEL_KINDS = ['list', 'form', 'table', 'grid', 'edittable', 'bake3d', 'svg', 'text', 'heading', 'divider', 'chat', 'container', 'card', 'div', 'row', 'col', 'button', 'tabs', 'toolbar', 'file', 'sidebar', 'vtoolbar', 'menu', 'popover', 'tooltip'] as const;
 
 const pending =
   (name: string) =>

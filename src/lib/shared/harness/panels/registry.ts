@@ -21,6 +21,8 @@ import Placeholder from '$lib/app_components/Placeholder/Placeholder.svelte';
 import Sidebar from '$lib/app_components/Sidebar/Sidebar.svelte';
 import VerticalToolbar from '$lib/app_components/VerticalToolbar/VerticalToolbar.svelte';
 import MenuButton from '$lib/app_components/MenuButton/MenuButton.svelte';
+import Popover from '$lib/app_components/Popover/Popover.svelte';
+import Tooltip from '$lib/app_components/Tooltip/Tooltip.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: List,
@@ -46,6 +48,8 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   sidebar: Sidebar, // collapsible side panel holding children
   vtoolbar: VerticalToolbar, // vertical icon rail (left dock)
   menu: MenuButton, // button → dropdown menu (children = items)
+  popover: Popover, // behavior child — attaches to parent, opens on parent click (PanelNode)
+  tooltip: Tooltip, // behavior child — attaches to parent, shows on hover (PanelNode)
 };
 
 export function panelComponent(kind: string): Component<any> {
