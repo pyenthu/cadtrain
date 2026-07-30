@@ -41,9 +41,12 @@
     },
   );
 
-  // Declarative computed variables — reactive over the live params scope. Referenced
-  // by bindings/props/text as $vars.<name> (manifest/compute.ts, reused everywhere).
-  const vars = $derived(evalComputed(app.computed, { params, active, ...params }));
+  // Variables: static app.vars + reactive computed (both under $vars). Referenced by
+  // bindings/props/text as $vars.<name> (manifest/compute.ts, reused everywhere).
+  const vars = $derived({
+    ...(app.vars ?? {}),
+    ...evalComputed(app.computed, { params, active, ...params, ...(app.vars ?? {}) }),
+  });
 
   /** Resolve a binding's refs against the live scope, then dispatch it. */
   async function run(binding: Binding | undefined, item?: unknown): Promise<unknown> {
@@ -104,6 +107,7 @@
 </script>
 
 <div class="harness" style={themeVars(app.theme)}>
+  {#if app.css}{@html `<style>${app.css}</style>`}{/if}
   {#if app.title}<header class="harness-head"><strong>{app.title}</strong></header>{/if}
   <div class="harness-grid">
     {#each app.panels as panel (panel.id)}

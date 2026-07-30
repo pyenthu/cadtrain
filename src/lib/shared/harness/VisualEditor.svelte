@@ -16,6 +16,9 @@
   let openPanel = $state<any>(null); // the node whose settings popover is open
   let openStyle = $state(''); // fixed-position style anchored to the ⚙ button
   let settingsTab = $state<'props' | 'style'>('props'); // component editor tab
+  let appOpen = $state(false); // app-level settings popover
+  let appStyle = $state('');
+  let appTab = $state<'vars' | 'style'>('vars');
   let addTarget = $state<string | null>(null); // container id to add INTO (null → root)
   let collapsed = $state<Set<string>>(new Set());
   let queryEl = $state<HTMLInputElement>();
@@ -109,6 +112,30 @@
     else delete on[ev];
     return dispatch('setPanelProp', { panelId: p.id, key: 'on', value: on }, store());
   }
+
+  // ── App-level settings (variables + style) ──────────────────────────────────
+  function openApp(btn: HTMLElement) {
+    if (appOpen) return (appOpen = false);
+    const r = btn.getBoundingClientRect();
+    appStyle = `top:${r.bottom + 4}px; left:${Math.max(8, r.left)}px;`;
+    appOpen = true;
+  }
+  const compEntries = $derived(Object.entries((app.computed ?? {}) as Record<string, string>));
+  const addComputed = () => (app.computed = { ...(app.computed ?? {}), [`var${compEntries.length + 1}`]: '= 0' });
+  function renameComputed(oldName: string, newName: string) {
+    const c: Record<string, string> = { ...(app.computed ?? {}) };
+    const v = c[oldName];
+    delete c[oldName];
+    c[newName || oldName] = v;
+    app.computed = c;
+  }
+  const setFormula = (name: string, f: string) => (app.computed = { ...(app.computed ?? {}), [name]: f });
+  function delComputed(name: string) {
+    const c: Record<string, string> = { ...(app.computed ?? {}) };
+    delete c[name];
+    app.computed = c;
+  }
+  const setTheme = (k: 'mode' | 'accent', v: string) => (app.theme = { ...(app.theme ?? {}), [k]: v });
 
   function toggleCollapse(id: string) {
     const s = new Set(collapsed);
@@ -211,6 +238,7 @@
 <div class="ve">
   <div class="topbar">
     <button class="add-top" onclick={(e) => openSearch(null, e.currentTarget as HTMLElement)} disabled={searchOpen} title="add a component">＋ Add</button>
+    <button class="app-top" class:on={appOpen} onclick={(e) => openApp(e.currentTarget as HTMLElement)} title="app settings — variables + style">⚙ App</button>
   </div>
 
   <ul class="tree">
@@ -220,6 +248,46 @@
 
   <div class="hint">A tree of components (nest with ＋ on containers). Edits call the same gui verbs the AI uses.</div>
 </div>
+
+{#if appOpen}
+  <div class="settings-backdrop" role="presentation" onclick={() => (appOpen = false)}></div>
+  <div class="settings-pop app-pop" style={appStyle}>
+    <div class="sp-head">
+      <span class="sp-kind">App</span>
+      <div class="sp-tabs">
+        <button class:on={appTab === 'vars'} onclick={() => (appTab = 'vars')}>Variables</button>
+        <button class:on={appTab === 'style'} onclick={() => (appTab = 'style')}>Style</button>
+      </div>
+      <button class="sp-close" onclick={() => (appOpen = false)} title="close">✕</button>
+    </div>
+    {#if appTab === 'vars'}
+      <div class="wire">
+        {#each compEntries as [name, formula] (name)}
+          <div class="var-row">
+            <input class="vn" value={name} onchange={(e) => renameComputed(name, (e.currentTarget as HTMLInputElement).value)} />
+            <input class="vf" value={formula} placeholder="= w * h" onchange={(e) => setFormula(name, (e.currentTarget as HTMLInputElement).value)} />
+            <button class="rm" onclick={() => delComputed(name)} title="remove">✕</button>
+          </div>
+        {/each}
+        {#if !compEntries.length}<div class="sp-note">no variables — a formula over params/vars, referenced as $vars.name</div>{/if}
+        <button class="ete-add" onclick={addComputed}>＋ variable</button>
+      </div>
+    {:else}
+      <div class="wire">
+        <label class="prop"><span class="pl">theme</span>
+          <select value={(app.theme?.mode as string) ?? 'light'} onchange={(e) => setTheme('mode', (e.currentTarget as HTMLSelectElement).value)}>
+            <option value="light">light</option><option value="dark">dark</option>
+          </select>
+        </label>
+        <label class="prop"><span class="pl">accent</span>
+          <input type="color" value={(app.theme?.accent as string) ?? '#0369a1'} onchange={(e) => setTheme('accent', (e.currentTarget as HTMLInputElement).value)} />
+        </label>
+        <span class="pl">custom CSS</span>
+        <textarea class="app-css" value={app.css ?? ''} placeholder=".harness .cell {'{'} border-radius: 12px {'}'}" oninput={(e) => (app.css = (e.currentTarget as HTMLTextAreaElement).value)}></textarea>
+      </div>
+    {/if}
+  </div>
+{/if}
 
 {#if searchOpen}
   <div class="settings-backdrop" role="presentation" onclick={closeSearch}></div>
@@ -285,10 +353,18 @@
 
 <style>
   .ve { display: flex; flex-direction: column; gap: 8px; padding: 10px; font: 12.5px system-ui, Arial, sans-serif; color: #0f172a; height: 100%; overflow: auto; }
-  .topbar { display: flex; }
+  .topbar { display: flex; gap: 6px; }
   .add-top { padding: 6px 12px; border: 1px solid #0369a1; border-radius: 7px; background: #0369a1; color: #fff; font: 600 12.5px system-ui; cursor: pointer; }
   .add-top:hover:not(:disabled) { filter: brightness(1.08); }
   .add-top:disabled { opacity: .5; cursor: default; }
+  .app-top { margin-left: auto; padding: 6px 11px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #334155; font: 600 12.5px system-ui; cursor: pointer; }
+  .app-top.on { border-color: #0369a1; background: #eff6ff; color: #0369a1; }
+  .app-pop { width: 320px; }
+  .var-row { display: flex; align-items: center; gap: 4px; }
+  .var-row .vn { width: 34%; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 5px; font: 600 12px system-ui; }
+  .var-row .vf { flex: 1; min-width: 0; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 5px; font: 12px ui-monospace, monospace; }
+  .var-row .rm { padding: 1px 6px; border: 1px solid #fecaca; border-radius: 4px; background: #fff; color: #b91c1c; cursor: pointer; font-size: 11px; }
+  .app-css { width: 100%; box-sizing: border-box; min-height: 84px; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font: 12px ui-monospace, monospace; resize: vertical; }
   .search-pop { position: fixed; z-index: 41; width: 300px; max-height: 62vh; overflow: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 9px; box-shadow: 0 14px 40px rgba(2,6,23,.18); padding: 6px; }
   .search-pop .q { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 7px; font: 12.5px system-ui; margin-bottom: 4px; }
   .search-pop .q:focus { outline: none; border-color: #0369a1; box-shadow: 0 0 0 3px rgba(3,105,161,.12); }
