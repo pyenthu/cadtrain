@@ -25,7 +25,7 @@
   let inputEl = $state<HTMLInputElement>();
   let previewToken = $state(''); // the /app/local session the Preview iframe renders (server-side)
   let previewBusy = $state(false);
-  let autoCompile = $state(false); // re-render the preview on every edit? default OFF (manual ↻)
+  let autoCompile = $state(true); // re-render the preview on every edit (debounced); user default ON
 
   function idOf(): string {
     return (app?.app || fileName.replace(/\.app$/, '') || 'untitled').replace(/[^a-zA-Z0-9_-]/g, '_') || 'untitled';
