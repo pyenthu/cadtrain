@@ -68,6 +68,11 @@ export function makeSlotApi(get: () => Slots, set: (next: Slots) => void): SlotA
       set({ ...get(), [slot]: { name, type, data: parseData(name, text), handle } });
     },
 
+    setData(slot, data) {
+      const cur = get()[slot];
+      set({ ...get(), [slot]: { name: cur?.name ?? `${slot}.json`, type: cur?.type, data, handle: cur?.handle } });
+    },
+
     async save(slot) {
       const s = get()[slot];
       if (!s) return;

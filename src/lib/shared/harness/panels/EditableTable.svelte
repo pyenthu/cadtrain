@@ -6,22 +6,45 @@
   //
   // Seeded SYNCHRONOUSLY from server-resolved `preloaded` so the initial rows are in the SSR
   // first paint (an $effect would not run during svelte/server render).
-  import type { Panel, EventMap } from '$lib/appkit/manifest/types';
+  import type { Panel, EventMap, SlotValue, SlotApi } from '$lib/appkit/manifest/types';
   let {
     panel,
     fire,
     preloaded,
+    slots,
+    slotApi,
   }: {
     panel: Panel;
     fire?: (n: { on?: EventMap } | undefined, event: string, item?: unknown) => Promise<void>;
     preloaded?: unknown;
+    slots?: Record<string, SlotValue>;
+    slotApi?: SlotApi;
   } = $props();
 
-  // Client-owned rows (the working state). Seeded once from the server-resolved data.
+  // Optional DATA-FILE slot (§0.5): when set, rows come from the opened file and Save writes
+  // them back to that file. Otherwise rows seed from server-resolved data (SSR, rung 1).
+  const slot = $derived(panel.props?.slot as string | undefined);
+  const slotData = $derived(slot ? slots?.[slot]?.data : undefined);
+
+  // Client-owned rows (the working state). Seeded synchronously from preloaded (SSR path).
   let rows = $state<Record<string, any>[]>(
     Array.isArray(preloaded) ? (preloaded as any[]).map((r) => ({ ...r })) : [],
   );
   let dirty = $state(false);
+
+  // Slot mode: re-seed rows when the slot's underlying file changes (a new file opened).
+  // Content-key guard so local edits aren't clobbered + Save (which sets slot=rows) is a no-op.
+  let seedKey = $state('');
+  $effect(() => {
+    if (!slot) return;
+    const arr = Array.isArray(slotData) ? (slotData as any[]) : [];
+    const key = JSON.stringify(arr);
+    if (key !== seedKey) {
+      seedKey = key;
+      rows = arr.map((r) => ({ ...r }));
+      dirty = false;
+    }
+  });
 
   function colsOf(prop: unknown, first: any): string[] {
     if (typeof prop === 'string') return prop.split(',').map((s) => s.trim()).filter(Boolean);
@@ -46,18 +69,27 @@
     rows[i][c] = v; // deep-reactive $state
     dirty = true;
   }
-  // ── the ONLY server round-trip — explicit, on click ──
+  // ── the ONLY persist — explicit, on click ──
+  // Slot mode → write rows back to the data FILE (§0.5). Else → fire the on.save hook.
   async function save() {
-    await fire?.(panel, 'save', $state.snapshot(rows));
+    const snap = $state.snapshot(rows);
+    if (slot && slotApi) {
+      slotApi.setData(slot, snap);
+      seedKey = JSON.stringify(snap); // keep the re-seed guard in sync (no clobber)
+      await slotApi.save(slot); // persist to the data file
+    } else {
+      await fire?.(panel, 'save', snap); // deferred server hook
+    }
     dirty = false;
   }
+  const canSave = $derived(!!(slot && slotApi) || !!panel.on?.save);
 </script>
 
 <div class="et">
   <div class="et-bar">
     <button class="add" onclick={addRow}>{addLabel}</button>
     <span class="count">{rows.length} row{rows.length === 1 ? '' : 's'}{dirty ? ' · unsaved' : ''}</span>
-    {#if panel.on?.save}<button class="save" class:dirty onclick={save}>💾 Save</button>{/if}
+    {#if canSave}<button class="save" class:dirty onclick={save}>💾 Save{slot ? ` → ${slot}` : ''}</button>{/if}
   </div>
   <div class="et-wrap">
     <table>

@@ -69,6 +69,8 @@ export interface SlotValue {
 export interface SlotApi {
   /** Open a data file (File System Access picker) into a slot. */
   openInto(slot: string, type?: string): Promise<void>;
+  /** Replace a slot's in-memory data (a component writing edits back before persisting). */
+  setData(slot: string, data: unknown): void;
   /** Write the slot's data back to its file (Save As if no handle). */
   save(slot: string): Promise<void>;
   /** Write the slot's data to a new file (picker). */

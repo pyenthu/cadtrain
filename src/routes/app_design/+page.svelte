@@ -5,7 +5,6 @@
   // lives, but any location works). The AI builds the IN-MEMORY app (no server file needed),
   // so picker-opened files build too. See docs/architecture/app-harness.md.
   import VisualEditor from '$lib/shared/harness/VisualEditor.svelte';
-  import HarnessView from '$lib/shared/harness/HarnessView.svelte';
   import { validateManifest } from '$lib/appkit/manifest/validate';
   import { autoDoc } from '$lib/appkit/manifest/doc';
   import { createLocalStore } from '$lib/appkit/store/local-backend';
@@ -24,6 +23,8 @@
   let prompt = $state('');
   let building = $state(false);
   let inputEl = $state<HTMLInputElement>();
+  let previewToken = $state(''); // the /app/local session the Preview iframe renders (server-side)
+  let previewBusy = $state(false);
 
   function idOf(): string {
     return (app?.app || fileName.replace(/\.app$/, '') || 'untitled').replace(/[^a-zA-Z0-9_-]/g, '_') || 'untitled';
@@ -154,6 +155,31 @@
     }
   }
 
+  // Preview = SERVER-rendered (same path as Launch): park the current app → iframe /app/local.
+  // Explicit (on entering Preview + a manual refresh) — edits happen in Design (client), so we
+  // don't round-trip per keystroke.
+  async function serverPreview() {
+    if (!app) return;
+    previewBusy = true;
+    try {
+      const r = await fetch('/api/app/session', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ app: $state.snapshot(app), name: fileName || app.title || app.app }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      previewToken = (await r.json()).token;
+    } catch (e) {
+      status = `preview failed: ${String((e as any)?.message ?? e)}`;
+    } finally {
+      previewBusy = false;
+    }
+  }
+  function openPreview() {
+    view = 'preview';
+    serverPreview();
+  }
+
   async function launch() {
     if (!app) return;
     // Server-render the CURRENT app (works for a picked local file or a freshly-built one,
@@ -182,7 +208,7 @@
     <button title="Save As…" onclick={() => saveAs()} disabled={!app}>⤓</button>
     <span class="sp"></span>
     <button title="Design (visual editor)" class:on={view === 'design'} onclick={() => (view = 'design')} disabled={!app}>✎</button>
-    <button title="Preview (run)" class:on={view === 'preview'} onclick={() => (view = 'preview')} disabled={!app}>👁</button>
+    <button title="Preview (server-rendered)" class:on={view === 'preview'} onclick={() => openPreview()} disabled={!app}>👁</button>
     <button title="Text (.app JSON)" class:on={view === 'text'} onclick={() => (view = 'text')} disabled={!app}>&lt;/&gt;</button>
     <button title="Doc (Markdown)" class:on={view === 'doc'} onclick={() => (view = 'doc')} disabled={!app}>📄</button>
     <button title="★ Add this app to the shared design-RAG" onclick={() => promote()} disabled={!app}>★</button>
@@ -210,7 +236,17 @@
       </div>
       <div class="work">
         {#if view === 'preview'}
-          <HarnessView {app} />
+          <div class="preview-wrap">
+            <div class="preview-bar">
+              <span class="pv-tag">server-rendered · /app/local/{previewToken || '…'}</span>
+              <button class="pv-refresh" onclick={() => serverPreview()} disabled={previewBusy}>↻ re-render</button>
+            </div>
+            {#if previewToken}
+              <iframe class="preview-frame" src="/app/local/{previewToken}" title="server-rendered app preview"></iframe>
+            {:else}
+              <div class="pv-loading">{previewBusy ? 'rendering on server…' : 'preview'}</div>
+            {/if}
+          </div>
         {:else if view === 'text'}
           <pre class="text-view">{JSON.stringify(app, null, 2)}</pre>
         {:else if view === 'doc'}
@@ -253,6 +289,13 @@
   .build .ai { padding: 6px 12px; border: 1px solid #7c3aed; border-radius: 6px; background: #7c3aed; color: #fff; font: 600 12px system-ui; cursor: pointer; }
   .build .ai:disabled { opacity: .5; cursor: default; }
   .work { flex: 1; min-height: 0; overflow: auto; }
+  .preview-wrap { display: flex; flex-direction: column; height: 100%; }
+  .preview-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
+  .pv-tag { font: 500 11px ui-monospace, monospace; color: #64748b; }
+  .pv-refresh { margin-left: auto; padding: 3px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; font: 600 11px system-ui; cursor: pointer; }
+  .pv-refresh:disabled { opacity: .5; cursor: default; }
+  .preview-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
+  .pv-loading { flex: 1; display: grid; place-items: center; color: #94a3b8; font: 13px system-ui; font-style: italic; }
   .text-view { margin: 0; padding: 14px; font: 12px/1.5 ui-monospace, monospace; color: #0f172a; white-space: pre; height: 100%; box-sizing: border-box; }
   .doc-view { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: #e5e7eb; height: 100%; }
   .doc-src { border: 0; padding: 14px; font: 13px/1.6 ui-monospace, monospace; resize: none; outline: none; }
