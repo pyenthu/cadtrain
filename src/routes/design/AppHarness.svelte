@@ -30,6 +30,39 @@
   const diagrams: Diagram[] = [
     {
       n: '01',
+      title: 'Server-render — the .app compiled by the superapp',
+      body:
+        'The .app (on the volume via /app/[id], or a local file parked in a session then /app/local/[token]) is compiled by the SERVER: it resolves the data for each server-mode panel through the engine in-process (SvelteKit fetch to /api/primitives/*), SSRs the first paint, then the client HYDRATES for full Svelte reactivity. The ENGINE (bake, compile, parts) never ships — only resolved data + compiled component code, never the .svelte source. Local UI is instant client-side (tabs, inputs, add/delete rows, computed); only persist, engine, and load round-trip. Two per-component knobs: dataMode (static/server/client) and computeMode (server/client bake).',
+      cites: 'docs/plans/app-server-render.md · /app/[id] · /app/local/[token] · dataMode · computeMode',
+      wide: true,
+      diagram: `flowchart LR
+  subgraph SRC[".app · pointer to the file"]
+    direction TB
+    V["Volume<br/>/app/[id]"]:::src
+    L["Local file<br/>/app/local/[token]"]:::src
+  end
+  subgraph SRV["Server · the superapp (SSR)"]
+    direction TB
+    RD["Resolve server-mode data<br/>engine + dispatch"]:::srv
+    SS["SSR first paint → HTML"]:::srv
+    EN["🔒 ENGINE<br/>bake · compile · parts — never ships"]:::eng
+  end
+  subgraph CLI["Client · hydrated + reactive"]
+    direction TB
+    RX["Full Svelte reactivity"]:::cli
+    LO["Local: tabs · inputs · add/del rows · computed"]:::cli
+  end
+  V --> RD
+  L --> RD
+  RD --> SS --> CLI
+  CLI -. "only persist · engine · load" .-> SRV
+  classDef src fill:#f6f7f9,stroke:#cbd2da,color:#334155;
+  classDef srv fill:#eef4fb,stroke:#3b82c4,color:#1e3a5f;
+  classDef eng fill:#fbeaea,stroke:#cc2222,color:#7a1414;
+  classDef cli fill:#eef6ee,stroke:#2f7d32,color:#1c4d1f;`,
+    },
+    {
+      n: '02',
       title: 'The five-layer stack — one SSOT, three projections',
       body:
         'A single Verb Registry is the source of truth: each op declared once ({name, group, desc, params, handler}). It PROJECTS to three surfaces that cannot drift — the AI tool schema, the HTTP execution routes, and the generated API.md authoring guide. A declarative .app manifest wires panels/controls to verbs; the Harness UI reads it through a PanelKind registry; a multi-prompt AI pipeline authors the manifest.',
@@ -52,7 +85,7 @@
   classDef ai fill:#fff6e6,stroke:#c47f16,color:#5f3a0e;`,
     },
     {
-      n: '02',
+      n: '03',
       title: 'Two tiers — engines vs apps (D12)',
       body:
         'The boundary between the two tiers is the verb registry. ENGINES live in src/, are built by Claude at dev-time, and hold the complex, heavy functionality (Manifold / TF / BREP kernels, the primitives pipeline, any hard logic). They are exposed as VERBS. APPS are thin declarative .app GUIs, built by the runtime AI, that DRAW + WIRE engines — no complex logic of their own. In short: Claude builds engines; the AI builds apps.',
@@ -71,7 +104,7 @@
   classDef app fill:#eef6ee,stroke:#2f7d32,color:#1c4d1f;`,
     },
     {
-      n: '03',
+      n: '04',
       title: 'Three authoring surfaces, one .app (D16)',
       body:
         'The same manifest is edited three ways: the AI chat (the build pipeline), a native lightweight visual editor (palette = the PanelKinds, drag-to-place, bind-control-to-verb), and the rendered harness itself. All three hands edit the ONE .app — human and AI co-author the same file.',
@@ -84,7 +117,7 @@
   classDef app fill:#f3eefb,stroke:#7c4dc4,color:#3a1e5f;`,
     },
     {
-      n: '04',
+      n: '05',
       title: 'The .app lifecycle',
       body:
         'Create → Design (AI + visual) → Save → Launch (preview) — then iterate. A .app is a self-contained file (like a .docx): panels, controls, bindings, and the verbs it composes travel together. Hand someone the file and it runs on any harness. It lives in a working dir (default ~/Desktop/SAMPLE) but is openable/saveable anywhere via the native file picker.',
@@ -95,14 +128,14 @@
   classDef step fill:#f6f7f9,stroke:#cbd2da,color:#334155;`,
     },
     {
-      n: '05',
+      n: '06',
       title: 'The learning loop (rung 4a.2)',
       body:
         'Every AI build run is captured — the tuple {prompt, retrieved RAG context, the verb calls, the resulting .app} — into an app-building corpus (_builds.jsonl). Retrieval grounds FUTURE builds on that corpus, so the system learns to build apps and gets more deterministic over time. Verified non-conformances promote into RAG goldens + sharpened verb desc + eval cases. Runs LOCALLY — no data leaves (data-residency).',
-      cites: 'D10 · D15 — /api/app/generate writes _builds.jsonl; ai/feedback/',
+      cites: 'D10 · D15 — /api/app/generate → volume ai/app-rag/ (builds.jsonl + golden/)',
       diagram: `flowchart LR
   B["AI build run"]:::step --> CAP["Capture tuple<br/>prompt · RAG · verbs · result"]:::cap
-  CAP --> LOG["corpus<br/>_builds.jsonl (local)"]:::corpus
+  CAP --> LOG["corpus<br/>ai/app-rag/ (volume)"]:::corpus
   LOG -->|grounds next| B
   classDef step fill:#eef6ee,stroke:#2f7d32,color:#1c4d1f;
   classDef cap fill:#fff6e6,stroke:#c47f16,color:#5f3a0e;
@@ -235,7 +268,7 @@
 <!-- ── The /app_design studio interface — hand-drawn wireframe ── -->
 <article class="ah-card wire-card">
   <header class="ah-head">
-    <span class="ah-num">06</span>
+    <span class="ah-num">07</span>
     <h3>The studio interface — <code>/app_design</code> (target layout)</h3>
   </header>
   <p class="ah-body">
