@@ -10,6 +10,7 @@ import { env } from '$env/dynamic/private';
 import { appFilePath } from '$lib/server/app-paths';
 import { validateManifest } from '$lib/appkit/manifest/validate';
 import { buildApp } from '$lib/appkit/ai/pipeline';
+import { buildAppViaCli } from '$lib/appkit/ai/build-cli';
 import { captureBuild, buildGrounding } from '$lib/server/app-corpus';
 
 export const POST: RequestHandler = async ({ request }) => {
@@ -17,10 +18,12 @@ export const POST: RequestHandler = async ({ request }) => {
   if (!body?.prompt) throw error(400, 'missing prompt');
   if (!body.app && !body.id) throw error(400, 'missing app or id');
 
-  const provider = env.APP_BUILD_PROVIDER === 'local' ? 'local' : 'cloud';
+  // Backend select (APP_BUILD_PROVIDER): 'cli' → claude --print subprocess (dev, bills the Max
+  // subscription) · 'local' → Ollama (dev, free) · else 'cloud' → ANTHROPIC_API_KEY (prod default).
+  const mode = env.APP_BUILD_PROVIDER === 'cli' ? 'cli' : env.APP_BUILD_PROVIDER === 'local' ? 'local' : 'cloud';
   const apiKey = env.ANTHROPIC_API_KEY;
-  if (provider === 'cloud' && !apiKey) {
-    throw error(503, 'ANTHROPIC_API_KEY not set (cloud build). Set APP_BUILD_PROVIDER=local for a local Ollama model.');
+  if (mode === 'cloud' && !apiKey) {
+    throw error(503, 'ANTHROPIC_API_KEY not set (cloud build). Set APP_BUILD_PROVIDER=cli (claude CLI subscription) or =local (Ollama) for dev.');
   }
 
   // Resolve the manifest: prefer the in-memory `app` (studio file-editor); else load by id.
@@ -51,15 +54,23 @@ export const POST: RequestHandler = async ({ request }) => {
 
   let out;
   try {
-    out = await buildApp({
-      prompt: body.prompt,
-      app: manifest as any,
-      grounding,
-      provider,
-      apiKey,
-      model: env.APP_BUILD_MODEL,
-      baseURL: env.OLLAMA_URL,
-    });
+    if (mode === 'cli') {
+      const { runClaudeCli } = await import('$lib/server/claude-cli');
+      out = await buildAppViaCli(
+        { prompt: body.prompt, app: manifest as any, grounding, model: env.APP_BUILD_MODEL },
+        (p, o) => runClaudeCli(p, { model: o.model }),
+      );
+    } else {
+      out = await buildApp({
+        prompt: body.prompt,
+        app: manifest as any,
+        grounding,
+        provider: mode,
+        apiKey,
+        model: env.APP_BUILD_MODEL,
+        baseURL: env.OLLAMA_URL,
+      });
+    }
   } catch (e) {
     throw error(502, `build failed: ${String((e as any)?.message ?? e)}`);
   }
