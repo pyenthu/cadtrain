@@ -21,5 +21,26 @@ export function validateManifest(x: unknown): ValidateResult {
       }
     });
   }
-  return errors.length ? { ok: false, errors } : { ok: true, app: a as AppManifest };
+  if (errors.length) return { ok: false, errors };
+  dedupePanelIds(a); // normalize — duplicate ids break keyed renders + id-keyed lookups
+  return { ok: true, app: a as AppManifest };
+}
+
+/** Rename duplicate panel ids (across the panel tree + popovers) so every id is unique.
+ *  Duplicates crash keyed {#each} and collide in preloaded[]/findPanel(). Mutates in place. */
+export function dedupePanelIds(app: any): void {
+  const walk = (list: any[], seen: Set<string>) => {
+    for (const p of list ?? []) {
+      if (!p || typeof p !== 'object') continue;
+      const base = String(p.id ?? 'p');
+      let id = base;
+      let n = 2;
+      while (seen.has(id)) id = `${base}-${n++}`;
+      seen.add(id);
+      p.id = id;
+      if (Array.isArray(p.children)) walk(p.children, seen);
+    }
+  };
+  walk(app?.panels, new Set<string>());
+  walk(app?.popovers, new Set<string>());
 }

@@ -19,6 +19,14 @@ function requireApp(ctx: Ctx): AppDoc {
   return ctx.appStore;
 }
 
+/** A panel id not already used anywhere in the tree (append -2, -3, … on collision). */
+export function uniquePanelId(app: AppDoc, base: string): string {
+  if (!findPanel(app, base)) return base;
+  let n = 2;
+  while (findPanel(app, `${base}-${n}`)) n++;
+  return `${base}-${n}`;
+}
+
 /** Find a panel by id anywhere in the tree (top-level panels + nested children). */
 export function findPanel(app: AppDoc, id: string): any | undefined {
   const walk = (list: any[]): any => {
@@ -63,7 +71,9 @@ export const GUI_VERBS: Verb[] = [
     params: { type: 'object', properties: { panel: { type: 'object' } }, required: ['panel'] },
     handler: (a: { panel: Record<string, unknown> }, ctx) => {
       const app = requireApp(ctx);
-      (app.panels ??= []).push(a.panel);
+      const panel = a.panel as any;
+      panel.id = uniquePanelId(app, String(panel.id ?? 'p')); // never collide (keyed renders + lookups)
+      (app.panels ??= []).push(panel);
       return { ok: true };
     },
   },
