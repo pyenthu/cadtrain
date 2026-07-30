@@ -9,17 +9,19 @@
   import { getComponentMeta } from '$lib/appkit/catalog/components';
   import { panelEditor } from './panels/editor-registry';
 
-  let { app }: { app: AppManifest } = $props();
+  let {
+    app,
+    onScopedBuild,
+  }: { app: AppManifest; onScopedBuild?: (panelId: string, kind: string, prompt: string) => Promise<unknown> } = $props();
   let query = $state('');
   let searchOpen = $state(false); // the add-component search popover
   let searchStyle = $state(''); // fixed-position style anchored to the clicked ＋
   let behaviorOnly = $state(false); // target is a leaf → offer only popover/tooltip
-  let openPanel = $state<any>(null); // the node whose settings popover is open
+  let openPanelId = $state<string | null>(null); // settings popover target (by id → live-resolved so it survives an AI rebuild)
   let openStyle = $state(''); // fixed-position style anchored to the ⚙ button
-  let settingsTab = $state<'props' | 'style'>('props'); // component editor tab
-  let appOpen = $state(false); // app-level settings popover
-  let appStyle = $state('');
-  let appTab = $state<'vars' | 'structures' | 'style'>('vars');
+  let settingsTab = $state<'props' | 'style' | 'events'>('props'); // component editor tab
+  let aiPrompt = $state(''); // component-scoped AI prompt (top of the ⚙ popover)
+  let aiBusy = $state(false);
   let addTarget = $state<string | null>(null); // container id to add INTO (null → root)
   let collapsed = $state<Set<string>>(new Set());
   let queryEl = $state<HTMLInputElement>();
@@ -32,6 +34,17 @@
     ).slice(0, 8),
   );
   const store = () => ({ appStore: app as any });
+
+  /** Find a panel by id anywhere in the tree (so the open popover re-resolves after any edit). */
+  function findPanel(list: any[], id: string): any {
+    for (const p of list ?? []) {
+      if (p.id === id) return p;
+      const c = findPanel(p.children, id);
+      if (c) return c;
+    }
+    return null;
+  }
+  const openPanel = $derived(openPanelId ? findPanel(app.panels, openPanelId) : null);
 
   /** Fixed-position style anchored to a button that STAYS in the viewport: clamps left, caps the
    *  height to the space below, and flips ABOVE the anchor when there's more room up top. */
@@ -114,12 +127,24 @@
   const rename = (id: string, title: string) => dispatch('setPanelProp', { panelId: id, key: 'title', value: title }, store());
 
   function openSettings(p: any, btn: HTMLElement) {
-    if (openPanel?.id === p.id) return closeSettings();
+    if (openPanelId === p.id) return closeSettings();
     settingsTab = 'props';
-    openStyle = anchorStyle(btn, 300);
-    openPanel = p;
+    aiPrompt = '';
+    openStyle = anchorStyle(btn, 320);
+    openPanelId = p.id;
   }
-  const closeSettings = () => (openPanel = null);
+  const closeSettings = () => (openPanelId = null);
+  /** Run the ⚙ popover's ✨ bar — a component-scoped AI edit via the parent. */
+  async function runScopedAi() {
+    if (!openPanel || !aiPrompt.trim() || !onScopedBuild) return;
+    aiBusy = true;
+    try {
+      await onScopedBuild(openPanel.id, openPanel.kind, aiPrompt.trim());
+      aiPrompt = '';
+    } finally {
+      aiBusy = false;
+    }
+  }
   const propVal = (p: any, name: string, dflt: unknown) => p.props?.[name] ?? dflt;
   const setProp = (id: string, name: string, value: unknown) =>
     dispatch('setComponentProp', { panelId: id, name, value }, store());
@@ -130,7 +155,6 @@
   const MUTATE_VERBS = ['setParam', 'addRow', 'removeRow', 'reorderRow', 'patchDoc', 'http'];
   const ARG_KEY: Record<string, string> = { loadData: 'slot', http: 'url', listParts: 'category', listDocs: 'docType' };
   const eventsFor = (kind: string): string[] => (kind === 'button' ? ['click'] : kind === 'edittable' ? ['save'] : []);
-  const wireableKind = (kind: string) => SOURCE_KINDS.has(kind) || eventsFor(kind).length > 0;
 
   /** Build a binding's args from a single primary arg (contextual per verb). */
   function argsFor(verb: string, arg: string): Record<string, unknown> {
@@ -155,47 +179,6 @@
     else delete on[ev];
     return dispatch('setPanelProp', { panelId: p.id, key: 'on', value: on }, store());
   }
-
-  // ── App-level settings (variables + style) ──────────────────────────────────
-  function openApp(btn: HTMLElement) {
-    if (appOpen) return (appOpen = false);
-    appStyle = anchorStyle(btn, 320);
-    appOpen = true;
-  }
-  const compEntries = $derived(Object.entries((app.computed ?? {}) as Record<string, string>));
-  const addComputed = () => (app.computed = { ...(app.computed ?? {}), [`var${compEntries.length + 1}`]: '= 0' });
-  function renameComputed(oldName: string, newName: string) {
-    const c: Record<string, string> = { ...(app.computed ?? {}) };
-    const v = c[oldName];
-    delete c[oldName];
-    c[newName || oldName] = v;
-    app.computed = c;
-  }
-  const setFormula = (name: string, f: string) => (app.computed = { ...(app.computed ?? {}), [name]: f });
-  function delComputed(name: string) {
-    const c: Record<string, string> = { ...(app.computed ?? {}) };
-    delete c[name];
-    app.computed = c;
-  }
-  const setTheme = (k: 'mode' | 'accent', v: string) => (app.theme = { ...(app.theme ?? {}), [k]: v });
-  // Data structures (reusable field sets)
-  const structEntries = $derived(Object.entries((app.structures ?? {}) as Record<string, Array<{ name: string }>>));
-  const addStructure = () => (app.structures = { ...(app.structures ?? {}), [`struct${structEntries.length + 1}`]: [] });
-  function renameStructure(oldName: string, newName: string) {
-    const s = { ...(app.structures ?? {}) };
-    const v = s[oldName];
-    delete s[oldName];
-    s[newName || oldName] = v;
-    app.structures = s;
-  }
-  const setFields = (name: string, csv: string) =>
-    (app.structures = { ...(app.structures ?? {}), [name]: csv.split(',').map((x) => x.trim()).filter(Boolean).map((n) => ({ name: n })) });
-  function delStructure(name: string) {
-    const s = { ...(app.structures ?? {}) };
-    delete s[name];
-    app.structures = s;
-  }
-  const fieldsCsv = (fields: Array<{ name: string }>) => (fields ?? []).map((f) => f.name).join(', ');
 
   function toggleCollapse(id: string) {
     const s = new Set(collapsed);
@@ -234,9 +217,10 @@
   </div>
 {/snippet}
 
-{#snippet wiring(p)}
-  <div class="wire">
-    {#if SOURCE_KINDS.has(p.kind)}
+{#snippet sourceWiring(p)}
+  {#if SOURCE_KINDS.has(p.kind)}
+    <div class="wire">
+      <div class="wire-h">Data source</div>
       <label class="prop">
         <span class="pl">🔌 source</span>
         <select value={p.source?.verb ?? ''} onchange={(e) => setSource(p.id, (e.currentTarget as HTMLSelectElement).value)}>
@@ -250,7 +234,12 @@
           <input value={argOf(p.source)} placeholder={argHint(p.source.verb)} onchange={(e) => setSource(p.id, p.source.verb, (e.currentTarget as HTMLInputElement).value)} />
         </label>
       {/if}
-    {/if}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet eventWiring(p)}
+  <div class="wire">
     {#each eventsFor(p.kind) as ev}
       <label class="prop">
         <span class="pl">⚡ on {ev}</span>
@@ -266,6 +255,12 @@
         </label>
       {/if}
     {/each}
+    {#if !eventsFor(p.kind).length}
+      <div class="sp-empty">
+        <span>No standard events for <b>{p.kind}</b> yet.</span>
+        <span class="sp-note">Fire an app event or wire a verb here once event propagation lands — or ask ✨ above.</span>
+      </div>
+    {/if}
   </div>
 {/snippet}
 
@@ -273,12 +268,11 @@
   {@const meta = getComponentMeta(p.kind)}
   {@const kids = p.children ?? []}
   {@const shown = !collapsed.has(p.id)}
-  {@const canEdit = !!meta?.props?.length || wireableKind(p.kind)}
   {@const prevNests = idx > 0 && !!getComponentMeta(siblings[idx - 1]?.kind)?.acceptsChildren}
   <li class="node" class:target={addTarget === p.id}>
     <div class="row" class:sel={openPanel?.id === p.id}>
       <button class="caret" class:hide={!kids.length} onclick={() => toggleCollapse(p.id)} title={shown ? 'collapse' : 'expand'}>{shown ? '▾' : '▸'}</button>
-      <button class="gear" class:on={openPanel?.id === p.id} disabled={!canEdit} onclick={(e) => openSettings(p, e.currentTarget as HTMLElement)} title={canEdit ? 'settings' : 'no settings'}>⚙</button>
+      <button class="gear" class:on={openPanel?.id === p.id} onclick={(e) => openSettings(p, e.currentTarget as HTMLElement)} title="settings">⚙</button>
       <span class="kind" title={p.title ?? p.id}>{p.kind}</span>
       <button class="add-child" title={meta?.acceptsChildren ? 'add child' : 'add popover / tooltip'} onclick={(e) => openSearch(p.id, e.currentTarget as HTMLElement, !!meta?.acceptsChildren)}>＋</button>
       <button onclick={() => outdent(p.id)} disabled={depth === 0} title="promote (out of parent)">←</button>
@@ -298,7 +292,6 @@
 <div class="ve">
   <div class="topbar">
     <button class="add-top" onclick={(e) => openSearch(null, e.currentTarget as HTMLElement)} disabled={searchOpen} title="add a component">＋ Add</button>
-    <button class="app-top" class:on={appOpen} onclick={(e) => openApp(e.currentTarget as HTMLElement)} title="app settings — variables + style">⚙ App</button>
   </div>
 
   <ul class="tree">
@@ -308,59 +301,6 @@
 
   <div class="hint">A tree of components (nest with ＋ on containers). Edits call the same gui verbs the AI uses.</div>
 </div>
-
-{#if appOpen}
-  <div class="settings-backdrop" role="presentation" onclick={() => (appOpen = false)}></div>
-  <div class="settings-pop app-pop" style={appStyle}>
-    <div class="sp-head">
-      <span class="sp-kind">App</span>
-      <div class="sp-tabs">
-        <button class:on={appTab === 'vars'} onclick={() => (appTab = 'vars')}>Variables</button>
-        <button class:on={appTab === 'structures'} onclick={() => (appTab = 'structures')}>Data</button>
-        <button class:on={appTab === 'style'} onclick={() => (appTab = 'style')}>Style</button>
-      </div>
-      <button class="sp-close" onclick={() => (appOpen = false)} title="close">✕</button>
-    </div>
-    {#if appTab === 'vars'}
-      <div class="wire">
-        {#each compEntries as [name, formula] (name)}
-          <div class="var-row">
-            <input class="vn" value={name} onchange={(e) => renameComputed(name, (e.currentTarget as HTMLInputElement).value)} />
-            <input class="vf" value={formula} placeholder="= w * h" onchange={(e) => setFormula(name, (e.currentTarget as HTMLInputElement).value)} />
-            <button class="rm" onclick={() => delComputed(name)} title="remove">✕</button>
-          </div>
-        {/each}
-        {#if !compEntries.length}<div class="sp-note">no variables — a formula over params/vars, referenced as $vars.name</div>{/if}
-        <button class="ete-add" onclick={addComputed}>＋ variable</button>
-      </div>
-    {:else if appTab === 'structures'}
-      <div class="wire">
-        {#each structEntries as [name, fields] (name)}
-          <div class="var-row">
-            <input class="vn" value={name} onchange={(e) => renameStructure(name, (e.currentTarget as HTMLInputElement).value)} />
-            <input class="vf" value={fieldsCsv(fields)} placeholder="od, id, top" onchange={(e) => setFields(name, (e.currentTarget as HTMLInputElement).value)} />
-            <button class="rm" onclick={() => delStructure(name)} title="remove">✕</button>
-          </div>
-        {/each}
-        {#if !structEntries.length}<div class="sp-note">no structures — a reusable field set; a table adopts one via its “From structure” picker</div>{/if}
-        <button class="ete-add" onclick={addStructure}>＋ structure</button>
-      </div>
-    {:else}
-      <div class="wire">
-        <label class="prop"><span class="pl">theme</span>
-          <select value={(app.theme?.mode as string) ?? 'light'} onchange={(e) => setTheme('mode', (e.currentTarget as HTMLSelectElement).value)}>
-            <option value="light">light</option><option value="dark">dark</option>
-          </select>
-        </label>
-        <label class="prop"><span class="pl">accent</span>
-          <input type="color" value={(app.theme?.accent as string) ?? '#0369a1'} onchange={(e) => setTheme('accent', (e.currentTarget as HTMLInputElement).value)} />
-        </label>
-        <span class="pl">custom CSS</span>
-        <textarea class="app-css" value={app.css ?? ''} placeholder=".harness .cell {'{'} border-radius: 12px {'}'}" oninput={(e) => (app.css = (e.currentTarget as HTMLTextAreaElement).value)}></textarea>
-      </div>
-    {/if}
-  </div>
-{/if}
 
 {#if searchOpen}
   <div class="settings-backdrop" role="presentation" onclick={closeSearch}></div>
@@ -407,35 +347,51 @@
   <div class="settings-pop" style={openStyle}>
     <div class="sp-head">
       <span class="sp-kind">{openPanel.kind}</span>
-      <div class="sp-tabs">
-        <button class:on={settingsTab === 'props'} onclick={() => (settingsTab = 'props')}>Props</button>
-        <button class:on={settingsTab === 'style'} onclick={() => (settingsTab = 'style')}>Style</button>
-      </div>
+      <input class="sp-title" value={openPanel.title ?? ''} placeholder={openPanel.id}
+        onchange={(e) => rename(openPanel.id, (e.currentTarget as HTMLInputElement).value)} />
       <button class="sp-close" onclick={closeSettings} title="close">✕</button>
     </div>
-    <label class="prop">
-      <span class="pl">title</span>
-      <input value={openPanel.title ?? ''} placeholder={openPanel.id} onchange={(e) => rename(openPanel.id, (e.currentTarget as HTMLInputElement).value)} />
-    </label>
-    {#if settingsTab === 'props'}
-      {#if panelEditor(openPanel.kind)}
-        {@const CustomEditor = panelEditor(openPanel.kind)}
-        <CustomEditor panel={openPanel} structures={app.structures} onProp={(name, value) => setProp(openPanel.id, name, value)} />
-      {:else if meta?.props?.length}
-        {@render propsForm(openPanel, meta)}
+
+    <form class="sp-ai" onsubmit={(e) => { e.preventDefault(); runScopedAi(); }}>
+      <span class="sp-ai-ic">✨</span>
+      <input placeholder={`style, add a variable, event or code for this ${openPanel.kind}…`}
+        bind:value={aiPrompt} disabled={aiBusy || !onScopedBuild} />
+      <button type="submit" class="sp-ai-go" disabled={aiBusy || !aiPrompt.trim() || !onScopedBuild} title="ask AI">
+        {aiBusy ? '…' : '→'}
+      </button>
+    </form>
+
+    <div class="sp-tabs">
+      <button class:on={settingsTab === 'props'} onclick={() => (settingsTab = 'props')}>Props</button>
+      <button class:on={settingsTab === 'style'} onclick={() => (settingsTab = 'style')}>Style</button>
+      <button class:on={settingsTab === 'events'} onclick={() => (settingsTab = 'events')}>Events</button>
+    </div>
+
+    <div class="sp-body">
+      {#if settingsTab === 'props'}
+        {#if panelEditor(openPanel.kind)}
+          {@const CustomEditor = panelEditor(openPanel.kind)}
+          <CustomEditor panel={openPanel} structures={app.structures} onProp={(name, value) => setProp(openPanel.id, name, value)} />
+        {:else if meta?.props?.length}
+          {@render propsForm(openPanel, meta)}
+        {:else}
+          <div class="sp-empty"><span>No props for <b>{openPanel.kind}</b>.</span><span class="sp-note">Use Style or Events, or ask ✨ above.</span></div>
+        {/if}
+        {@render sourceWiring(openPanel)}
+      {:else if settingsTab === 'style'}
+        <div class="wire">
+          <label class="prop"><span class="pl">CSS classes</span>
+            <input value={(openPanel.props?.class as string) ?? ''} placeholder="e.g. p-4 rounded" onchange={(e) => setProp(openPanel.id, 'class', (e.currentTarget as HTMLInputElement).value)} />
+          </label>
+          <label class="prop"><span class="pl">inline style</span>
+            <input value={(openPanel.props?.style as string) ?? ''} placeholder="e.g. padding:12px;background:#f8fafc" onchange={(e) => setProp(openPanel.id, 'style', (e.currentTarget as HTMLInputElement).value)} />
+          </label>
+          <div class="sp-note">Inline style always applies; Tailwind classes only if already in the build.</div>
+        </div>
+      {:else}
+        {@render eventWiring(openPanel)}
       {/if}
-      {#if wireableKind(openPanel.kind)}{@render wiring(openPanel)}{/if}
-    {:else}
-      <div class="wire">
-        <label class="prop"><span class="pl">CSS classes</span>
-          <input value={(openPanel.props?.class as string) ?? ''} placeholder="e.g. p-4 rounded" onchange={(e) => setProp(openPanel.id, 'class', (e.currentTarget as HTMLInputElement).value)} />
-        </label>
-        <label class="prop"><span class="pl">inline style</span>
-          <input value={(openPanel.props?.style as string) ?? ''} placeholder="e.g. padding:12px;background:#f8fafc" onchange={(e) => setProp(openPanel.id, 'style', (e.currentTarget as HTMLInputElement).value)} />
-        </label>
-        <div class="sp-note">Inline style always applies; Tailwind classes only if already in the build.</div>
-      </div>
-    {/if}
+    </div>
   </div>
 {/if}
 
@@ -446,14 +402,6 @@
   .add-top:hover:not(:disabled) { filter: brightness(1.08); }
   .add-top:disabled { opacity: .5; cursor: default; }
   .res-group { font: 600 9px system-ui; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; padding: 4px 9px 2px; }
-  .app-top { margin-left: auto; padding: 6px 11px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; color: #334155; font: 600 12.5px system-ui; cursor: pointer; }
-  .app-top.on { border-color: #0369a1; background: #eff6ff; color: #0369a1; }
-  .app-pop { width: 320px; }
-  .var-row { display: flex; align-items: center; gap: 4px; }
-  .var-row .vn { width: 34%; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 5px; font: 600 12px system-ui; }
-  .var-row .vf { flex: 1; min-width: 0; padding: 3px 6px; border: 1px solid #cbd5e1; border-radius: 5px; font: 12px ui-monospace, monospace; }
-  .var-row .rm { padding: 1px 6px; border: 1px solid #fecaca; border-radius: 4px; background: #fff; color: #b91c1c; cursor: pointer; font-size: 11px; }
-  .app-css { width: 100%; box-sizing: border-box; min-height: 84px; padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font: 12px ui-monospace, monospace; resize: vertical; }
   .search-pop { position: fixed; z-index: 41; width: 300px; max-height: 62vh; overflow: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 9px; box-shadow: 0 14px 40px rgba(2,6,23,.18); padding: 6px; }
   .search-pop .q { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid #cbd5e1; border-radius: 7px; font: 12.5px system-ui; margin-bottom: 4px; }
   .search-pop .q:focus { outline: none; border-color: #0369a1; box-shadow: 0 0 0 3px rgba(3,105,161,.12); }
@@ -489,16 +437,34 @@
   .prop input[type=color] { width: 32px; height: 22px; padding: 0; border: 1px solid #cbd5e1; border-radius: 5px; }
   .hint { color: #94a3b8; font-size: 11px; font-style: italic; }
 
-  /* Settings popover (props + wiring + title) — anchored to the ⚙ button */
+  /* Settings popover (AI · props · style · events) — anchored to the ⚙ button */
   .settings-backdrop { position: fixed; inset: 0; z-index: 40; }
-  .settings-pop { position: fixed; z-index: 41; width: 300px; max-height: 72vh; overflow: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 9px; box-shadow: 0 14px 40px rgba(2,6,23,.18); padding: 9px 11px; display: flex; flex-direction: column; gap: 4px; }
-  .sp-head { display: flex; align-items: center; justify-content: space-between; }
-  .sp-kind { font: 600 9.5px system-ui; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; }
-  .sp-tabs { display: flex; gap: 2px; }
-  .sp-tabs button { padding: 2px 9px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: #64748b; font: 600 11px system-ui; cursor: pointer; }
+  .settings-pop { position: fixed; z-index: 41; width: 320px; max-height: 72vh; overflow: auto; background: #fff; border: 1px solid #e2e8f0; border-radius: 11px; box-shadow: 0 16px 44px rgba(2,6,23,.2); padding: 10px; display: flex; flex-direction: column; gap: 9px; }
+  .sp-head { display: flex; align-items: center; gap: 7px; }
+  .sp-kind { flex: 0 0 auto; font: 700 9px system-ui; text-transform: uppercase; letter-spacing: .4px; color: #0369a1; background: #eff6ff; padding: 3px 7px; border-radius: 999px; }
+  .sp-title { flex: 1; min-width: 0; padding: 4px 8px; border: 1px solid transparent; border-radius: 6px; font: 600 13px system-ui; color: #0f172a; background: #f6f8fa; }
+  .sp-title:hover { border-color: #e2e8f0; }
+  .sp-title:focus { outline: none; border-color: #0369a1; background: #fff; box-shadow: 0 0 0 3px rgba(3,105,161,.1); }
+  .sp-close { flex: 0 0 auto; width: 22px; height: 22px; border: 0; background: transparent; color: #94a3b8; cursor: pointer; font-size: 13px; border-radius: 5px; }
+  .sp-close:hover { background: #f1f5f9; color: #0f172a; }
+  /* component-scoped AI bar (top) */
+  .sp-ai { display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 9px; border: 1.5px solid #d8b4fe; border-radius: 9px; background: #faf5ff; }
+  .sp-ai-ic { font-size: 13px; line-height: 1; }
+  .sp-ai input { flex: 1; min-width: 0; border: 0; background: transparent; font: 12px system-ui; color: #0f172a; }
+  .sp-ai input:focus { outline: none; }
+  .sp-ai input::placeholder { color: #a78bda; }
+  .sp-ai-go { flex: 0 0 auto; width: 26px; height: 24px; border: 0; border-radius: 7px; background: #7c3aed; color: #fff; font-size: 14px; cursor: pointer; }
+  .sp-ai-go:hover:not(:disabled) { filter: brightness(1.08); }
+  .sp-ai-go:disabled { opacity: .45; cursor: default; }
+  .sp-tabs { display: flex; gap: 2px; border-bottom: 1px solid #e5e7eb; }
+  .sp-tabs button { padding: 4px 11px; border: 0; border-bottom: 2px solid transparent; margin-bottom: -1px; background: transparent; color: #64748b; font: 600 11.5px system-ui; cursor: pointer; }
+  .sp-tabs button:hover { color: #0f172a; }
   .sp-tabs button.on { color: #0369a1; border-bottom-color: #0369a1; }
-  .sp-note { color: #94a3b8; font-size: 10.5px; font-style: italic; margin-top: 2px; }
-  .sp-close { border: 0; background: transparent; color: #64748b; cursor: pointer; font-size: 13px; padding: 0 2px; }
-  .settings-pop .props, .settings-pop .wire { display: flex; flex-direction: column; gap: 7px; margin: 4px 0 0; }
+  .sp-body { display: flex; flex-direction: column; gap: 8px; }
+  .wire-h { font: 600 9px system-ui; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; }
+  .sp-empty { display: flex; flex-direction: column; gap: 3px; padding: 8px; border: 1px dashed #e5e7eb; border-radius: 7px; color: #64748b; font-size: 12px; }
+  .sp-empty b { color: #0f172a; }
+  .sp-note { color: #94a3b8; font-size: 10.5px; font-style: italic; }
+  .settings-pop .props, .settings-pop .wire { display: flex; flex-direction: column; gap: 7px; }
   .settings-pop .prop input[type=text], .settings-pop .prop select, .settings-pop .prop input[type=number] { max-width: 60%; }
 </style>
