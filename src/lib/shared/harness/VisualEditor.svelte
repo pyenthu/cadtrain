@@ -7,6 +7,7 @@
   import { dispatch } from '$lib/appkit/verbs/dispatch';
   import { searchCatalog } from '$lib/appkit/catalog/catalog';
   import { getComponentMeta } from '$lib/appkit/catalog/components';
+  import { panelEditor } from './panels/editor-registry';
 
   let { app }: { app: AppManifest } = $props();
   let query = $state('');
@@ -254,7 +255,12 @@
       <span class="pl">title</span>
       <input value={openPanel.title ?? ''} placeholder={openPanel.id} onchange={(e) => rename(openPanel.id, (e.currentTarget as HTMLInputElement).value)} />
     </label>
-    {#if meta?.props?.length}{@render propsForm(openPanel, meta)}{/if}
+    {#if panelEditor(openPanel.kind)}
+      {@const CustomEditor = panelEditor(openPanel.kind)}
+      <CustomEditor panel={openPanel} onProp={(name, value) => setProp(openPanel.id, name, value)} />
+    {:else if meta?.props?.length}
+      {@render propsForm(openPanel, meta)}
+    {/if}
     {#if wireableKind(openPanel.kind)}{@render wiring(openPanel)}{/if}
   </div>
 {/if}
