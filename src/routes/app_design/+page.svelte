@@ -43,6 +43,27 @@
       .replace(/\n{2,}/g, '<br/><br/>');
   }
 
+  // ★ Promote the current app into the shared design-RAG (golden pair). The Doc (📄) is
+  // the retrieval KEY — edit it first to describe what the app does; empty → auto-summary.
+  async function promote() {
+    if (!app) return;
+    const snap = $state.snapshot(app) as any;
+    const md = (app.doc && app.doc.trim()) || autoDoc(snap);
+    status = 'adding to RAG…';
+    try {
+      const r = await fetch('/api/app/promote', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: app.title || app.app, md, app: snap }),
+      });
+      if (!r.ok) throw new Error(await r.text());
+      const { name } = await r.json();
+      status = `★ added to the RAG as “${name}”`;
+    } catch (e) {
+      status = `promote failed: ${String((e as any)?.message ?? e)}`;
+    }
+  }
+
   function load(text: string, name: string, handle: any) {
     const res = validateManifest(JSON.parse(text));
     if (!res.ok) { status = res.errors.join('; '); return; }
@@ -157,6 +178,7 @@
     <button title="Preview (run)" class:on={view === 'preview'} onclick={() => (view = 'preview')} disabled={!app}>👁</button>
     <button title="Text (.app JSON)" class:on={view === 'text'} onclick={() => (view = 'text')} disabled={!app}>&lt;/&gt;</button>
     <button title="Doc (Markdown)" class:on={view === 'doc'} onclick={() => (view = 'doc')} disabled={!app}>📄</button>
+    <button title="★ Add this app to the shared design-RAG" onclick={() => promote()} disabled={!app}>★</button>
     <button title="Launch in a new tab" onclick={() => launch()} disabled={!app}>↗</button>
   </nav>
 
