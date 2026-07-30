@@ -106,6 +106,42 @@ export function isCleanBuild(rec: BuildRecord): boolean {
   return true;
 }
 
+/** A raw build surfaced as a candidate to PROMOTE into golden, with a score + human-readable
+ *  reasons. The engine behind the signal-assisted promotion queue (#38): the human confirms;
+ *  automation never promotes the model's own output unprompted (avoids the self-reinforcing
+ *  feedback loop). Ranks by the signals we HAVE today; richer keep-signals (saved / launched /
+ *  superseded) slot in as extra score terms once captured. */
+export interface PromotionCandidate {
+  rec: BuildRecord;
+  score: number;
+  reasons: string[];
+}
+
+export function rankPromotionCandidates(builds: BuildRecord[], golden: GoldenPair[] = [], k = 10): PromotionCandidate[] {
+  const goldenToks = golden.map((g) => tokenize(g.md));
+  const out: PromotionCandidate[] = [];
+  for (const rec of builds) {
+    if (!isCleanBuild(rec)) continue; // never a candidate — a broken build can't be a golden example
+    const reasons: string[] = ['clean build'];
+    let score = 1;
+    if (rec.trace && rec.trace.length > 0 && rec.trace.every((t) => t.ok)) {
+      score += 2;
+      reasons.push('all verbs succeeded');
+    }
+    if (rec.steps >= 1 && rec.steps <= 8) {
+      score += 1;
+      reasons.push('focused (≤8 steps)');
+    }
+    const q = tokenize(rec.prompt);
+    if (goldenToks.some((g) => overlap(q, g) > 0.6)) {
+      score -= 3;
+      reasons.push('already covered by a golden');
+    }
+    out.push({ rec, score, reasons });
+  }
+  return out.sort((a, b) => b.score - a.score || b.rec.ts - a.rec.ts).slice(0, k);
+}
+
 /** Load + rank golden pairs (the curated DB) AND the builds log, and render the combined
  *  few-shot grounding string. The one call the build pipeline uses. Golden is authoritative;
  *  raw builds are a fallback and are HYGIENE-FILTERED (isCleanBuild) so failures never teach. */
