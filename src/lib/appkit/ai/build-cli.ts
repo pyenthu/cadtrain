@@ -25,7 +25,7 @@ export async function buildAppViaCli(opts: BuildOpts, run: CliRunner): Promise<B
     'They run in order and mutate the app in place. Example:',
     '[{"verb":"definePanel","args":{"panel":{"id":"t","kind":"text","props":{"text":"Hi","color":"red"}}}}]',
   ].join('\n');
-  const full = `${systemPrompt(app, grounding)}\n\n=== REQUEST ===\n${prompt}\n${emit}`;
+  const full = `${systemPrompt(app, grounding, prompt)}\n\n=== REQUEST ===\n${prompt}\n${emit}`;
 
   const raw = await run(full, { model });
   const calls = parseVerbCalls(raw);
