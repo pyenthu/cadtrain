@@ -26,6 +26,7 @@ import { metas as vtoolbarMetas } from '$lib/app_components/VerticalToolbar/meta
 import { metas as menuMetas } from '$lib/app_components/MenuButton/meta';
 import { metas as popoverMetas } from '$lib/app_components/Popover/meta';
 import { metas as tooltipMetas } from '$lib/app_components/Tooltip/meta';
+import { metas as iconButtonMetas } from '$lib/app_components/IconButton/meta';
 
 export interface PropSpec {
   name: string;
@@ -73,6 +74,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
   ...sidebarMetas,
   ...tabsMetas,
   ...buttonMetas,
+  ...iconButtonMetas,
   ...menuMetas,
   ...textMetas,
   ...headingMetas,

@@ -1,0 +1,17 @@
+import type { ComponentMeta } from '$lib/appkit/catalog/components';
+
+export const metas: ComponentMeta[] = [
+  {
+    kind: 'iconbutton',
+    name: 'Icon Button',
+    description: 'A button with an ICON + text (fires on.click). Pick the icon from a searchable set (its editor); a server icon library is the follow-up.',
+    group: 'input',
+    tags: ['icon', 'button', 'action', 'glyph', 'click', 'search'],
+    props: [
+      { name: 'icon', type: 'string', label: 'Icon (name)' },
+      { name: 'label', type: 'string', label: 'Label' },
+      { name: 'variant', type: 'select', label: 'Variant', options: ['solid', 'ghost'], default: 'solid' },
+    ],
+    wiresTo: ['data', 'mutate'],
+  },
+];

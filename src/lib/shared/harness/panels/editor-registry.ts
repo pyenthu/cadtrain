@@ -3,9 +3,11 @@
 // the generic props form (driven by meta.props). See src/lib/app_components/CLAUDE.md.
 import type { Component } from 'svelte';
 import EditableTableEditor from '$lib/app_components/EditableTable/EditableTableEditor.svelte';
+import IconButtonEditor from '$lib/app_components/IconButton/IconButtonEditor.svelte';
 
 export const PANEL_EDITORS: Record<string, Component<any>> = {
   edittable: EditableTableEditor,
+  iconbutton: IconButtonEditor,
 };
 
 /** The custom editor for a kind, or undefined → use the generic props form. */

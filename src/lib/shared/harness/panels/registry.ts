@@ -23,6 +23,7 @@ import VerticalToolbar from '$lib/app_components/VerticalToolbar/VerticalToolbar
 import MenuButton from '$lib/app_components/MenuButton/MenuButton.svelte';
 import Popover from '$lib/app_components/Popover/Popover.svelte';
 import Tooltip from '$lib/app_components/Tooltip/Tooltip.svelte';
+import IconButton from '$lib/app_components/IconButton/IconButton.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: List,
@@ -50,6 +51,7 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   menu: MenuButton, // button → dropdown menu (children = items)
   popover: Popover, // behavior child — attaches to parent, opens on parent click (PanelNode)
   tooltip: Tooltip, // behavior child — attaches to parent, shows on hover (PanelNode)
+  iconbutton: IconButton, // button with a searchable icon + label
 };
 
 export function panelComponent(kind: string): Component<any> {
