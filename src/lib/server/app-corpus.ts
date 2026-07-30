@@ -8,9 +8,10 @@ import {
   getCorpusStore,
   type BuildRecord,
   type GoldenPair,
+  type NonConformance,
 } from './app-corpus-store';
 
-export type { BuildRecord, GoldenPair };
+export type { BuildRecord, GoldenPair, NonConformance };
 
 export async function captureBuild(rec: BuildRecord): Promise<void> {
   await getCorpusStore().appendBuild(rec);
@@ -24,6 +25,22 @@ export async function loadCorpus(): Promise<BuildRecord[]> {
  *  RAG" flow). MD is the retrieval key; the .app is the target. */
 export async function promoteGolden(name: string, md: string, app: unknown): Promise<void> {
   await getCorpusStore().saveGolden(name, md, app);
+}
+
+/** Capture a ⚠ Report — the negative signal (a bad build the user flagged). */
+export async function reportNonConformance(rec: NonConformance): Promise<void> {
+  await getCorpusStore().appendNonConformance(rec);
+}
+export async function loadNonConformances(): Promise<NonConformance[]> {
+  return getCorpusStore().loadNonConformances();
+}
+
+/** The promotion QUEUE: rank the raw builds as golden candidates against the current golden
+ *  set (the human then one-click-promotes). Reads the shared corpus. */
+export async function getPromotionCandidates(k = 12): Promise<PromotionCandidate[]> {
+  const store = getCorpusStore();
+  const [builds, golden] = await Promise.all([store.loadBuilds(), store.loadGolden()]);
+  return rankPromotionCandidates(builds, golden, k);
 }
 
 const tokenize = (s: string): Set<string> => new Set(s.toLowerCase().match(/[a-z0-9]+/g) ?? []);
