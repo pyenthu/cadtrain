@@ -175,9 +175,10 @@ Two AIs, two doc diets (D6, refined for codegen):
 Built this session: **Sidebar · Vertical toolbar · Menu button** (parallel agents) · **Popover ·
 Tooltip** (behavior-attach in PanelNode) · **Icon button** (+ searchable icon-picker editor) ·
 per-component **Props|Style tabs** · **App settings** (Variables + Style: theme/accent/`app.css`) ·
-the **component-bundle migration** (18 bundles) + per-component editors. **Remaining:** Data
-STRUCTURES tab · **server icon library** (icon backend) · **JS transform** escape hatch (future,
-task #33) · **`.app` → component** (task #31).
+the **component-bundle migration** (18 bundles) + per-component editors · **App settings** (Variables + **Data STRUCTURES** + Style) · **`.app` →
+component** (save a composition to the volume, insert from the palette — `insertTree` +
+`/api/app/templates`). **Remaining:** **server icon library** (icon backend — needs a lib pick) ·
+**JS transform** escape hatch (future, task #33).
 
 ## Next wave — backlog (2026-07-30, from a design conversation)
 
