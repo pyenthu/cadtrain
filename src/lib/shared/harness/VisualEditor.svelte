@@ -33,6 +33,19 @@
   );
   const store = () => ({ appStore: app as any });
 
+  /** Fixed-position style anchored to a button that STAYS in the viewport: clamps left, caps the
+   *  height to the space below, and flips ABOVE the anchor when there's more room up top. */
+  function anchorStyle(btn: HTMLElement, width = 300): string {
+    const r = btn.getBoundingClientRect();
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
+    const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
+    const left = Math.max(8, Math.min(r.left, vw - width - 8));
+    const below = vh - r.bottom - 12;
+    const above = r.top - 12;
+    if (below >= 220 || below >= above) return `top:${r.bottom + 4}px; left:${left}px; max-height:${Math.max(140, below)}px;`;
+    return `bottom:${vh - r.top + 4}px; left:${left}px; max-height:${Math.max(140, above)}px;`;
+  }
+
   function defaultProps(kind: string): Record<string, unknown> | undefined {
     const props: Record<string, unknown> = {};
     for (const p of getComponentMeta(kind)?.props ?? []) if (p.default !== undefined) props[p.name] = p.default;
@@ -57,9 +70,7 @@
     behaviorOnly = !!target && !canNest; // a leaf can only host popover/tooltip
     if (target) uncollapse(target);
     query = '';
-    const r = btn.getBoundingClientRect();
-    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
-    searchStyle = `top:${r.bottom + 4}px; left:${Math.max(8, Math.min(r.left, vw - 300))}px;`;
+    searchStyle = anchorStyle(btn, 300);
     searchOpen = true;
     fetchTemplates(); // saved components appear alongside catalog results
     setTimeout(() => queryEl?.focus(), 0);
@@ -105,9 +116,7 @@
   function openSettings(p: any, btn: HTMLElement) {
     if (openPanel?.id === p.id) return closeSettings();
     settingsTab = 'props';
-    const r = btn.getBoundingClientRect();
-    const vw = typeof window !== 'undefined' ? window.innerWidth : 1200;
-    openStyle = `top:${r.bottom + 4}px; left:${Math.max(8, Math.min(r.left, vw - 320))}px;`;
+    openStyle = anchorStyle(btn, 300);
     openPanel = p;
   }
   const closeSettings = () => (openPanel = null);
@@ -150,8 +159,7 @@
   // ── App-level settings (variables + style) ──────────────────────────────────
   function openApp(btn: HTMLElement) {
     if (appOpen) return (appOpen = false);
-    const r = btn.getBoundingClientRect();
-    appStyle = `top:${r.bottom + 4}px; left:${Math.max(8, r.left)}px;`;
+    appStyle = anchorStyle(btn, 320);
     appOpen = true;
   }
   const compEntries = $derived(Object.entries((app.computed ?? {}) as Record<string, string>));
