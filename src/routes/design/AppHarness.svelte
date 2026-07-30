@@ -416,6 +416,95 @@
   </section>
 </div>
 
+<!-- ═══════════ BUILT 2026-07-30 — the app-builder + learning system (live) ═══════════ -->
+<div class="built">
+  <div class="built-h">
+    <span class="built-badge">Built · 2026-07-30</span>
+    <h3>The prompt is the programming language</h3>
+    <p>The harness above is now live. An AI assembles the <code>.app</code> by calling verbs; three
+      backends run it; every build teaches a shared, self-cleaning corpus.</p>
+  </div>
+
+  <article class="built-card">
+    <h4>① The build — a prompt becomes an app by emitting verbs</h4>
+    <div class="chips">
+      <span class="chip">Prompt</span><span class="ar">→</span>
+      <span class="chip ssot">System prompt · SSOT</span><span class="ar">→</span>
+      <span class="chip ai">Model · CLI·API·Phi</span><span class="ar">→</span>
+      <span class="chip">dispatch verbs</span><span class="ar">→</span>
+      <span class="chip ok">.app mutated</span><span class="ar">→</span>
+      <span class="chip">Server-render</span>
+    </div>
+    <p class="built-note">The model only ever does what the verb registry exposes — the tools ARE the
+      API; a <code>sanitize</code> pass strips hallucinated verbs. Grounded, not freeform.</p>
+  </article>
+
+  <div class="built-2col">
+    <article class="built-card">
+      <h4>② Three cost paths, one toggle</h4>
+      <div class="ah-tablescroll">
+        <table class="ah-table">
+          <thead><tr><th>backend</th><th>runs</th><th>bills</th><th>residency</th></tr></thead>
+          <tbody>
+            <tr><td class="strong">Claude API</td><td>cloud · prod</td><td>metered key</td><td class="dim">cloud</td></tr>
+            <tr><td class="strong">Claude CLI</td><td>subprocess · dev</td><td>Max subscription (flat)</td><td class="dim">cloud</td></tr>
+            <tr><td class="strong">Phi · WebLLM</td><td>in-browser · dev</td><td>free</td><td class="dim">perfect · offline</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </article>
+
+    <article class="built-card">
+      <h4>③ What fills the context</h4>
+      <p class="built-note" style="margin:0 0 .7rem">The SSOT system prompt is the meal; RAG is the seasoning.</p>
+      <div class="tbar">
+        <div class="s-verb">Verb&nbsp;guide</div><div class="s-tool">Tools</div><div class="s-card">Cards</div><div class="s-app">App</div><div class="s-rag">RAG</div>
+      </div>
+      <div class="blegend">
+        <span><i style="background:#0369a1"></i>Verb guide — all verbs (biggest)</span>
+        <span><i style="background:#0ea5b7"></i>Tool schemas — cloud only</span>
+        <span><i style="background:#7c3aed"></i>Component cards — relevant-only (#37)</span>
+        <span><i style="background:#b45309"></i>Current .app</span>
+        <span><i style="background:#64748b"></i>RAG — smallest (#43 {'{{slot}}'} templates)</span>
+      </div>
+    </article>
+  </div>
+
+  <article class="built-card">
+    <h4>④ The learning flywheel — every build teaches a self-cleaning corpus</h4>
+    <div class="chips">
+      <span class="chip">Build</span><span class="ar">→</span>
+      <span class="chip">Capture · trace+raw</span><span class="ar">→</span>
+      <span class="chip ok">Hygiene gate</span><span class="ar">→</span>
+      <span class="chip ssot">Shared corpus</span><span class="ar">→</span>
+      <span class="chip amber">Queue</span><span class="ar">→</span>
+      <span class="chip amber">★ promote / ⚠ report</span>
+    </div>
+    <p class="loopnote">↺ promoted goldens ground every future build — the loop closes.
+      <b>Raw log never teaches; only curated golden pairs do.</b> The human stays the authority —
+      automation never promotes the model's own output unprompted.</p>
+  </article>
+
+  <article class="built-card">
+    <h4>⑤ Shipped this session</h4>
+    <div class="ah-tablescroll">
+      <table class="ah-table">
+        <thead><tr><th>#</th><th>what</th><th>state</th></tr></thead>
+        <tbody>
+          <tr><td class="mono strong">39</td><td>CLI backend — <code>claude --print</code>, subscription-billed</td><td class="ship">live</td></tr>
+          <tr><td class="mono strong">37</td><td>Component cards from <code>meta.ts</code> SSOT (relevant-only)</td><td class="ship">live</td></tr>
+          <tr><td class="mono strong">42</td><td>Shared corpus on the prod volume (<code>ai/app-rag</code>)</td><td class="ship">live</td></tr>
+          <tr><td class="mono strong">38</td><td>Learn tab — promotion queue + ⚠ report flywheel</td><td class="ship">live</td></tr>
+          <tr><td class="mono strong">41</td><td>Floating chat · CLI·API·Phi model toggle</td><td class="ship">live</td></tr>
+          <tr><td class="mono strong">40</td><td>WebLLM (Phi) in-browser build via WebGPU</td><td class="ship">built*</td></tr>
+          <tr><td class="mono strong">43</td><td>Parameterized <code>{'{{slot}}'}</code> goldens (~7.5× per family)</td><td class="ship">live</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="ah-cite">*Phi is build-green; running it needs a WebGPU browser + a one-time model download.</div>
+  </article>
+</div>
+
 <style>
   .section-intro {
     max-width: 52rem;
@@ -653,4 +742,40 @@
     border-radius: 6px;
     vertical-align: middle;
   }
+
+  /* ═══ Built 2026-07-30 block ═══ */
+  .built { margin-top: 2.2rem; padding-top: 1.6rem; border-top: 2px solid #eef1f5; display: flex; flex-direction: column; gap: 1.1rem; }
+  .built-h { max-width: 52rem; }
+  .built-badge { display: inline-block; font: 800 0.62rem ui-monospace, Menlo, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: #047857; background: #e7f6ef; border: 1px solid #b7e4cd; padding: 3px 10px; border-radius: 999px; margin-bottom: 0.6rem; }
+  .built-h h3 { margin: 0 0 0.4rem; font-size: 1.35rem; font-weight: 800; letter-spacing: -0.02em; color: #1a1a1a; }
+  .built-h p { margin: 0; font-size: 0.9rem; line-height: 1.55; color: #555; }
+  .built-h code, .built-note code, .built-card code { font-family: ui-monospace, 'SF Mono', Menlo, monospace; font-size: 0.82em; color: #cc2222; }
+  .built-2col { display: grid; grid-template-columns: 1fr 1fr; gap: 1.1rem; }
+  @media (max-width: 720px) { .built-2col { grid-template-columns: 1fr; } }
+  .built-card { padding: 1.2rem 1.3rem; background: #fff; border: 1px solid #e7e7e7; border-radius: 14px; }
+  .built-card h4 { margin: 0 0 0.9rem; font-size: 0.98rem; font-weight: 700; letter-spacing: -0.01em; color: #1a1a1a; }
+  .built-note { margin: 0.9rem 0 0; font-size: 0.8rem; line-height: 1.5; color: #64748b; }
+
+  .chips { display: flex; align-items: center; flex-wrap: wrap; gap: 0.35rem 0.15rem; }
+  .chip { font: 650 0.78rem -apple-system, system-ui, sans-serif; padding: 0.4rem 0.7rem; border-radius: 9px; background: #f6f8fb; border: 1px solid #e2e8f0; color: #334155; white-space: nowrap; }
+  .chip.ssot { background: #fbeaea; border-color: #f0c4c4; color: #7a1414; }
+  .chip.ai { background: #f3ecfe; border-color: #ddc9f7; color: #5a2ca0; }
+  .chip.ok { background: #e7f6ef; border-color: #b7e4cd; color: #1c5b3c; }
+  .chip.amber { background: #fdf2e2; border-color: #f6d9ac; color: #92500c; }
+  .ar { color: #94a3b8; font-size: 1rem; padding: 0 0.15rem; }
+
+  .tbar { display: flex; height: 34px; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; }
+  .tbar > div { display: flex; align-items: center; justify-content: center; font: 700 0.66rem system-ui, sans-serif; color: #fff; min-width: 0; padding: 0 3px; }
+  .tbar .s-verb { background: #0369a1; flex: 34; }
+  .tbar .s-tool { background: #0ea5b7; flex: 22; }
+  .tbar .s-card { background: #7c3aed; flex: 22; }
+  .tbar .s-app { background: #b45309; flex: 12; }
+  .tbar .s-rag { background: #64748b; flex: 8; }
+  .blegend { display: flex; flex-direction: column; gap: 0.35rem; margin-top: 0.8rem; font-size: 0.72rem; color: #64748b; }
+  .blegend span { display: inline-flex; align-items: center; gap: 0.5rem; }
+  .blegend i { width: 10px; height: 10px; border-radius: 3px; flex: 0 0 auto; }
+
+  .loopnote { margin: 1rem 0 0; font-size: 0.82rem; line-height: 1.5; color: #64748b; }
+  .loopnote b { color: #1a1a1a; }
+  .built-card .ah-table td.ship { color: #047857; font-weight: 700; }
 </style>
