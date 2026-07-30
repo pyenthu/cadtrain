@@ -34,6 +34,16 @@ export interface GoldenPair {
   app: unknown;
 }
 
+/** A user-flagged bad build — the NEGATIVE signal (the ⚠ Report). Reviewed to fix a component
+ *  rule-card or to author a corrected golden; never grounds the model. */
+export interface NonConformance {
+  ts: number;
+  prompt: string;
+  note: string;
+  app?: unknown;
+  trace?: unknown;
+}
+
 export interface AppCorpusStore {
   /** Human label for where this store lives (logging / UI). */
   describe(): string;
@@ -41,6 +51,8 @@ export interface AppCorpusStore {
   loadBuilds(): Promise<BuildRecord[]>;
   saveGolden(name: string, md: string, app: unknown): Promise<void>;
   loadGolden(): Promise<GoldenPair[]>;
+  appendNonConformance(rec: NonConformance): Promise<void>;
+  loadNonConformances(): Promise<NonConformance[]>;
 }
 
 function parseJsonl<T>(raw: string): T[] {
@@ -60,6 +72,7 @@ function parseJsonl<T>(raw: string): T[] {
 /** One fs-backed store, parameterized by a base directory (volume path or local dir). */
 export function fsCorpusStore(baseDir: string, label: string): AppCorpusStore {
   const buildsPath = join(baseDir, 'builds.jsonl');
+  const ncPath = join(baseDir, 'non-conformances.jsonl');
   const goldenDir = join(baseDir, 'golden');
   return {
     describe: () => label,
@@ -77,6 +90,23 @@ export function fsCorpusStore(baseDir: string, label: string): AppCorpusStore {
     async loadBuilds() {
       try {
         return parseJsonl<BuildRecord>(await readFile(buildsPath, 'utf8'));
+      } catch {
+        return [];
+      }
+    },
+
+    async appendNonConformance(rec) {
+      try {
+        await mkdir(baseDir, { recursive: true });
+        await appendFile(ncPath, `${JSON.stringify(rec)}\n`, 'utf8');
+      } catch {
+        /* ignore */
+      }
+    },
+
+    async loadNonConformances() {
+      try {
+        return parseJsonl<NonConformance>(await readFile(ncPath, 'utf8'));
       } catch {
         return [];
       }
@@ -168,6 +198,17 @@ export function remoteCorpusStore(remoteBase: string, token: string): AppCorpusS
     async loadBuilds() {
       const t = await getText('builds.jsonl');
       return t ? parseJsonl<BuildRecord>(t) : [];
+    },
+
+    async appendNonConformance(rec) {
+      const cur = await getText('non-conformances.jsonl');
+      const prefix = cur ? (cur.endsWith('\n') ? cur : `${cur}\n`) : '';
+      await putText('non-conformances.jsonl', `${prefix}${JSON.stringify(rec)}\n`, 'text/plain');
+    },
+
+    async loadNonConformances() {
+      const t = await getText('non-conformances.jsonl');
+      return t ? parseJsonl<NonConformance>(t) : [];
     },
 
     async saveGolden(name, md, app) {

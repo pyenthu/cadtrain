@@ -6,6 +6,7 @@
   // so picker-opened files build too. See docs/architecture/app-harness.md.
   import VisualEditor from '$lib/shared/harness/VisualEditor.svelte';
   import AppSettings from '$lib/shared/harness/AppSettings.svelte';
+  import LearnPanel from '$lib/shared/harness/LearnPanel.svelte';
   import { validateManifest } from '$lib/appkit/manifest/validate';
   import { autoDoc } from '$lib/appkit/manifest/doc';
   import { createLocalStore } from '$lib/appkit/store/local-backend';
@@ -21,7 +22,7 @@
   let fileName = $state('');
   let status = $state('');
   let view = $state<'split' | 'design' | 'preview' | 'text' | 'doc'>('split');
-  let leftTab = $state<'tree' | 'vars' | 'style' | 'data' | 'events'>('tree'); // the split's left-sidebar icon tabs
+  let leftTab = $state<'tree' | 'vars' | 'style' | 'data' | 'events' | 'learn'>('tree'); // the split's left-sidebar icon tabs
   let aiOpen = $state(false); // the ✨ AI prompter popover (right edge of the tab strip)
   let prompt = $state('');
   let building = $state(false);
@@ -304,12 +305,15 @@
               <button class:on={leftTab === 'events'} onclick={() => (leftTab = 'events')} title="Events">⚡</button>
               <button class:on={leftTab === 'style'} onclick={() => (leftTab = 'style')} title="Style">🎨</button>
               <button class:on={leftTab === 'data'} onclick={() => (leftTab = 'data')} title="Data structures">▦</button>
+              <button class:on={leftTab === 'learn'} onclick={() => (leftTab = 'learn')} title="Learn — promote good builds, report bad ones">🎓</button>
               <span class="left-spacer"></span>
               <button class="ai-tab" class:on={aiOpen} onclick={() => (aiOpen = !aiOpen)} title="Build with AI">✨</button>
             </nav>
             <div class="left-body">
               {#if leftTab === 'tree'}
                 <VisualEditor {app} onScopedBuild={scopedBuild} />
+              {:else if leftTab === 'learn'}
+                <LearnPanel {app} />
               {:else}
                 <AppSettings {app} tab={leftTab} />
               {/if}
