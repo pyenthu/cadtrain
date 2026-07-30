@@ -17,6 +17,7 @@
     slots,
     slotApi,
     dataRev,
+    preloaded,
     onBuild,
   }: {
     node: Panel;
@@ -30,21 +31,25 @@
     slotApi?: SlotApi;
     /** Bumps on any slot change → data panels re-fetch. */
     dataRev?: number;
+    /** Server-resolved data per panel id (SSR first paint). */
+    preloaded?: Record<string, unknown>;
     onBuild?: (p: string) => Promise<void>;
   } = $props();
 
   const Comp = $derived(panelComponent(node.kind));
+  // This node's server-resolved data (if any) — passed to the component synchronously.
+  const pre = $derived(preloaded?.[node.id]);
 </script>
 
 {#snippet kids()}
   {#each node.children ?? [] as child (child.id)}
-    <PanelNode node={child} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {onBuild} />
+    <PanelNode node={child} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {preloaded} {onBuild} />
   {/each}
 {/snippet}
 
 <!-- renderChild: render ONE child node (for components like Tabs that show a subset). -->
 {#snippet renderChild(child: Panel)}
-  <PanelNode node={child} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {onBuild} />
+  <PanelNode node={child} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {preloaded} {onBuild} />
 {/snippet}
 
-<Comp panel={node} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {onBuild} {kids} {renderChild} />
+<Comp panel={node} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {onBuild} {kids} {renderChild} preloaded={pre} />

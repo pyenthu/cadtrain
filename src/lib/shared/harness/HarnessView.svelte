@@ -11,7 +11,17 @@
   import { createClientEngine } from './client-engine';
   import { makeSlotApi } from './slots';
 
-  let { app, onBuild }: { app: AppManifest; onBuild?: (prompt: string) => Promise<void> } = $props();
+  let {
+    app,
+    onBuild,
+    preloaded,
+  }: {
+    app: AppManifest;
+    onBuild?: (prompt: string) => Promise<void>;
+    /** Server-resolved data per panel id (SSR): panels read it synchronously so data is in
+     *  the first paint. Absent (client-only) → panels fall back to their onMount fetch. */
+    preloaded?: Record<string, unknown>;
+  } = $props();
 
   // The CLIENT engine — data verbs read real parts via /api/primitives/list.
   const engine = createClientEngine();
@@ -102,7 +112,7 @@
     {#each app.panels as panel (panel.id)}
       <section class="panel" style={gridStyle(panel.layout)}>
         <div class="panel-head">{panel.title ?? panel.id}<span class="kind">{panel.kind}</span></div>
-        <div class="panel-body"><PanelNode node={panel} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {onBuild} /></div>
+        <div class="panel-body"><PanelNode node={panel} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {preloaded} {onBuild} /></div>
       </section>
     {/each}
   </div>

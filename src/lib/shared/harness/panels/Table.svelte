@@ -7,15 +7,24 @@
     panel,
     run,
     dataRev,
+    preloaded,
   }: {
     panel: Panel;
     run: (b?: Binding, item?: unknown) => Promise<unknown>;
     /** Bumps on slot changes → re-fetch. */
     dataRev?: number;
+    /** Server-resolved rows (SSR). When present, used synchronously — no client fetch. */
+    preloaded?: unknown;
   } = $props();
 
-  let rows = $state<any[]>([]);
+  let fetched = $state<any[]>([]);
   let note = $state('');
+  // Server-resolved rows (SSR) win; a single object becomes one row.
+  const rows = $derived(
+    preloaded !== undefined
+      ? (Array.isArray(preloaded) ? (preloaded as any[]) : preloaded ? [preloaded] : [])
+      : fetched,
+  );
 
   const colProp = $derived(panel.props?.columns);
   const columns = $derived(
@@ -25,13 +34,14 @@
   );
 
   $effect(() => {
+    if (preloaded !== undefined) return; // server already resolved it
     void dataRev; // re-fetch when a slot changes
     note = '';
-    rows = [];
+    fetched = [];
     run(panel.source)
       .then((r) => {
-        if (Array.isArray(r)) rows = r;
-        else if (r && typeof r === 'object') rows = [r];
+        if (Array.isArray(r)) fetched = r;
+        else if (r && typeof r === 'object') fetched = [r];
       })
       .catch((e) => {
         const m = String(e);

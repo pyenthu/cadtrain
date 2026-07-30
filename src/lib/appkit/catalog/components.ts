@@ -18,6 +18,12 @@ export interface PropSpec {
 
 export type ComponentGroup = 'layout' | 'data' | 'input' | 'display' | '3d' | 'ai';
 
+/** How a component gets its data when the app is SERVER-rendered (app-server-render.md):
+ *  - 'static' — no data source; pure structure → HTML.
+ *  - 'server' — the server resolves the panel's source up-front and bakes data into the HTML.
+ *  - 'client' — a thin island that fetches onMount (needs the browser). */
+export type DataMode = 'static' | 'server' | 'client';
+
 export interface ComponentMeta {
   /** The PanelKind (matches the render registry + PANEL_KINDS). */
   kind: string;
@@ -25,6 +31,8 @@ export interface ComponentMeta {
   description: string;
   group: ComponentGroup;
   tags: string[];
+  /** How this component's data is resolved under server-render (default 'static'). */
+  dataMode?: DataMode;
   /** Container/card hold nested children. */
   acceptsChildren?: boolean;
   /** Typed props surfaced in the per-component editor. */
@@ -38,6 +46,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
     kind: 'list',
     name: 'List',
     description: 'A selectable list of documents/rows. Bind source to a data verb; click selects.',
+    dataMode: 'server',
     group: 'data',
     tags: ['list', 'menu', 'select', 'docs', 'rows', 'items'],
     wiresTo: ['data'],
@@ -46,6 +55,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
     kind: 'form',
     name: 'Form',
     description: "A document's params as editable fields + tables (list<record> controls).",
+    dataMode: 'server',
     group: 'data',
     tags: ['form', 'params', 'fields', 'edit', 'inputs'],
     wiresTo: ['data', 'mutate'],
@@ -54,6 +64,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
     kind: 'table',
     name: 'Table',
     description: 'Tabular rows of a list<record> param with columns; add/edit rows.',
+    dataMode: 'server',
     group: 'data',
     tags: ['table', 'grid', 'rows', 'columns', 'spreadsheet', 'records'],
     wiresTo: ['data', 'mutate'],
@@ -62,6 +73,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
     kind: 'grid',
     name: 'Data Grid',
     description: 'A read-only data table from any source (http / data verb). Columns from props.columns or inferred.',
+    dataMode: 'server',
     group: 'data',
     tags: ['grid', 'table', 'data', 'rows', 'columns', 'results', 'json'],
     props: [{ name: 'columns', type: 'string', label: 'Columns (comma-sep)' }],
@@ -89,6 +101,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
     kind: 'bake3d',
     name: '3D Bake',
     description: 'Bakes the active doc through the engine → geometry stats (verts/tris).',
+    dataMode: 'server',
     group: '3d',
     tags: ['3d', 'bake', 'geometry', 'render', 'manifold', 'mesh'],
     wiresTo: ['data'],
@@ -97,6 +110,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
     kind: 'svg',
     name: 'SVG',
     description: 'A 2D SVG view of a doc (placeholder until wired).',
+    dataMode: 'server',
     group: 'display',
     tags: ['svg', '2d', 'diagram', 'vector'],
     wiresTo: ['data'],
@@ -148,6 +162,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
     kind: 'file',
     name: 'File',
     description: 'Open / Save / Save As a DATA file into a slot (§0.5). Components read it via loadData.',
+    dataMode: 'client',
     group: 'data',
     tags: ['file', 'open', 'save', 'load', 'data', 'slot', 'import', 'picker'],
     props: [
@@ -160,6 +175,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
     kind: 'chat',
     name: 'AI Chat',
     description: 'The AI-build surface — a prompt box that edits the app.',
+    dataMode: 'client',
     group: 'ai',
     tags: ['chat', 'ai', 'prompt', 'assistant', 'build'],
   },

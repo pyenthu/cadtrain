@@ -6,6 +6,7 @@
     select,
     active,
     dataRev,
+    preloaded,
   }: {
     panel: Panel;
     run: (b?: Binding, item?: unknown) => Promise<unknown>;
@@ -13,10 +14,14 @@
     active?: string;
     /** Bumps on slot changes → re-fetch. */
     dataRev?: number;
+    /** Server-resolved rows (SSR). When present, used synchronously — no client fetch. */
+    preloaded?: unknown;
   } = $props();
 
-  let items = $state<any[]>([]);
+  let fetched = $state<any[]>([]);
   let note = $state('');
+  // Prefer server-resolved rows (present in SSR first paint); else the client-fetched rows.
+  const items = $derived(Array.isArray(preloaded) ? (preloaded as any[]) : fetched);
 
   function pending(e: unknown, verb?: string): string {
     const m = String(e);
@@ -26,11 +31,12 @@
   }
 
   $effect(() => {
+    if (preloaded !== undefined) return; // server already resolved it
     void dataRev; // re-fetch when a slot changes
     note = '';
-    items = [];
+    fetched = [];
     run(panel.source)
-      .then((r) => { if (Array.isArray(r)) items = r; })
+      .then((r) => { if (Array.isArray(r)) fetched = r; })
       .catch((e) => { note = pending(e, panel.source?.verb); });
   });
 </script>

@@ -7,20 +7,31 @@
     panel,
     run,
     active,
-  }: { panel: Panel; run: (b?: Binding, item?: unknown) => Promise<unknown>; active?: string } = $props();
+    preloaded,
+  }: {
+    panel: Panel;
+    run: (b?: Binding, item?: unknown) => Promise<unknown>;
+    active?: string;
+    /** Server-resolved bake stats (SSR). When present, shown synchronously — no client bake. */
+    preloaded?: unknown;
+  } = $props();
 
-  let stats = $state<{ verts?: number; tris?: number } | null>(null);
+  let fetched = $state<{ verts?: number; tris?: number } | null>(null);
   let note = $state('');
   let busy = $state(false);
+  const stats = $derived(
+    (preloaded && typeof preloaded === 'object' ? (preloaded as { verts?: number; tris?: number }) : fetched),
+  );
 
   $effect(() => {
+    if (preloaded !== undefined) return; // server already baked the stats
     const a = active; // re-bake when the active doc changes
-    stats = null;
+    fetched = null;
     note = '';
     if (!a) { note = 'select a document'; return; }
     busy = true;
     run(panel.source)
-      .then((r: any) => { if (r && typeof r === 'object') stats = r; })
+      .then((r: any) => { if (r && typeof r === 'object') fetched = r; })
       .catch((e) => {
         const m = String(e);
         note = m.includes('not wired') || m.includes('needs an engine') || m.includes('no bake') ? 'bake pending' : m;
