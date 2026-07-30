@@ -6,7 +6,7 @@ import type { Verb, Ctx, AppDoc } from './registry';
 
 /** Panel kinds the harness can render (Layer 4 registry). The AI may only COMPOSE
  *  these — the D1/D5 safety boundary (it never invents a new kind). */
-export const PANEL_KINDS = ['list', 'form', 'table', 'grid', 'edittable', 'bake3d', 'svg', 'text', 'chat', 'container', 'card', 'button', 'tabs', 'toolbar', 'file'] as const;
+export const PANEL_KINDS = ['list', 'form', 'table', 'grid', 'edittable', 'bake3d', 'svg', 'text', 'heading', 'divider', 'chat', 'container', 'card', 'div', 'row', 'col', 'button', 'tabs', 'toolbar', 'file'] as const;
 
 const pending =
   (name: string) =>
@@ -38,6 +38,24 @@ export function findPanel(app: AppDoc, id: string): any | undefined {
     return undefined;
   };
   return walk((app.panels ?? []) as any[]);
+}
+
+/** The array (+ index) that DIRECTLY contains a panel id — the top-level panels array or
+ *  some node's children array. Lets remove/move operate anywhere in the tree. */
+function findContainingList(app: AppDoc, id: string): { list: any[]; index: number } | undefined {
+  const search = (list: any[] | undefined): { list: any[]; index: number } | undefined => {
+    if (!Array.isArray(list)) return undefined;
+    for (let i = 0; i < list.length; i++) {
+      const p = list[i];
+      if (p?.id === id) return { list, index: i };
+      if (p?.children) {
+        const r = search(p.children);
+        if (r) return r;
+      }
+    }
+    return undefined;
+  };
+  return search((app.panels ?? []) as any[]);
 }
 
 /** Minimal JSON patch by dotted path — set | push | remove. Dependency-free; the
@@ -95,33 +113,50 @@ export const GUI_VERBS: Verb[] = [
     },
   },
   {
+    name: 'addChildPanel',
+    group: 'gui',
+    desc: 'Append a child panel to a container/card/tabs/toolbar/div (by parentId). Returns { ok }. Nesting = HTML-style encapsulation.',
+    params: {
+      type: 'object',
+      properties: { parentId: { type: 'string' }, panel: { type: 'object' } },
+      required: ['parentId', 'panel'],
+    },
+    handler: (a: { parentId: string; panel: Record<string, unknown> }, ctx) => {
+      const app = requireApp(ctx);
+      const parent = findPanel(app, a.parentId);
+      if (!parent) throw new Error(`appkit: no panel "${a.parentId}"`);
+      const panel = a.panel as any;
+      panel.id = uniquePanelId(app, String(panel.id ?? 'p'));
+      (parent.children ??= []).push(panel);
+      return { ok: true };
+    },
+  },
+  {
     name: 'removePanel',
     group: 'gui',
-    desc: 'Remove a panel from the .app by id.',
+    desc: 'Remove a panel from the .app by id (anywhere in the tree — top-level or nested).',
     params: { type: 'object', properties: { panelId: { type: 'string' } }, required: ['panelId'] },
     handler: (a: { panelId: string }, ctx) => {
-      const app = requireApp(ctx);
-      app.panels = (app.panels ?? []).filter((p: any) => p.id !== a.panelId);
+      const loc = findContainingList(requireApp(ctx), a.panelId);
+      if (loc) loc.list.splice(loc.index, 1);
       return { ok: true };
     },
   },
   {
     name: 'movePanel',
     group: 'gui',
-    desc: 'Reorder a panel to a new 0-based index.',
+    desc: 'Reorder a panel within its siblings — "to" is the target index in its own list (top-level or nested).',
     params: {
       type: 'object',
       properties: { panelId: { type: 'string' }, to: { type: 'number' } },
       required: ['panelId', 'to'],
     },
     handler: (a: { panelId: string; to: number }, ctx) => {
-      const app = requireApp(ctx);
-      const ps = (app.panels ?? []) as any[];
-      const i = ps.findIndex((p) => p.id === a.panelId);
-      if (i < 0) throw new Error(`appkit: no panel "${a.panelId}"`);
-      const [p] = ps.splice(i, 1);
-      ps.splice(Math.max(0, Math.min(a.to, ps.length)), 0, p);
-      app.panels = ps;
+      const loc = findContainingList(requireApp(ctx), a.panelId);
+      if (!loc) throw new Error(`appkit: no panel "${a.panelId}"`);
+      const { list, index } = loc;
+      const [p] = list.splice(index, 1);
+      list.splice(Math.max(0, Math.min(a.to, list.length)), 0, p);
       return { ok: true };
     },
   },

@@ -14,6 +14,8 @@ import Toolbar from './Toolbar.svelte';
 import Table from './Table.svelte';
 import EditableTable from './EditableTable.svelte';
 import File from './File.svelte';
+import Heading from './Heading.svelte';
+import Divider from './Divider.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: ListPanel,
@@ -27,6 +29,11 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   svg: PlaceholderPanel,
   container: Container, // holds children (nesting) — transparent wrapper
   card: Container, // holds children — bordered surface
+  div: Container, // generic block container (HTML-style) — holds children
+  col: Container, // vertical stack of children
+  row: Toolbar, // horizontal row of children
+  heading: Heading, // h1/h2/h3
+  divider: Divider, // <hr>/labeled rule
   button: Button, // fires on.click (a verb binding or a sequence)
   tabs: Tabs, // tabbed container — children are tabs
   toolbar: Toolbar, // horizontal row of children (buttons)

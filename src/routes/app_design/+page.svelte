@@ -10,7 +10,7 @@
   import { createLocalStore } from '$lib/appkit/store/local-backend';
   import type { AppManifest } from '$lib/appkit/manifest/types';
 
-  const store = createLocalStore(); // used by Launch (copy into the SAMPLE working dir)
+  const store = createLocalStore(); // no-FSA save fallback only (writes to the SAMPLE dir)
   const W = typeof window !== 'undefined' ? (window as any) : undefined;
   const hasFSA = !!W && 'showOpenFilePicker' in W;
   const PICK = { types: [{ description: 'App file', accept: { 'application/json': ['.app'] } }], startIn: 'desktop' };
