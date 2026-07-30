@@ -27,6 +27,7 @@ import { metas as menuMetas } from '$lib/app_components/MenuButton/meta';
 import { metas as popoverMetas } from '$lib/app_components/Popover/meta';
 import { metas as tooltipMetas } from '$lib/app_components/Tooltip/meta';
 import { metas as iconButtonMetas } from '$lib/app_components/IconButton/meta';
+import { metas as ganttMetas } from '$lib/app_components/Gantt/meta';
 
 export interface PropSpec {
   name: string;
@@ -81,6 +82,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
   ...dividerMetas,
   ...popoverMetas,
   ...tooltipMetas,
+  ...ganttMetas,
   ...bake3dMetas,
   ...placeholderMetas,
   ...fileMetas,

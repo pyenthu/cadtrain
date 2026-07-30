@@ -16,6 +16,22 @@ const pending =
 
 export const DATA_VERBS: Verb[] = [
   {
+    name: 'readVar',
+    group: 'data',
+    desc:
+      "Read an app-level variable (app.vars[name]) — the seed-data bridge. Lets a data component " +
+      "(grid/list) SOURCE its rows from a seeded list<record> variable, e.g. source " +
+      "{ verb:'readVar', args:{ name:'tasks' } }. Returns the value (often an array of records); " +
+      "an empty array if the variable is absent. No engine needed — reads the live .app.",
+    params: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+    returns: { type: 'array' },
+    handler: (a: { name: string }, ctx) => {
+      const vars = (ctx.appStore as { vars?: Record<string, unknown> } | undefined)?.vars;
+      const v = vars?.[a?.name];
+      return v === undefined ? [] : v;
+    },
+  },
+  {
     name: 'listDocs',
     group: 'data',
     desc: 'List available documents of a type. Returns [{id, title}].',
