@@ -22,6 +22,9 @@ export interface BuildRecord {
   /** The ordered verb calls the model emitted (verb + args + outcome). Optional (older
    *  records lack it). Drives debugging + the refine loop — "which verb turned it red". */
   trace?: Array<{ verb: string; args: unknown; ok: boolean; error?: string }>;
+  /** The RAW model output the verbs were parsed from (CLI path). Optional. The one thing that
+   *  survives a parse failure — when trace is empty, this shows exactly what the model said. */
+  raw?: string;
 }
 
 /** A curated (description, structure) example — the MD is the retrieval key. */

@@ -45,7 +45,7 @@ export async function buildAppViaCli(opts: BuildOpts, run: CliRunner): Promise<B
     }
   }
   sanitizeApp(app); // parity with the AI-SDK path — drop any hallucinated-verb bindings
-  return { app, steps: trace.length, text: '', trace };
+  return { app, steps: trace.length, text: '', trace, raw };
 }
 
 /** Pull the JSON verb array out of the model's text, tolerating ```fences``` + surrounding

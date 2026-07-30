@@ -40,6 +40,10 @@ export interface BuildResult {
   text: string;
   /** The ordered list of verb calls the model emitted (drives debugging + the learning loop). */
   trace: VerbCall[];
+  /** The RAW model output the verbs were parsed from — set on the CLI path (the emitted JSON
+   *  verb-list text). Undefined on the native tool-call path (calls arrive as tool_use, not text).
+   *  Its whole value is debugging a build that parsed to 0 verbs: you see what the model said. */
+  raw?: string;
 }
 
 /** Run the Build stage: the model calls the GUI verbs to compose the .app. */
