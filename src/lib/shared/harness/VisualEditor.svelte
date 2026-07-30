@@ -13,6 +13,7 @@
   let query = $state('');
   let searchOpen = $state(false); // the add-component search popover
   let searchStyle = $state(''); // fixed-position style anchored to the clicked ＋
+  let behaviorOnly = $state(false); // target is a leaf → offer only popover/tooltip
   let openPanel = $state<any>(null); // the node whose settings popover is open
   let openStyle = $state(''); // fixed-position style anchored to the ⚙ button
   let settingsTab = $state<'props' | 'style'>('props'); // component editor tab
@@ -25,7 +26,12 @@
   let templates = $state<Array<{ id: string; name: string; count: number }>>([]); // saved components (.app→component)
   let savedMsg = $state('');
 
-  const results = $derived(searchCatalog(query, { type: 'component' }).slice(0, 8));
+  const results = $derived(
+    (behaviorOnly
+      ? searchCatalog(query, { type: 'component' }).filter((r) => r.key === 'popover' || r.key === 'tooltip')
+      : searchCatalog(query, { type: 'component' })
+    ).slice(0, 8),
+  );
   const store = () => ({ appStore: app as any });
 
   function defaultProps(kind: string): Record<string, unknown> | undefined {
@@ -47,8 +53,9 @@
 
   /** Open the add-component search POPOVER anchored to the clicked ＋ (target = a parent id
    *  to add INTO, or null for the root). */
-  function openSearch(target: string | null, btn: HTMLElement) {
+  function openSearch(target: string | null, btn: HTMLElement, canNest = true) {
     addTarget = target;
+    behaviorOnly = !!target && !canNest; // a leaf can only host popover/tooltip
     if (target) uncollapse(target);
     query = '';
     const r = btn.getBoundingClientRect();
@@ -61,6 +68,7 @@
   function closeSearch() {
     searchOpen = false;
     addTarget = null;
+    behaviorOnly = false;
     query = '';
   }
 
@@ -283,7 +291,7 @@
       <button class="caret" class:hide={!kids.length} onclick={() => toggleCollapse(p.id)} title={shown ? 'collapse' : 'expand'}>{shown ? '▾' : '▸'}</button>
       <button class="gear" class:on={openPanel?.id === p.id} disabled={!canEdit} onclick={(e) => openSettings(p, e.currentTarget as HTMLElement)} title={canEdit ? 'settings' : 'no settings'}>⚙</button>
       <span class="kind" title={p.title ?? p.id}>{p.kind}</span>
-      {#if meta?.acceptsChildren}<button class="add-child" title="add child" onclick={(e) => openSearch(p.id, e.currentTarget as HTMLElement)}>＋</button>{/if}
+      <button class="add-child" title={meta?.acceptsChildren ? 'add child' : 'add popover / tooltip'} onclick={(e) => openSearch(p.id, e.currentTarget as HTMLElement, !!meta?.acceptsChildren)}>＋</button>
       <button onclick={() => outdent(p.id)} disabled={depth === 0} title="promote (out of parent)">←</button>
       <button onclick={() => move(p.id, idx, -1)} disabled={idx === 0} title="up">↑</button>
       <button onclick={() => move(p.id, idx, 1)} disabled={idx === siblings.length - 1} title="down">↓</button>
@@ -373,7 +381,7 @@
     <input
       bind:this={queryEl}
       class="q"
-      placeholder={addTarget ? `add into “${addTarget}”…` : 'search components — div · row · text · table · 3d…'}
+      placeholder={behaviorOnly ? `popover / tooltip for “${addTarget}”…` : addTarget ? `add into “${addTarget}”…` : 'search components — div · row · text · table · 3d…'}
       bind:value={query}
     />
     {#if templateResults.length}
