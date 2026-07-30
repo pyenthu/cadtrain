@@ -1,16 +1,26 @@
 // src/lib/appkit/catalog/components.ts — the COMPONENT catalog (headless metadata).
 //
-// Each entry describes ONE PanelKind: its display name, search tags, typed props, whether
-// it accepts children, and which verb groups it wires to. This metadata is what the studio
-// search bar (Increment 8) and the per-component editors (Increment 9) read — the RENDER
-// components stay in src/lib/shared/harness/panels/ (UI), this is the pure catalog side.
+// Every component's metadata now lives in its BUNDLE (app_components/<Name>/meta.ts, exporting
+// `metas: ComponentMeta[]`); this file just AGGREGATES them into COMPONENT_CATALOG. The types
+// (ComponentMeta etc.) are defined here — bundle metas import them with `import type` (pure, no
+// runtime cycle). This metadata feeds the studio search bar + the settings popover.
 //
 // Invariant (guarded by the test): every `kind` here is a real PanelKind (verbs/gui.ts).
-
-// Bundle metas (app_components/<Name>/meta.ts) are aggregated into COMPONENT_CATALOG below.
-// The migration is incremental — bundle metas + legacy inline entries coexist. See
-// src/lib/app_components/CLAUDE.md.
-import { meta as editTableMeta } from '$lib/app_components/EditableTable/meta';
+import { metas as listMetas } from '$lib/app_components/List/meta';
+import { metas as formMetas } from '$lib/app_components/Form/meta';
+import { metas as dataGridMetas } from '$lib/app_components/DataGrid/meta';
+import { metas as editTableMetas } from '$lib/app_components/EditableTable/meta';
+import { metas as containerMetas } from '$lib/app_components/Container/meta';
+import { metas as toolbarMetas } from '$lib/app_components/Toolbar/meta';
+import { metas as tabsMetas } from '$lib/app_components/Tabs/meta';
+import { metas as buttonMetas } from '$lib/app_components/Button/meta';
+import { metas as textMetas } from '$lib/app_components/Text/meta';
+import { metas as headingMetas } from '$lib/app_components/Heading/meta';
+import { metas as dividerMetas } from '$lib/app_components/Divider/meta';
+import { metas as bake3dMetas } from '$lib/app_components/Bake3d/meta';
+import { metas as placeholderMetas } from '$lib/app_components/Placeholder/meta';
+import { metas as fileMetas } from '$lib/app_components/File/meta';
+import { metas as chatMetas } from '$lib/app_components/Chat/meta';
 
 export interface PropSpec {
   name: string;
@@ -46,189 +56,23 @@ export interface ComponentMeta {
   wiresTo?: Array<'data' | 'mutate'>;
 }
 
+/** Aggregated from the bundle metas — data · layout · input · display · ai. */
 export const COMPONENT_CATALOG: ComponentMeta[] = [
-  {
-    kind: 'list',
-    name: 'List',
-    description: 'A selectable list of documents/rows. Bind source to a data verb; click selects.',
-    dataMode: 'server',
-    group: 'data',
-    tags: ['list', 'menu', 'select', 'docs', 'rows', 'items'],
-    wiresTo: ['data'],
-  },
-  {
-    kind: 'form',
-    name: 'Form',
-    description: "A document's params as editable fields + tables (list<record> controls).",
-    dataMode: 'server',
-    group: 'data',
-    tags: ['form', 'params', 'fields', 'edit', 'inputs'],
-    wiresTo: ['data', 'mutate'],
-  },
-  {
-    kind: 'table',
-    name: 'Table',
-    description: 'Tabular rows of a list<record> param with columns; add/edit rows.',
-    dataMode: 'server',
-    group: 'data',
-    tags: ['table', 'grid', 'rows', 'columns', 'spreadsheet', 'records'],
-    wiresTo: ['data', 'mutate'],
-  },
-  {
-    kind: 'grid',
-    name: 'Data Grid',
-    description: 'A read-only data table from any source (http / data verb). Columns from props.columns or inferred.',
-    dataMode: 'server',
-    group: 'data',
-    tags: ['grid', 'table', 'data', 'rows', 'columns', 'results', 'json'],
-    props: [{ name: 'columns', type: 'string', label: 'Columns (comma-sep)' }],
-    wiresTo: ['data'],
-  },
-  editTableMeta, // ← bundle: app_components/EditableTable/ (render + meta co-located)
-  {
-    kind: 'tabs',
-    name: 'Tabs',
-    description: 'A tabbed container — each child is a tab (label from its title or props.labels).',
-    group: 'layout',
-    tags: ['tabs', 'tabbed', 'sections', 'pages', 'nest'],
-    acceptsChildren: true,
-    props: [{ name: 'labels', type: 'string', label: 'Tab labels (comma-sep)' }],
-  },
-  {
-    kind: 'toolbar',
-    name: 'Toolbar',
-    description: 'A horizontal row that holds children (buttons). props.align: start|center|end|between.',
-    group: 'layout',
-    tags: ['toolbar', 'row', 'buttons', 'actions', 'bar', 'nest'],
-    acceptsChildren: true,
-    props: [{ name: 'align', type: 'select', label: 'Align', options: ['start', 'center', 'end', 'between'], default: 'start' }],
-  },
-  {
-    kind: 'bake3d',
-    name: '3D Bake',
-    description: 'Bakes the active doc through the engine → geometry stats (verts/tris).',
-    dataMode: 'server',
-    group: '3d',
-    tags: ['3d', 'bake', 'geometry', 'render', 'manifold', 'mesh'],
-    wiresTo: ['data'],
-  },
-  {
-    kind: 'svg',
-    name: 'SVG',
-    description: 'A 2D SVG view of a doc (placeholder until wired).',
-    dataMode: 'server',
-    group: 'display',
-    tags: ['svg', '2d', 'diagram', 'vector'],
-    wiresTo: ['data'],
-  },
-  {
-    kind: 'text',
-    name: 'Text',
-    description: 'A text label. Props text/size/weight/align/color; text can be a $vars/$params ref.',
-    group: 'display',
-    tags: ['text', 'label', 'heading', 'paragraph', 'caption', 'stat'],
-    props: [
-      { name: 'text', type: 'string', label: 'Text', default: 'Text' },
-      { name: 'size', type: 'select', label: 'Size', options: ['xs', 'sm', 'md', 'lg', 'xl', '2xl'], default: 'md' },
-      { name: 'weight', type: 'select', label: 'Weight', options: ['400', '600', '700'], default: '400' },
-      { name: 'align', type: 'select', label: 'Align', options: ['left', 'center', 'right'], default: 'left' },
-      { name: 'color', type: 'color', label: 'Color' },
-      { name: 'muted', type: 'boolean', label: 'Muted' },
-    ],
-  },
-  {
-    kind: 'button',
-    name: 'Button',
-    description: 'A button that fires on.click (a verb binding or a sequence). Props label/variant.',
-    group: 'input',
-    tags: ['button', 'action', 'click', 'submit', 'trigger'],
-    props: [
-      { name: 'label', type: 'string', label: 'Label', default: 'Button' },
-      { name: 'variant', type: 'select', label: 'Variant', options: ['solid', 'ghost'], default: 'solid' },
-    ],
-    wiresTo: ['data', 'mutate'],
-  },
-  {
-    kind: 'container',
-    name: 'Container',
-    description: 'A transparent wrapper that holds nested children (layout/grouping).',
-    group: 'layout',
-    tags: ['container', 'group', 'stack', 'wrapper', 'layout', 'nest'],
-    acceptsChildren: true,
-  },
-  {
-    kind: 'div',
-    name: 'Div',
-    description: 'A generic block container (HTML-style) — holds children; the basic building block.',
-    group: 'layout',
-    tags: ['div', 'block', 'box', 'container', 'html', 'nest', 'group'],
-    acceptsChildren: true,
-  },
-  {
-    kind: 'row',
-    name: 'Row',
-    description: 'A horizontal row — children laid out left-to-right (columns).',
-    group: 'layout',
-    tags: ['row', 'horizontal', 'flex', 'columns', 'html', 'nest'],
-    acceptsChildren: true,
-    props: [{ name: 'align', type: 'select', label: 'Align', options: ['start', 'center', 'end', 'between'], default: 'start' }],
-  },
-  {
-    kind: 'col',
-    name: 'Column',
-    description: 'A vertical column — children stacked top-to-bottom.',
-    group: 'layout',
-    tags: ['col', 'column', 'vertical', 'stack', 'html', 'nest'],
-    acceptsChildren: true,
-  },
-  {
-    kind: 'heading',
-    name: 'Heading',
-    description: 'An h1/h2/h3 title (props.level + text).',
-    group: 'display',
-    tags: ['heading', 'title', 'h1', 'h2', 'h3', 'html'],
-    props: [
-      { name: 'text', type: 'string', label: 'Text', default: 'Heading' },
-      { name: 'level', type: 'select', label: 'Level', options: ['1', '2', '3'], default: '2' },
-    ],
-  },
-  {
-    kind: 'divider',
-    name: 'Divider',
-    description: 'A horizontal rule (<hr>), optionally with a centered label.',
-    group: 'display',
-    tags: ['divider', 'rule', 'hr', 'separator', 'line', 'html'],
-    props: [{ name: 'label', type: 'string', label: 'Label (optional)' }],
-  },
-  {
-    kind: 'card',
-    name: 'Card',
-    description: 'A bordered surface that holds nested children (a titled group).',
-    group: 'layout',
-    tags: ['card', 'panel', 'box', 'surface', 'group', 'nest'],
-    acceptsChildren: true,
-  },
-  {
-    kind: 'file',
-    name: 'File',
-    description: 'Open / Save / Save As a DATA file into a slot (§0.5). Components read it via loadData.',
-    dataMode: 'client',
-    group: 'data',
-    tags: ['file', 'open', 'save', 'load', 'data', 'slot', 'import', 'picker'],
-    props: [
-      { name: 'slot', type: 'string', label: 'Slot', default: 'data' },
-      { name: 'label', type: 'string', label: 'Label' },
-      { name: 'type', type: 'string', label: 'File type hint (.wson,.json)' },
-    ],
-  },
-  {
-    kind: 'chat',
-    name: 'AI Chat',
-    description: 'The AI-build surface — a prompt box that edits the app.',
-    dataMode: 'client',
-    group: 'ai',
-    tags: ['chat', 'ai', 'prompt', 'assistant', 'build'],
-  },
+  ...listMetas,
+  ...formMetas,
+  ...dataGridMetas,
+  ...editTableMetas,
+  ...containerMetas,
+  ...toolbarMetas,
+  ...tabsMetas,
+  ...buttonMetas,
+  ...textMetas,
+  ...headingMetas,
+  ...dividerMetas,
+  ...bake3dMetas,
+  ...placeholderMetas,
+  ...fileMetas,
+  ...chatMetas,
 ];
 
 export function getComponentMeta(kind: string): ComponentMeta | undefined {

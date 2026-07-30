@@ -14,10 +14,12 @@ app_components/<Name>/
                         generic settings popover drives off meta.props
 ```
 
-- **`meta.ts` MUST stay pure** (`import type { ComponentMeta } …` only — no Svelte, no runtime
-  import of the catalog) so `appkit/catalog/components.ts` can aggregate it without a cycle and
-  without breaking appkit's headless rule. It carries: `kind · name · description · group · tags
-  · dataMode · computeMode? · acceptsChildren? · props[] · wiresTo[] · slots?`.
+- **`meta.ts` exports `metas: ComponentMeta[]`** — an ARRAY, because one render can back several
+  kinds (e.g. `Container` → container/card/div/col; `Form` → form/table; `Toolbar` → toolbar/row).
+  It **MUST stay pure** (`import type { ComponentMeta } …` only — no Svelte, no runtime import of
+  the catalog) so `appkit/catalog/components.ts` can aggregate it (`...<name>Metas`) without a
+  cycle and without breaking appkit's headless rule. Each meta carries: `kind · name · description
+  · group · tags · dataMode · computeMode? · acceptsChildren? · props[] · wiresTo[] · slots?`.
 - **`<Name>.svelte`** receives the standard panel props (`panel, run, fire, select, active,
   params, vars, slots, slotApi, dataRev, preloaded, kids, renderChild`) — take what you need.
 
@@ -27,11 +29,13 @@ app_components/<Name>/
   `COMPONENT_CATALOG`. This is what the search bar + settings popover read.
 - **Render** → `src/lib/shared/harness/panels/registry.ts` maps `kind → <Name>.svelte`.
 
-Migration is incremental: bundles and the legacy `harness/panels/*.svelte` + inline catalog
-entries coexist until every kind is a bundle. **Reference bundle: `EditableTable/`.**
+**Migration COMPLETE (2026-07-30):** every render is a bundle. `harness/panels/` now holds only
+`PanelNode.svelte` (the recursive tree renderer) + `registry.ts` (kind → bundle render). All 15
+bundles: List · Form · DataGrid · EditableTable · Text · Heading · Divider · Button · Container ·
+Toolbar · Tabs · File · Chat · Bake3d · Placeholder.
 
 ## Roadmap
-- Migrate the rest (Table/Grid, Tabs, Toolbar, File, Text, Heading, …) into bundles.
-- Per-component editors (`<Name>Editor.svelte`) where the generic props form isn't enough.
+- Per-component editors (`<Name>Editor.svelte`) where the generic props form isn't enough
+  (Table = Excel-like columns first).
 - **`.app` → component**: promote a saved composition (or subtree) into a new bundle, parameterized
   by its own props/slots (`docs/plans/app-server-render.md`).
