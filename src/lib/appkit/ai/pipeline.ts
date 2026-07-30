@@ -81,7 +81,7 @@ export async function buildApp(opts: BuildOpts): Promise<BuildResult> {
   return { app, steps: result.steps?.length ?? 0, text: result.text ?? '', trace };
 }
 
-function systemPrompt(app: AppDoc, grounding = ''): string {
+export function systemPrompt(app: AppDoc, grounding = ''): string {
   const cur = { app: app.app, title: app.title, panels: (app.panels ?? []).map((p: any) => ({ id: p.id, kind: p.kind })) };
   return [
     ...(grounding ? [grounding, ''] : []),
