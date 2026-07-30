@@ -6,6 +6,9 @@
   //
   // Seeded SYNCHRONOUSLY from server-resolved `preloaded` so the initial rows are in the SSR
   // first paint (an $effect would not run during svelte/server render).
+  //
+  // BUNDLE component (app_components/EditableTable/) — render + meta.ts co-located. See
+  // src/lib/app_components/CLAUDE.md.
   import type { Panel, EventMap, SlotValue, SlotApi } from '$lib/appkit/manifest/types';
   let {
     panel,

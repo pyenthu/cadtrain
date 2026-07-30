@@ -12,7 +12,7 @@ import Button from './Button.svelte';
 import Tabs from './Tabs.svelte';
 import Toolbar from './Toolbar.svelte';
 import Table from './Table.svelte';
-import EditableTable from './EditableTable.svelte';
+import EditableTable from '$lib/app_components/EditableTable/EditableTable.svelte'; // bundle
 import File from './File.svelte';
 import Heading from './Heading.svelte';
 import Divider from './Divider.svelte';

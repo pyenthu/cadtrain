@@ -7,6 +7,11 @@
 //
 // Invariant (guarded by the test): every `kind` here is a real PanelKind (verbs/gui.ts).
 
+// Bundle metas (app_components/<Name>/meta.ts) are aggregated into COMPONENT_CATALOG below.
+// The migration is incremental — bundle metas + legacy inline entries coexist. See
+// src/lib/app_components/CLAUDE.md.
+import { meta as editTableMeta } from '$lib/app_components/EditableTable/meta';
+
 export interface PropSpec {
   name: string;
   type: 'string' | 'number' | 'boolean' | 'select' | 'color';
@@ -79,19 +84,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
     props: [{ name: 'columns', type: 'string', label: 'Columns (comma-sep)' }],
     wiresTo: ['data'],
   },
-  {
-    kind: 'edittable',
-    name: 'Editable Table',
-    description: 'Rows editable in LOCAL client state (add/edit/delete instant, no round-trip); on.save persists to the server. Seeded from source (SSR).',
-    dataMode: 'server',
-    group: 'data',
-    tags: ['edit', 'table', 'rows', 'form', 'input', 'crud', 'spreadsheet', 'local'],
-    props: [
-      { name: 'columns', type: 'string', label: 'Columns (comma-sep)' },
-      { name: 'addLabel', type: 'string', label: 'Add-row label', default: '+ Add row' },
-    ],
-    wiresTo: ['data', 'mutate'],
-  },
+  editTableMeta, // ← bundle: app_components/EditableTable/ (render + meta co-located)
   {
     kind: 'tabs',
     name: 'Tabs',
