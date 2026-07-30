@@ -170,6 +170,42 @@ Two AIs, two doc diets (D6, refined for codegen):
 - **`app_components/` physical relocation** — deferred; the headless catalog delivers discovery,
   render/editor UI stays in `shared/harness`.
 
+## Next wave — backlog (2026-07-30, from a design conversation)
+
+Bundle migration is DONE (15 bundles, `app_components/<Name>/`), plus per-component editors,
+settings/search popovers, split live-preview, server-render. This wave adds:
+
+### A · New COMPONENTS (each a bundle — mostly disjoint new files ⇒ PARALLELIZABLE via agents)
+- **Sidebar** — a dockable panel region inside a parent (left/right, collapsible); holds children.
+- **Vertical toolbar** — a vertical icon rail inside a parent's left edge (like /app_design's rail);
+  may expose theme options.
+- **Menu button** — a button that opens a dropdown menu (items = children or `props.items`, each an action).
+- **Icon button** — a button with an ICON + text; the icon is **searched from a server icon lib**
+  (needs an icon backend — see Future). Render is a bundle; icon-search lives in its `<Name>Editor`.
+- **Popover** — a BEHAVIOR component nested in a parent: opens (floating, anchored) on **parent click**;
+  holds content + event triggers. *Needs harness wiring* (PanelNode detects the child + wires the
+  parent trigger) ⇒ inline, not a blind agent.
+- **Tooltip** — same, on **hover**; lighter content. *Needs harness wiring* ⇒ inline.
+
+### B · Design-panel FEATURES (cross-cut VisualEditor/HarnessView ⇒ INLINE, not parallel agents)
+- **App-level settings** (a root ⚙): **Variables** (static `app.vars` + computed `app.computed`,
+  `$vars.*`) · **Structures** (app-local record shapes; reuse the volume type library later) · **Style**
+  (`app.theme` + custom `app.css` injected into the harness).
+- **Per-component editor TABS: Props | Style** — Style = `class` (Tailwind) + inline `style`, applied by
+  the harness to the component's cell (universal; inline-style is the reliable path).
+
+### C · FUTURE (todo)
+- **JS escape hatch** — a friendly CodeMirror editor; the snippet is **server-compiled + sandboxed**,
+  **variable-aware** (`$vars`/computed/slot data). Start as a **computed TRANSFORM** (returns a value,
+  no free-form eval); grow to event actions / codegen'd components. *(agreed 2026-07-30.)*
+- **Icon backend** — a server icon GUI-lib + a search endpoint feeding the Icon button.
+
+### Parallelization note
+New self-contained component bundles (Sidebar · Vertical toolbar · Menu button · Icon-button render)
+parallelize cleanly (disjoint folders — like the completed migration). The cross-cutting features (A's
+Popover/Tooltip wiring; all of B) share `VisualEditor`/`HarnessView`/`PanelNode` + are interaction-heavy
+(not headless-verifiable) ⇒ built INLINE.
+
 ## Files (indicative)
 - `src/routes/app_design/+page.svelte` — rail view toggles (Design/Preview/Text/Doc).
 - `src/lib/appkit/manifest/types.ts` — add `doc`, grid `{col,row,w,h}`, `theme`.

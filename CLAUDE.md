@@ -93,6 +93,21 @@ open fork: which repo HOSTS — likely (A) wellnew consuming cadtrain's engine a
 authoring endpoints (`/refine`, `/rag/prompt`), runtime model LOCAL (Rule: AI
 data-residency). Bundles C (OAuth) + D (SDK `/api/v1`) already frame it.
 
+**App harness — BUILT (2026-07-30).** The declarative sub-app layer landed: a `.app` is a
+component TREE (`children[]`); `src/lib/appkit/` is the HEADLESS kit (verb registry = SSOT →
+AI-SDK tools + HTTP + API.md · manifest · `catalog/` component metadata · `store` · `ai`
+pipeline); `src/lib/app_components/<Name>/` holds component BUNDLES (render + `meta.ts` +
+optional `<Name>Editor.svelte`); `src/lib/shared/harness/` renders them (`HarnessView` +
+recursive `PanelNode` + `VisualEditor` tree). **Server-render (decided WITH the user):** the
+`.app` is the app, the SERVER compiles it — `/app/[id]` (volume) + `/app/local/[token]` (local
+file) SSR + hydrate; the ENGINE never ships (only compiled UI + resolved data); components
+hydrate for client reactivity; per-component `dataMode` (static/server/client) + `computeMode`
+(server/client bake). Declarative logic: `computed`/`$vars` (safe interpreter, reuses graph/expr),
+`http`/`loadData` verbs, `on` events, file SLOTS (§0.5 — data lives in files, not the `.app`).
+Design-RAG = MD↔.app golden pairs on the VOLUME (`ai/app-rag/`, `server/app-corpus-store.ts`).
+Plans: `docs/plans/app-server-render.md` + `docs/plans/app-studio-enhancements.md` (next-wave
+backlog). Module guides: `src/lib/appkit/CLAUDE.md` + `src/lib/app_components/CLAUDE.md`.
+
 **Tests: `bun run test` (vitest), NOT `bun test`.**
 
 ## Tech stack + commands
@@ -126,6 +141,8 @@ bun run record:task <id> # e2e + harvest WEBMs for a /plan task (Rule 12)
 | `/research` | Research notes route |
 | `/volume` | Volume file manager |
 | `/plan` | Gantt roadmap (Rule 19) |
+| `/app_design` | **App-harness STUDIO** (2026-07-30) — file-editor for `.app` docs: a collapsible component-bundle TREE (left) ↔ **server-rendered** live preview (right). ＋ search-popover · ⚙ settings-popover (title/props/**custom editor**/wiring) · ←↑↓→ tree ops · auto-compile toggle. Plan: `docs/plans/app-server-render.md` + `docs/plans/app-studio-enhancements.md`. |
+| `/app/[id]` · `/app/local/[token]` | **Launch** a `.app` — SERVER-rendered (SSR + hydrate). `[id]` = volume/apps-dir; `local/[token]` = a POSTed local file (readable slug). The ENGINE stays server-side; only compiled UI + resolved data ship. |
 
 **Removed/archived**: `/components` (deleted 2026-05-27); `/archive/*` and
 `/api/{identify,refine,accept,feedback,wells,kb}` (→ `archive/src/`, 2026-06-01);
@@ -142,7 +159,9 @@ src/
 ├── routes/              # graph-editor/, primitives/(+profiles/), vocab/, wells/, design/,
 │                        # research/, volume/, plan/, api/  (+layout: NavMenu top-right, pins #app height)
 └── lib/
-    ├── shared/          # GraphEditorPane, PrimitiveView, canvases, FloatingPanel, …
+    ├── appkit/          # HEADLESS app-harness kit (2026-07-30): verbs (SSOT) · schema · manifest · catalog · store · ai (see appkit/CLAUDE.md)
+    ├── app_components/  # component BUNDLES (render + meta.ts + optional <Name>Editor.svelte) — the .app UI kit (see app_components/CLAUDE.md)
+    ├── shared/          # GraphEditorPane, canvases, …; harness/ = app-harness UI (HarnessView · VisualEditor · PanelNode · panels/registry)
     ├── cad/             # composition-graph/emit/layout/bake, sketch, stdlib/ (+ stale/)  (see cad/CLAUDE.md)
     ├── engines/         # geometry KERNELS carved out of cad/+shared/ (E1 2026-07-12): manifold/ · trueform/ · brep/ (see engines/CLAUDE.md)
     ├── server/          # volume.ts, primitive-paths.ts, primitive-loader.ts, stdlib.ts,
