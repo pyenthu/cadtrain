@@ -390,7 +390,9 @@
 
   {#if app}<ChatPanel onBuild={chatBuild} />{/if}
 
-  <input bind:this={inputEl} type="file" accept=".app,application/json" style="display:none" onchange={onPick} />
+  <!-- No `accept` filter: mobile pickers (iOS treats .app as an app-bundle UTI) grey out .app
+       files when one is set. onPick reads the text + validates JSON, so any file is safe. -->
+  <input bind:this={inputEl} type="file" style="display:none" onchange={onPick} />
 </div>
 
 <style>
