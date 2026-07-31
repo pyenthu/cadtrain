@@ -85,8 +85,8 @@
   <div class="ws-scroll">
     <svg
       class="ws-svg"
-      viewBox="0 0 {view.plot.width} {view.plot.height}"
-      width={view.plot.width}
+      viewBox="0 0 {view.contentWidth} {view.plot.height}"
+      width={view.contentWidth}
       height={view.plot.height}
       role="img"
       aria-label={`Well schematic for ${title}`}
@@ -132,10 +132,13 @@
         <rect x={c.x} y={c.y} width={c.w} height={c.h} fill={c.fill} stroke="none" />
       {/each}
 
-      <!-- casings (widest first) -->
+      <!-- casings (widest first). Tag each string at its SHOE (bottom-right) with a short leader —
+           concentric surface strings all start at depth 0, so labelling at the top smears them
+           together; their shoes sit at different depths and spread the tags down the right wall. -->
       {#each view.casings as c, i (i)}
         <rect class="ws-rect" x={c.x} y={c.y} width={c.w} height={c.h} fill={c.fill} stroke={c.stroke} />
-        <text class="ws-lbl" x={c.x + c.w + 3} y={c.y + 11}>{fmt(c.od)}"{c.grade ? ` ${c.grade}` : ''}</text>
+        <line class="ws-shoe" x1={c.x + c.w} y1={c.y + c.h} x2={c.x + c.w + 7} y2={c.y + c.h} />
+        <text class="ws-lbl" x={c.x + c.w + 10} y={c.y + c.h + 3}>{fmt(c.od)}"{c.grade ? ` ${c.grade}` : ''}</text>
       {/each}
 
       <!-- tubing (centred) -->
@@ -179,6 +182,7 @@
   .ws-rect { stroke-width: 1.5; }
   .ws-hole { stroke-width: 1.5; stroke-dasharray: 3 2; }
   .ws-lbl { font-size: 9px; fill: #0f3d56; font-weight: 600; }
+  .ws-shoe { stroke: #0f3d56; stroke-width: 1.25; }
   .ws-perf-band { opacity: 0.85; }
   .ws-perf-lbl { font-size: 8.5px; fill: var(--h-muted, #64748b); }
 </style>

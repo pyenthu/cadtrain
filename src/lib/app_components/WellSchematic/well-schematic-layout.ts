@@ -116,6 +116,9 @@ export interface SchematicView {
   tubing: RectView[];
   perfs: PerfView[];
   depthTicks: TickView[];
+  /** SVG width to render at: the plot width, grown to fit right-side shoe tags + perf labels so
+   *  they don't clip against the canvas edge (text width is estimated — no DOM measurement). */
+  contentWidth: number;
 }
 
 const DEFAULT_MARGIN: Margin = { top: 28, bottom: 24, left: 54, right: 20 };
@@ -287,30 +290,56 @@ export function buildSchematic(input: SchematicInput): SchematicView {
   const cementRows = (input.cement ?? []).map(toStringRow).filter((r) => r.od > 0 && r.bot > r.top);
   const perfRows = (input.perforations ?? []).map(toPerfRow);
 
+  const holes = holeRows.map((r) => stringRect(r, range, plot, STYLE.hole));
+  const cement = cementRows.map((r) => stringRect(r, range, plot, STYLE.cement));
+  // Widest strings first so narrower inner strings paint on top.
+  const casings = [...casingRows].sort((a, b) => b.od - a.od).map((r) => stringRect(r, range, plot, STYLE.casing));
+  const tubing = [...tubingRows].sort((a, b) => b.od - a.od).map((r) => stringRect(r, range, plot, STYLE.tubing));
+  const perfs: PerfView[] = perfRows.map((p) => {
+    const r = enclosingRadius((p.top + p.bot) / 2, casingRows, range, plot);
+    return {
+      yTop: yScale(p.top, range, plot),
+      yBot: yScale(p.bot, range, plot),
+      cx: plot.cx,
+      xLeft: plot.cx - r,
+      xRight: plot.cx + r,
+      color: p.color || '#e11d48',
+      label: p.label,
+      top: p.top,
+      bot: p.bot,
+    };
+  });
+
+  // Grow the canvas so right-side text (shoe tags at casing.x+w+10, perf labels at xRight+11) is not
+  // clipped by the SVG edge. Text width is estimated (≈0.58·chars·fontPx) — SSR-safe, no measurement.
+  let contentWidth = width;
+  for (const c of casings) {
+    const tag = `${fmtDia(c.od)}"${c.grade ? ` ${c.grade}` : ''}`;
+    contentWidth = Math.max(contentWidth, c.x + c.w + 10 + estTextWidth(tag, 9));
+  }
+  for (const pf of perfs) {
+    if (pf.label) contentWidth = Math.max(contentWidth, pf.xRight + 11 + estTextWidth(pf.label, 8.5));
+  }
+
   return {
     plot,
     range,
-    holes: holeRows.map((r) => stringRect(r, range, plot, STYLE.hole)),
-    cement: cementRows.map((r) => stringRect(r, range, plot, STYLE.cement)),
-    // Widest strings first so narrower inner strings paint on top.
-    casings: [...casingRows]
-      .sort((a, b) => b.od - a.od)
-      .map((r) => stringRect(r, range, plot, STYLE.casing)),
-    tubing: [...tubingRows].sort((a, b) => b.od - a.od).map((r) => stringRect(r, range, plot, STYLE.tubing)),
-    perfs: perfRows.map((p) => {
-      const r = enclosingRadius((p.top + p.bot) / 2, casingRows, range, plot);
-      return {
-        yTop: yScale(p.top, range, plot),
-        yBot: yScale(p.bot, range, plot),
-        cx: plot.cx,
-        xLeft: plot.cx - r,
-        xRight: plot.cx + r,
-        color: p.color || '#e11d48',
-        label: p.label,
-        top: p.top,
-        bot: p.bot,
-      };
-    }),
+    holes,
+    cement,
+    casings,
+    tubing,
+    perfs,
     depthTicks: depthTicks(range, plot, 7),
+    contentWidth: Math.ceil(contentWidth + plot.margin.right),
   };
+}
+
+/** Rough SVG text width (no DOM): average glyph ≈ 0.58·fontPx. Good enough to reserve label room. */
+function estTextWidth(s: string, fontPx: number): number {
+  return s.length * fontPx * 0.58;
+}
+
+/** Diameter formatting mirrored from the component (integer → plain, else one decimal). */
+function fmtDia(v: number): string {
+  return Number.isInteger(v) ? String(v) : v.toFixed(1);
 }

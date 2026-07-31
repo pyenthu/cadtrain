@@ -183,4 +183,15 @@ describe('buildSchematic', () => {
     expect(v.depthTicks.length).toBeGreaterThan(0);
     expect(Number.isFinite(v.plot.cx)).toBe(true);
   });
+  it('grows contentWidth past the plot width to fit a long right-side perf label', () => {
+    const narrow = { width: 260, height: 400 };
+    const noLbl = buildSchematic({ ...narrow, casings: [{ od: 7, top: 0, bot: 300 }] });
+    const withLbl = buildSchematic({
+      ...narrow,
+      casings: [{ od: 7, top: 0, bot: 300 }],
+      perforations: [{ top: 100, bot: 120, label: 'A very long perforation description that would clip' }],
+    });
+    expect(withLbl.contentWidth).toBeGreaterThan(noLbl.contentWidth);
+    expect(withLbl.contentWidth).toBeGreaterThan(narrow.width);
+  });
 });
