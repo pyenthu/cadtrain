@@ -14,10 +14,14 @@ import { resolvePreloaded } from '$lib/server/app-render';
 export const load: PageServerLoad = async ({ params, fetch }) => {
   // Prefer the shared volume (apps/<id>.app); fall back to the local apps dir.
   const safe = params.id.replace(/[^a-zA-Z0-9_-]/g, '_');
-  const volPath = volumePath(`apps/${safe}.app`);
+  // Prefer the shared volume (apps/<id>.app.json | .app); fall back to the local apps dir.
+  const volJson = volumePath(`apps/${safe}.app.json`);
+  const volApp = volumePath(`apps/${safe}.app`);
   let path: string;
-  if (existsSync(volPath)) {
-    path = volPath;
+  if (existsSync(volJson)) {
+    path = volJson;
+  } else if (existsSync(volApp)) {
+    path = volApp;
   } else {
     try {
       path = appFilePath(params.id);

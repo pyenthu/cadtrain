@@ -16,7 +16,7 @@
   const store = createLocalStore(); // no-FSA save fallback only (writes to the SAMPLE dir)
   const W = typeof window !== 'undefined' ? (window as any) : undefined;
   const hasFSA = !!W && 'showOpenFilePicker' in W;
-  const PICK = { types: [{ description: 'App file', accept: { 'application/json': ['.app'] } }], startIn: 'desktop' };
+  const PICK = { types: [{ description: 'App file', accept: { 'application/json': ['.app.json', '.app', '.json'] } }], startIn: 'desktop' };
 
   let app = $state<AppManifest | null>(null);
   let fileHandle = $state<any>(null); // File System Access handle (write-back target)
@@ -33,7 +33,7 @@
   let autoCompile = $state(true); // re-render the preview on every edit (debounced); user default ON
 
   function idOf(): string {
-    return (app?.app || fileName.replace(/\.app$/, '') || 'untitled').replace(/[^a-zA-Z0-9_-]/g, '_') || 'untitled';
+    return (app?.app || fileName.replace(/\.app(\.json)?$/, '') || 'untitled').replace(/[^a-zA-Z0-9_-]/g, '_') || 'untitled';
   }
   const serialize = () => `${JSON.stringify($state.snapshot(app), null, 2)}\n`;
 
@@ -147,17 +147,17 @@
     if (!app) return;
     if (hasFSA) {
       try {
-        const h = await W.showSaveFilePicker({ ...PICK, suggestedName: `${idOf()}.app` });
+        const h = await W.showSaveFilePicker({ ...PICK, suggestedName: `${idOf()}.app.json` });
         await writeHandle(h);
         fileHandle = h;
-        fileName = h.name ?? `${idOf()}.app`;
+        fileName = h.name ?? `${idOf()}.app.json`;
         status = `saved ${fileName}`;
       } catch (e: any) {
         if (e?.name !== 'AbortError') status = String(e);
       }
     } else {
       await store.save?.(idOf(), $state.snapshot(app) as AppManifest);
-      status = `saved ${idOf()}.app (SAMPLE)`;
+      status = `saved ${idOf()}.app.json (SAMPLE)`;
     }
   }
 
