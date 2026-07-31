@@ -81,7 +81,9 @@
   /** CSS grid placement from a panel's declarative layout (12-col responsive grid).
    *  No layout → auto-flow, spanning 4 columns (≈3 per row). */
   function gridStyle(L?: { col?: number; row?: number; w?: number; h?: number }): string {
-    const w = L?.w ?? 4;
+    // Default full-width → top-level panels STACK vertically (HTML block-flow). Side-by-side is
+    // opt-in via an explicit layout.w (grid placement) or a `row` container holding children.
+    const w = L?.w ?? 12;
     const h = L?.h ?? 1;
     const col = L?.col != null ? `${L.col} / span ${w}` : `span ${w}`;
     const row = L?.row != null ? `${L.row} / span ${h}` : `span ${h}`;
