@@ -27,24 +27,38 @@
   let aiOpen = $state(false); // the ✨ AI prompter popover (right edge of the tab strip)
   let leftWidth = $state(380); // px width of the design pane — dragged via the full-height vertical divider
 
-  /** Drag the whole vertical divider (not a corner grip) to resize the left design pane. */
+  /** Drag the whole vertical divider (not a corner grip) to resize the left design pane.
+   *  Uses POINTER CAPTURE on the divider itself — the live-preview <iframe> swallows pointer
+   *  events, so window-level listeners lose `pointermove` (drag dies) and never see `pointerup`
+   *  (so it kept resizing after mouse-up). Capturing routes every event for this pointer to the
+   *  divider, over the iframe or anything else, until we release it. */
   function startResize(e: PointerEvent) {
     e.preventDefault();
+    const el = e.currentTarget as HTMLElement;
+    const id = e.pointerId;
     const startX = e.clientX;
     const startW = leftWidth;
+    try { el.setPointerCapture(id); } catch { /* older engines — falls back to bubbling */ }
+
     const onMove = (ev: PointerEvent) => {
+      if (ev.pointerId !== id) return;
       leftWidth = Math.max(240, Math.min(startW + (ev.clientX - startX), window.innerWidth - 52 - 300));
     };
-    const onUp = () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
+    const stop = (ev: PointerEvent) => {
+      if (ev.pointerId !== id) return;
+      el.removeEventListener('pointermove', onMove);
+      el.removeEventListener('pointerup', stop);
+      el.removeEventListener('pointercancel', stop);
+      try { el.releasePointerCapture(id); } catch { /* already released */ }
       document.body.style.userSelect = '';
       document.body.style.cursor = '';
     };
+
     document.body.style.userSelect = 'none';
     document.body.style.cursor = 'col-resize';
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
+    el.addEventListener('pointermove', onMove);
+    el.addEventListener('pointerup', stop);
+    el.addEventListener('pointercancel', stop);
   }
   let prompt = $state('');
   let building = $state(false);
