@@ -149,33 +149,6 @@ export const details: Record<number, PlanDetail> = {
     recorded: false,
   },
 
-  957: {
-    summary:
-      'W-H1 · 3D-fast build — WellBakePool.\n\n' +
-      'ROOT CAUSE (docs/research/wells-perf-ewells-vs-cadtrain.md): ewells draws an ' +
-      'instant 2D SVG; /wells built real watertight Manifold CSG shells + a ' +
-      'per-element half-section cutaway SYNCHRONOUSLY on the MAIN THREAD, then bent ' +
-      'each along the survey in a per-vertex JS loop → the UI janked on long/multi-' +
-      'string wells. Shipping the 2D-SVG-default (#953) hid this for tab-open; this ' +
-      'task fixes the 3D path itself.\n\n' +
-      'Move the per-element build into a POOL of N Web-Workers, each owning its OWN ' +
-      'Manifold instance (crucially NOT the /primitives editor\'s single latest-wins ' +
-      'worker — wells needs ALL elements built in parallel, cached, and rendered ' +
-      'progressively). Rides the existing bake-worker / bake-client pipeline ' +
-      '(client_side_execution).',
-    acceptance: [
-      'Opening a long multi-string well in 3D no longer blocks the UI thread',
-      'Elements appear progressively as their workers finish',
-      'Per-element bake results are cached (no rebuild on unrelated edits)',
-    ],
-    refs: [
-      'docs/plans/wells-build-architecture.md (P1–P3, WellBakePool)',
-      'src/lib/graph/bake-worker.ts + bake-client.ts (reused pipeline)',
-      'src/lib/wells/WellSchematic3D.svelte (the main-thread $derived.by stack to move off-thread)',
-    ],
-    recorded: false,
-  },
-
   958: {
     summary:
       'W-H2 · 3D-fast — clip-plane cutaway (drop the boolean).\n\n' +
@@ -220,28 +193,6 @@ export const details: Record<number, PlanDetail> = {
 
   // ───── TF / revolve follow-ups (from the 2026-07-06/07 batch) ─────
 
-  944: {
-    summary:
-      'Curvature-adaptive warp axial span.\n\n' +
-      'Route C lean revolve (#942) re-densifies a warped part at build time via a ' +
-      'CONSTANT axial span dial (_axialMaxZSpan = 1.5) so a warped shaft samples enough ' +
-      'Z-stations to bend smoothly. A constant span over-tessellates long, gently-curved ' +
-      'wells (lots of stations where the trajectory is nearly straight). Replace the ' +
-      'constant with a planAxialStations() pass that places stations by LOCAL CURVATURE ' +
-      '— dense through doglegs, sparse on straight runs — so vert counts track the actual ' +
-      'geometry. Rule-25 clean (build-time segmentation, never a post-bake mesh rewrite).',
-    acceptance: [
-      'A long, near-straight warped well samples far fewer axial stations than the constant span',
-      'A tight dogleg keeps enough stations to stay smooth (no faceting)',
-      'Build-time only — no post-bake MeshGL subdivide (Rule 25)',
-    ],
-    refs: [
-      'docs/plans/curvature-adaptive-warp-subdivision.md',
-      'src/lib/graph/bake-worker-core.ts (_axialMaxZSpan dial)',
-    ],
-    recorded: false,
-  },
-
 
   946: {
     summary:
@@ -257,49 +208,6 @@ export const details: Record<number, PlanDetail> = {
     ],
     refs: [
       'docs/plans/tf-wasm-tab.md',
-    ],
-    recorded: false,
-  },
-
-  947: {
-    summary:
-      'Per-SUBPART material — color-by-source.\n\n' +
-      'The TF hardening (#942) shipped per-PART material on the full + cut views. But a ' +
-      'material set on a HIDDEN sub-part is currently lost when subparts are merged into ' +
-      'the full + cut meshes. Needs color-by-source: track which source part each merged ' +
-      'triangle came from so a subpart\'s material survives the merge.',
-    acceptance: [
-      'A material on a hidden sub-part is honored in both the full and the cut mesh',
-      'Merged meshes carry per-source material groups',
-    ],
-    refs: [
-      'src/lib/graph/tf-worker-core.ts (per-part material + merge)',
-      'memory: session_handoff_2026-07-06',
-    ],
-    recorded: false,
-  },
-
-  948: {
-    summary:
-      'Warp-trajectory originZ + #38 P2 param-editor tails (from the 2026-07-07 batch, ' +
-      '#972). The parts_map NODE-CARD + pm_demo volume part shipped separately — see #973. ' +
-      'What is LEFT:\n\n' +
-      ' #36c — the warp spline tangent-extension to ±∞ shipped; the originZ PLACEMENT ' +
-      'option exists in warp-spline.ts but NO caller feeds it through to the warp node. ' +
-      'Wire it.\n' +
-      ' #38 P2 — the ParamsCard list<record> TABLE editor (the "add object / add row" ' +
-      'param editor) for the new record|list param kinds. P1 (ParamSchema discriminated ' +
-      'union number|record|list), P3 (parts_map producer + the bakeable pm_demo), and the ' +
-      'parts_map node-card (#973) all shipped — this is the remaining param-authoring UI.',
-    acceptance: [
-      'The warp node exposes + applies the originZ placement option',
-      'A record/list param is authored + edited from the ParamsCard table editor (add object / add row)',
-    ],
-    refs: [
-      'docs/plans/warp-part-along-spline.md (items: originZ wiring)',
-      'docs/plans/complex-params-list-of-parts.md',
-      'docs/plans/parts-params.md',
-      'src/lib/graph/nodes/kinds/parts-map.ts (P3, shipped)',
     ],
     recorded: false,
   },
