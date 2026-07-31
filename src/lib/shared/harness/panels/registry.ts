@@ -26,6 +26,7 @@ import Tooltip from '$lib/app_components/Tooltip/Tooltip.svelte';
 import IconButton from '$lib/app_components/IconButton/IconButton.svelte';
 import Gantt from '$lib/app_components/Gantt/Gantt.svelte';
 import WellSchematic from '$lib/app_components/WellSchematic/WellSchematic.svelte';
+import NodeTree from '$lib/app_components/NodeTree/NodeTree.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: List,
@@ -56,6 +57,7 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   iconbutton: IconButton, // button with a searchable icon + label
   gantt: Gantt, // roadmap timeline — task bars by start/end, coloured by status, lane swimlanes
   wellschematic: WellSchematic, // SVG well cross-section — casing/tubing/perfs from seeded vars
+  nodetree: NodeTree, // SSR-safe SVG architecture graph — nodes+edges laid L→R by depth
 };
 
 export function panelComponent(kind: string): Component<any> {

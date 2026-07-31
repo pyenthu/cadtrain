@@ -29,6 +29,7 @@ import { metas as tooltipMetas } from '$lib/app_components/Tooltip/meta';
 import { metas as iconButtonMetas } from '$lib/app_components/IconButton/meta';
 import { metas as ganttMetas } from '$lib/app_components/Gantt/meta';
 import { metas as wellSchematicMetas } from '$lib/app_components/WellSchematic/meta';
+import { metas as nodeTreeMetas } from '$lib/app_components/NodeTree/meta';
 
 export interface PropSpec {
   name: string;
@@ -85,6 +86,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
   ...tooltipMetas,
   ...ganttMetas,
   ...wellSchematicMetas,
+  ...nodeTreeMetas,
   ...bake3dMetas,
   ...placeholderMetas,
   ...fileMetas,
