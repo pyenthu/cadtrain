@@ -19,9 +19,13 @@ function countGeom(svg: string) {
   return { elements, commands };
 }
 
-/** Every numeric token inside the SVG must be finite (no NaN/Infinity leaking). */
+/** Every numeric COORDINATE token inside the SVG must be finite (no NaN/Infinity leaking).
+ *  Hex colour literals are stripped first: a valid shaded grey like `#7e8084` contains the
+ *  substring `7e8084`, which the naive number regex would otherwise misread as scientific
+ *  notation (7e8084 = 7·10^8084 = Infinity). Colours aren't coordinates — exclude them. */
 function allCoordsFinite(svg: string): boolean {
-  const nums = svg.match(/-?\d+(\.\d+)?(e-?\d+)?/gi) || [];
+  const scrubbed = svg.replace(/#[0-9a-fA-F]{3,8}\b/g, '');
+  const nums = scrubbed.match(/-?\d+(\.\d+)?(e-?\d+)?/gi) || [];
   return nums.length > 0 && nums.every((n) => Number.isFinite(Number(n)));
 }
 
