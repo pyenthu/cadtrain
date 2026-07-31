@@ -1,105 +1,74 @@
-// Integration test for the plan.app sample (task #34): it must validate, carry the seeded
-// roadmap in vars.tasks, expose the Gantt, and — crucially — SERVER-PRELOAD the task table
-// through the exact path the SSR route uses (resolvePreloaded → the readVar data verb reading
-// app.vars). Proves the seed-data → server-render pipeline headlessly (no browser).
+// Integration test for the readVar → server-preload → Gantt pipeline (task #34). Uses an
+// INLINE plan-app-shaped fixture (the plan.app sample itself lives as a user local file in the
+// samples dir, not the source tree) so this proves the seed-data → server-render path headlessly
+// without depending on a shipped .app file.
 import { describe, it, expect } from 'vitest';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { validateManifest } from './validate';
 import { dispatch } from '../verbs/dispatch';
 import { resolvePreloaded } from '$lib/server/app-render';
 import { normalizeRows, groupByLane } from '$lib/app_components/Gantt/gantt-layout';
 import type { AppEngine } from '../verbs/registry';
 
-const raw = readFileSync(fileURLToPath(new URL('./examples/plan.app', import.meta.url)), 'utf8');
-const parsed = JSON.parse(raw);
+// A compact plan.app-shaped fixture: heading + gantt (reads vars.tasks) + grid (readVar tasks),
+// with rows spanning all five bundle lanes and all four statuses.
+const planFixture = {
+  app: 'plan',
+  title: 'CAD Train — Roadmap',
+  structures: { task: [{ name: 'id' }, { name: 'label' }, { name: 'lane' }, { name: 'start' }, { name: 'end' }, { name: 'status' }, { name: 'details' }] },
+  vars: {
+    tasks: [
+      { id: '940', label: 'GraphEditorPane modularization — Phase 4', lane: 'B · /primitives', start: 0.95, end: 1.25, status: 'active' },
+      { id: '512', label: 'AI refine L2 — post-generation validation', lane: 'A · /components', start: 0, end: 0.13, status: 'todo' },
+      { id: '700', label: 'Google OAuth identity port from SVTC', lane: 'C · Identity', start: 0, end: 0.15, status: 'open' },
+      { id: '901', label: 'V1.0 read-only /api/v1 facade', lane: 'D · SDK', start: 0.15, end: 0.3, status: 'open' },
+      { id: 'W-B1', label: 'W-B1 · editing — mutation + undo layer', lane: 'E · /wells', start: 0.3, end: 0.42, status: 'done' },
+    ],
+  },
+  panels: [
+    { id: 'title', kind: 'heading', props: { text: 'Roadmap', level: 1 } },
+    { id: 'roadmap', kind: 'gantt', props: { rowsVar: 'tasks' } },
+    { id: 'tasktable', kind: 'grid', source: { verb: 'readVar', args: { name: 'tasks' } }, props: { columns: ['id', 'label', 'lane', 'start', 'end', 'status'] } },
+  ],
+};
 
-// A no-op engine — plan.app's server data comes from readVar (app.vars), not the engine.
+// A no-op engine — the server data comes from readVar (app.vars), not the engine.
 const stubEngine: AppEngine = { list: async () => [] };
 
-describe('plan.app sample', () => {
-  it('is valid JSON and passes manifest validation', () => {
-    const res = validateManifest(parsed);
-    expect(res.ok).toBe(true);
-  });
-
-  it('seeds a task list<record> with the documented fields', () => {
-    const tasks = parsed.vars?.tasks as Array<Record<string, unknown>>;
-    expect(Array.isArray(tasks)).toBe(true);
-    expect(tasks.length).toBeGreaterThanOrEqual(12);
-    for (const t of tasks) {
-      for (const k of ['id', 'label', 'lane', 'start', 'end', 'status']) expect(t[k]).toBeDefined();
+describe('readVar → server-preload → Gantt pipeline (plan.app shape)', () => {
+  it('validates + seeds a task list<record> with the documented fields', () => {
+    expect(validateManifest(planFixture).ok).toBe(true);
+    for (const t of planFixture.vars.tasks) {
+      for (const k of ['id', 'label', 'lane', 'start', 'end', 'status']) expect((t as any)[k]).toBeDefined();
     }
-    // structures.task documents the shape.
-    expect(parsed.structures?.task?.map((f: any) => f.name)).toEqual([
-      'id', 'label', 'lane', 'start', 'end', 'status', 'details',
-    ]);
+    expect(planFixture.structures.task.map((f) => f.name)).toEqual(['id', 'label', 'lane', 'start', 'end', 'status', 'details']);
   });
 
   it('composes a heading, a gantt (reading vars.tasks) and a task grid', () => {
-    const byId = Object.fromEntries((parsed.panels as any[]).map((p) => [p.id, p]));
+    const byId = Object.fromEntries(planFixture.panels.map((p) => [p.id, p]));
     expect(byId.title.kind).toBe('heading');
     expect(byId.roadmap.kind).toBe('gantt');
-    expect(byId.roadmap.props.rowsVar).toBe('tasks');
+    expect(byId.roadmap.props!.rowsVar).toBe('tasks');
     expect(byId.tasktable.kind).toBe('grid');
     expect(byId.tasktable.source).toEqual({ verb: 'readVar', args: { name: 'tasks' } });
   });
 
-  it('readVar returns the seeded rows from the live .app', async () => {
-    const rows = await dispatch('readVar', { name: 'tasks' }, { appStore: parsed });
-    expect(rows).toBe(parsed.vars.tasks);
-    // absent variable → empty array (never throws)
-    expect(await dispatch('readVar', { name: 'nope' }, { appStore: parsed })).toEqual([]);
+  it('readVar returns the seeded rows from the live .app; missing var → []', async () => {
+    const rows = await dispatch('readVar', { name: 'tasks' }, { appStore: planFixture });
+    expect(rows).toBe(planFixture.vars.tasks);
+    expect(await dispatch('readVar', { name: 'nope' }, { appStore: planFixture })).toEqual([]);
   });
 
-  it('server-preloads the task grid exactly like the SSR route (resolvePreloaded)', async () => {
-    const preloaded = await resolvePreloaded(parsed, stubEngine);
-    // the grid (dataMode:server) is preloaded; the gantt (dataMode:static) reads vars directly.
-    expect(preloaded.tasktable).toBe(parsed.vars.tasks);
-    expect(preloaded.roadmap).toBeUndefined();
+  it('server-preloads the grid exactly like the SSR route (resolvePreloaded)', async () => {
+    const preloaded = await resolvePreloaded(planFixture as any, stubEngine);
+    expect(preloaded.tasktable).toBe(planFixture.vars.tasks); // grid (dataMode:server) preloaded
+    expect(preloaded.roadmap).toBeUndefined(); // gantt (dataMode:static) reads vars directly
   });
 
-  it('the seeded rows normalize + group across all five bundle lanes', () => {
-    const rows = normalizeRows(parsed.vars.tasks);
+  it('rows normalize + group across all five bundle lanes with status variety', () => {
+    const rows = normalizeRows(planFixture.vars.tasks);
     const lanes = groupByLane(rows);
-    expect(lanes.map((l) => l.lane).sort()).toEqual([
-      'A · /components',
-      'B · /primitives',
-      'C · Identity',
-      'D · SDK',
-      'E · /wells',
-    ]);
-    // a couple of real roadmap labels survive intact
-    const labels = rows.map((r) => r.label);
-    expect(labels).toContain('GraphEditorPane modularization — Phase 4');
-    expect(labels.some((l) => l.startsWith('W-B1'))).toBe(true);
-    // statuses include done + active + open + todo (colour variety)
+    expect(lanes.map((l) => l.lane).sort()).toEqual(['A · /components', 'B · /primitives', 'C · Identity', 'D · SDK', 'E · /wells']);
     const statuses = new Set(rows.map((r) => r.status));
     for (const s of ['open', 'done', 'active', 'todo']) expect(statuses.has(s)).toBe(true);
-  });
-
-  it('carries a doc summary (feeds design-RAG + points at the prompt script)', () => {
-    expect(typeof parsed.doc).toBe('string');
-    expect(parsed.doc).toContain('plan.app.prompts.md');
-  });
-});
-
-describe('plan.app prompt script (recreatable-from-prompts, #34)', () => {
-  const prompts = readFileSync(fileURLToPath(new URL('./examples/plan.app.prompts.md', import.meta.url)), 'utf8');
-
-  it('exists next to plan.app and drives the harness AI builder', () => {
-    expect(prompts).toContain('/api/app/generate');
-    expect(prompts).toContain('builds.jsonl'); // confirms the corpus-logging claim is documented
-  });
-
-  it('has a prompt increment for every panel kind + the data wiring the app uses', () => {
-    // The verbs the builder is expected to emit for each increment.
-    for (const verb of ['setAppMeta', 'patchApp', 'definePanel', 'readVar']) {
-      expect(prompts).toContain(verb);
-    }
-    // Every panel kind in plan.app must have a covering prompt row.
-    for (const kind of (parsed.panels as any[]).map((p) => p.kind)) {
-      expect(prompts).toContain(`kind:"${kind}"`);
-    }
   });
 });
