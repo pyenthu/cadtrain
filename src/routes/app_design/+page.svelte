@@ -25,6 +25,27 @@
   let view = $state<'split' | 'design' | 'preview' | 'text' | 'doc'>('split');
   let leftTab = $state<'tree' | 'vars' | 'style' | 'data' | 'events' | 'learn'>('tree'); // the split's left-sidebar icon tabs
   let aiOpen = $state(false); // the ✨ AI prompter popover (right edge of the tab strip)
+  let leftWidth = $state(380); // px width of the design pane — dragged via the full-height vertical divider
+
+  /** Drag the whole vertical divider (not a corner grip) to resize the left design pane. */
+  function startResize(e: PointerEvent) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = leftWidth;
+    const onMove = (ev: PointerEvent) => {
+      leftWidth = Math.max(240, Math.min(startW + (ev.clientX - startX), window.innerWidth - 52 - 300));
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.userSelect = '';
+      document.body.style.cursor = '';
+    };
+    document.body.style.userSelect = 'none';
+    document.body.style.cursor = 'col-resize';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }
   let prompt = $state('');
   let building = $state(false);
   let inputEl = $state<HTMLInputElement>();
@@ -330,7 +351,7 @@
     {:else}
       <div class="work" class:split={view === 'split'}>
         {#if view === 'split'}
-          <aside class="pane-left">
+          <aside class="pane-left" style="width:{leftWidth}px">
             <nav class="left-tabs">
               <button class:on={leftTab === 'tree'} onclick={() => (leftTab = 'tree')} title="Component tree">☰</button>
               <button class:on={leftTab === 'vars'} onclick={() => (leftTab = 'vars')} title="Variables">ƒ</button>
@@ -369,6 +390,7 @@
               </div>
             {/if}
           </aside>
+          <div class="pane-divider" role="separator" aria-orientation="vertical" title="drag to resize" onpointerdown={startResize}></div>
           <div class="pane-right">{@render previewPane()}</div>
         {:else if view === 'preview'}
           {@render previewPane()}
@@ -396,8 +418,12 @@
 </div>
 
 <style>
-  .studio { position: fixed; inset: 0; display: grid; grid-template-columns: 52px 1fr; font: 13px system-ui, Arial, sans-serif; color: #0f172a; background: #fff; }
-  .rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; background: #0f172a; }
+  /* grid-template-rows:100% + overflow:hidden bound the layout to the viewport, so a long design
+     scrolls INSIDE its pane instead of growing the row (which pushed the rail's bottom buttons
+     off-screen). */
+  .studio { position: fixed; inset: 0; display: grid; grid-template-columns: 52px 1fr; grid-template-rows: 100%; overflow: hidden; font: 13px system-ui, Arial, sans-serif; color: #0f172a; background: #fff; }
+  .rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; background: #0f172a; overflow-y: auto; overflow-x: hidden; }
+  .rail button { flex: 0 0 auto; }
   .rail button { width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; font-size: 17px; border: 0; border-radius: 8px; background: transparent; color: #e2e8f0; cursor: pointer; }
   .rail button:hover:not(:disabled) { background: #1e293b; }
   .rail button.on { background: #0369a1; color: #fff; }
@@ -431,7 +457,10 @@
   .ai-pop .ai:disabled { opacity: .5; cursor: default; }
   .work { flex: 1; min-height: 0; overflow: auto; }
   .work.split { display: flex; overflow: hidden; padding: 0; }
-  .work.split .pane-left { position: relative; width: 380px; min-width: 280px; max-width: 46%; border-right: 1px solid #e5e7eb; overflow: hidden; resize: horizontal; display: flex; flex-direction: column; }
+  .work.split .pane-left { position: relative; flex: 0 0 auto; min-width: 240px; max-width: 70%; overflow: hidden; display: flex; flex-direction: column; }
+  /* full-height drag handle sitting on the vertical border (not a corner grip) */
+  .work.split .pane-divider { flex: 0 0 5px; align-self: stretch; background: #e5e7eb; cursor: col-resize; touch-action: none; transition: background .12s; }
+  .work.split .pane-divider:hover, .work.split .pane-divider:active { background: #0369a1; }
   .work.split .pane-right { flex: 1; min-width: 0; overflow: hidden; }
   .preview-wrap { display: flex; flex-direction: column; height: 100%; }
   .preview-bar { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
