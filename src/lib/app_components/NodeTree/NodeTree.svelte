@@ -14,6 +14,7 @@
     normalizeEdges,
     layoutTree,
     layoutEdges,
+    canvasWidth,
     nodeColor,
     edgeColor,
     nodeLegend,
@@ -51,6 +52,7 @@
 
   const layout = $derived(layoutTree(nodes, opts));
   const laidEdges = $derived(layoutEdges(edges, layout.byId));
+  const svgW = $derived(canvasWidth(layout, laidEdges)); // grows for same-column arcs that bow right
   const legend = $derived(nodeLegend(nodes));
 
   const title = $derived(String(resolveRef((p.title ?? panel.title) as string, { params, vars }) ?? ''));
@@ -73,8 +75,8 @@
     <div class="nt-scroll">
       <svg
         class="nt-svg"
-        viewBox="0 0 {layout.width} {layout.height}"
-        width={layout.width}
+        viewBox="0 0 {svgW} {layout.height}"
+        width={svgW}
         height={layout.height}
         role="img"
         aria-label={`Architecture graph${title ? ` — ${title}` : ''}: ${nodes.length} nodes, ${edges.length} edges`}

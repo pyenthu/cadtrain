@@ -166,6 +166,9 @@ export interface LaidLink {
   label?: string;
   path: string;
   mid: { x: number; y: number };
+  /** Rightmost x the connector reaches — a same-column arc bows past the last column, so the SVG
+   *  width must grow to it or the arc clips. */
+  right: number;
 }
 
 export interface LayoutOpts {
@@ -204,6 +207,14 @@ function round(n: number): number {
 export function linkPath(x1: number, y1: number, x2: number, y2: number): string {
   const dx = Math.max(24, Math.abs(x2 - x1) * 0.5);
   return `M${round(x1)},${round(y1)} C${round(x1 + dx)},${round(y1)} ${round(x2 - dx)},${round(y2)} ${round(x2)},${round(y2)}`;
+}
+
+/** A vertical C-curve that exits (x,y1) rightward, bows out by `bulge`, and re-enters at (x,y2).
+ *  For an edge between two nodes in the SAME column (equal depth → equal x, e.g. a route calling an
+ *  api stacked below it) where a straight L→R connector would loop back THROUGH the boxes. The
+ *  deepest column is rightmost, so bowing right stays on open canvas. Pure string. */
+export function sideArcPath(x: number, y1: number, y2: number, bulge: number): string {
+  return `M${round(x)},${round(y1)} C${round(x + bulge)},${round(y1)} ${round(x + bulge)},${round(y2)} ${round(x)},${round(y2)}`;
 }
 
 /** Lay the node forest out L→R by depth. Siblings stack (rowGap apart); a parent centres between
@@ -267,6 +278,7 @@ export function layoutTree(nodes: TreeNode[], opts: LayoutOpts = {}): TreeLayout
       kind: 'hier',
       path: linkPath(p.x + p.w, p.cy, n.x, n.cy),
       mid: { x: (p.x + p.w + n.x) / 2, y: (p.cy + n.cy) / 2 },
+      right: Math.max(p.x + p.w, n.x),
     });
   }
 
@@ -283,6 +295,26 @@ export function layoutEdges(edges: TreeEdge[], byId: Record<string, LaidNode>): 
     const s = byId[e.source];
     const t = byId[e.target];
     if (!s || !t) continue;
+    const kind = e.kind ?? 'calls';
+    // Same column (equal depth, e.g. route→api both at the deepest level): a straight L→R connector
+    // would exit the right edge and loop back to the same-column left edge, drawing a teardrop over
+    // the boxes. Instead bow a clean vertical C-curve out the shared right edge (open canvas).
+    if (s.depth === t.depth) {
+      const x = Math.max(s.x + s.w, t.x + t.w);
+      const bulge = Math.min(150, Math.max(30, Math.abs(t.cy - s.cy) * 0.42));
+      out.push({
+        source: e.source,
+        target: e.target,
+        kind,
+        label: e.label,
+        path: sideArcPath(x, s.cy, t.cy, bulge),
+        mid: { x: x + bulge * 0.66, y: (s.cy + t.cy) / 2 },
+        right: x + bulge,
+      });
+      continue;
+    }
+    // Different column → attach at the near edges (source-right → target-left, or mirrored for a
+    // back-edge that points leftward) with horizontal handles.
     let x1: number;
     let x2: number;
     if (t.cx >= s.cx) {
@@ -295,13 +327,22 @@ export function layoutEdges(edges: TreeEdge[], byId: Record<string, LaidNode>): 
     out.push({
       source: e.source,
       target: e.target,
-      kind: e.kind ?? 'calls',
+      kind,
       label: e.label,
       path: linkPath(x1, s.cy, x2, t.cy),
       mid: { x: (x1 + x2) / 2, y: (s.cy + t.cy) / 2 },
+      right: Math.max(x1, x2),
     });
   }
   return out;
+}
+
+/** The SVG width needed to show `layout` plus any connectors that bow past the last column (a
+ *  same-column arc). Max of the tree width and every laid edge's rightmost reach + a small gutter. */
+export function canvasWidth(layout: TreeLayout, laidEdges: LaidLink[]): number {
+  let max = layout.width;
+  for (const e of laidEdges) if (e.right + layout.opts.marginX > max) max = e.right + layout.opts.marginX;
+  return round(max);
 }
 
 // ──────────────────────────────────────────────────────────

@@ -5,7 +5,9 @@ import {
   computeDepths,
   layoutTree,
   layoutEdges,
+  canvasWidth,
   linkPath,
+  sideArcPath,
   nodeColor,
   edgeColor,
   nodeLegend,
@@ -157,6 +159,46 @@ describe('node-tree-layout — layoutEdges', () => {
   it('defaults a missing edge kind to calls', () => {
     const es = layoutEdges(normalizeEdges([{ source: 'a', target: 'b' }]), L.byId);
     expect(es[0].kind).toBe('calls');
+  });
+
+  it('routes a SAME-COLUMN edge as a right-side arc (no teardrop through the boxes)', () => {
+    // two api nodes stacked in the same column (both children of the same route → same depth)
+    const same = normalizeNodes([
+      { id: 'r', kind: 'route' },
+      { id: 'x', parentId: 'r', kind: 'api' },
+      { id: 'y', parentId: 'r', kind: 'api' },
+    ]);
+    const LL = layoutTree(same);
+    const [e] = layoutEdges(normalizeEdges([{ source: 'x', target: 'y', kind: 'calls' }]), LL.byId);
+    const xr = LL.byId.x.x + LL.byId.x.w; // shared right edge
+    // both endpoints sit on the shared right edge, and the curve bows to the RIGHT of it
+    expect(LL.byId.x.depth).toBe(LL.byId.y.depth);
+    expect(e.path.startsWith(`M${xr},`)).toBe(true);
+    expect(e.mid.x).toBeGreaterThan(xr); // label sits out in the bulge, not over the column
+  });
+});
+
+describe('node-tree-layout — sideArcPath', () => {
+  it('exits and re-enters at x, bowing right by bulge', () => {
+    const s = sideArcPath(100, 20, 80, 40);
+    expect(s).toBe('M100,20 C140,20 140,80 100,80');
+  });
+});
+
+describe('node-tree-layout — canvasWidth', () => {
+  const same = normalizeNodes([
+    { id: 'r', kind: 'route' },
+    { id: 'x', parentId: 'r', kind: 'api' },
+    { id: 'y', parentId: 'r', kind: 'api' },
+  ]);
+  const LL = layoutTree(same);
+  it('grows past the tree width to fit a same-column arc bowing right', () => {
+    const arc = layoutEdges(normalizeEdges([{ source: 'x', target: 'y' }]), LL.byId);
+    expect(canvasWidth(LL, arc)).toBeGreaterThan(LL.width); // arc reaches past the last column
+  });
+  it('equals the tree width when no connector bows past it', () => {
+    const fwd = layoutEdges(normalizeEdges([{ source: 'r', target: 'x' }]), LL.byId); // cross-column
+    expect(canvasWidth(LL, fwd)).toBe(LL.width);
   });
 });
 
