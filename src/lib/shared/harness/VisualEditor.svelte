@@ -396,9 +396,9 @@
 {/if}
 
 <style>
-  .ve { display: flex; flex-direction: column; gap: 8px; padding: 10px; font: 12.5px system-ui, Arial, sans-serif; color: #0f172a; height: 100%; overflow: auto; }
-  .topbar { display: flex; gap: 6px; }
-  .add-top { padding: 6px 12px; border: 1px solid #0369a1; border-radius: 7px; background: #0369a1; color: #fff; font: 600 12.5px system-ui; cursor: pointer; }
+  .ve { display: flex; flex-direction: column; gap: 6px; padding: 8px; font: 10px system-ui, Arial, sans-serif; color: #0f172a; height: 100%; overflow: auto; }
+  .topbar { display: flex; gap: 5px; }
+  .add-top { padding: 4px 10px; border: 1px solid #0369a1; border-radius: 6px; background: #0369a1; color: #fff; font: 600 10px system-ui; cursor: pointer; }
   .add-top:hover:not(:disabled) { filter: brightness(1.08); }
   .add-top:disabled { opacity: .5; cursor: default; }
   .res-group { font: 600 9px system-ui; text-transform: uppercase; letter-spacing: .4px; color: #94a3b8; padding: 4px 9px 2px; }
@@ -414,22 +414,22 @@
   .results .rd { color: #64748b; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
   .tree, .children { list-style: none; margin: 0; padding: 0; }
-  .children { margin-left: 8px; padding-left: 7px; border-left: 1px solid #e5e7eb; }
-  .node { margin-top: 2px; }
+  .children { margin-left: 6px; padding-left: 6px; border-left: 1px solid #e5e7eb; }
+  .node { margin-top: 0; }
   .node.target > .row { outline: 2px solid #0369a1; outline-offset: 1px; border-radius: 5px; }
-  .row { display: flex; align-items: center; gap: 3px; padding: 1px 5px; border: 1px solid #e8edf2; border-radius: 5px; background: #fff; }
+  .row { display: flex; align-items: center; gap: 2px; padding: 0 4px; border: 1px solid #e8edf2; border-radius: 4px; background: #fff; }
   .row:hover { border-color: #cbd5e1; }
   .row.sel { border-color: #0369a1; background: #f0f9ff; }
-  .caret { width: 15px; border: 0; background: transparent; color: #94a3b8; cursor: pointer; padding: 0; font-size: 10px; }
+  .caret { width: 12px; border: 0; background: transparent; color: #94a3b8; cursor: pointer; padding: 0; font-size: 8px; }
   .caret.hide { visibility: hidden; }
   /* the KIND is the row label (dark, readable); the title lives in the tooltip (title=) */
-  .kind { flex: 1; min-width: 40px; padding: 2px 4px; font: 600 13px system-ui; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
-  .row button { padding: 1px 6px; border: 1px solid #d7dee6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 11px; line-height: 1.4; }
+  .kind { flex: 1; min-width: 36px; padding: 1px 3px; font: 600 10.5px system-ui; color: #0f172a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: default; }
+  .row button { padding: 0 5px; border: 1px solid #d7dee6; border-radius: 4px; background: #fff; cursor: pointer; font-size: 9px; line-height: 1.5; }
   .row button:disabled { opacity: .3; cursor: default; }
   .add-child { color: #0369a1; border-color: #bae6fd !important; font-weight: 700; }
   .gear.on { border-color: #0369a1; background: #eff6ff; }
   .rm { color: #b91c1c; border-color: #fecaca !important; }
-  .empty { padding: 8px; text-align: center; color: #94a3b8; font-style: italic; border: 1px dashed #e5e7eb; border-radius: 6px; margin-top: 4px; }
+  .empty { padding: 6px; text-align: center; color: #94a3b8; font-style: italic; border: 1px dashed #e5e7eb; border-radius: 6px; margin-top: 2px; }
 
   .prop { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .prop .pl { color: #64748b; font-size: 12px; }
