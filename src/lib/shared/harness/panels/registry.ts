@@ -25,6 +25,7 @@ import Popover from '$lib/app_components/Popover/Popover.svelte';
 import Tooltip from '$lib/app_components/Tooltip/Tooltip.svelte';
 import IconButton from '$lib/app_components/IconButton/IconButton.svelte';
 import Gantt from '$lib/app_components/Gantt/Gantt.svelte';
+import WellSchematic from '$lib/app_components/WellSchematic/WellSchematic.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: List,
@@ -54,6 +55,7 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   tooltip: Tooltip, // behavior child — attaches to parent, shows on hover (PanelNode)
   iconbutton: IconButton, // button with a searchable icon + label
   gantt: Gantt, // roadmap timeline — task bars by start/end, coloured by status, lane swimlanes
+  wellschematic: WellSchematic, // SVG well cross-section — casing/tubing/perfs from seeded vars
 };
 
 export function panelComponent(kind: string): Component<any> {
