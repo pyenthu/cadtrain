@@ -22,7 +22,10 @@ describe('build-cli (provider "cli" — emit-verbs then dispatch)', () => {
       ]);
     const out = await buildAppViaCli({ prompt: 'add a red text', app }, runner);
     expect(out.app.panels).toHaveLength(1);
-    expect(out.app.panels[0].props.color).toBe('red'); // the exact call that "turns text red"
+    // Props auto-promote to the runes store: the prop binds to $vars.<id>.<key> and the value
+    // lives in the store, so setComponentProp writes THROUGH to it (the "turn text red" call).
+    expect(out.app.panels[0].props.color).toBe('$vars.greeting.color');
+    expect(out.app.vars.greeting.color).toBe('red');
     expect(out.trace.every((t) => t.ok)).toBe(true);
     expect(out.steps).toBe(2);
   });

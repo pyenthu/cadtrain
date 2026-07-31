@@ -4,6 +4,13 @@
 // which is what rung 1 proves.
 import type { Verb, Ctx, AppDoc } from './registry';
 import { dedupePanelIds } from '../manifest/validate';
+import { promoteComponentProps, storeRefPath, setVarByPath } from '../manifest/promote-props';
+import type { AppManifest, Panel } from '../manifest/types';
+
+/** Auto-promote a freshly-added panel's props into the runes store (app.vars) + a structure, and
+ *  bind them to $vars refs. Default-on; opt out per-app with app.autoPromoteProps === false. */
+const promote = (app: AppDoc, panel: unknown) =>
+  promoteComponentProps(app as unknown as AppManifest, panel as Panel);
 
 /** Panel kinds the harness can render (Layer 4 registry). The AI may only COMPOSE
  *  these — the D1/D5 safety boundary (it never invents a new kind). */
@@ -108,6 +115,7 @@ export const GUI_VERBS: Verb[] = [
       const panel = a.panel as any;
       panel.id = uniquePanelId(app, String(panel.id ?? 'p')); // never collide (keyed renders + lookups)
       (app.panels ??= []).push(panel);
+      promote(app, panel); // props → runes store + inferred structure (default-on)
       return { ok: true };
     },
   },
@@ -144,6 +152,7 @@ export const GUI_VERBS: Verb[] = [
       const panel = a.panel as any;
       panel.id = uniquePanelId(app, String(panel.id ?? 'p'));
       (parent.children ??= []).push(panel);
+      promote(app, panel); // props → runes store + inferred structure (default-on)
       return { ok: true };
     },
   },
@@ -264,6 +273,13 @@ export const GUI_VERBS: Verb[] = [
       const p = findPanel(app, a.panelId);
       if (!p) throw new Error(`appkit: no panel "${a.panelId}"`);
       p.props ??= {};
+      // If the prop is bound to the runes store ($vars.<id>.<key>), write THROUGH to the store —
+      // it's the source of truth, so the component + any other reader react (keeps the binding).
+      const path = storeRefPath(p.props[a.name]);
+      if (path) {
+        setVarByPath(app as unknown as AppManifest, path, a.value);
+        return { ok: true };
+      }
       if (a.value === null || a.value === undefined) delete p.props[a.name];
       else p.props[a.name] = a.value;
       return { ok: true };

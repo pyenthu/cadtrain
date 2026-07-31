@@ -7,6 +7,7 @@
   import { dispatch } from '$lib/appkit/verbs/dispatch';
   import { searchCatalog } from '$lib/appkit/catalog/catalog';
   import { getComponentMeta } from '$lib/appkit/catalog/components';
+  import { resolveRef } from '$lib/appkit/manifest/refs';
   import { panelEditor } from './panels/editor-registry';
 
   let {
@@ -145,7 +146,11 @@
       aiBusy = false;
     }
   }
-  const propVal = (p: any, name: string, dflt: unknown) => p.props?.[name] ?? dflt;
+  // Resolve a prop for DISPLAY: promoted props hold a $vars.<id>.<key> ref, so resolve it against
+  // the store (the same resolver the components use) → the input shows the real value, not the ref.
+  // Writes go through setProp → setComponentProp, which writes back THROUGH the ref to the store.
+  const propVal = (p: any, name: string, dflt: unknown) =>
+    resolveRef(p.props?.[name], { vars: app.vars ?? {} }) ?? dflt;
   const setProp = (id: string, name: string, value: unknown) =>
     dispatch('setComponentProp', { panelId: id, name, value }, store());
 
