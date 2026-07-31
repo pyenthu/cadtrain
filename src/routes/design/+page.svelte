@@ -20,6 +20,7 @@
   import CodeGraph, { type GraphJson } from './CodeGraph.svelte';
   import DesignPhilosophy from './DesignPhilosophy.svelte';
   import AppHarness from './AppHarness.svelte';
+  import ApiDocs from './ApiDocs.svelte';
 
   // ── Architecture view tabs: Tree | C4 | GEP module | Folder tree | Class model | Code graph ──
   const LS_ARCH_TAB = 'design-arch-tab';
@@ -110,6 +111,7 @@
     { id: 'cap',    num: '05', label: 'Capabilities' },
     { id: 'stack',  num: '06', label: 'Tech stack' },
     { id: 'routes', num: '07', label: 'Routes' },
+    { id: 'api',    num: '08', label: 'API' },
   ] as const;
   type PageSection = (typeof PAGE_SECTIONS)[number]['id'];
   const LS_PAGE_SECTION = 'design-page-section';
@@ -428,6 +430,22 @@
       <code><a href="/volume">/volume</a></code> (file manager),
       <code><a href="/plan">/plan</a></code> (Gantt roadmap).
     </p>
+  </section>
+
+  {:else if pageSection === 'api'}
+  <!-- ───────────────────────── API surface ───────────────────────── -->
+  <section class="section" aria-labelledby="api-h">
+    <div class="section-head">
+      <span class="num">08</span>
+      <h2 id="api-h">API</h2>
+    </div>
+    <p class="prose section-intro">
+      The codebase's API surface — the HTTP endpoints under <code>src/routes/api</code>,
+      the public declaration surface across <code>src/lib</code>, and a per-module
+      responsibility summary — generated from the graphify knowledge graph so it
+      stays in lock-step with the code. Filter to find a route or a symbol.
+    </p>
+    <ApiDocs />
   </section>
   {/if}
     </div>
