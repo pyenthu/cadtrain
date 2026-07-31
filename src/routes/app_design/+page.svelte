@@ -198,6 +198,35 @@
 
   /** Shared AI edit: send the whole .app + a prompt to the SERVER builder (provider = cloud/cli/
    *  local, the chat's model toggle), swap in the result. */
+  let versionOnBuild = $state(true); // auto-save a numbered snapshot (versions/<id>.<n>.app.json) + history per build
+  /** Best-effort: save a numbered version snapshot + a prompt↔version history row after a build,
+   *  so the prompt-by-prompt build is a studyable trail. Never blocks or fails the build. */
+  async function snapshotVersion(promptText: string, steps?: number): Promise<void> {
+    if (!versionOnBuild || !app) return;
+    try {
+      await fetch('/api/app/snapshot', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ id: idOf(), app: $state.snapshot(app), prompt: promptText, steps }),
+      });
+    } catch { /* snapshot is best-effort */ }
+  }
+
+  /** SVTC-style "needs work": record a build's prompt (+ the current app) as a non-conformance for
+   *  developers to improve the RAG/rule-cards. The negative signal — never grounds the model. */
+  async function reportPrompt(promptText: string, note: string): Promise<{ ok: boolean }> {
+    try {
+      const r = await fetch('/api/app/learn', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ note, prompt: promptText, app: app ? $state.snapshot(app) : undefined }),
+      });
+      return { ok: r.ok };
+    } catch {
+      return { ok: false };
+    }
+  }
+
   async function runGenerate(promptText: string, provider?: string): Promise<{ ok: boolean; steps?: number }> {
     if (!app || !promptText.trim()) return { ok: false };
     building = true;
@@ -212,6 +241,7 @@
       const j = await r.json();
       app = j.app;
       status = `AI built (${j.steps} steps) — Save to keep`;
+      void snapshotVersion(promptText, j.steps); // version-per-prompt trail (best-effort)
       return { ok: true, steps: j.steps };
     } catch (e) {
       status = String(e);
@@ -239,6 +269,7 @@
         app = { ...app }; // nudge reactivity after in-place dispatch
         serverPreview();
         status = `Phi built (${out.trace.length} steps)`;
+        void snapshotVersion(promptText, out.trace.length); // version-per-prompt trail (best-effort)
         return { ok: true, steps: out.trace.length };
       } catch (e) {
         status = String(e);
@@ -329,6 +360,7 @@
       {#if status}<span class="pv-status">{status}</span>{/if}
       <span class="pv-tag">server-rendered · /app/local/{previewToken || '…'}{previewBusy ? ' · rendering…' : ''}</span>
       <label class="pv-auto" title="re-render on every edit (else use ↻)"><input type="checkbox" bind:checked={autoCompile} /> auto-compile</label>
+      <label class="pv-auto ver" title="save a numbered snapshot + history row each build → versions/&lt;id&gt;.&lt;n&gt;.app.json"><input type="checkbox" bind:checked={versionOnBuild} /> 📸 version</label>
       <button class="pv-refresh" onclick={() => serverPreview()} disabled={previewBusy}>↻ re-render</button>
     </div>
     {#if previewToken}
@@ -424,7 +456,7 @@
     {/if}
   </main>
 
-  {#if app}<ChatPanel onBuild={chatBuild} />{/if}
+  {#if app}<ChatPanel onBuild={chatBuild} onReport={reportPrompt} />{/if}
 
   <!-- No `accept` filter: mobile pickers (iOS treats .app as an app-bundle UTI) grey out .app
        files when one is set. onPick reads the text + validates JSON, so any file is safe. -->
@@ -482,6 +514,7 @@
   .pv-status { font-size: 11px; color: #16a34a; }
   .pv-tag { font: 500 11px ui-monospace, monospace; color: #94a3b8; }
   .pv-auto { margin-left: auto; display: flex; align-items: center; gap: 5px; font: 500 11px system-ui; color: #475569; cursor: pointer; }
+  .pv-auto.ver { margin-left: 0; }
   .pv-refresh { padding: 3px 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; font: 600 11px system-ui; cursor: pointer; }
   .pv-refresh:disabled { opacity: .5; cursor: default; }
   .preview-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
