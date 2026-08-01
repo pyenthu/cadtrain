@@ -57,6 +57,7 @@
     builtStructures: string[];
     goldenStructures: string[];
     lastBuiltApp: AppLike | null;
+    stepScores: number[]; // per-rung overall score of the LATEST run — the "where does it diverge" curve
     expanded: boolean;
   }
 
@@ -75,6 +76,7 @@
       builtStructures: [],
       goldenStructures: [],
       lastBuiltApp: null,
+      stepScores: [],
       expanded: false,
     };
   }
@@ -189,10 +191,13 @@
     }
   }
 
-  /** Build one app once: EMPTY → replay every prompt in order → return the finished app. */
-  async function buildOnce(id: EvalAppId, runLabel: string, row: AppRow): Promise<AppLike> {
+  /** Build one app once: EMPTY → replay every prompt in order → return the finished app. Scores
+   *  vs the golden AFTER EACH prompt (the per-rung curve) so we see exactly where a build diverges —
+   *  the "incrementally at each step" diagnostic, mirroring the headless runner's summary.json. */
+  async function buildOnce(id: EvalAppId, runLabel: string, row: AppRow, golden: AppLike): Promise<AppLike> {
     let app: AppLike = { app: id, title: id, panels: [] };
     const prompts = EVAL_PROMPTS[id];
+    const stepScores: number[] = [];
     for (let i = 0; i < prompts.length; i++) {
       const step = prompts[i]!;
       row.progress = `${runLabel} · prompt ${i + 1}/${prompts.length}`;
@@ -214,6 +219,8 @@
         const j = await res.json();
         app = j.app as AppLike; // forward the mutated manifest to the next prompt
       }
+      stepScores.push(scoreApp(app, golden).score); // score this rung vs the golden
+      row.stepScores = [...stepScores];
     }
     return app;
   }
@@ -244,7 +251,7 @@
         const runResults: RunResult[] = [];
         try {
           for (let r = 1; r <= Math.max(1, runsN); r++) {
-            const built = await buildOnce(id, `run ${r}/${Math.max(1, runsN)}`, row);
+            const built = await buildOnce(id, `run ${r}/${Math.max(1, runsN)}`, row, golden);
             const sc = scoreApp(built, golden);
             runResults.push({ score: sc.score, breakdown: sc.breakdown });
             row.runs = [...runResults];
@@ -399,6 +406,9 @@
                     {#if row.runs.length}
                       <div class="dline"><b>per-run overall:</b> {row.runs.map((r) => pct(r.score)).join(' · ')}{#if row.runs.length > 1} <span class="sig">(σ {(stdev(row.runs) * 100).toFixed(1)})</span>{/if}</div>
                     {/if}
+                    {#if row.stepScores.length}
+                      <div class="dline"><b>per-rung ({row.stepScores.length}):</b> <span class="curve">{row.stepScores.map((s) => pct(s)).join(' → ')}</span></div>
+                    {/if}
                     <div class="cmp">
                       <div class="col">
                         <div class="ch">built kinds ({row.builtKinds.length})</div>
@@ -502,6 +512,7 @@
   .detail { background: #f8fafc; border: 1px solid #eef2f7; border-radius: 8px; margin: 2px 0 10px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
   .derr { color: #b91c1c; font-size: 12px; }
   .dline { font-size: 12px; color: #334155; }
+  .curve { font: 12px/1.6 ui-monospace, SFMono-Regular, Menlo, monospace; color: #475569; word-break: break-word; }
   .cmp { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   .col { min-width: 0; }
   .ch { font: 600 10px system-ui; text-transform: uppercase; letter-spacing: 0.03em; color: #94a3b8; margin-bottom: 3px; }
