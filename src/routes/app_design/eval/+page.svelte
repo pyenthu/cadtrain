@@ -149,7 +149,7 @@
   async function loadPhiModel(): Promise<void> {
     if (phiLoaded || phiLoading) return;
     phiLoading = true;
-    phiText = 'loading Qwen3-4B (one-time ~3.4 GB, cached in-browser)…';
+    phiText = 'loading Qwen2.5-1.5B (one-time ~1.6 GB, cached in-browser)…';
     try {
       phiMod = await import('$lib/appkit/ai/webllm-build');
       if (!phiMod.isWebGPUAvailable()) throw new Error('WebGPU unavailable — use Chrome/Edge desktop');
@@ -253,7 +253,7 @@
   }
 
   const providerLabel: Record<Provider, string> = {
-    phi: 'Phi / Qwen3-4B (in-browser)',
+    phi: 'Phi / Qwen2.5-1.5B (in-browser)',
     cli: 'Claude CLI (subscription)',
     cloud: 'Claude API (metered)',
   };
@@ -273,7 +273,7 @@
     <label class="fld">
       <span>Provider</span>
       <select bind:value={provider} disabled={running}>
-        <option value="phi">Phi / Qwen3-4B (in-browser)</option>
+        <option value="phi">Phi / Qwen2.5-1.5B (in-browser)</option>
         <option value="cli">Claude CLI (subscription)</option>
         <option value="cloud">Claude API (metered)</option>
       </select>
