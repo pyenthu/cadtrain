@@ -63,6 +63,12 @@ export interface ComponentMeta {
   props?: PropSpec[];
   /** Verb groups this component's source/actions can bind to (the wiring picker). */
   wiresTo?: Array<'data' | 'mutate'>;
+  /** One crisp sentence: WHEN to reach for this component vs its alternatives. Feeds the AI
+   *  component-knowledge card so a (esp. LOCAL) model picks the RIGHT kind — not generic text/list. */
+  useWhen?: string;
+  /** A concrete panel object exactly as it'd appear in the .app tree (id, kind, realistic
+   *  props/source/on). Shown verbatim in the card so the model calls the component correctly. */
+  example?: Record<string, unknown>;
 }
 
 /** Aggregated from the bundle metas — data · layout · input · display · ai. */

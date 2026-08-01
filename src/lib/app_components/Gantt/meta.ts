@@ -13,10 +13,15 @@ export const metas: ComponentMeta[] = [
       'vars[name], a list<record> of {id,label,lane,start,end,status,details}) or an inline ' +
       'props.rows array. Server-renders (no client fetch). Use props.durationField to read ' +
       '{start,weeks}-style records instead of an explicit end.',
+    useWhen:
+      'A horizontal timeline of bars over a date/number axis — use for a schedule, roadmap, Gantt, ' +
+      'or project plan built from a list of {start,end} (or {start,weeks}) records; NOT for plain ' +
+      'tabular data (use grid) or a categorical chart.',
+    example: { id: 'timeline', kind: 'gantt', props: { title: 'Roadmap', rowsVar: 'tasks', unit: 'wk' } },
     // static: no `source` — reads the seeded variable directly, available in the SSR first paint.
     dataMode: 'static',
     group: 'display',
-    tags: ['gantt', 'timeline', 'roadmap', 'schedule', 'plan', 'bars', 'swimlane', 'tasks', 'chart'],
+    tags: ['gantt', 'timeline', 'roadmap', 'schedule', 'plan', 'bars', 'swimlane', 'tasks', 'chart', 'milestones', 'phases', 'calendar', 'project'],
     props: [
       { name: 'title', type: 'string', label: 'Title' },
       { name: 'rowsVar', type: 'string', label: 'Rows variable', default: 'tasks' },

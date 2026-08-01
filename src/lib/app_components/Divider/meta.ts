@@ -8,8 +8,10 @@ export const metas: ComponentMeta[] = [
     kind: 'divider',
     name: 'Divider',
     description: 'A horizontal rule (<hr>), optionally with a centered label.',
+    useWhen: 'A horizontal rule, optionally labelled — use to visually separate sections.',
+    example: { id: 'sep', kind: 'divider', props: { label: 'Details' } },
     group: 'display',
-    tags: ['divider', 'rule', 'hr', 'separator', 'line', 'html'],
+    tags: ['divider', 'rule', 'hr', 'separator', 'line', 'spacer', 'html'],
     props: [{ name: 'label', type: 'string', label: 'Label (optional)' }],
   },
 ];

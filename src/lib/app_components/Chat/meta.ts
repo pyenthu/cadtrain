@@ -8,8 +8,12 @@ export const metas: ComponentMeta[] = [
     kind: 'chat',
     name: 'AI Chat',
     description: 'The AI-build surface — a prompt box that edits the app.',
+    useWhen:
+      'An AI prompt box that edits the app itself — use to embed the AI-build/assistant surface ' +
+      'inside a running app.',
+    example: { id: 'ai', kind: 'chat' },
     dataMode: 'client',
     group: 'ai',
-    tags: ['chat', 'ai', 'prompt', 'assistant', 'build'],
+    tags: ['chat', 'ai', 'prompt', 'assistant', 'build', 'copilot'],
   },
 ];

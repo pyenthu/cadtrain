@@ -8,8 +8,12 @@ export const metas: ComponentMeta[] = [
     kind: 'menu',
     name: 'Menu Button',
     description: 'A button that opens a dropdown menu; its children are the menu items.',
+    useWhen:
+      'A button that opens a dropdown of its children as menu items — use for a compact set of ' +
+      'related actions under one trigger (use toolbar to show buttons inline).',
+    example: { id: 'actions', kind: 'menu', props: { label: 'Actions' }, children: [] },
     group: 'input',
-    tags: ['menu', 'dropdown', 'button', 'actions', 'nav'],
+    tags: ['menu', 'dropdown', 'button', 'actions', 'nav', 'select'],
     acceptsChildren: true,
     props: [
       { name: 'label', type: 'string', label: 'Label', default: 'Menu' },

@@ -18,10 +18,15 @@ export const metas: ComponentMeta[] = [
       'props.edgesVar → a list<record> of {source,target,kind?,label?}) or inline props.nodes/' +
       'props.edges arrays. Server-renders (no client fetch). Ideal for C4 / dependency / site-map ' +
       'diagrams.',
+    useWhen:
+      'A nodes+edges graph laid out left→right — use for an architecture tree, org chart, C4 model, ' +
+      'dependency/site map, flowchart, or ANY parent/child graph; NOT for a flat selectable list ' +
+      '(use list) or tabular rows (use grid).',
+    example: { id: 'tree', kind: 'nodetree', props: { nodesVar: 'nodes', edgesVar: 'edges' } },
     // static: no `source` — reads the seeded variables directly, available in the SSR first paint.
     dataMode: 'static',
     group: 'display',
-    tags: ['tree', 'graph', 'architecture', 'c4', 'diagram', 'nodes', 'edges', 'hierarchy', 'flow', 'sitemap', 'svg', 'dependency'],
+    tags: ['tree', 'graph', 'architecture', 'c4', 'diagram', 'nodes', 'edges', 'hierarchy', 'flow', 'flowchart', 'sitemap', 'svg', 'dependency', 'org', 'orgchart', 'network', 'mindmap'],
     props: [
       { name: 'title', type: 'string', label: 'Title' },
       { name: 'nodesVar', type: 'string', label: 'Nodes variable', default: 'nodes' },
