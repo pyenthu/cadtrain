@@ -12,10 +12,13 @@ import { dispatch } from '../verbs/dispatch';
 import { systemPrompt, emitInstruction, parseVerbCalls } from './prompt';
 import { sanitizeApp } from './sanitize';
 
-// Qwen3-4B (Apache-2.0, ~3.4 GB) — was 'Phi-3.5-mini-instruct-q4f16_1-MLC'. Smaller footprint than
-// Phi-3.5 and a materially stronger JSON/instruction model. Thinking mode disabled in the create
-// call below (see header). Ref: docs/research/local-model-survey.md.
-const MODEL_ID = 'Qwen3-4B-q4f16_1-MLC';
+// Qwen2.5-1.5B-Instruct (Apache-2.0, ~1.6 GB q4f16) — the LIGHT pick from the model survey. Qwen3-4B
+// (~3.4 GB) lost the WebGPU device ("Device was lost … resource constraints") on this machine, so
+// 1.5B is the size that actually runs in-browser here (also the SVTC/web-llm default class).
+// Ref: docs/research/local-model-survey.md. Swap MODEL_ID to try a bigger one if the GPU allows.
+const MODEL_ID = 'Qwen2.5-1.5B-Instruct-q4f16_1-MLC';
+// Qwen3 has a hybrid THINKING mode we must disable; Qwen2.5 has none, so the flag only applies to Qwen3.
+const IS_QWEN3 = MODEL_ID.startsWith('Qwen3');
 
 let engine: { chat: { completions: { create: (o: unknown) => Promise<any> } } } | null = null;
 let loading = false;
@@ -61,7 +64,7 @@ export async function buildAppWithPhi(app: AppDoc, prompt: string, grounding = '
     // Qwen3 is hybrid-thinking: WebLLM's non-thinking template (a leading closed empty
     // <think></think> block) suppresses reasoning so the reply is a clean JSON verb-array. Without
     // this, <think>…</think> prose can make parseVerbCalls return [] → a silent no-op build.
-    extra_body: { enable_thinking: false },
+    ...(IS_QWEN3 ? { extra_body: { enable_thinking: false } } : {}),
   });
   const raw = String(res?.choices?.[0]?.message?.content ?? '');
 
