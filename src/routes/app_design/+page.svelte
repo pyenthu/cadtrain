@@ -23,7 +23,7 @@
   let fileName = $state('');
   let status = $state('');
   let view = $state<'split' | 'design' | 'preview' | 'text' | 'doc'>('split');
-  let leftTab = $state<'tree' | 'vars' | 'style' | 'data' | 'events' | 'learn'>('tree'); // the split's left-sidebar icon tabs
+  let leftTab = $state<'tree' | 'vars' | 'style' | 'data' | 'events' | 'persistent' | 'files' | 'learn'>('tree'); // the split's left-sidebar icon tabs
   let aiOpen = $state(false); // the ✨ AI prompter popover (right edge of the tab strip)
   let leftWidth = $state(380); // px width of the design pane — dragged via the full-height vertical divider
 
@@ -404,6 +404,8 @@
               <button class:on={leftTab === 'events'} onclick={() => (leftTab = 'events')} title="Events">⚡</button>
               <button class:on={leftTab === 'style'} onclick={() => (leftTab = 'style')} title="Style">🎨</button>
               <button class:on={leftTab === 'data'} onclick={() => (leftTab = 'data')} title="Data structures">▦</button>
+              <button class:on={leftTab === 'persistent'} onclick={() => (leftTab = 'persistent')} title="Persistent data — the app's main data source">🗄</button>
+              <button class:on={leftTab === 'files'} onclick={() => (leftTab = 'files')} title="Data files — sibling DLIS / LAS / … files">📁</button>
               <button class:on={leftTab === 'learn'} onclick={() => (leftTab = 'learn')} title="Learn — promote good builds, report bad ones">🎓</button>
               <span class="left-spacer"></span>
               <button class="ai-tab" class:on={aiOpen} onclick={() => (aiOpen = !aiOpen)} title="Build with AI">✨</button>

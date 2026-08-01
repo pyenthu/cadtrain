@@ -49,6 +49,16 @@ export interface Panel {
   [k: string]: unknown;
 }
 
+/** A persisted reference to the data file backing a slot (§0.5) — the durable link between an
+ *  `.app` and a local file. Survives reload: NO bytes, NO handle, just enough to re-resolve
+ *  against the workspace folder. `path` is slash-joined RELATIVE to the workspace root. Mirrors
+ *  SVTC's file refs; resolved by src/lib/shared/harness/workspace-tree.ts. */
+export interface FileRef {
+  name: string;
+  path: string;
+  type?: string;
+}
+
 /** A named data-file the app opens at runtime (§0.5 — the app is stateless; DATA
  *  lives in files). A component's `source` binds to a slot; verbs process that file. */
 export interface FileSlot {
@@ -56,6 +66,12 @@ export interface FileSlot {
   /** Expected data-file type — '.wson' | '.asm.ts' | … (a hint for the picker). */
   type?: string;
   label?: string;
+  /** Persisted file reference — resolved against the workspace on mount (no picker). When set,
+   *  the harness auto-loads this slot on reload. */
+  ref?: FileRef;
+  /** Marks the app's MAIN data source (the studio's "Persistent data" tab). Sibling data files
+   *  (the "Data files" tab) omit it. */
+  primary?: boolean;
 }
 
 /** A data file opened into a slot at runtime: its name + parsed content. */
@@ -63,6 +79,8 @@ export interface SlotValue {
   name: string;
   data: unknown;
   type?: string;
+  /** Workspace-relative path the data was resolved from (when opened via the workspace). */
+  path?: string;
 }
 
 /** The runtime slot operations the harness gives the File component (§0.5). */

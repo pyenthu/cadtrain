@@ -9,7 +9,9 @@
   import { evalComputed } from '$lib/appkit/manifest/compute';
   import PanelNode from './panels/PanelNode.svelte';
   import { createClientEngine } from './client-engine';
-  import { makeSlotApi } from './slots';
+  import { makeSlotApi, parseData } from './slots';
+  import { workspace } from './workspace.svelte';
+  import { onMount } from 'svelte';
 
   let {
     app,
@@ -40,6 +42,33 @@
       dataRev += 1;
     },
   );
+
+  // Resolve-on-mount (§0.5, SVTC-style): for each app.files slot that carries a persisted
+  // { name, path, type } ref, silently re-grant the workspace folder + re-open the file — NO
+  // per-file picker. Client-only (onMount); a slot the user already opened this session wins.
+  onMount(() => {
+    void (async () => {
+      const files = app.files ?? [];
+      if (!files.some((f) => (f as any).ref)) return;
+      if (!workspace.tree) await workspace.autoReopen();
+      if (!workspace.tree) return; // no folder re-granted → File component's picker is the fallback
+      const next = { ...slots };
+      let changed = false;
+      for (const f of files) {
+        const ref = (f as any).ref;
+        if (!ref || next[f.slot]) continue; // already loaded this session
+        const file = await workspace.resolveFile(ref);
+        if (!file) continue;
+        const text = await file.text();
+        next[f.slot] = { name: file.name, path: ref.path, type: f.type, data: parseData(file.name, text) };
+        changed = true;
+      }
+      if (changed) {
+        slots = next;
+        dataRev += 1;
+      }
+    })();
+  });
 
   // Variables: static app.vars + reactive computed (both under $vars). Referenced by
   // bindings/props/text as $vars.<name> (manifest/compute.ts, reused everywhere).

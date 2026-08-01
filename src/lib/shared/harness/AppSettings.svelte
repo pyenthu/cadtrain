@@ -2,8 +2,10 @@
   // AppSettings — the APP-level settings panes (Variables · Style · Data), rendered as a full
   // panel in the studio's left sidebar (was the ⚙ App popover). One pane per `tab`. Mutates the
   // live `app` manifest directly (deep $state → reactive). Component-level settings stay a popover.
-  import type { AppManifest } from '$lib/appkit/manifest/types';
-  let { app, tab }: { app: AppManifest; tab: 'vars' | 'style' | 'data' | 'events' } = $props();
+  import type { AppManifest, FileSlot } from '$lib/appkit/manifest/types';
+  import { workspace, pickFileFallback } from './workspace.svelte';
+  import { flattenFiles, refFromNode, linkStatus, type FileNode } from './workspace-tree';
+  let { app, tab }: { app: AppManifest; tab: 'vars' | 'style' | 'data' | 'events' | 'persistent' | 'files' } = $props();
 
   // ── Data variables (app.vars: name → value) — the runes store: seeded data + promoted
   //    component props. Referenced anywhere as $vars.name (resolveRef). ──
@@ -123,7 +125,121 @@
   function saveInferred(name: string, fields: Array<{ name: string; type: string }>) {
     app.structures = { ...(app.structures ?? {}), [name]: fields.map((f) => ({ name: f.name, type: f.type })) };
   }
+
+  // ── Data files (app.files: FileSlot[]) — the app's MAIN data source (primary) + sibling data
+  //    files (DLIS/LAS/…). Each slot persists a { name, path, type } REF (workspace-relative) so
+  //    the link survives reload; the live bytes/handle stay transient (§0.5). ──
+  const fileSlots = $derived((app.files ?? []) as FileSlot[]);
+  const primarySlot = $derived(fileSlots.find((f) => f.primary));
+  const dataSlots = $derived(fileSlots.filter((f) => !f.primary));
+  // Reactive re-link status: reads workspace.tree so badges refresh when a folder (re)links.
+  const wsTree = $derived(workspace.tree);
+  const wsFiles = $derived(flattenFiles(wsTree));
+
+  const setFiles = (next: FileSlot[]) => (app.files = next);
+  const extOf = (name: string): string | undefined => (/\.[^./\\]+$/.exec(name) ?? [])[0];
+  function uniqueSlot(base: string): string {
+    const taken = new Set(fileSlots.map((f) => f.slot));
+    const root = (base || 'data').replace(/[^a-zA-Z0-9_]+/g, '_').replace(/^_+|_+$/g, '').toLowerCase() || 'data';
+    if (!taken.has(root)) return root;
+    let i = 2;
+    while (taken.has(`${root}${i}`)) i++;
+    return `${root}${i}`;
+  }
+  const slotFromName = (name: string) => uniqueSlot(name.replace(/\.[^.]+$/, ''));
+
+  /** Set/replace the MAIN data source from a workspace file node (or a native-picked file). */
+  function setMainFromNode(node: Pick<FileNode, 'name' | 'path'>) {
+    const ref = refFromNode(node, extOf(node.name));
+    const next = [...fileSlots];
+    const idx = next.findIndex((f) => f.primary);
+    const cur = idx >= 0 ? next[idx] : undefined;
+    if (cur) next[idx] = { ...cur, ref, type: ref.type, label: cur.label ?? node.name };
+    else next.push({ slot: uniqueSlot('data'), primary: true, ref, type: ref.type, label: node.name });
+    setFiles(next);
+    browseFor = null;
+  }
+  /** Add a sibling data file from a workspace node (or a native-picked file). */
+  function addDataFromNode(node: Pick<FileNode, 'name' | 'path'>) {
+    const ref = refFromNode(node, extOf(node.name));
+    setFiles([...fileSlots, { slot: slotFromName(node.name), ref, type: ref.type, label: node.name }]);
+    browseFor = null;
+  }
+  function removeSlot(slot: string) {
+    setFiles(fileSlots.filter((f) => f.slot !== slot));
+  }
+  function renameSlot(slot: string, next: string) {
+    const clean = (next || slot).replace(/[^a-zA-Z0-9_]+/g, '_');
+    setFiles(fileSlots.map((f) => (f.slot === slot ? { ...f, slot: clean } : f)));
+  }
+  function clearRef(slot: string) {
+    setFiles(fileSlots.map((f) => (f.slot === slot ? { ...f, ref: undefined } : f)));
+  }
+
+  // Native-picker fallback (no workspace / no FSA): no relative path, so the ref path == name;
+  // a name fallback re-resolves it if a workspace with that file is opened later.
+  async function pickMainNative() {
+    const f = await pickFileFallback(primarySlot?.type);
+    if (f) setMainFromNode({ name: f.name, path: f.name });
+  }
+  async function pickDataNative() {
+    const f = await pickFileFallback();
+    if (f) addDataFromNode({ name: f.name, path: f.name });
+  }
+
+  let browseFor = $state<'main' | 'data' | null>(null); // which action the workspace file-list feeds
+  let wsBusy = $state(false);
+  async function openFolder() {
+    wsBusy = true;
+    try { await workspace.pickWorkspace(); } finally { wsBusy = false; }
+  }
+  async function reconnectFolder() {
+    wsBusy = true;
+    try { await workspace.reconnect(); } finally { wsBusy = false; }
+  }
+
+  const statusLabel = (s: ReturnType<typeof linkStatus>) =>
+    s === 'linked' ? '● linked' : s === 'missing' ? '○ not linked' : '○ no folder';
+
+  // Silently surface a previously-linked folder the first time a data tab becomes active (this
+  // component is reused across tab switches, so an effect — not onMount — catches the activation).
+  // `triedReopen` is a plain local (non-reactive) so it can't loop the effect. queryPermission
+  // shows no UI; a re-grant that needs a click is offered as the "reconnect" button.
+  let triedReopen = false;
+  $effect(() => {
+    if ((tab === 'persistent' || tab === 'files') && !triedReopen) {
+      triedReopen = true;
+      void workspace.autoReopen();
+    }
+  });
 </script>
+
+{#snippet workspaceBar()}
+  {#if !workspace.supported}
+    <div class="wsbar unsupported">Folder linking needs Chrome/Edge desktop (File System Access). You can still pick a file directly — it re-links by name if you open its folder later.</div>
+  {:else}
+    <div class="wsbar">
+      <span class="wsdir" class:on={!!workspace.tree} title={workspace.dirName}>{workspace.dirName ? `📁 ${workspace.dirName}` : 'no folder linked'}</span>
+      {#if workspace.status === 'prompt' || workspace.status === 'denied'}
+        <button class="wsbtn re" onclick={reconnectFolder} disabled={wsBusy} title="re-grant access to the saved folder">reconnect</button>
+      {/if}
+      <button class="wsbtn" onclick={openFolder} disabled={wsBusy}>{workspace.tree ? 'change…' : 'open folder…'}</button>
+      {#if workspace.tree}<button class="wsbtn ghost" onclick={() => workspace.forget()} title="forget this folder">unlink</button>{/if}
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet fileList(onPick: (node: FileNode) => void)}
+  <div class="flist">
+    {#if !wsFiles.length}<div class="empty">folder has no files</div>{/if}
+    {#each wsFiles as node (node.path)}
+      <button class="fpick" onclick={() => onPick(node)} title={node.path}>
+        <span class="fpick-nm">{node.name}</span>
+        <span class="fpick-path">{node.path}</span>
+      </button>
+    {/each}
+  </div>
+{/snippet}
 
 <div class="as">
   {#if tab === 'vars'}
@@ -190,6 +306,56 @@
         </div>
       {/each}
     {/if}
+  {:else if tab === 'persistent'}
+    <div class="as-h">Persistent data</div>
+    <p class="as-hint">The app's MAIN data source — the file its store reads. Link a workspace folder once; the file re-opens on reload without re-picking.</p>
+    {@render workspaceBar()}
+    <div class="as-sub">Main data source</div>
+    {#if primarySlot?.ref}
+      <div class="fitem">
+        <div class="frow">
+          <span class="fnm" title={primarySlot.ref.path}>{primarySlot.ref.name}</span>
+          <span class="badge {linkStatus(wsTree, primarySlot.ref)}">{statusLabel(linkStatus(wsTree, primarySlot.ref))}</span>
+        </div>
+        <div class="fmeta">
+          <label class="slotf">slot <input class="slot" value={primarySlot.slot} onchange={(e) => renameSlot(primarySlot!.slot, (e.currentTarget as HTMLInputElement).value)} /></label>
+          <span class="path" title={primarySlot.ref.path}>{primarySlot.ref.path}</span>
+        </div>
+      </div>
+    {:else}
+      <div class="empty">no main data source yet — choose a file below</div>
+    {/if}
+    <div class="fbtns">
+      {#if workspace.tree}<button class="add" onclick={() => (browseFor = browseFor === 'main' ? null : 'main')}>{browseFor === 'main' ? '× close' : '▦ Choose from folder'}</button>{/if}
+      <button class="add ghost" onclick={pickMainNative}>📂 Pick file…</button>
+      {#if primarySlot?.ref}<button class="rm" onclick={() => clearRef(primarySlot!.slot)} title="unlink the file (keep the slot)">unlink</button>{/if}
+    </div>
+    {#if browseFor === 'main'}{@render fileList(setMainFromNode)}{/if}
+  {:else if tab === 'files'}
+    <div class="as-h">Data files</div>
+    <p class="as-hint">Sibling data files (DLIS · LAS · …) read alongside the main file — ideally in the same folder. Each keeps a workspace-relative link that survives reload.</p>
+    {@render workspaceBar()}
+    <div class="as-sub">Files</div>
+    {#each dataSlots as f (f.slot)}
+      <div class="fitem">
+        <div class="frow">
+          <span class="fnm" class:dim={!f.ref} title={f.ref?.path ?? ''}>{f.ref?.name ?? '(unlinked)'}</span>
+          <span class="badge {f.ref ? linkStatus(wsTree, f.ref) : 'missing'}">{statusLabel(f.ref ? linkStatus(wsTree, f.ref) : 'missing')}</span>
+          <button class="rm sm" onclick={() => removeSlot(f.slot)} title="remove">✕</button>
+        </div>
+        <div class="fmeta">
+          <label class="slotf">slot <input class="slot" value={f.slot} onchange={(e) => renameSlot(f.slot, (e.currentTarget as HTMLInputElement).value)} /></label>
+          {#if f.ref}<span class="path" title={f.ref.path}>{f.ref.path}</span>{:else}<span class="path dim">link a file to bind it</span>{/if}
+        </div>
+      </div>
+    {/each}
+    {#if !dataSlots.length}<div class="empty">no data files yet</div>{/if}
+    <div class="fbtns">
+      {#if workspace.tree}<button class="add" onclick={() => (browseFor = browseFor === 'data' ? null : 'data')}>{browseFor === 'data' ? '× close' : '▦ Add from folder'}</button>{/if}
+      <button class="add ghost" onclick={pickDataNative}>📂 Add file…</button>
+      <button class="add ghost" onclick={() => workspace.refresh()} disabled={!workspace.tree} title="re-scan the folder + refresh link status">↻ Re-link all</button>
+    </div>
+    {#if browseFor === 'data'}{@render fileList(addDataFromNode)}{/if}
   {:else}
     <div class="as-h">Style</div>
     <label class="f"><span>Theme</span>
@@ -225,4 +391,36 @@
   .f select { width: 60%; padding: 4px 7px; border: 1px solid #cbd5e1; border-radius: 6px; font: 12px system-ui; }
   .f input[type=color] { width: 40px; height: 26px; padding: 0; border: 1px solid #cbd5e1; border-radius: 6px; }
   .css { width: 100%; box-sizing: border-box; flex: 1; min-height: 140px; padding: 8px 10px; border: 1px solid #cbd5e1; border-radius: 7px; font: 12px ui-monospace, monospace; resize: vertical; }
+  /* ── Persistent data / Data files tabs ── */
+  .wsbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; padding: 7px 9px; border: 1px solid #e2e8f0; border-radius: 7px; background: #f8fafc; }
+  .wsbar.unsupported { color: #92400e; background: #fffbeb; border-color: #fde68a; font-size: 12px; line-height: 1.4; display: block; }
+  .wsdir { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #94a3b8; font: 600 12px system-ui; }
+  .wsdir.on { color: #0f172a; }
+  .wsbtn { padding: 3px 9px; border: 1px solid #cbd5e1; border-radius: 6px; background: #fff; color: #0f172a; font: 600 11px system-ui; cursor: pointer; }
+  .wsbtn:hover:not(:disabled) { border-color: #0369a1; }
+  .wsbtn:disabled { opacity: .5; cursor: default; }
+  .wsbtn.re { border-color: #f59e0b; color: #b45309; background: #fffbeb; }
+  .wsbtn.ghost { color: #b91c1c; border-color: #fecaca; }
+  .fitem { display: flex; flex-direction: column; gap: 3px; padding: 6px 8px; border: 1px solid #e2e8f0; border-radius: 7px; }
+  .frow { display: flex; align-items: center; gap: 7px; }
+  .fnm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 600 12px system-ui; color: #0f172a; }
+  .fnm.dim { color: #94a3b8; font-style: italic; font-weight: 500; }
+  .badge { flex: 0 0 auto; font: 600 10px system-ui; padding: 1px 7px; border-radius: 999px; white-space: nowrap; }
+  .badge.linked { color: #15803d; background: #f0fdf4; border: 1px solid #bbf7d0; }
+  .badge.missing { color: #b91c1c; background: #fef2f2; border: 1px solid #fecaca; }
+  .badge.no-workspace { color: #64748b; background: #f1f5f9; border: 1px solid #e2e8f0; }
+  .fmeta { display: flex; align-items: center; gap: 8px; }
+  .slotf { display: flex; align-items: center; gap: 5px; color: #64748b; font-size: 11px; }
+  .slot { width: 88px; padding: 2px 6px; border: 1px solid #cbd5e1; border-radius: 5px; font: 11px ui-monospace, monospace; }
+  .path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #94a3b8; font: 11px ui-monospace, monospace; }
+  .path.dim { font-style: italic; }
+  .fbtns { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .add.ghost { border-color: #cbd5e1; background: #fff; color: #334155; }
+  .rm { padding: 3px 9px; border: 1px solid #fecaca; border-radius: 6px; background: #fff; color: #b91c1c; cursor: pointer; font: 600 11px system-ui; }
+  .rm.sm { flex: 0 0 auto; padding: 1px 7px; }
+  .flist { display: flex; flex-direction: column; gap: 2px; max-height: 220px; overflow: auto; padding: 4px; border: 1px solid #e2e8f0; border-radius: 7px; background: #fff; }
+  .fpick { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 4px 8px; border: 0; border-radius: 5px; background: transparent; cursor: pointer; text-align: left; }
+  .fpick:hover { background: #eff6ff; }
+  .fpick-nm { font: 600 12px system-ui; color: #0f172a; }
+  .fpick-path { font: 10px ui-monospace, monospace; color: #94a3b8; }
 </style>
