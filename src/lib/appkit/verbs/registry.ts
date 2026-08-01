@@ -44,6 +44,10 @@ export interface AppEngine {
   list(opts?: { docType?: string; category?: string }): Promise<EngineDoc[]>;
   /** Bake a doc with params → geometry stats (rung 3b). Optional — not every engine bakes. */
   bake?(id: string, params?: Record<string, unknown>): Promise<{ ok: boolean; verts?: number; tris?: number }>;
+  /** Bake a doc → the SERIALIZED renderable MESH ({ full, cutVC, … }) for the 3D viewer (cad3d).
+   *  Optional. The cad3d island fetches /api/app/cad-bake directly at runtime; this exists so the
+   *  AI surface (tool schema + API.md) carries the `bakeGeo` verb. */
+  bakeGeo?(id: string, params?: Record<string, unknown>, cutaway?: boolean): Promise<Record<string, unknown>>;
   /** A doc's source text (ENG-engine). */
   getSource?(id: string): Promise<{ source: string }>;
   /** Compile a doc → dep-inlined script + scriptHash (ENG-engine). */

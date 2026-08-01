@@ -5,13 +5,13 @@ _Auto-generated from the SSOT by `bun run scripts/gen-app-dictionary.ts` — the
 build `.app` UIs with NO Claude API (restricted / air-gapped). Regenerate after enriching a
 `meta.ts` or a verb — it never drifts from the code._
 
-**33 components · 29 verbs**
+**34 components · 30 verbs**
 
 ---
 
 ## Components — the UI kinds you can place
 
-Index — data: list, form, table, grid, edittable, datatable, file · layout: container, card, div, col, toolbar, row, vtoolbar, sidebar, tabs, popover, statgrid · input: button, iconbutton, menu · display: text, heading, divider, tooltip, gantt, wellschematic, nodetree, chart, stat, svg · 3d: bake3d · ai: chat
+Index — data: list, form, table, grid, edittable, datatable, file · layout: container, card, div, col, toolbar, row, vtoolbar, sidebar, tabs, popover, statgrid · input: button, iconbutton, menu · display: text, heading, divider, tooltip, gantt, wellschematic, nodetree, chart, stat, svg · 3d: cad3d, bake3d · ai: chat
 
 Each card: what it is · when to reach for it · props · a concrete example call.
 
@@ -160,6 +160,11 @@ Each card: what it is · when to reach for it · props · a concrete example cal
   props: columns:string, search:boolean=true, sortable:boolean=true, pageSize:number=0, showTotals:boolean=false, numberAlign:boolean=true, zebra:boolean=true
   e.g. {"id":"analytics","kind":"datatable","source":{"verb":"readVar","args":{"name":"rows"}},"props":{"columns":"name,region,qty:Quantity,total:Total","search":true,"sortable":true,"showTotals":true}}
 
+- cad3d (3d)
+  An interactive 3D viewer that embeds a baked CAD part/assembly — orbit/zoom a real Manifold mesh (red outer skin / grey bore), with an optional cutaway. A CLIENT island (dataMode:client): it renders an SSR placeholder then mounts the WebGL canvas onMount, fetching the BAKED MESH from the server (computeMode:server) so the engine + the part source never ship to the browser. An interactive 3D view of a baked CAD part/assembly — use to show/inspect geometry in an app (orbit, zoom, cutaway); bake3d shows only stats (verts/tris), not the model.
+  props: partId:string, params:string, cutaway:boolean=false, height:number=360, background:color, autoRotate:boolean=false, engine:select(manifold|trueform|brep)=manifold
+  e.g. {"id":"viewer","kind":"cad3d","props":{"partId":"g_shaft","cutaway":false,"height":360,"autoRotate":true}}
+
 - bake3d (3d)
   Bakes the active doc through the engine → geometry stats (verts/tris). Bake the active CAD doc through the engine and show geometry stats — use to preview/verify a parametric part's mesh (verts/tris) inside the app.
   props: (none)
@@ -196,6 +201,7 @@ Each card: what it is · when to reach for it · props · a concrete example cal
 - `bake(id, params)` — Bake a document with params → geometry stats { verts, tris }.
 - `getSource(id)` — Get a document's TypeScript source.
 - `compile(id, params)` — Compile a document → the dep-inlined Manifold script + scriptHash.
+- `bakeGeo(partId, params, cutaway)` — Bake a CAD part by id → the SERIALIZED renderable MESH ({ full, cutVC } vertex-coloured geometry) for the interactive 3D viewer (the cad3d component sources its geometry from this). Unlike `bake` (which returns verts/tris STATS only), bakeGeo returns the geometry to draw. The engine + the part source stay SERVER-side (computeMode:server) — only mesh reaches the client. args: { partId, params?, cutaway? }.
 - `listParts(category)` — List volume parts, optionally filtered by category. Returns [{id, meta}].
 - `loadData(slot, pick)` — Read the DATA a File component opened into a slot (§0.5 — the app is stateless; data lives in files). { slot, pick? } → the parsed content (or a nested path via pick). Wire a component's source to it: {verb:'loadData', args:{slot:'well'}}.
 - `http(url, method, body, headers, pick)` — Call an HTTP endpoint declaratively: { url, method?, body?, headers?, pick? }. Returns the parsed JSON (or text). "pick" selects a nested path (e.g. "data.items") — use it to feed a list panel an array. Same-origin URLs like "/api/..." are typical. Wire it as a panel source or an on-event action.

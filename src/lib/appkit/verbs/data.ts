@@ -107,6 +107,30 @@ export const DATA_VERBS: Verb[] = [
     },
   },
   {
+    name: 'bakeGeo',
+    group: 'data',
+    desc:
+      'Bake a CAD part by id → the SERIALIZED renderable MESH ({ full, cutVC } vertex-coloured ' +
+      'geometry) for the interactive 3D viewer (the cad3d component sources its geometry from this). ' +
+      'Unlike `bake` (which returns verts/tris STATS only), bakeGeo returns the geometry to draw. ' +
+      'The engine + the part source stay SERVER-side (computeMode:server) — only mesh reaches the ' +
+      "client. args: { partId, params?, cutaway? }.",
+    params: {
+      type: 'object',
+      properties: {
+        partId: { type: 'string' },
+        params: { type: 'object', description: 'name→value overrides; defaults fill the rest.' },
+        cutaway: { type: 'boolean', description: 'Return the cutaway cross-section too.' },
+      },
+      required: ['partId'],
+    },
+    handler: async (a: { partId: string; params?: Record<string, unknown>; cutaway?: boolean }, ctx) => {
+      const e = engine(ctx);
+      if (!e.bakeGeo) throw new Error('appkit: engine has no bakeGeo()');
+      return e.bakeGeo(a.partId, a.params, a.cutaway);
+    },
+  },
+  {
     name: 'listParts',
     group: 'data',
     desc: 'List volume parts, optionally filtered by category. Returns [{id, meta}].',
