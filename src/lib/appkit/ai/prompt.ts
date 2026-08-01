@@ -47,20 +47,66 @@ export function emitInstruction(): string {
   ].join('\n');
 }
 
+function toVerbCalls(list: unknown[]): Array<{ verb: string; args: unknown }> {
+  return list
+    .filter((x): x is { verb: string; args?: unknown } => !!x && typeof (x as { verb?: unknown }).verb === 'string')
+    .map((x) => ({ verb: x.verb, args: x.args ?? {} }));
+}
+
+/** Fallback for models that ignore the array wrapper: extract every TOP-LEVEL balanced `{…}`
+ *  object from the text (a lone object, or several newline-separated ones) and keep the ones that
+ *  look like a verb call. Brace-depth scan (string-literal aware) so nested `{}` never split an
+ *  object. Small local models (Phi/WebLLM) frequently emit `{"verb":…}` or NDJSON instead of a
+ *  strict `[ … ]`; this recovers those without loosening the strict-array happy path. */
+function scanVerbObjects(raw: string): Array<{ verb: string; args: unknown }> {
+  const objs: unknown[] = [];
+  let depth = 0;
+  let start = -1;
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') {
+      if (depth === 0) start = i;
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0 && start >= 0) {
+        try {
+          objs.push(JSON.parse(raw.slice(start, i + 1)));
+        } catch {
+          /* skip an unparseable fragment */
+        }
+        start = -1;
+      }
+    }
+  }
+  return toVerbCalls(objs);
+}
+
 /** Pull the JSON verb array out of the model's text, tolerating ```fences``` + surrounding
- *  prose. Pure → unit-testable without spawning anything. */
+ *  prose. Pure → unit-testable without spawning anything. Falls back to a bare-object scan when
+ *  no valid array is present, so a model that forgets the `[ … ]` wrapper still parses. */
 export function parseVerbCalls(raw: string): Array<{ verb: string; args: unknown }> {
   const start = raw.indexOf('[');
   const end = raw.lastIndexOf(']');
-  if (start === -1 || end === -1 || end < start) return [];
-  let arr: unknown;
-  try {
-    arr = JSON.parse(raw.slice(start, end + 1));
-  } catch {
-    return [];
+  if (start !== -1 && end !== -1 && end >= start) {
+    try {
+      const arr = JSON.parse(raw.slice(start, end + 1));
+      if (Array.isArray(arr)) {
+        const calls = toVerbCalls(arr);
+        if (calls.length) return calls; // a well-formed array wins (unchanged happy path)
+      }
+    } catch {
+      /* fall through to the object scan */
+    }
   }
-  if (!Array.isArray(arr)) return [];
-  return arr
-    .filter((x): x is { verb: string; args?: unknown } => !!x && typeof (x as { verb?: unknown }).verb === 'string')
-    .map((x) => ({ verb: x.verb, args: x.args ?? {} }));
+  return scanVerbObjects(raw);
 }
