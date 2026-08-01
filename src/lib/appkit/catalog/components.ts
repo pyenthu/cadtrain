@@ -34,6 +34,7 @@ import { metas as statMetas } from '$lib/app_components/Stat/meta';
 import { metas as statGridMetas } from '$lib/app_components/StatGrid/meta';
 import { metas as chartMetas } from '$lib/app_components/Chart/meta';
 import { metas as dataTableMetas } from '$lib/app_components/DataTable/meta';
+import { metas as cad3dMetas } from '$lib/app_components/Cad3d/meta';
 
 export interface PropSpec {
   name: string;
@@ -52,6 +53,15 @@ export type ComponentGroup = 'layout' | 'data' | 'input' | 'display' | '3d' | 'a
  *  - 'client' — a thin island that fetches onMount (needs the browser). */
 export type DataMode = 'static' | 'server' | 'client';
 
+/** WHERE a component's heavy geometry compute (the CAD engine bake) runs — a sibling knob to
+ *  `dataMode` (app-server-render.md §computeMode). Only compute-heavy components (cad3d) set it.
+ *  - 'server' (default) — the engine + the part's source stay SERVER-side; the client fetches
+ *    only the baked mesh (via /api/app/cad-bake). Protected: no engine/source ships. Costs server CPU.
+ *  - 'client' — runs the WASM engine in the BROWSER (worker-bake) to offload the server / go
+ *    offline. Tradeoff: ships the engine + that part's compiled script (geometry logic exposed).
+ *    FUTURE — not implemented in v0. */
+export type ComputeMode = 'server' | 'client';
+
 export interface ComponentMeta {
   /** The PanelKind (matches the render registry + PANEL_KINDS). */
   kind: string;
@@ -61,6 +71,10 @@ export interface ComponentMeta {
   tags: string[];
   /** How this component's data is resolved under server-render (default 'static'). */
   dataMode?: DataMode;
+  /** WHERE this component's heavy geometry compute runs (default 'server' when unset for the
+   *  compute-heavy kinds). server = fetch baked geometry, engine stays server-side; client =
+   *  worker-bake, ships the engine (future). See ComputeMode. */
+  computeMode?: ComputeMode;
   /** Container/card hold nested children. */
   acceptsChildren?: boolean;
   /** Typed props surfaced in the per-component editor. */
@@ -101,6 +115,7 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
   ...statMetas,
   ...statGridMetas,
   ...dataTableMetas,
+  ...cad3dMetas,
   ...bake3dMetas,
   ...placeholderMetas,
   ...fileMetas,

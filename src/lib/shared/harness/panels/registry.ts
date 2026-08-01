@@ -31,6 +31,7 @@ import Stat from '$lib/app_components/Stat/Stat.svelte';
 import StatGrid from '$lib/app_components/StatGrid/StatGrid.svelte';
 import Chart from '$lib/app_components/Chart/Chart.svelte';
 import DataTable from '$lib/app_components/DataTable/DataTable.svelte';
+import Cad3d from '$lib/app_components/Cad3d/Cad3d.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: List,
@@ -66,6 +67,7 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   stat: Stat, // KPI stat tile — big number + label + optional delta/sparkline
   statgrid: StatGrid, // responsive auto-flow grid of tiles (holds children)
   chart: Chart, // SSR-safe SVG data chart — bar/line/area/pie/donut from a seeded var
+  cad3d: Cad3d, // interactive 3D CAD viewer — client island; server-baked mesh (computeMode:server)
 };
 
 export function panelComponent(kind: string): Component<any> {
