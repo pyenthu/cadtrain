@@ -27,7 +27,7 @@
   const MODELS: Array<{ id: Provider; label: string; hint: string }> = [
     { id: 'cli', label: 'Claude CLI', hint: 'dev · bills your Max subscription (no API tokens)' },
     { id: 'cloud', label: 'Claude API', hint: 'metered ANTHROPIC_API_KEY' },
-    { id: 'phi', label: 'Phi', hint: 'in-browser (WebGPU) · free · offline · ~2.4 GB one-time download' },
+    { id: 'phi', label: 'Phi', hint: 'in-browser (WebGPU) · Qwen3-4B · free · offline · ~3.4 GB one-time download' },
   ];
 
   async function send() {

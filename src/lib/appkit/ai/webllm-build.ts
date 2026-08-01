@@ -1,15 +1,21 @@
-// src/lib/appkit/ai/webllm-build.ts — the PHI (WebLLM) build path (#40). Runs ENTIRELY in the
-// browser via WebGPU: zero API cost, zero subscription, perfect residency (satisfies the
-// AI-data-residency rule outright). Phi-3.5-mini weights (~2.4 GB) download ONCE and cache in
-// the browser Cache API. Client-safe: imports only headless appkit (no 'ai', no node) + lazy-
-// loads @mlc-ai/web-llm. Same emit-then-dispatch shape as build-cli, but the model is local.
-// Verify in a WebGPU browser (Chrome/Edge desktop); the model download is one-time.
+// src/lib/appkit/ai/webllm-build.ts — the in-browser (WebLLM) build path (#40), still surfaced as
+// the "Phi" model toggle. Runs ENTIRELY in the browser via WebGPU: zero API cost, zero
+// subscription, perfect residency (satisfies the AI-data-residency rule outright). The model is
+// now Qwen3-4B (Apache-2.0); its q4f16 weights (~3.4 GB) download ONCE and cache in the browser
+// Cache API. Client-safe: imports only headless appkit (no 'ai', no node) + lazy-loads
+// @mlc-ai/web-llm. Same emit-then-dispatch shape as build-cli, but the model is local.
+// Qwen3 is a HYBRID-THINKING model: we pass extra_body.enable_thinking:false (below) so it does
+// NOT prepend a <think>…</think> block, which would otherwise confuse parseVerbCalls into an empty
+// no-op build. Verify in a WebGPU browser (Chrome/Edge desktop); the model download is one-time.
 import { verbsByGroup, type Ctx, type AppDoc } from '../verbs/registry';
 import { dispatch } from '../verbs/dispatch';
 import { systemPrompt, emitInstruction, parseVerbCalls } from './prompt';
 import { sanitizeApp } from './sanitize';
 
-const MODEL_ID = 'Phi-3.5-mini-instruct-q4f16_1-MLC';
+// Qwen3-4B (Apache-2.0, ~3.4 GB) — was 'Phi-3.5-mini-instruct-q4f16_1-MLC'. Smaller footprint than
+// Phi-3.5 and a materially stronger JSON/instruction model. Thinking mode disabled in the create
+// call below (see header). Ref: docs/research/local-model-survey.md.
+const MODEL_ID = 'Qwen3-4B-q4f16_1-MLC';
 
 let engine: { chat: { completions: { create: (o: unknown) => Promise<any> } } } | null = null;
 let loading = false;
@@ -52,6 +58,10 @@ export async function buildAppWithPhi(app: AppDoc, prompt: string, grounding = '
     messages: [{ role: 'user', content: full }],
     temperature: 0,
     max_tokens: 2048,
+    // Qwen3 is hybrid-thinking: WebLLM's non-thinking template (a leading closed empty
+    // <think></think> block) suppresses reasoning so the reply is a clean JSON verb-array. Without
+    // this, <think>…</think> prose can make parseVerbCalls return [] → a silent no-op build.
+    extra_body: { enable_thinking: false },
   });
   const raw = String(res?.choices?.[0]?.message?.content ?? '');
 
