@@ -25,7 +25,10 @@ export function resolveModel(opts: ProviderOpts): any {
       name: 'ollama',
       baseURL: opts.baseURL ?? 'http://localhost:11434/v1',
     });
-    return ollama(opts.model ?? 'qwen2.5-coder');
+    // Qwen3 is Apache-2.0 + trained for reliable native tool calling (Ollama tool-capable list),
+    // which is exactly what the AI-SDK path uses. Override per-call via opts.model; lighter
+    // fallback is 'qwen3:4b'. (Requires `ollama pull qwen3:8b`.) Ref: docs/research/local-model-survey.md.
+    return ollama(opts.model ?? 'qwen3:8b');
   }
   return createAnthropic({ apiKey: opts.apiKey ?? '' })(opts.model ?? 'claude-sonnet-4-6');
 }
