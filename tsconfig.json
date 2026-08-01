@@ -10,6 +10,13 @@
 
     // Bundler mode
     "moduleResolution": "bundler",
+    // $lib alias — vite/vitest provide it at build/test time; declaring it here lets `tsc`
+    // AND `bun run` (standalone scripts, e.g. scripts/eval-app-build.ts) resolve it too.
+    "baseUrl": ".",
+    "paths": {
+      "$lib": ["src/lib"],
+      "$lib/*": ["src/lib/*"]
+    },
     "allowImportingTsExtensions": true,
     "verbatimModuleSyntax": true,
     "noEmit": true,
