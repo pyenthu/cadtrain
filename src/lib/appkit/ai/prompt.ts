@@ -44,8 +44,14 @@ export function emitInstruction(): string {
     'OUTPUT FORMAT: respond with ONLY a JSON array of gui-verb calls that build the app —',
     'no prose, no markdown fences, no explanation. Each element is',
     `{"verb": "<one of: ${guiNames.join(', ')}>", "args": { ... }}.`,
-    'They run in order and mutate the app in place. Example:',
-    '[{"verb":"definePanel","args":{"panel":{"id":"t","kind":"text","props":{"text":"Hi","color":"red"}}}}]',
+    'They run in order and mutate the app in place. Pick the RIGHT component for the data the prompt',
+    'describes — do NOT default everything to text/list. This example covers the common ops (meta,',
+    'seed a variable, a DATA component reading it via a source, theme):',
+    '[{"verb":"setAppMeta","args":{"title":"Sales Dashboard","docType":"dashboard"}},',
+    ' {"verb":"patchApp","args":{"op":"set","path":"vars.rows","value":[{"month":"Jan","amt":10},{"month":"Feb","amt":14}]}},',
+    ' {"verb":"definePanel","args":{"panel":{"id":"h","kind":"heading","props":{"text":"Sales","level":1}}}},',
+    ' {"verb":"definePanel","args":{"panel":{"id":"tbl","kind":"grid","source":{"verb":"readVar","args":{"name":"rows"}},"props":{"columns":"month,amt"}}}},',
+    ' {"verb":"patchApp","args":{"op":"set","path":"theme","value":{"mode":"light","accent":"#0369a1"}}}]',
   ].join('\n');
 }
 

@@ -16,13 +16,20 @@ function propSummary(meta: ComponentMeta): string {
     .join(', ');
 }
 
-/** A FULL rule-card for one kind: "- text (display) · props: text:string, …, color:color". */
+/** A FULL rule-card for one kind — the DICTIONARY entry the (esp. local) model relies on:
+ *  "- gantt (display) — <what it is / when to use> · props: rowsVar:string, … · e.g. {…verb call…}".
+ *  Pulls the description + optional useWhen + a concrete example straight from meta.ts (SSOT), so a
+ *  weak local model gets what/when/how per component (not just prop names). */
 export function componentCard(meta: ComponentMeta): string {
-  const parts = [`${meta.kind} (${meta.group})`];
-  if (meta.acceptsChildren) parts.push('HOLDS children');
+  const head = `${meta.kind} (${meta.group})${meta.acceptsChildren ? ' · HOLDS children' : ''}`;
+  const desc = [meta.description, (meta as { useWhen?: string }).useWhen].filter(Boolean).join(' ').trim();
   const ps = propSummary(meta);
-  parts.push(ps ? `props: ${ps}` : 'no props');
-  return `- ${parts.join(' · ')}`;
+  const ex = (meta as { example?: unknown }).example;
+  const parts = [`- ${head}`];
+  if (desc) parts.push(`  ${desc}`);
+  parts.push(`  props: ${ps || '(none)'}`);
+  if (ex) parts.push(`  e.g. ${JSON.stringify(ex)}`);
+  return parts.join('\n');
 }
 
 /** The compact INDEX — every kind by group on a few lines (the cheap menu the model picks from). */
