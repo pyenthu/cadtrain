@@ -228,6 +228,15 @@
             row.builtVars = sc.detail.builtVars;
             row.builtStructures = sc.detail.builtStructures;
             row.lastBuiltApp = built;
+            // Persist every build as a real, inspectable file (helpful, model-aware name) so the
+            // model's output isn't lost: <appsDir>/versions/<id>-<model>.<n>.app.json + a history
+            // row logging the score. Best-effort — a malformed build just won't save.
+            const modelTag = provider === 'phi' ? 'qwen15b' : provider === 'cli' ? 'claude' : 'claudeapi';
+            void fetch('/api/app/snapshot', {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({ id: `${id}-${modelTag}`, app: built, prompt: `${provider} build · score ${(sc.score * 100).toFixed(0)}% vs golden` }),
+            }).catch(() => {});
           }
           row.status = 'done';
           row.progress = '';
