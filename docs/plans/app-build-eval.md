@@ -78,3 +78,25 @@ correct fix, not relying on the fallback.)
    verb array with **no `<think>` leakage** in the raw output.
 5. Score it against the golden with `scripts/eval-app-build.ts` (or eyeball the produced `.app`)
    and confirm conformance is ≥ the Phi-3.5 baseline before calling the swap done.
+
+### 2026-08-01 — WebLLM inference moved OFF the main thread into a Web Worker (/plan #906)
+
+The MLC engine previously ran `CreateMLCEngine` + `chat.completions.create` on the MAIN THREAD, so
+the WebGPU generation loop **froze the renderer for ~90s per prompt** — the `/app_design` studio and
+`/app_design/eval` harness locked up and CDP/automation timed out. WebGPU is available inside Web
+Workers, so the heavy engine now lives in `src/lib/appkit/ai/webllm.worker.ts` (SVTC does the same).
+
+- **In the worker:** ONLY the MLC engine — `CreateMLCEngine` (load, forwarding init progress) and
+  `chat.completions.create` (inference). `MODEL_ID`/`IS_QWEN3`/sampling consts come from the shared
+  `src/lib/appkit/ai/webllm-model.ts` so worker + main can never drift.
+- **On the main thread (`webllm-build.ts`, now the DRIVER):** the SAME emit-verbs prompt build,
+  `parseVerbCalls`, and the verb `dispatch` loop (that's where the `.app` state lives, and it's cheap).
+  The public API (`loadPhi`/`buildAppWithPhi`/`isWebGPUAvailable`/`phiReady`/`phiLoading`) is UNCHANGED,
+  so the studio + eval routes need no edits.
+- **Fallback:** if `new Worker` throws or the worker can't bring up WebGPU (Safari / worker-WebGPU
+  disabled), `loadPhi` transparently falls back to the old main-thread engine path.
+
+**To verify (needs a WebGPU browser — NOT headless / Node):** open `/app_design/eval` → **Load model**
+→ **Run**. Generation must proceed while the UI stays responsive (drag/scroll during a build) — that's
+the whole point of the worker move. Confirm the trace is still non-empty (parity with the pre-worker
+path).
