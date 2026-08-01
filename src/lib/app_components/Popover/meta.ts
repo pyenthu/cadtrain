@@ -8,6 +8,10 @@ export const metas: ComponentMeta[] = [
     group: 'layout',
     tags: ['popover', 'popup', 'flyout', 'overlay', 'menu', 'attach', 'behavior'],
     acceptsChildren: true,
-    props: [{ name: 'title', type: 'string', label: 'Title' }],
+    props: [
+      { name: 'title', type: 'string', label: 'Title' },
+      // Default: light-dismiss (click outside / Escape closes). Turn on to keep it open until re-click.
+      { name: 'modal', type: 'boolean', label: 'Modal (stay open)', default: false },
+    ],
   },
 ];

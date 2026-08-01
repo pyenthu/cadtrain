@@ -46,6 +46,14 @@
   const tooltip = $derived((node.children ?? []).find((c) => c.kind === 'tooltip'));
   let popOpen = $state(false);
   let tipOpen = $state(false);
+
+  // Escape closes an open (non-modal) popover — listener lives only while it's open.
+  $effect(() => {
+    if (!popOpen || popover?.props?.modal) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') popOpen = false; };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  });
 </script>
 
 {#snippet kids()}
@@ -72,7 +80,12 @@
   >
     {@render comp()}
     {#if popover && popOpen}
-      <div class="pn-backdrop" role="presentation" onclick={() => (popOpen = false)}></div>
+      <!-- Light-dismiss backdrop (default). It MUST stopPropagation: without it the click bubbled
+           up to .pn-anchor's toggle handler, which reopened the popover — so "click outside" did
+           nothing and the popover felt modal. Opt into a sticky popover with props.modal. -->
+      {#if !popover.props?.modal}
+        <div class="pn-backdrop" role="presentation" onclick={(e) => { e.stopPropagation(); popOpen = false; }}></div>
+      {/if}
       <div class="pn-popover" role="presentation" onclick={(e) => e.stopPropagation()}>{@render renderChild(popover)}</div>
     {/if}
     {#if tooltip && tipOpen}<div class="pn-tooltip">{@render renderChild(tooltip)}</div>{/if}
