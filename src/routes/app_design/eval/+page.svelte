@@ -79,6 +79,7 @@
   let provider = $state<Provider>('phi');
   let appSel = $state<'all' | EvalAppId>('all');
   let runsN = $state(1);
+  let ground = $state(true); // RAG grounding on/off — the independent variable (raw vs grounded lift)
   let running = $state(false);
   let rows = $state<AppRow[]>(APP_IDS.map(emptyRow));
 
@@ -145,6 +146,22 @@
     return g;
   }
 
+  /** The RAG grounding for one prompt — the SAME server-side retrieval the cli/cloud path uses,
+   *  fetched so the in-browser phi builder can be grounded too. Best-effort: '' on any failure. */
+  async function fetchGrounding(prompt: string): Promise<string> {
+    try {
+      const r = await fetch('/api/app/ground', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      if (!r.ok) return '';
+      return ((await r.json()) as { grounding?: string }).grounding ?? '';
+    } catch {
+      return '';
+    }
+  }
+
   let phiMod: typeof import('$lib/appkit/ai/webllm-build') | null = null;
   async function loadPhiModel(): Promise<void> {
     if (phiLoaded || phiLoading) return;
@@ -177,9 +194,14 @@
       const step = prompts[i]!;
       row.progress = `${runLabel} · prompt ${i + 1}/${prompts.length}`;
       if (provider === 'phi') {
+        // phi runs in-browser and never hits /api/app/generate, so it gets NO grounding unless we
+        // fetch it here. /api/app/ground runs the SAME server-side retrieval the cli/cloud path uses
+        // (residency-clean: retrieval on the local server, inference in-browser). Toggle via `ground`.
+        const grounding = ground ? await fetchGrounding(step) : '';
         // buildAppWithPhi mutates `app` in place (returns {trace, raw}); keep the same object.
-        await phiMod!.buildAppWithPhi(app as any, step, '');
+        await phiMod!.buildAppWithPhi(app as any, step, grounding);
       } else {
+        // cli/cloud POST /api/app/generate, which already grounds via buildGrounding server-side.
         const res = await fetch('/api/app/generate', {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
@@ -231,7 +253,7 @@
             // Persist every build as a real, inspectable file (helpful, model-aware name) so the
             // model's output isn't lost: <appsDir>/versions/<id>-<model>.<n>.app.json + a history
             // row logging the score. Best-effort — a malformed build just won't save.
-            const modelTag = provider === 'phi' ? 'qwen15b' : provider === 'cli' ? 'claude' : 'claudeapi';
+            const modelTag = (provider === 'phi' ? 'qwen15b' : provider === 'cli' ? 'claude' : 'claudeapi') + (ground ? '' : '-raw');
             void fetch('/api/app/snapshot', {
               method: 'POST',
               headers: { 'content-type': 'application/json' },
@@ -299,6 +321,10 @@
     <label class="fld">
       <span>Runs</span>
       <input type="number" min="1" max="10" bind:value={runsN} disabled={running} />
+    </label>
+    <label class="fld chk" title="RAG grounding: retrieved golden pairs + clean builds prepended to the prompt (phi fetches /api/app/ground; cli/cloud already ground server-side)">
+      <span>RAG</span>
+      <input type="checkbox" bind:checked={ground} disabled={running} />
     </label>
     <button class="run" onclick={runAll} disabled={running || (provider === 'phi' && !webgpuOk)}>
       {running ? 'Running…' : 'Run'}
@@ -434,6 +460,8 @@
   .fld { display: flex; flex-direction: column; gap: 4px; font: 600 11px system-ui; color: #475569; }
   .fld select, .fld input { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 6px; font: 13px system-ui; color: #0f172a; background: #fff; }
   .fld input { width: 62px; }
+  .fld.chk { align-items: flex-start; }
+  .fld.chk input { width: auto; height: 16px; margin-top: 6px; }
   .run { padding: 8px 20px; border: 1px solid #7c3aed; border-radius: 8px; background: #7c3aed; color: #fff; font: 600 13px system-ui; cursor: pointer; }
   .run:disabled { opacity: 0.5; cursor: not-allowed; }
   .note { color: #64748b; font-size: 12px; align-self: center; }

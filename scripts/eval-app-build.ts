@@ -164,6 +164,24 @@ function pct(x: number): string {
   return `${(x * 100).toFixed(1)}%`;
 }
 
+/** Optional RAG grounding for the headless runner — fetches the dev server's /api/app/ground (the
+ *  SAME retrieval the browser uses). Requires a running dev server; returns '' on any failure. */
+function makeGrounder(): (prompt: string, app: AppLike) => Promise<string> {
+  const base = process.env.CADTRAIN_DEV_URL ?? 'http://localhost:3333';
+  return async (prompt) => {
+    try {
+      const r = await fetch(`${base}/api/app/ground`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+      return r.ok ? (((await r.json()) as { grounding?: string }).grounding ?? '') : '';
+    } catch {
+      return '';
+    }
+  };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const flag = (name: string) => {
@@ -174,6 +192,7 @@ async function main() {
   const model = flag('--model');
   const asJson = argv.includes('--json');
   const incremental = argv.includes('--incremental'); // one model call PER prompt + per-rung snapshots
+  const doGround = argv.includes('--ground'); // fetch RAG grounding per prompt (needs a dev server)
   const only = flag('--app');
   const scoreFile = flag('--score-file'); // score an ALREADY-BUILT .app (e.g. a browser capture) vs the golden
   const ids = (only && only !== 'all' ? [only] : APPS).filter((a): a is AppId => (APPS as readonly string[]).includes(a));
@@ -187,14 +206,14 @@ async function main() {
   for (const id of ids) {
     const golden = await loadGolden(id);
     const prompts = EVAL_PROMPTS[id] ?? [];
-    const outDir = incremental ? join(FIX, 'runs', `${id}-${provider}`) : undefined;
+    const outDir = incremental ? join(FIX, 'runs', `${id}-${provider}${doGround ? '-ground' : ''}`) : undefined;
 
     let built: AppLike;
     let stepRecs: StepRec[] | undefined;
     if (scoreFile) {
       built = JSON.parse(await readFile(scoreFile, 'utf8')) as AppLike; // score a captured build (browser/local) vs the golden
     } else if (provider === 'cli' && incremental) {
-      const res = await runCliIncremental(id, prompts, golden, { model, outDir });
+      const res = await runCliIncremental(id, prompts, golden, { model, outDir, ground: doGround ? makeGrounder() : undefined });
       built = res.app;
       stepRecs = res.steps;
     } else if (provider === 'cli') {
