@@ -128,6 +128,7 @@ async function main() {
   const model = flag('--model');
   const asJson = argv.includes('--json');
   const only = flag('--app');
+  const scoreFile = flag('--score-file'); // score an ALREADY-BUILT .app (e.g. a browser capture) vs the golden
   const ids = (only && only !== 'all' ? [only] : APPS).filter((a): a is AppId => (APPS as readonly string[]).includes(a));
   if (!ids.length) {
     console.error(`unknown app "${only}" — choose one of: ${APPS.join(', ')} (or "all")`);
@@ -140,7 +141,9 @@ async function main() {
   for (const id of ids) {
     const golden = await loadGolden(id);
     const steps = prompts[id] ?? [];
-    const built = provider === 'cli' ? await runCli(id, steps, model) : await runFake(id, steps, golden);
+    const built = scoreFile
+      ? (JSON.parse(await readFile(scoreFile, 'utf8')) as AppLike) // score a captured build (browser/local) vs the golden
+      : provider === 'cli' ? await runCli(id, steps, model) : await runFake(id, steps, golden);
     const r = scoreApp(built, golden);
     results.push({ id, score: r.score, breakdown: r.breakdown as unknown as Record<string, number> });
 
