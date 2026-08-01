@@ -22,9 +22,9 @@ function propSummary(meta: ComponentMeta): string {
  *  weak local model gets what/when/how per component (not just prop names). */
 export function componentCard(meta: ComponentMeta): string {
   const head = `${meta.kind} (${meta.group})${meta.acceptsChildren ? ' · HOLDS children' : ''}`;
-  const desc = [meta.description, (meta as { useWhen?: string }).useWhen].filter(Boolean).join(' ').trim();
+  const desc = [meta.description, meta.useWhen].filter(Boolean).join(' ').trim();
   const ps = propSummary(meta);
-  const ex = (meta as { example?: unknown }).example;
+  const ex = meta.example;
   const parts = [`- ${head}`];
   if (desc) parts.push(`  ${desc}`);
   parts.push(`  props: ${ps || '(none)'}`);

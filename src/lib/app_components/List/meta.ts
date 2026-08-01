@@ -8,9 +8,13 @@ export const metas: ComponentMeta[] = [
     kind: 'list',
     name: 'List',
     description: 'A selectable list of documents/rows. Bind source to a data verb; click selects.',
+    useWhen:
+      'A vertical, clickable list where selecting an item drives the rest of the app — use for a ' +
+      'master/detail picker, nav menu, or document chooser; NOT for tabular columns (use grid/table).',
+    example: { id: 'items', kind: 'list', source: { verb: 'readVar', args: { name: 'items' } } },
     dataMode: 'server',
     group: 'data',
-    tags: ['list', 'menu', 'select', 'docs', 'rows', 'items'],
+    tags: ['list', 'menu', 'select', 'picker', 'docs', 'rows', 'items', 'sidebar'],
     wiresTo: ['data'],
   },
 ];

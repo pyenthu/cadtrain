@@ -8,8 +8,12 @@ export const metas: ComponentMeta[] = [
     kind: 'text',
     name: 'Text',
     description: 'A text label. Props text/size/weight/align/color; text can be a $vars/$params ref.',
+    useWhen:
+      'An inline text label/paragraph, optionally bound to a $vars/$params value — use for body copy, ' +
+      'a caption, or a live stat readout; use heading for a section title.',
+    example: { id: 'caption', kind: 'text', props: { text: 'Hello', size: 'sm', muted: true } },
     group: 'display',
-    tags: ['text', 'label', 'heading', 'paragraph', 'caption', 'stat'],
+    tags: ['text', 'label', 'paragraph', 'caption', 'stat', 'body', 'copy'],
     props: [
       { name: 'text', type: 'string', label: 'Text', default: 'Text' },
       { name: 'size', type: 'select', label: 'Size', options: ['xs', 'sm', 'md', 'lg', 'xl', '2xl'], default: 'md' },

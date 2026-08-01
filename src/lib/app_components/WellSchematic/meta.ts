@@ -14,10 +14,18 @@ export const metas: ComponentMeta[] = [
       'vars[name], each a list<record> of {od|bitSize, top, bot, grade?, label?, color?}) or inline ' +
       'props arrays, plus a props.wellVar record for the header (name/field/company). Server-renders ' +
       '(no client fetch) — SSR-safe SVG.',
+    useWhen:
+      'An oilfield well cross-section (casing/tubing/perforations/cement drawn to scale) built from ' +
+      'seeded well variables — use for a downhole completion, wellbore, or borehole diagram.',
+    example: {
+      id: 'well',
+      kind: 'wellschematic',
+      props: { wellVar: 'well', casingsVar: 'casings', tubingVar: 'tubing', perfsVar: 'perforations' },
+    },
     // static: no `source` — reads seeded variables directly, present in the SSR first paint.
     dataMode: 'static',
     group: 'display',
-    tags: ['well', 'schematic', 'wellbore', 'casing', 'tubing', 'completion', 'perforation', 'diagram', 'svg', 'drilling'],
+    tags: ['well', 'schematic', 'wellbore', 'borehole', 'casing', 'tubing', 'completion', 'perforation', 'downhole', 'cement', 'diagram', 'svg', 'drilling', 'oilfield'],
     props: [
       { name: 'title', type: 'string', label: 'Title (else well.name)' },
       { name: 'width', type: 'number', label: 'Width px', default: 380 },
