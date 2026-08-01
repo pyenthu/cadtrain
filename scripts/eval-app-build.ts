@@ -15,11 +15,11 @@
 // establishing the score CEILING (≈1.0) and proving the parse→dispatch→score plumbing is sound.
 // A real model's deviation from that ceiling is then the meaningful signal. `--provider cli` runs
 // the subscription-billed `claude --print` ONCE (one app) — keep it to a smoke check.
-import { readFile } from 'node:fs/promises';
+import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildAppViaCli, type CliRunner } from '../src/lib/appkit/ai/build-cli';
-import { scoreApp, type AppLike } from '../src/lib/appkit/ai/score-app';
+import { scoreApp, preorderKinds, type AppLike } from '../src/lib/appkit/ai/score-app';
 import { APP_IDS, EVAL_PROMPTS, type EvalAppId } from '../src/lib/appkit/ai/eval-fixtures';
 import { runClaudeCli } from '../src/lib/server/claude-cli';
 
@@ -96,11 +96,46 @@ function makeOracleRunner(golden: AppLike, nPrompts: number): CliRunner {
 }
 
 // ── run one app ────────────────────────────────────────────────────────────────────────────────
-async function runFake(id: AppId, prompts: string[], golden: AppLike): Promise<AppLike> {
+/** One replayed rung: the app AFTER prompt N, scored vs the golden — the divergence diagnostic. */
+interface StepRec {
+  step: number;
+  prompt: string;
+  score: number;
+  breakdown: Record<string, number>;
+  builtKinds: string[];
+}
+
+/** The TRUE incremental path: replay the prompts ONE AT A TIME, feeding the mutated app forward,
+ *  scoring after every rung (so we see exactly where a build diverges) and — when `outDir` is set —
+ *  writing a `step-NN.app` snapshot per rung + a `summary.json`. Used by both the deterministic
+ *  oracle (fake) and the real `claude --print` runner; only the transport + grounding differ. */
+async function replayIncremental(
+  id: AppId,
+  prompts: string[],
+  runner: CliRunner,
+  golden: AppLike,
+  opts: { model?: string; ground?: (prompt: string, app: AppLike) => Promise<string>; outDir?: string } = {},
+): Promise<{ app: AppLike; steps: StepRec[] }> {
   const app: AppLike = { app: id, panels: [] };
-  const runner = makeOracleRunner(golden, prompts.length);
-  for (const prompt of prompts) await buildAppViaCli({ prompt, app: app as any, grounding: '' }, runner);
-  return app;
+  const steps: StepRec[] = [];
+  if (opts.outDir) await mkdir(opts.outDir, { recursive: true });
+  for (let i = 0; i < prompts.length; i++) {
+    const prompt = prompts[i]!;
+    const grounding = opts.ground ? await opts.ground(prompt, app) : '';
+    await buildAppViaCli({ prompt, app: app as any, grounding, model: opts.model }, runner);
+    const r = scoreApp(app, golden);
+    steps.push({ step: i + 1, prompt, score: r.score, breakdown: r.breakdown as unknown as Record<string, number>, builtKinds: preorderKinds(app) });
+    if (opts.outDir) await writeFile(join(opts.outDir, `step-${String(i + 1).padStart(2, '0')}.app`), JSON.stringify(app, null, 2));
+  }
+  if (opts.outDir) {
+    await writeFile(join(opts.outDir, 'final.app'), JSON.stringify(app, null, 2));
+    await writeFile(join(opts.outDir, 'summary.json'), JSON.stringify({ id, prompts: prompts.length, steps }, null, 2));
+  }
+  return { app, steps };
+}
+
+async function runFake(id: AppId, prompts: string[], golden: AppLike, outDir?: string): Promise<{ app: AppLike; steps: StepRec[] }> {
+  return replayIncremental(id, prompts, makeOracleRunner(golden, prompts.length), golden, { outDir });
 }
 
 /** ONE real `claude --print` turn: the whole script is concatenated into a single request so the
@@ -111,6 +146,18 @@ async function runCli(id: AppId, prompts: string[], model?: string): Promise<App
   const runner: CliRunner = (full, opts) => runClaudeCli(full, { model: opts.model });
   await buildAppViaCli({ prompt: combined, app: app as any, grounding: '', model }, runner);
   return app;
+}
+
+/** The TRUE incremental CLI reference: one `claude --print` call PER prompt, forwarding the app.
+ *  Costs N subscription calls per app (never the metered key) — the faithful atomic-build test. */
+async function runCliIncremental(
+  id: AppId,
+  prompts: string[],
+  golden: AppLike,
+  opts: { model?: string; ground?: (prompt: string, app: AppLike) => Promise<string>; outDir?: string },
+): Promise<{ app: AppLike; steps: StepRec[] }> {
+  const runner: CliRunner = (full, o) => runClaudeCli(full, { model: o.model });
+  return replayIncremental(id, prompts, runner, golden, opts);
 }
 
 function pct(x: number): string {
@@ -126,6 +173,7 @@ async function main() {
   const provider = (flag('--provider') ?? 'fake') as 'fake' | 'cli';
   const model = flag('--model');
   const asJson = argv.includes('--json');
+  const incremental = argv.includes('--incremental'); // one model call PER prompt + per-rung snapshots
   const only = flag('--app');
   const scoreFile = flag('--score-file'); // score an ALREADY-BUILT .app (e.g. a browser capture) vs the golden
   const ids = (only && only !== 'all' ? [only] : APPS).filter((a): a is AppId => (APPS as readonly string[]).includes(a));
@@ -134,19 +182,34 @@ async function main() {
     process.exit(1);
   }
 
-  const results: Array<{ id: string; score: number; breakdown: Record<string, number> }> = [];
+  const results: Array<{ id: string; score: number; breakdown: Record<string, number>; steps?: StepRec[] }> = [];
 
   for (const id of ids) {
     const golden = await loadGolden(id);
-    const steps = EVAL_PROMPTS[id] ?? [];
-    const built = scoreFile
-      ? (JSON.parse(await readFile(scoreFile, 'utf8')) as AppLike) // score a captured build (browser/local) vs the golden
-      : provider === 'cli' ? await runCli(id, steps, model) : await runFake(id, steps, golden);
+    const prompts = EVAL_PROMPTS[id] ?? [];
+    const outDir = incremental ? join(FIX, 'runs', `${id}-${provider}`) : undefined;
+
+    let built: AppLike;
+    let stepRecs: StepRec[] | undefined;
+    if (scoreFile) {
+      built = JSON.parse(await readFile(scoreFile, 'utf8')) as AppLike; // score a captured build (browser/local) vs the golden
+    } else if (provider === 'cli' && incremental) {
+      const res = await runCliIncremental(id, prompts, golden, { model, outDir });
+      built = res.app;
+      stepRecs = res.steps;
+    } else if (provider === 'cli') {
+      built = await runCli(id, prompts, model);
+    } else {
+      const res = await runFake(id, prompts, golden, outDir);
+      built = res.app;
+      stepRecs = res.steps;
+    }
     const r = scoreApp(built, golden);
-    results.push({ id, score: r.score, breakdown: r.breakdown as unknown as Record<string, number> });
+    results.push({ id, score: r.score, breakdown: r.breakdown as unknown as Record<string, number>, steps: stepRecs });
 
     if (!asJson) {
-      console.log(`\n=== ${id}  (${provider}, ${steps.length} prompt${steps.length === 1 ? '' : 's'}) ===`);
+      const tag = incremental ? `${provider}, incremental` : provider;
+      console.log(`\n=== ${id}  (${tag}, ${prompts.length} prompt${prompts.length === 1 ? '' : 's'}) ===`);
       console.log(`  score: ${pct(r.score)}`);
       const b = r.breakdown;
       console.log(
@@ -154,6 +217,10 @@ async function main() {
       );
       console.log(`  built kinds:  [${r.detail.builtKinds.join(', ')}]`);
       console.log(`  golden kinds: [${r.detail.goldenKinds.join(', ')}]`);
+      if (stepRecs) {
+        console.log(`  per-rung score: ${stepRecs.map((s) => pct(s.score)).join(' → ')}`);
+        if (outDir) console.log(`  snapshots → ${outDir}/`);
+      }
     }
   }
 

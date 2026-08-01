@@ -141,3 +141,6 @@ test-results/
 _builds.jsonl
 *.app.tmp
 **/examples/_*.app
+
+# app-build eval per-run snapshots (diagnostic, regenerated)
+scripts/eval-fixtures/runs/
