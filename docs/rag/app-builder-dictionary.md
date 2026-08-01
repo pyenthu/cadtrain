@@ -5,13 +5,13 @@ _Auto-generated from the SSOT by `bun run scripts/gen-app-dictionary.ts` — the
 build `.app` UIs with NO Claude API (restricted / air-gapped). Regenerate after enriching a
 `meta.ts` or a verb — it never drifts from the code._
 
-**29 components · 29 verbs**
+**33 components · 29 verbs**
 
 ---
 
 ## Components — the UI kinds you can place
 
-Index — data: list, form, table, grid, edittable, file · layout: container, card, div, col, toolbar, row, vtoolbar, sidebar, tabs, popover · input: button, iconbutton, menu · display: text, heading, divider, tooltip, gantt, wellschematic, nodetree, svg · 3d: bake3d · ai: chat
+Index — data: list, form, table, grid, edittable, datatable, file · layout: container, card, div, col, toolbar, row, vtoolbar, sidebar, tabs, popover, statgrid · input: button, iconbutton, menu · display: text, heading, divider, tooltip, gantt, wellschematic, nodetree, chart, stat, svg · 3d: bake3d · ai: chat
 
 Each card: what it is · when to reach for it · props · a concrete example call.
 
@@ -139,6 +139,26 @@ Each card: what it is · when to reach for it · props · a concrete example cal
   A nodes+edges architecture graph laid out LEFT→RIGHT by depth (x = depth·colWidth; siblings stack; parents centre over their subtree), drawn as pure SSR-safe SVG (no xyflow). Nodes are coloured by props.kind bucket (system·container·route·api·lib·store·person·external); planned/archived nodes dash + fade; edges are coloured by relationship kind (summary·calls·mounts·flow·reads·writes·nav) with optional labels; a subtle parent→child skeleton is drawn from the node hierarchy. Reads app VARIABLES (props.nodesVar → vars[name], a list<record> of {id,label,parentId?,kind,tech?,accent?,blurb?,href?,planned?,archived?}; props.edgesVar → a list<record> of {source,target,kind?,label?}) or inline props.nodes/props.edges arrays. Server-renders (no client fetch). Ideal for C4 / dependency / site-map diagrams. A nodes+edges graph laid out left→right — use for an architecture tree, org chart, C4 model, dependency/site map, flowchart, or ANY parent/child graph; NOT for a flat selectable list (use list) or tabular rows (use grid).
   props: title:string, nodesVar:string=nodes, edgesVar:string=edges, colWidth:number=210, rowGap:number=46, nodeWidth:number=172, showHierarchy:boolean=true, edgeLabels:boolean=true
   e.g. {"id":"tree","kind":"nodetree","props":{"nodesVar":"nodes","edgesVar":"edges"}}
+
+- chart (display)
+  A data chart drawn as SSR-safe inline SVG — bar / line / area / pie / donut. Reads rows from an app variable (props.rowsVar → vars[name], a list<record>) or an inline props.rows array, plots props.xField (category/label) against props.yField (numeric value); fields are inferred from the first row when omitted. Nice y-axis ticks, faint gridlines, and an optional legend are computed in plain JS, so the whole chart is in the first paint (no client fetch, no canvas). Single-series in v1. A data chart from a list of records — bar/line/area/pie/donut; use for trends, breakdowns, or comparisons, NOT tabular data (grid/datatable) or a timeline (gantt).
+  props: type:select(bar|line|area|pie|donut)=bar, rowsVar:string=rows, xField:string, yField:string, title:string, color:color=#3b82f6, height:number=240, showAxis:boolean=true, showLegend:boolean=false, valueLabels:boolean=false
+  e.g. {"id":"chart","kind":"chart","props":{"type":"bar","title":"Revenue by region","rowsVar":"sales","xField":"region","yField":"revenue"}}
+
+- stat (display)
+  A KPI stat tile — a big headline number + label, with optional unit/delta/sparkline. value/delta can be a $vars/$params ref; sparklineVar names a vars array of numbers. A single headline metric — big number + label + optional delta/sparkline; use for dashboard KPI tiles, NOT a paragraph (text) or a table.
+  props: label:string=Metric, value:string=0, unit:string, format:select(number|currency|percent|compact|plain)=plain, delta:string, deltaDir:select(auto|up|down)=auto, accent:color, icon:string, sparklineVar:string
+  e.g. {"id":"revenue","kind":"stat","props":{"label":"Revenue","value":"$vars.revenue","format":"currency","delta":"$vars.revenueDelta","deltaDir":"auto","accent":"#0369a1","icon":"💰","sparklineVar":"revenueTrend"}}
+
+- statgrid (layout) · HOLDS children
+  A responsive auto-flow grid of equal tiles (stats/charts/cards) — holds nested children. A responsive grid of equal tiles — use to lay out several stat/chart/card tiles in a dashboard header; use row/col for simple flex, container for a plain wrapper.
+  props: minTileWidth:number=200, columns:number, gap:number=12
+  e.g. {"id":"kpis","kind":"statgrid","props":{"minTileWidth":200,"gap":12},"children":[{"id":"stat_a","kind":"card","title":"Total","children":[]},{"id":"stat_b","kind":"card","title":"Active","children":[]}]}
+
+- datatable (data)
+  A rich read-only data table from any source (http / data verb) — the data grid levelled up with client-side column SORT (click a header, three-state), a SEARCH box filtering all columns, optional client PAGING, and a numeric TOTALS footer. Columns from props.columns ("od,id" or "od:OD,id:ID" key:Label pairs) or inferred from the first row. Rows resolve server-side into the first paint; sort/search/paging enhance on the client. A read-only data table with sort/search/totals — use for analytics/listings from a source; use edittable to EDIT rows, grid for a plain table, chart to visualise.
+  props: columns:string, search:boolean=true, sortable:boolean=true, pageSize:number=0, showTotals:boolean=false, numberAlign:boolean=true, zebra:boolean=true
+  e.g. {"id":"analytics","kind":"datatable","source":{"verb":"readVar","args":{"name":"rows"}},"props":{"columns":"name,region,qty:Quantity,total:Total","search":true,"sortable":true,"showTotals":true}}
 
 - bake3d (3d)
   Bakes the active doc through the engine → geometry stats (verts/tris). Bake the active CAD doc through the engine and show geometry stats — use to preview/verify a parametric part's mesh (verts/tris) inside the app.

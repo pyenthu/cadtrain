@@ -27,12 +27,17 @@ import IconButton from '$lib/app_components/IconButton/IconButton.svelte';
 import Gantt from '$lib/app_components/Gantt/Gantt.svelte';
 import WellSchematic from '$lib/app_components/WellSchematic/WellSchematic.svelte';
 import NodeTree from '$lib/app_components/NodeTree/NodeTree.svelte';
+import Stat from '$lib/app_components/Stat/Stat.svelte';
+import StatGrid from '$lib/app_components/StatGrid/StatGrid.svelte';
+import Chart from '$lib/app_components/Chart/Chart.svelte';
+import DataTable from '$lib/app_components/DataTable/DataTable.svelte';
 
 export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   list: List,
   form: Form,
   table: Form, // an editable list<record> table (a form with a table control)
   grid: DataGrid, // a read-only data GRID from any source (http/data verb)
+  datatable: DataTable, // read-only grid + client sort/search/paging/totals (superset of grid)
   edittable: EditableTable, // editable rows in LOCAL state; on.save persists
   text: Text,
   heading: Heading, // h1/h2/h3
@@ -58,6 +63,9 @@ export const PANEL_COMPONENTS: Record<string, Component<any>> = {
   gantt: Gantt, // roadmap timeline — task bars by start/end, coloured by status, lane swimlanes
   wellschematic: WellSchematic, // SVG well cross-section — casing/tubing/perfs from seeded vars
   nodetree: NodeTree, // SSR-safe SVG architecture graph — nodes+edges laid L→R by depth
+  stat: Stat, // KPI stat tile — big number + label + optional delta/sparkline
+  statgrid: StatGrid, // responsive auto-flow grid of tiles (holds children)
+  chart: Chart, // SSR-safe SVG data chart — bar/line/area/pie/donut from a seeded var
 };
 
 export function panelComponent(kind: string): Component<any> {

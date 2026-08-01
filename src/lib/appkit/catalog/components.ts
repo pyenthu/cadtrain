@@ -30,6 +30,10 @@ import { metas as iconButtonMetas } from '$lib/app_components/IconButton/meta';
 import { metas as ganttMetas } from '$lib/app_components/Gantt/meta';
 import { metas as wellSchematicMetas } from '$lib/app_components/WellSchematic/meta';
 import { metas as nodeTreeMetas } from '$lib/app_components/NodeTree/meta';
+import { metas as statMetas } from '$lib/app_components/Stat/meta';
+import { metas as statGridMetas } from '$lib/app_components/StatGrid/meta';
+import { metas as chartMetas } from '$lib/app_components/Chart/meta';
+import { metas as dataTableMetas } from '$lib/app_components/DataTable/meta';
 
 export interface PropSpec {
   name: string;
@@ -93,6 +97,10 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
   ...ganttMetas,
   ...wellSchematicMetas,
   ...nodeTreeMetas,
+  ...chartMetas,
+  ...statMetas,
+  ...statGridMetas,
+  ...dataTableMetas,
   ...bake3dMetas,
   ...placeholderMetas,
   ...fileMetas,
