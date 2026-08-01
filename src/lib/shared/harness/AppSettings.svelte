@@ -9,13 +9,13 @@
   //    component props. Referenced anywhere as $vars.name (resolveRef). ──
   const varEntries = $derived(Object.entries((app.vars ?? {}) as Record<string, unknown>));
   const isScalar = (v: unknown) => v == null || ['string', 'number', 'boolean'].includes(typeof v);
-  /** A one-line summary of a complex value (record / list-of-records / list). */
+  /** A one-line summary of a complex value (record / list-of-records / list). Shows the KIND +
+   *  SIZE only — the field NAMES belong to the Data tab (its structure), so we don't echo them
+   *  here. Full value is on hover (title). */
+  const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
   function valueSummary(v: unknown): string {
-    if (Array.isArray(v)) {
-      const f = inferFields(v);
-      return f ? `list · ${v.length} × {${f.map((x) => x.name).join(', ')}}` : `list · ${v.length} items`;
-    }
-    if (v && typeof v === 'object') return `record · {${Object.keys(v as object).join(', ')}}`;
+    if (Array.isArray(v)) return `list · ${plural(v.length, inferFields(v) ? 'record' : 'item')}`;
+    if (v && typeof v === 'object') return `record · ${plural(Object.keys(v as object).length, 'field')}`;
     return String(v);
   }
   /** Infer a record schema from an array-of-objects (union of the first rows' keys) or a lone
