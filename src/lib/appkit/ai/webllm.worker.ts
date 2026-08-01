@@ -19,7 +19,7 @@
  * This file is ONLY ever instantiated as a Worker (never imported by tests or the
  * server bundle), so the top-level `self` handler + the web-llm import stay isolated.
  */
-import { MODEL_ID, IS_QWEN3, INFER_TEMPERATURE, INFER_MAX_TOKENS } from './webllm-model';
+import { MODEL_ID, IS_QWEN3, INFER_TEMPERATURE, INFER_MAX_TOKENS, WEBLLM_CONTEXT_WINDOW } from './webllm-model';
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope;
 
@@ -47,10 +47,16 @@ function ensureLoaded(): Promise<void> {
   if (!loadPromise) {
     loadPromise = (async () => {
       const { CreateMLCEngine } = await import('@mlc-ai/web-llm');
-      engine = (await CreateMLCEngine(MODEL_ID, {
-        initProgressCallback: (p: { progress: number; text: string }) =>
-          ctx.postMessage({ type: 'progress', p } satisfies WebllmWorkerReply),
-      })) as MLCEngine;
+      // 3rd arg = ChatOptions override: widen the context window past the prebuilt 4096 default so
+      // the grounded system prompt (~4.4k tokens) fits (see WEBLLM_CONTEXT_WINDOW).
+      engine = (await CreateMLCEngine(
+        MODEL_ID,
+        {
+          initProgressCallback: (p: { progress: number; text: string }) =>
+            ctx.postMessage({ type: 'progress', p } satisfies WebllmWorkerReply),
+        },
+        { context_window_size: WEBLLM_CONTEXT_WINDOW },
+      )) as MLCEngine;
     })();
   }
   return loadPromise;

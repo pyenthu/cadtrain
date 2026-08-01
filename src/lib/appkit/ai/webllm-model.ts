@@ -16,3 +16,10 @@ export const IS_QWEN3 = MODEL_ID.startsWith('Qwen3');
 // Inference sampling — kept here so the worker (executor) and the main thread (driver) agree.
 export const INFER_TEMPERATURE = 0;
 export const INFER_MAX_TOKENS = 2048;
+
+// The in-browser context window. The prebuilt MLC config defaults Qwen2.5-1.5B to 4096, but the
+// component/verb system prompt + RAG grounding runs ~4.4k tokens and OVERFLOWS it ("prompt tokens
+// exceed context window size"). Qwen2.5 supports 32768; 8192 gives headroom for grounding while
+// keeping the KV-cache memory modest for the 1.5B (Qwen3-4B lost the WebGPU device, but 1.5B@8192
+// is well within budget). Passed as a ChatOptions override to CreateMLCEngine.
+export const WEBLLM_CONTEXT_WINDOW = 8192;
