@@ -311,7 +311,7 @@ export const GUI_VERBS: Verb[] = [
   {
     name: 'patchApp',
     group: 'gui',
-    desc: 'Patch the .app JSON directly: op="set|push|remove", path (dotted, e.g. "popovers"), value.',
+    desc: 'Patch the .app JSON directly: op="set|push|remove", path (dotted), value. For app-level state the other verbs don\'t cover — SEED DATA: path "vars.<name>" (a scalar / list / list-of-records, read as $vars.<name>); DEFINE A STRUCTURE: path "structures.<name>" value [{name,type},…] (a record schema); theme: path "theme" value {mode,accent}; app id: path "app".',
     params: {
       type: 'object',
       properties: { op: { type: 'string' }, path: { type: 'string' }, value: {} },
