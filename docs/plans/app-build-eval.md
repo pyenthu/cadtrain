@@ -25,6 +25,32 @@ bun run scripts/eval-app-build.ts --provider cli --app plan   # ONE real `claude
 A real model's deviation from the FAKE ceiling is the meaningful signal. A model swap is only
 "done" when its JSON-array conformance / score is ≥ the incumbent's.
 
+## In-browser eval harness (`/app_design/eval`)
+
+For a **comprehensive, repeatable** run over ALL apps — and to measure the LOCAL model
+(Qwen3-4B in-browser, WebGPU) which the headless Node runner **cannot** execute — use the
+in-browser route **`src/routes/app_design/eval/+page.svelte`** (a sub-route of the studio).
+
+- **Prompts + app ids** come from the SHARED module `src/lib/appkit/ai/eval-fixtures.ts`
+  (`EVAL_PROMPTS` + `APP_IDS`) — the single source of truth, also imported by
+  `scripts/eval-app-build.ts` (so the two never drift; the old `prompts.json` is superseded).
+- **Providers:** Phi / Qwen3-4B (in-browser, free — `buildAppWithPhi`) · Claude CLI · Claude API
+  (the last two POST `/api/app/generate` and bill the subscription/metered path).
+- **How to run:** open `/app_design/eval`, pick a provider + app (all / one) + a *runs N* (average
+  over N to de-noise LLM variance). For Phi, click **Load model** (one-time ~3.4 GB into the
+  browser Cache API) — nothing runs on mount, only on **Run**. Each app × run starts from an EMPTY
+  `{app,title,panels:[]}`, replays `EVAL_PROMPTS[id]` one prompt at a time, then
+  `scoreApp(built, golden)` (golden fetched from `/api/volume?path=ai/app-rag/golden/<id>.app&raw=1`).
+- **Report:** a colour-graded matrix (rows = apps · cols = Overall + the 6 facets + a Claude-ref
+  column) with a summary average row, live-updating per run; each app expands to the built-vs-golden
+  kind/var/structure lists, the per-run scores + σ variance, any build error, and a **capture** link
+  to download the built `.app` (for `--score-file`-style offline checks). Committed Claude reference
+  numbers (design 1.0 · plan ~0.8 · ewell 0.67) shown as a static comparison.
+- **Verified headless:** `bun run build`, `svelte-check` on the new files, and the FAKE-oracle
+  `scripts/eval-app-build.ts` (still 100% ceiling after the fixtures refactor). The actual Phi/Qwen3
+  WebGPU run + the visual matrix are the **interactive follow-up** (needs a WebGPU browser —
+  Chrome/Edge desktop; not headless / Node).
+
 ## Log
 
 ### 2026-08-01 — browser model swapped to Qwen3-4B

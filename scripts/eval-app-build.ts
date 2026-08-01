@@ -20,18 +20,17 @@ import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildAppViaCli, type CliRunner } from '../src/lib/appkit/ai/build-cli';
 import { scoreApp, type AppLike } from '../src/lib/appkit/ai/score-app';
+import { APP_IDS, EVAL_PROMPTS, type EvalAppId } from '../src/lib/appkit/ai/eval-fixtures';
 import { runClaudeCli } from '../src/lib/server/claude-cli';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const FIX = join(HERE, 'eval-fixtures');
-const APPS = ['plan', 'design', 'ewell'] as const;
-type AppId = (typeof APPS)[number];
+// The prompt scripts + app ids live in the SHARED fixtures module (eval-fixtures.ts) so the
+// headless runner and the in-browser eval route (/app_design/eval) can never drift.
+const APPS = APP_IDS;
+type AppId = EvalAppId;
 
 // ── fixtures ─────────────────────────────────────────────────────────────────────────────────
-async function loadPrompts(): Promise<Record<string, string[]>> {
-  return JSON.parse(await readFile(join(FIX, 'prompts.json'), 'utf8'));
-}
-
 /** Load a golden .app: the committed fixture snapshot first (offline/CI), else the running dev
  *  server's volume proxy (the canonical store, ai/app-rag/golden/<id>.app). */
 async function loadGolden(id: string): Promise<AppLike> {
@@ -135,12 +134,11 @@ async function main() {
     process.exit(1);
   }
 
-  const prompts = await loadPrompts();
   const results: Array<{ id: string; score: number; breakdown: Record<string, number> }> = [];
 
   for (const id of ids) {
     const golden = await loadGolden(id);
-    const steps = prompts[id] ?? [];
+    const steps = EVAL_PROMPTS[id] ?? [];
     const built = scoreFile
       ? (JSON.parse(await readFile(scoreFile, 'utf8')) as AppLike) // score a captured build (browser/local) vs the golden
       : provider === 'cli' ? await runCli(id, steps, model) : await runFake(id, steps, golden);
