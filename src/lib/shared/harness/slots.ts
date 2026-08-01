@@ -8,8 +8,9 @@ type Slots = Record<string, SlotValue & { handle?: unknown }>;
 
 const hasFSA = () => typeof window !== 'undefined' && 'showOpenFilePicker' in window;
 
-/** Parse by extension: .json/.wson → object; everything else → text. */
-function parseData(name: string, text: string): unknown {
+/** Parse by extension: .json/.wson → object; everything else → text. Exported so the
+ *  resolve-on-mount path (HarnessView) parses re-linked files the same way. */
+export function parseData(name: string, text: string): unknown {
   if (/\.(json|wson)$/i.test(name)) {
     try {
       return JSON.parse(text);
