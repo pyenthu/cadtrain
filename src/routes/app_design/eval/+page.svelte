@@ -33,8 +33,11 @@
     meta: 'meta',
   };
 
-  // The committed Claude reference numbers (a single cloud-Claude pass) — a static comparison.
-  const CLAUDE_REF: Record<EvalAppId, number> = { design: 1.0, plan: 0.8, ewell: 0.67 };
+  // The committed Claude reference numbers — Claude CLI, INCREMENTAL (one call per atomic prompt),
+  // with the incremental-discipline fix (scripts/eval-app-build.ts --provider cli --incremental).
+  // Data facets are 100% across all three; residual gaps are panel-nesting only (design wraps each
+  // nodetree in a container; ewell's interleaved rail + centre schematic). Qwen is measured vs these.
+  const CLAUDE_REF: Record<EvalAppId, number> = { plan: 1.0, design: 0.9, ewell: 0.687 };
 
   interface RunResult {
     score: number;
@@ -297,7 +300,7 @@
       <h1>App-build eval</h1>
       <span class="sub">reproduce goldens · score per-facet · no hand-driving</span>
     </div>
-    <div class="ref">Claude reference: design {pct(CLAUDE_REF.design)} · plan ~{pct(CLAUDE_REF.plan)} · ewell {pct(CLAUDE_REF.ewell)}</div>
+    <div class="ref">Claude CLI reference (incremental): plan {pct(CLAUDE_REF.plan)} · design {pct(CLAUDE_REF.design)} · ewell {pct(CLAUDE_REF.ewell)}</div>
   </header>
 
   <section class="ctrls">
