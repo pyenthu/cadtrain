@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rankBuilds, rankGolden, renderGrounding, compactApp, isCleanBuild, rankPromotionCandidates, type BuildRecord, type GoldenPair } from './app-corpus';
+import { rankBuilds, rankGolden, renderGrounding, compactApp, isCleanBuild, rankPromotionCandidates, docTypeOf, type BuildRecord, type GoldenPair } from './app-corpus';
 import { matchTemplate, applyTemplate } from './golden-templates';
 
 const rec = (prompt: string, panels: Array<{ id: string; kind: string }>): BuildRecord => ({
@@ -87,6 +87,41 @@ describe('app-corpus (rung 4a.2 learning loop)', () => {
     const g = renderGrounding(rankBuilds('wells app', corpus, 1), rankGolden('well casings', golden, 1));
     expect(g).toContain('Curated examples');
     expect(g.indexOf('Curated examples')).toBeLessThan(g.indexOf('Similar past builds'));
+  });
+});
+
+// Mirrors the REAL corpus contamination measured 2026-08-02: a `dashboard` build was retrieving
+// (and the small local model copying) the `roadmap` app's gantt — via an UNTYPED `…gantt` atomic
+// golden — plus the `well` schematic. The strict docType filter scopes retrieval to the app's own
+// family, so those cross-app goldens (and untyped ones) drop out entirely.
+describe('docType-scoped golden retrieval (#49 — kills cross-app contamination)', () => {
+  const golden: GoldenPair[] = [
+    { name: 'partsdash', md: '# Parts dashboard\nA bar chart of tris per part reading the parts variable.', app: { app: 'partsdash', docType: 'dashboard', panels: [{ id: 'c', kind: 'chart' }, { id: 't', kind: 'datatable' }] } },
+    { name: 'plan', md: '# Roadmap\nSeed a tasks variable and a gantt timeline of the roadmap.', app: { app: 'plan', docType: 'roadmap', panels: [{ id: 'g', kind: 'gantt' }] } },
+    { name: 'gantt-atomic', md: 'Seed a tasks variable with the roadmap as a list of task records with id label lane start end.', app: { app: 'x', panels: [{ id: 'greeting', kind: 'text' }, { id: 'gantt', kind: 'gantt' }] } }, // UNTYPED — the real contaminant
+    { name: 'ewell', md: '# Well schematic\nA well schematic reading the casings variable.', app: { app: 'ewell', docType: 'well', panels: [{ id: 'w', kind: 'wellschematic' }] } },
+  ];
+
+  it('docTypeOf reads the top-level docType (undefined when untyped/null)', () => {
+    expect(docTypeOf(golden[0].app)).toBe('dashboard');
+    expect(docTypeOf(golden[2].app)).toBeUndefined();
+    expect(docTypeOf(null)).toBeUndefined();
+  });
+
+  it('a dashboard build retrieves ONLY dashboard goldens (roadmap · well · untyped all excluded)', () => {
+    const hits = rankGolden('Add a bar chart titled tris per part reading the parts variable', golden, 3, 'dashboard');
+    expect(hits.map((g) => g.name)).toEqual(['partsdash']);
+  });
+
+  it('the gantt contaminant is gone from a dashboard prompt grounding (the acceptance test)', () => {
+    const g = renderGrounding([], rankGolden('Add a bar chart reading the parts variable', golden, 3, 'dashboard'));
+    expect(g).not.toMatch(/gantt/i);
+    expect(g).toContain('chart');
+  });
+
+  it('without a docType the untyped gantt atomic is still retrievable (unchanged, backward-compatible)', () => {
+    const hits = rankGolden('Seed a tasks variable with the roadmap task records id label lane', golden, 3);
+    expect(hits.some((g) => g.name === 'gantt-atomic')).toBe(true);
   });
 });
 

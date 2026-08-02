@@ -152,13 +152,14 @@
   }
 
   /** The RAG grounding for one prompt — the SAME server-side retrieval the cli/cloud path uses,
-   *  fetched so the in-browser phi builder can be grounded too. Best-effort: '' on any failure. */
-  async function fetchGrounding(prompt: string): Promise<string> {
+   *  fetched so the in-browser phi builder can be grounded too. `docType` scopes retrieval to the
+   *  app's own family (#49 — kills cross-app contamination). Best-effort: '' on any failure. */
+  async function fetchGrounding(prompt: string, docType?: string): Promise<string> {
     try {
       const r = await fetch('/api/app/ground', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt, docType }),
       });
       if (!r.ok) return '';
       return ((await r.json()) as { grounding?: string }).grounding ?? '';
@@ -205,7 +206,7 @@
         // phi runs in-browser and never hits /api/app/generate, so it gets NO grounding unless we
         // fetch it here. /api/app/ground runs the SAME server-side retrieval the cli/cloud path uses
         // (residency-clean: retrieval on the local server, inference in-browser). Toggle via `ground`.
-        const grounding = ground ? await fetchGrounding(step) : '';
+        const grounding = ground ? await fetchGrounding(step, (app as { docType?: string }).docType) : '';
         // buildAppWithPhi mutates `app` in place (returns {trace, raw}); keep the same object.
         await phiMod!.buildAppWithPhi(app as any, step, grounding);
       } else {

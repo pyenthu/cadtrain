@@ -64,12 +64,27 @@ export function rankBuilds(prompt: string, corpus: BuildRecord[], k = 3): BuildR
     .map((x) => x.r);
 }
 
+/** The docType of a golden's target .app (top-level `docType`), or undefined if untyped. */
+export function docTypeOf(app: unknown): string | undefined {
+  const dt = (app as { docType?: unknown } | null)?.docType;
+  return typeof dt === 'string' && dt ? dt : undefined;
+}
+
 /** Rank curated golden pairs against a prompt (pure → testable). SLOT-AWARE (#43): a TEMPLATED
  *  golden (md with `{{slots}}`) is scored on its non-slot skeleton, so one "…{{color}}" pair
  *  ranks for the whole family (teal/red/…); LITERAL goldens keep the exact original md-overlap
- *  ranking. See golden-templates.ts `goldenScore`. */
-export function rankGolden(prompt: string, golden: GoldenPair[], k = 3): GoldenPair[] {
-  return golden
+ *  ranking. See golden-templates.ts `goldenScore`.
+ *
+ *  DOCTYPE-SCOPED (#49): when `docType` is given, retrieve ONLY same-docType goldens — a strict
+ *  family filter that kills cross-app contamination. Measured 2026-08-02: the local model was
+ *  copying whatever golden ranked, so a `dashboard` build pulled the `roadmap` app's `gantt`
+ *  (via the untyped `…gantt` atomic golden) and the `well` app's schematic into the dashboard.
+ *  Untyped goldens are excluded under an active filter (that's where the gantt atomic lives).
+ *  Inactive when no docType is given (the "create" prompt that SETS docType, edit flows) →
+ *  unchanged behaviour. */
+export function rankGolden(prompt: string, golden: GoldenPair[], k = 3, docType?: string): GoldenPair[] {
+  const pool = docType ? golden.filter((g) => docTypeOf(g.app) === docType) : golden;
+  return pool
     .map((g) => ({ g, score: goldenScore(prompt, g) }))
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score)
@@ -191,8 +206,13 @@ export function rankPromotionCandidates(builds: BuildRecord[], golden: GoldenPai
 /** Load + rank golden pairs (the curated DB) AND the builds log, and render the combined
  *  few-shot grounding string. The one call the build pipeline uses. Golden is authoritative;
  *  raw builds are a fallback and are HYGIENE-FILTERED (isCleanBuild) so failures never teach. */
-export async function buildGrounding(prompt: string, k = 3): Promise<string> {
+export async function buildGrounding(prompt: string, k = 3, docType?: string): Promise<string> {
   const store = getCorpusStore();
   const [builds, golden] = await Promise.all([store.loadBuilds(), store.loadGolden()]);
-  return renderGrounding(rankBuilds(prompt, builds.filter(isCleanBuild), k), rankGolden(prompt, golden, k), prompt);
+  // docType-scoped (#49): ground on same-family CURATED goldens ONLY. Raw past builds carry no
+  // docType, so a cross-app build (e.g. one that contains a gantt) would re-contaminate a
+  // dashboard even after the golden filter — suppress them when scoping. The curated same-family
+  // goldens are the stronger, cleaner signal anyway.
+  const rankedBuilds = docType ? [] : rankBuilds(prompt, builds.filter(isCleanBuild), k);
+  return renderGrounding(rankedBuilds, rankGolden(prompt, golden, k, docType), prompt);
 }

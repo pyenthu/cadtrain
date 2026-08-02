@@ -7,9 +7,13 @@ import { json, error, type RequestHandler } from '@sveltejs/kit';
 import { buildGrounding } from '$lib/server/app-corpus';
 
 export const POST: RequestHandler = async ({ request }) => {
-  const body = (await request.json().catch(() => null)) as { prompt?: string; k?: number } | null;
+  const body = (await request.json().catch(() => null)) as
+    | { prompt?: string; k?: number; docType?: string }
+    | null;
   if (!body?.prompt) throw error(400, 'missing prompt');
   const k = typeof body.k === 'number' && body.k > 0 ? body.k : 3;
-  const grounding = await buildGrounding(body.prompt, k);
+  // docType-scoped retrieval (#49): scope grounding to the app's own family when known.
+  const docType = typeof body.docType === 'string' && body.docType ? body.docType : undefined;
+  const grounding = await buildGrounding(body.prompt, k, docType);
   return json({ grounding });
 };

@@ -60,7 +60,9 @@ export const POST: RequestHandler = async ({ request }) => {
     manifest = res.app;
   }
 
-  const grounding = await buildGrounding(body.prompt);
+  // docType-scoped retrieval (#49): scope grounding to the app's own family (kills cross-app
+  // contamination — a dashboard build no longer retrieves roadmap/well goldens).
+  const grounding = await buildGrounding(body.prompt, 3, (manifest as { docType?: string }).docType);
 
   let out;
   try {
