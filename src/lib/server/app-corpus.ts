@@ -344,5 +344,26 @@ export async function buildGrounding(prompt: string, k = 3, docType?: string): P
   // dashboard even after the golden filter — suppress them when scoping. The curated same-family
   // goldens are the stronger, cleaner signal anyway.
   const rankedBuilds = docType ? [] : rankBuilds(prompt, builds.filter(isCleanBuild), k);
-  return renderGrounding(rankedBuilds, rankGolden(prompt, golden, k, docType), prompt);
+  let golds = rankGolden(prompt, golden, k, docType);
+  // OPT-IN semantic retrieval (D11 vector RAG): env-gated (APP_RAG_VECTOR) so we A/B it against the
+  // lexical ranker via the N≥3 eval gate before flipping the default. The dynamic import keeps
+  // transformers.js/onnxruntime out of the module graph unless it's actually switched on; a vector
+  // miss (or any embed failure) falls back to the lexical `golds` — retrieval never regresses.
+  if (vectorRetrievalOn()) {
+    try {
+      const { rankGoldenVector } = await import('./vector-retrieval');
+      const v = await rankGoldenVector(prompt, golden, k, docType);
+      if (v.length) golds = v;
+    } catch {
+      /* keep lexical */
+    }
+  }
+  return renderGrounding(rankedBuilds, golds, prompt);
+}
+
+/** Is semantic (vector) retrieval switched on? Read from plain `process.env` (not `$env`) so this
+ *  stays importable in vitest + bun scripts. Default OFF — lexical until the eval gate says vector wins. */
+function vectorRetrievalOn(): boolean {
+  const v = process.env.APP_RAG_VECTOR;
+  return !!v && v !== '0' && v.toLowerCase() !== 'false';
 }

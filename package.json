@@ -53,6 +53,7 @@
     "@codemirror/state": "^6.7.0",
     "@codemirror/view": "^6.43.4",
     "@gltf-transform/core": "^4.3.0",
+    "@huggingface/transformers": "^4.2.0",
     "@lezer/highlight": "^1.2.3",
     "@math.gl/core": "^4.1.0",
     "@mlc-ai/web-llm": "^0.2.84",
@@ -79,5 +80,9 @@
     "three": "^0.183.2",
     "three-svg-renderer": "^1.0.4",
     "wabt": "^1.0.39"
-  }
+  },
+  "trustedDependencies": [
+    "onnxruntime-node",
+    "protobufjs"
+  ]
 }
