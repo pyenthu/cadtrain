@@ -37,6 +37,7 @@ export const API_VERBS: Verb[] = [
       'Read the DATA a File component opened into a slot (§0.5 — the app is stateless; data ' +
       'lives in files). { slot, pick? } → the parsed content (or a nested path via pick). Wire ' +
       "a component's source to it: {verb:'loadData', args:{slot:'well'}}.",
+    example: { args: { slot: 'well', pick: 'casings' }, note: 'read the casings rows from the opened well file' },
     params: {
       type: 'object',
       properties: {
@@ -60,6 +61,7 @@ export const API_VERBS: Verb[] = [
       'parsed JSON (or text). "pick" selects a nested path (e.g. "data.items") — use it to feed a ' +
       'list panel an array. Same-origin URLs like "/api/..." are typical. Wire it as a panel source ' +
       'or an on-event action.',
+    example: { args: { url: '/api/primitives/list', pick: 'items' }, note: 'GET a list and feed a grid its rows' },
     params: {
       type: 'object',
       properties: {

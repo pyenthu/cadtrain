@@ -6,6 +6,7 @@ import { generateText, tool, jsonSchema, stepCountIs } from 'ai';
 import { resolveModel, type Provider } from './providers';
 import { verbsByGroup, type Ctx, type AppDoc, type AppEngine } from '../verbs/registry';
 import { dispatch } from '../verbs/dispatch';
+import { verbDescription } from '../schema/to-aisdk';
 import { sanitizeApp } from './sanitize';
 import { systemPrompt } from './prompt';
 
@@ -58,7 +59,7 @@ export async function buildApp(opts: BuildOpts): Promise<BuildResult> {
   const tools: Record<string, unknown> = {};
   for (const v of verbsByGroup('gui')) {
     tools[v.name] = tool({
-      description: v.desc,
+      description: verbDescription(v),
       inputSchema: jsonSchema(v.params as any),
       execute: async (args: unknown) => {
         try {
