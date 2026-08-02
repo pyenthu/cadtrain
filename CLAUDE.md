@@ -110,6 +110,24 @@ Design-RAG = MD↔.app golden pairs on the VOLUME (`ai/app-rag/`, `server/app-co
 Plans: `docs/plans/app-server-render.md` + `docs/plans/app-studio-enhancements.md` (next-wave
 backlog). Module guides: `src/lib/appkit/CLAUDE.md` + `src/lib/app_components/CLAUDE.md`.
 
+**App harness — 2026-08 update (#49/#50).** (a) **Component kit → 34 kinds**: added `stat` ·
+`statgrid` · `chart` (SSR-SVG bar/line/area/pie/donut) · `datatable` (sort/search/paging/totals) ·
+**`cad3d`** — an interactive 3D CAD viewer, a `dataMode:'client'` island whose new `computeMode`
+field = `'server'` (bakes via `/api/app/cad-bake` → mesh JSON; engine/source never ship).
+(b) **Local-model RAG bet measured**: Claude CLI *incremental* reference locked (plan 100 · design
+90 · ewell 69); in-browser **Qwen2.5-1.5B lifted ~25% → 44.9% avg** via an incremental-discipline
+fix, an un-copyable few-shot example, RAG grounding wired to the browser (`/api/app/ground`), and
+an 8192 context window. Eval: `/app_design/eval` + `scripts/eval-app-build.ts --incremental`
+(per-rung diagnostic); scorer `appkit/ai/score-app.ts`. **RAG dictionary** (SSOT-generated,
+`docs/rag/app-builder-dictionary.md`) + **atomic prompt library** (`docs/rag/sample-prompts.md`).
+(c) **DEFERRED — the dispatch-engine + ADK direction** (`docs/plans/cad3d-component.md`): a
+component needing bespoke server work ships a `<Name>.server.ts` (never enters the client bundle)
+→ a generated `SERVER_ACTIONS` registry → ONE generic route `/api/app/component/[kind]/[action]`
+(the server never grows a route per component), fronted by a verb (AI SSOT). The long game is
+cadtrain's graph/engine componentized as an **ADK** embedded in other apps — cad3d is instance #1;
+comprehensive cad3d (render-mode MF·BREP·SVG selector · popover graph editor · volume part-picker)
+is spec'd there, not yet built.
+
 **Tests: `bun run test` (vitest), NOT `bun test`.**
 
 ## Tech stack + commands

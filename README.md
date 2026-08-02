@@ -1,126 +1,93 @@
 # CAD Train
 
-Parametric 3D CAD modelling pipeline for downhole tool components, combining:
+A parametric 3D CAD pipeline for downhole tool components, and an **engine + AI harness**
+for building declarative sub-apps on top of it. Stack: **SvelteKit** (Svelte 5 runes) ·
+**ManifoldCAD** / **TrueForm** / **OCCT-BREP** geometry kernels (WASM) · **Threlte** (3D) ·
+`@anthropic-ai/sdk` · Docker → Railway.
 
-- **ManifoldCAD** — parametric solid modelling in the browser
-- **Svelte 5 + Threlte** — interactive 3D viewers
-- **Claude vision API** — component identification from reference images
-- **Retrieval-Augmented Generation** — persistent training cache that improves with use
+> Detailed contributor guidance lives in **`CLAUDE.md`** (root) and the per-subtree
+> `CLAUDE.md` files. Roadmap: the **`/plan`** Gantt. Status/handoff: `docs/STATUS.md`.
+
+## What it is
+
+**1. A node-graph parametric CAD editor.** Parts and assemblies are typed source files on a
+persistent volume. You compose them in a visual node graph (`GraphEditorPane`), which compiles
+to a self-contained geometry script and bakes to a mesh — client-side in a Web Worker (default)
+or server-side. Three kernels: Manifold (mesh), TrueForm (native), and OCCT-BREP.
+
+**2. An app harness — cadtrain as an engine you build *apps* on.** A sub-app is a
+self-contained **`.app`** (a component tree). An AI assembles it by calling **verbs** (the verb
+registry is the single API + the safety boundary); the app is **server-rendered** (`/app/[id]`),
+and the geometry engine never ships to the client. The strategic bet is **local-first**: a small
+in-browser model (Qwen via WebGPU) builds apps with **no cloud API**, grounded by a RAG dictionary
+of components + verbs — for customers who can't reach the Claude API. Cloud Claude and a
+subscription CLI backend exist for dev/authoring.
 
 ## Routes
 
 | Path | Purpose |
 | --- | --- |
-| `/` | Landing page with feature cards |
-| `/components` | Parametric component library (18 primitives) with live 3D + SVG + PNG export |
-| `/reverse` | Upload an image → VLM identifies component + estimates params → live 3D render |
-| `/training` | Tabbed viewer for completion tool training data |
-| `/tests` | Visual test recordings + cache statistics |
-| `/tools/bottom-sub` | Dedicated Bottom Sub (HAL10408) parametric viewer |
-| `/tools/ratch-latch` | Dedicated Ratch-Latch Receiving Head viewer |
-| `/api/identify` | POST: RAG-based image → component identification (Claude + training cache) |
-| `/api/refine` | POST: Iterative parameter refinement via SSIM + Claude |
-| `/api/accept` | POST: Append user-validated result to persistent training cache |
-| `/api/cache/stats` | GET: Training cache statistics |
+| `/` | Landing menu |
+| `/graph-editor` | **The CAD editor** — a single part, full-screen (`?id=&embed=1`) |
+| `/primitives` | Sidebar of volume parts + multi-tab editor (a `GraphEditorPane` per tab) |
+| `/vocab` | Vocabulary editor — vocabulary-driven generative part authoring |
+| `/wells` | 3D-first well schematic (WIP) — WSON → graph → 3D well diagram |
+| `/design` | Architecture overview — Tree · C4 · verb/route **API** reference |
+| `/app_design` | **App-harness STUDIO** — visual tree editor · AI chat (CLI · API · local Qwen) · live server-rendered preview · `/app_design/eval` (local-model eval matrix) |
+| `/app/[id]` · `/app/local/[token]` | **Launch** a `.app` — server-rendered (engine stays server-side) |
+| `/volume` · `/plan` · `/research` | Volume file manager · Gantt roadmap · research notes |
+
+The app component kit (34 kinds) includes data (`list`/`form`/`grid`/`datatable`/`edittable`),
+dashboards (`stat`/`statgrid`/`chart`), diagrams (`gantt`/`nodetree`/`wellschematic`), layout,
+input, and **`cad3d`** — an interactive 3D CAD viewer that embeds baked geometry inside an app.
 
 ## Local development
 
 ```bash
 bun install
-bun run dev
+bun run dev        # dev server on :3333
+bun run build      # production build
+bun run test       # vitest unit tests   (NOT `bun test` — it ignores the $lib alias)
+bun run test:e2e   # Playwright e2e (headless)
 ```
 
 Open http://localhost:3333.
 
-Set `ANTHROPIC_API_KEY` in a `.env` file for the identification endpoints.
+**Environment** (`.env.local`): `ANTHROPIC_API_KEY` (cloud Claude backends — optional; the
+local model + subscription `claude` CLI need no key), and `CADTRAIN_VOLUME_REMOTE_URL` +
+`CADTRAIN_VOLUME_TOKEN` to proxy the local dev volume to the shared prod store (see
+`docs/VOLUME_TRANSFER.md`).
 
-To re-seed the training cache from the primitive training data:
+## Deploy (Railway)
 
-```bash
-bun run seed
-```
-
-## Build and run in Docker
-
-```bash
-# Build
-docker build -t cadtrain .
-
-# Run (cache is in-memory only)
-docker run -p 3333:3333 \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
-  cadtrain
-
-# Run with persistent cache volume
-docker run -p 3333:3333 \
-  -e ANTHROPIC_API_KEY=sk-ant-... \
-  -v $(pwd)/data:/data \
-  cadtrain
-```
-
-The container listens on `$PORT` (default 3333). The persistent cache is stored at `/data/cache.jsonl`, and is seeded from the baked-in cache on first run.
-
-## Deploy to Railway
-
-1. **Push this repo to GitHub.**
-2. In Railway, click **New project → Deploy from GitHub** and select this repo.
-3. Railway detects `Dockerfile` automatically. The `railway.json` file sets the health check.
-4. Open the service → **Variables** → add `ANTHROPIC_API_KEY`.
-5. Open the service → **Volumes** → add a volume mounted at `/data` (1 GB is plenty).
-6. Railway builds and deploys. The public URL will be shown in the service overview.
-
-Health check path: `/api/cache/stats` — returns `{ total, bySource, totalUses }`.
-
-## Architecture overview
-
-```
-┌───────────────┐   ┌───────────────────┐   ┌──────────────────┐
-│  Upload image │──▶│  pHash retrieval  │──▶│  Few-shot Claude │
-└───────────────┘   │  from cache.jsonl │   │  (top-K examples)│
-                    └───────────────────┘   └────────┬─────────┘
-                                                     │
-                                                     ▼
-                                           ┌────────────────────┐
-                                           │  Component + params│
-                                           └────────┬───────────┘
-                                                    │
-                                                    ▼
-                                           ┌────────────────────┐
-                                           │  Live 3D render    │
-                                           │  (ManifoldCAD)     │
-                                           └────────┬───────────┘
-                                                    │
-                                                    ▼
-                                           ┌────────────────────┐
-                                           │  Auto-refine loop  │
-                                           │  SSIM → Claude     │
-                                           └────────┬───────────┘
-                                                    │
-                                                    ▼
-                                           ┌────────────────────┐
-                                           │  Save to cache     │
-                                           │  (persistent)      │
-                                           └────────────────────┘
-```
-
-- **Training cache** — JSONL file at `training_data/cache.jsonl`. Seeded from primitive training data (122 records) and grows with user-accepted identifications.
-- **Retrieval** — perceptual hash (`sharp` + manual DCT) + Hamming distance. Top-5 neighbors included as few-shot context.
-- **Image comparison** — pure-TS implementation (`src/lib/training/image_diff.ts`) computing SSIM, pixel diff, and Sobel edge diff. No Python dependency.
+GitHub `pyenthu/cadtrain` → Docker build (`railway.toml` sets `builder = "DOCKERFILE"`).
+A volume is mounted at `/app_data` (all redeploy-surviving state). Health check:
+`/api/cache/stats`. Set `ANTHROPIC_API_KEY` in the service Variables. Prod:
+**https://cadtrain.up.railway.app** (not `.com`).
 
 ## Project layout
 
 ```
 src/
-├── routes/           # SvelteKit routes (pages + API)
-├── lib/
-│   ├── components/   # Component library + ManifoldCAD builder + SVG exporter
-│   ├── tools/        # Bottom Sub + Ratch-Latch dedicated tools
-│   ├── training/     # Persistent cache, pHash, image diff
-│   ├── shared/       # Shared Svelte components
-│   └── viewer/       # Generic builder for batch/training viewer
-scripts/
-└── seed_cache.ts     # Re-seed cache.jsonl from prim_* training data
-training_data/
-├── cache.jsonl       # Persistent training index (committed)
-└── prim_*/           # Source training data per primitive component
+├── routes/              # graph-editor · primitives · vocab · wells · design · app_design · app · api
+└── lib/
+    ├── appkit/          # HEADLESS app-harness kit — verbs (SSOT) · schema · manifest · store · ai · rag
+    ├── app_components/  # component BUNDLES (render + meta.ts + optional editor) — the .app UI kit
+    ├── shared/harness/  # the harness UI (HarnessView · PanelNode · registry · VisualEditor)
+    ├── graph/           # composition graph · emit · bake · sketch · stdlib engines
+    ├── engines/         # geometry KERNELS — manifold/ · trueform/ · brep/
+    ├── server/          # volume · primitive-paths · bake-cache · app-corpus · rag
+    ├── authoring/       # vocabulary → source translators
+    └── wells/           # WSON → 3D well-schematic engine
+
+docs/     # architecture · plans · CAD_AUTHORING · HISTORY · STATUS · rag/ (dictionary + prompts)
+archive/  # tracked, dormant legacy src (see archive/CADTRAIN_CLEANUP.md)
+Dockerfile + docker-entrypoint.sh + railway.toml
 ```
+
+## History
+
+The original product (image → component identification via pHash/CLIP + a training cache,
+`/components` · `/reverse` · `/training` · `/api/identify`) was archived 2026-06 — see
+`archive/CADTRAIN_CLEANUP.md` and `docs/HISTORY.md`. The active product is the node-graph CAD
+editor + the app harness above.
