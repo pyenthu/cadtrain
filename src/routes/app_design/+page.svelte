@@ -265,11 +265,31 @@
           await mod.loadPhi((p) => (status = `Phi ${Math.round(p.progress * 100)}% — ${p.text}`));
         }
         status = 'Phi building…';
-        const out = await mod.buildAppWithPhi(app, promptText, '');
+        // Ground the in-browser build with the SAME docType-scoped RAG retrieval the eval/cli use
+        // (residency-clean: retrieval on the local server, inference stays in-browser). Best-effort.
+        let grounding = '';
+        try {
+          const gr = await fetch('/api/app/ground', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ prompt: promptText, docType: (app as { docType?: string })?.docType }),
+          });
+          if (gr.ok) grounding = ((await gr.json()) as { grounding?: string }).grounding ?? '';
+        } catch {
+          /* ungrounded fallback */
+        }
+        const out = await mod.buildAppWithPhi(app, promptText, grounding);
         app = { ...app }; // nudge reactivity after in-place dispatch
         serverPreview();
         status = `Phi built (${out.trace.length} steps)`;
         void snapshotVersion(promptText, out.trace.length); // version-per-prompt trail (best-effort)
+        // Capture the build into the corpus so Qwen's OWN builds feed the flywheel (#49) — before,
+        // only cli/cloud captured, so the local model could never improve the DB it retrieves from.
+        void fetch('/api/app/capture', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ prompt: promptText, app, trace: out.trace, raw: out.raw }),
+        }).catch(() => {});
         return { ok: true, steps: out.trace.length };
       } catch (e) {
         status = String(e);
