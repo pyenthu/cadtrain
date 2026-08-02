@@ -67,7 +67,7 @@ describe('app-corpus (rung 4a.2 learning loop)', () => {
   });
 
   const golden: GoldenPair[] = [
-    { name: 'well-designer', md: '# Well designer\nA casings table + a 3D bake of the well.', app: { app: 'w', panels: [{ id: 't', kind: 'table' }, { id: 'v', kind: 'bake3d' }], files: [{ slot: 'well', type: '.wson' }] } },
+    { name: 'well-designer', md: '# Well designer\nA casings table + a 3D bake of the well.', app: { app: 'w', docType: 'well', vars: { casings: [{ od: 9.625, id: 8.5, top: 0, bottom: 3000 }] }, panels: [{ id: 't', kind: 'table', props: { columns: 'od,id,top,bottom', search: true } }, { id: 'v', kind: 'bake3d' }], files: [{ slot: 'well', type: '.wson' }] } },
     { name: 'hello', md: '# Hello\nA simple greeting.', app: { app: 'h', panels: [{ id: 'g', kind: 'text' }] } },
   ];
 
@@ -77,10 +77,67 @@ describe('app-corpus (rung 4a.2 learning loop)', () => {
     expect(rankGolden('zzz none', golden)).toHaveLength(0);
   });
 
-  it('compactApp keeps kinds/files/nesting, drops bulk', () => {
+  it('compactApp keeps kinds/files/nesting + props/vars/docType (semantics flow), drops bulk var rows', () => {
     const c = compactApp(golden[0].app) as any;
     expect(c.panels.map((p: any) => p.kind)).toEqual(['table', 'bake3d']);
     expect(c.files).toBeDefined();
+    // meta + config now flow (they teach the model HOW to build, not just what exists):
+    expect(c.docType).toBe('well');
+    expect(c.panels[0].props).toMatchObject({ columns: 'od,id,top,bottom', search: true });
+    // a var renders as a COMPACT SCHEMA (field names + count), NOT its rows:
+    expect(c.vars.casings).toEqual({ fields: ['od', 'id', 'top', 'bottom'], count: 1 });
+    expect(JSON.stringify(c)).not.toContain('9.625'); // the bulky row value is gone
+  });
+
+  // The #1 RAG-quality fix: a golden for "add a bar chart of tris per part" must ground with the
+  // chart's CONFIG (type/rowsVar/xField/yField), the var SHAPE, and the structure fields — so a
+  // 1.5B model can reconstruct the component, not just guess a `chart` kind exists.
+  it('compactApp conveys chart config + source.args + var/structure SCHEMA (the semantic grounding fix)', () => {
+    const app = {
+      app: 'partsdash',
+      title: 'CAD Parts — Dashboard',
+      docType: 'dashboard',
+      structures: {
+        part: [
+          { name: 'id', type: 'string' },
+          { name: 'category', type: 'string' },
+          { name: 'verts', type: 'number' },
+          { name: 'tris', type: 'number' },
+        ],
+      },
+      vars: {
+        parts: [
+          { id: 'g_cube', category: 'basic', verts: 24, tris: 12 },
+          { id: 'g_shaft', category: 'basic', verts: 388, tris: 760 },
+        ],
+      },
+      panels: [
+        { id: 'trischart', kind: 'chart', props: { type: 'bar', rowsVar: 'parts', xField: 'id', yField: 'tris', title: 'Triangles per part' } },
+        { id: 'partstable', kind: 'datatable', source: { verb: 'readVar', args: { name: 'parts' } }, props: { columns: 'id,category,verts,tris', search: true, showTotals: true } },
+      ],
+    };
+    const c = compactApp(app) as any;
+    const s = JSON.stringify(c);
+    // 1. chart PROPS flow (type/rowsVar/xField/yField):
+    expect(c.panels[0].props).toMatchObject({ type: 'bar', rowsVar: 'parts', xField: 'id', yField: 'tris' });
+    // 2. source.args flow — the verb AND the var it reads:
+    expect(c.panels[1].source).toEqual({ verb: 'readVar', args: { name: 'parts' } });
+    // 3. app meta (docType/title) flow:
+    expect(c.docType).toBe('dashboard');
+    expect(c.title).toBe('CAD Parts — Dashboard');
+    // 4. vars → compact schema (fields + count), NOT the rows:
+    expect(c.vars.parts).toEqual({ fields: ['id', 'category', 'verts', 'tris'], count: 2 });
+    expect(s).not.toContain('g_cube'); // the full var rows are never dumped
+    expect(s).not.toContain('388');
+    // 5. structures → field names:
+    expect(c.structures.part).toEqual(['id', 'category', 'verts', 'tris']);
+  });
+
+  it('compactApp truncates a long string prop (token budget)', () => {
+    const long = 'x'.repeat(200);
+    const c = compactApp({ app: 't', panels: [{ id: 'p', kind: 'text', props: { text: long } }] }) as any;
+    expect((c.panels[0].props.text as string).length).toBeLessThan(90);
+    expect(c.panels[0].props.text).toContain('…');
   });
 
   it('grounding renders golden BEFORE builds', () => {

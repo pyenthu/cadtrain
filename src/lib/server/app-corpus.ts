@@ -92,17 +92,63 @@ export function rankGolden(prompt: string, golden: GoldenPair[], k = 3, docType?
     .map((x) => x.g);
 }
 
-/** A compact structural summary of an .app — the shape we few-shot (kinds/nesting/files/
- *  computed/theme), not the whole doc (keeps grounding small). Pure. */
+/** A compact structural summary of an .app — the shape we few-shot, not the whole doc.
+ *  It must TEACH the model how to build (not just what exists): per-panel `props` (the config
+ *  — chart type/rowsVar/xField, stat label/value, datatable columns/search …) and `source.args`
+ *  (the var a verb reads) flow through, plus app meta (`app`/`title`/`docType`), a COMPACT `vars`
+ *  SCHEMA (field names + row count, never the bulk rows), and `structures` (name → field names).
+ *  Token-bounded: long string values are truncated and var data is never dumped. Pure. */
 export function compactApp(app: any): Record<string, unknown> {
+  // Truncate a long string value so a verbose prop / arg can't blow the few-shot token budget.
+  const clampStr = (v: unknown): unknown => (typeof v === 'string' && v.length > 80 ? v.slice(0, 80) + '…' : v);
+  // Shallow-clamp a props/args bag (string values truncated; structure kept). Undefined when empty.
+  const clampBag = (bag: any): Record<string, unknown> | undefined => {
+    if (!bag || typeof bag !== 'object') return undefined;
+    const o: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(bag)) o[k] = clampStr(v);
+    return Object.keys(o).length ? o : undefined;
+  };
   const node = (p: any): any => {
     const o: any = { kind: p.kind, id: p.id };
+    const props = clampBag(p.props);
+    if (props) o.props = props;
+    if (p.source && typeof p.source === 'object' && p.source.verb) {
+      const args = clampBag(p.source.args);
+      o.source = args ? { verb: p.source.verb, args } : p.source.verb;
+    }
     if (p.children?.length) o.children = p.children.map(node);
-    if (p.source?.verb) o.source = p.source.verb;
     return o;
   };
-  const out: Record<string, unknown> = { panels: (app?.panels ?? []).map(node) };
+  // A var → a COMPACT schema, never the rows: array-of-objects → {fields, count}; array-of-scalars
+  // → {count}; object → {fields}; scalar → its (clamped) value.
+  const compactVar = (v: unknown): unknown => {
+    if (Array.isArray(v)) {
+      const first = v.find((x) => x != null);
+      return first && typeof first === 'object' && !Array.isArray(first)
+        ? { fields: Object.keys(first), count: v.length }
+        : { count: v.length };
+    }
+    if (v && typeof v === 'object') return { fields: Object.keys(v) };
+    return clampStr(v);
+  };
+  const out: Record<string, unknown> = {};
+  if (app?.app) out.app = app.app;
+  if (app?.title) out.title = clampStr(app.title);
+  if (app?.docType) out.docType = app.docType;
+  out.panels = (app?.panels ?? []).map(node);
   if (app?.files?.length) out.files = app.files;
+  if (app?.vars && Object.keys(app.vars).length) {
+    const vars: Record<string, unknown> = {};
+    for (const [name, v] of Object.entries(app.vars)) vars[name] = compactVar(v);
+    out.vars = vars;
+  }
+  if (app?.structures && Object.keys(app.structures).length) {
+    const structures: Record<string, string[]> = {};
+    for (const [name, fields] of Object.entries(app.structures)) {
+      structures[name] = Array.isArray(fields) ? fields.map((f: any) => f?.name).filter(Boolean) : [];
+    }
+    out.structures = structures;
+  }
   if (app?.computed) out.computed = Object.keys(app.computed);
   if (app?.theme) out.theme = app.theme;
   return out;
