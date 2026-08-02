@@ -154,6 +154,90 @@ export function compactApp(app: any): Record<string, unknown> {
   return out;
 }
 
+/** One promotable atomic golden candidate: a natural-language retrieval key (`md`) → a minimal
+ *  docType-tagged `.app` slice (the target). */
+export interface AtomicGolden {
+  name: string;
+  md: string;
+  app: Record<string, unknown>;
+}
+
+const themeMd = (t: any): string =>
+  `Use a ${t?.mode || 'light'} theme${t?.accent ? ` with a ${t.accent} accent` : ''}.`;
+
+const fieldsOf = (v: unknown): string[] => {
+  if (Array.isArray(v)) {
+    const first = v.find((x) => x != null);
+    return first && typeof first === 'object' && !Array.isArray(first) ? Object.keys(first) : [];
+  }
+  return v && typeof v === 'object' ? Object.keys(v as object) : [];
+};
+const varMd = (name: string, v: unknown): string => {
+  const f = fieldsOf(v);
+  return `Seed a ${name} variable${f.length ? ` with records (${f.join(', ')})` : ''}.`;
+};
+
+/** A natural-language retrieval key for one panel, keyed off its kind + props (so a promoted
+ *  chart golden is retrieved by "add a bar chart …" not by an id). Falls back to the kind. */
+function panelMd(p: any): string {
+  const pr = p?.props ?? {};
+  const srcVar = p?.source?.args?.name;
+  switch (p?.kind) {
+    case 'chart':
+      return `Add a ${pr.type || ''} chart${pr.title ? ` titled "${pr.title}"` : ''}${srcVar || pr.rowsVar ? ` reading the ${srcVar || pr.rowsVar} variable` : ''}${pr.xField && pr.yField ? `, x = ${pr.xField}, y = ${pr.yField}` : ''}.`.replace(/\s+/g, ' ');
+    case 'datatable':
+      return `Add a data table${srcVar ? ` reading ${srcVar}` : ''}${pr.columns ? ` with columns ${pr.columns}` : ''}${pr.search ? ', with search' : ''}${pr.sortable ? ', sortable' : ''}${pr.showTotals ? ', with totals' : ''}.`;
+    case 'statgrid':
+      return 'Add a stat grid.';
+    case 'stat':
+      return `Add a KPI stat tile${pr.label ? ` "${pr.label}"` : ''}${pr.format ? ` as ${pr.format}` : ''}.`;
+    case 'cad3d':
+      return `Add a 3D CAD viewer${pr.partId ? ` of the ${pr.partId} part` : ''}.`;
+    case 'heading':
+      return `Add a ${pr.level === 1 ? 'level-1 ' : ''}heading${pr.text ? ` "${pr.text}"` : ''}.`;
+    case 'text':
+      return `Add a ${pr.muted ? 'muted ' : ''}subtitle or text paragraph.`;
+    default:
+      return `Add a ${p?.kind || 'component'} component.`;
+  }
+}
+
+/** Decompose a built .app into ATOMIC per-component golden candidates — one small `docType`-tagged
+ *  slice per app-meta / theme / structure / var / top-level panel, each keyed by a natural-language
+ *  `md`. This is the RIGHT shape to PROMOTE (measured 2026-08): a small model retrieves JUST the
+ *  relevant piece per prompt instead of over-copying a whole app (which dropped its data vars).
+ *  Slices carry the FULL target (e.g. a var's rows) — grounding renders them compact via
+ *  `compactApp`. Pure → testable; the promote endpoint saves each via `promoteGolden`. */
+export function decomposeToAtomicGoldens(app: any, opts: { base?: string } = {}): AtomicGolden[] {
+  const dt = docTypeOf(app);
+  const base = (opts.base || app?.app || app?.title || 'app')
+    .toString()
+    .replace(/[^a-z0-9_-]+/gi, '_')
+    .toLowerCase();
+  const tag: Record<string, unknown> = dt ? { docType: dt } : {};
+  const out: AtomicGolden[] = [];
+
+  if (app?.title || dt) {
+    out.push({
+      name: `${base}-meta`,
+      md: `Create ${dt ? `a ${dt} app` : 'an app'}${app?.title ? ` titled "${app.title}"` : ''}${dt ? `, docType ${dt}` : ''}.`,
+      app: { ...(app?.app ? { app: app.app } : {}), ...(app?.title ? { title: app.title } : {}), ...tag, panels: [] },
+    });
+  }
+  if (app?.theme) out.push({ name: `${base}-theme`, md: themeMd(app.theme), app: { ...tag, theme: app.theme, panels: [] } });
+  for (const [n, fields] of Object.entries(app?.structures ?? {})) {
+    const fnames = Array.isArray(fields) ? fields.map((f: any) => f?.name).filter(Boolean) : [];
+    out.push({ name: `${base}-struct-${n}`, md: `Define a ${n} structure with fields ${fnames.join(', ')}.`, app: { ...tag, structures: { [n]: fields }, panels: [] } });
+  }
+  for (const [n, v] of Object.entries(app?.vars ?? {})) {
+    out.push({ name: `${base}-var-${n}`, md: varMd(n, v), app: { ...tag, vars: { [n]: v }, panels: [] } });
+  }
+  for (const p of (app?.panels ?? []) as any[]) {
+    out.push({ name: `${base}-${p.kind}-${p.id}`.replace(/[^a-z0-9_-]+/gi, '_'), md: panelMd(p), app: { ...tag, panels: [p] } });
+  }
+  return out;
+}
+
 const firstLine = (md: string): string => (md.split('\n').find((l) => l.trim()) ?? '').replace(/^#+\s*/, '').trim();
 
 /** Render ONE golden as a few-shot line. TEMPLATED goldens (#43) render two ways:

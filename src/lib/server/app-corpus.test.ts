@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rankBuilds, rankGolden, renderGrounding, compactApp, isCleanBuild, rankPromotionCandidates, docTypeOf, type BuildRecord, type GoldenPair } from './app-corpus';
+import { rankBuilds, rankGolden, renderGrounding, compactApp, isCleanBuild, rankPromotionCandidates, docTypeOf, decomposeToAtomicGoldens, type BuildRecord, type GoldenPair } from './app-corpus';
 import { matchTemplate, applyTemplate } from './golden-templates';
 
 const rec = (prompt: string, panels: Array<{ id: string; kind: string }>): BuildRecord => ({
@@ -233,5 +233,55 @@ describe('parameterized / templated golden entries (#43 — one entry per family
     const target = applyTemplate(colorTemplate.app, m.values) as any;
     expect(target.theme.background).toBe('teal');
     expect(target.panels[0].kind).toBe('stack');
+  });
+});
+
+// The flywheel promote shape (2026-08): a kept build → ATOMIC per-component golden pieces, each a
+// docType-tagged slice keyed by a natural-language md — so a small model retrieves ONE piece per
+// prompt instead of over-copying the whole app.
+describe('decomposeToAtomicGoldens (#49 — the atomic promote transform)', () => {
+  const app = {
+    app: 'partsdash',
+    title: 'CAD Parts — Dashboard',
+    docType: 'dashboard',
+    theme: { mode: 'light', accent: '#0d9488' },
+    structures: { part: [{ name: 'id', type: 'string' }, { name: 'tris', type: 'number' }] },
+    vars: { parts: [{ id: 'g_cube', tris: 12 }, { id: 'g_shaft', tris: 760 }] },
+    panels: [
+      { id: 'title', kind: 'heading', props: { text: 'CAD Parts — Dashboard', level: 1 } },
+      { id: 'trischart', kind: 'chart', props: { type: 'bar', rowsVar: 'parts', xField: 'id', yField: 'tris', title: 'Triangles per part' } },
+      { id: 'viewer', kind: 'cad3d', props: { partId: 'g_shaft' } },
+    ],
+  };
+
+  it('slices into meta + theme + structure + var + one-per-panel, all docType-tagged', () => {
+    const g = decomposeToAtomicGoldens(app);
+    const byName = Object.fromEntries(g.map((x) => [x.name, x]));
+    expect(Object.keys(byName).sort()).toEqual(
+      ['partsdash-cad3d-viewer', 'partsdash-chart-trischart', 'partsdash-heading-title', 'partsdash-meta', 'partsdash-struct-part', 'partsdash-theme', 'partsdash-var-parts'].sort(),
+    );
+    // every slice carries docType so the docType filter keeps it for dashboard builds
+    for (const x of g) expect((x.app as any).docType).toBe('dashboard');
+    // each panel slice holds exactly ONE panel (atomic — no over-copy)
+    expect((byName['partsdash-chart-trischart'].app as any).panels).toHaveLength(1);
+    expect((byName['partsdash-chart-trischart'].app as any).panels[0].kind).toBe('chart');
+  });
+
+  it('keys each piece by a natural-language md a prompt can retrieve', () => {
+    const g = decomposeToAtomicGoldens(app);
+    const md = (n: string) => g.find((x) => x.name === n)!.md;
+    expect(md('partsdash-chart-trischart')).toMatch(/bar chart.*reading the parts variable.*x = id, y = tris/);
+    expect(md('partsdash-var-parts')).toMatch(/Seed a parts variable with records \(id, tris\)/);
+    expect(md('partsdash-cad3d-viewer')).toMatch(/3D CAD viewer of the g_shaft part/);
+    expect(md('partsdash-theme')).toMatch(/light theme with a #0d9488 accent/);
+    expect(md('partsdash-meta')).toMatch(/dashboard app titled "CAD Parts — Dashboard", docType dashboard/);
+  });
+
+  it('var slice keeps the full target rows (grounding compacts them later, not here)', () => {
+    const g = decomposeToAtomicGoldens(app);
+    const varSlice = g.find((x) => x.name === 'partsdash-var-parts')!;
+    expect((varSlice.app as any).vars.parts).toHaveLength(2); // the promote target is the real data
+    // …but compactApp renders it as a schema, so the grounding stays small:
+    expect(JSON.stringify(compactApp(varSlice.app))).not.toContain('g_cube');
   });
 });
