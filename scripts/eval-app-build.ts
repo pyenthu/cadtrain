@@ -147,26 +147,43 @@ async function runFake(id: AppId, prompts: string[], golden: AppLike, outDir?: s
   return replayIncremental(id, prompts, makeOracleRunner(golden, prompts.length), golden, { outDir });
 }
 
-/** ONE real `claude --print` turn: the whole script is concatenated into a single request so the
- *  eval costs at most one subscription-billed call (never a per-prompt loop). */
-async function runCli(id: AppId, prompts: string[], model?: string): Promise<AppLike> {
+const claudeRunner: CliRunner = (full, o) => runClaudeCli(full, { model: o.model });
+
+/** ONE Ollama (LOCAL, headless) turn — a real small model without a browser (the browser Qwen can't
+ *  run unattended). Uses the native non-streaming /api/generate; the model emits the SAME verb-list
+ *  text the cli/phi path parses. temperature 0 for the least-noisy measurement. `--provider local`.
+ *  Needs a running Ollama server (`brew services start ollama`) + the model (`ollama pull …`). */
+const runOllama: CliRunner = async (full, o) => {
+  const base = process.env.OLLAMA_URL ?? 'http://localhost:11434';
+  const model = o.model ?? process.env.OLLAMA_MODEL ?? 'qwen2.5:1.5b';
+  const r = await fetch(`${base}/api/generate`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ model, prompt: full, stream: false, options: { temperature: 0 } }),
+  });
+  if (!r.ok) throw new Error(`ollama ${r.status}: ${(await r.text()).slice(0, 200)}`);
+  return ((await r.json()) as { response?: string }).response ?? '';
+};
+
+/** ONE real turn (claude `--print` or local Ollama): the whole script is concatenated into a single
+ *  request so the cli eval costs at most one subscription-billed call (never a per-prompt loop). */
+async function runCli(id: AppId, prompts: string[], model?: string, runner: CliRunner = claudeRunner): Promise<AppLike> {
   const app: AppLike = { app: id, panels: [] };
   const combined = prompts.map((p, i) => `${i + 1}. ${p}`).join('\n');
-  const runner: CliRunner = (full, opts) => runClaudeCli(full, { model: opts.model });
   await buildAppViaCli({ prompt: combined, app: app as any, grounding: '', model }, runner);
   return app;
 }
 
-/** The TRUE incremental CLI reference: one `claude --print` call PER prompt, forwarding the app.
- *  Costs N subscription calls per app (never the metered key) — the faithful atomic-build test. */
+/** The TRUE incremental reference: one model call PER prompt, forwarding the app. cli = N
+ *  subscription calls per app (never the metered key); local = N Ollama calls — the faithful
+ *  atomic-build test on whichever model. */
 async function runCliIncremental(
   id: AppId,
   prompts: string[],
   golden: AppLike,
-  opts: { model?: string; ground?: (prompt: string, app: AppLike) => Promise<string>; outDir?: string },
+  opts: { model?: string; ground?: (prompt: string, app: AppLike) => Promise<string>; outDir?: string; runner?: CliRunner },
 ): Promise<{ app: AppLike; steps: StepRec[] }> {
-  const runner: CliRunner = (full, o) => runClaudeCli(full, { model: o.model });
-  return replayIncremental(id, prompts, runner, golden, opts);
+  return replayIncremental(id, prompts, opts.runner ?? claudeRunner, golden, opts);
 }
 
 function pct(x: number): string {
@@ -182,8 +199,13 @@ function makeGrounder(): (prompt: string, app: AppLike) => Promise<string> {
       const r = await fetch(`${base}/api/app/ground`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        // pass docType so the headless eval exercises the SAME docType-scoped retrieval (#49) as the real path
-        body: JSON.stringify({ prompt, docType: (app as { docType?: string })?.docType }),
+        // pass docType (#49) + a per-request vector toggle (APP_RAG_VECTOR env → the hill-climb A/Bs
+        // lexical↔vector without restarting the server) so the eval exercises the real retrieval path.
+        body: JSON.stringify({
+          prompt,
+          docType: (app as { docType?: string })?.docType,
+          vector: process.env.APP_RAG_VECTOR ? process.env.APP_RAG_VECTOR !== '0' && process.env.APP_RAG_VECTOR.toLowerCase() !== 'false' : undefined,
+        }),
       });
       return r.ok ? (((await r.json()) as { grounding?: string }).grounding ?? '') : '';
     } catch {
@@ -241,23 +263,25 @@ async function buildOnce(
   id: AppId,
   prompts: string[],
   golden: AppLike,
-  provider: 'fake' | 'cli',
+  provider: 'fake' | 'cli' | 'local',
   opts: { model?: string; incremental: boolean; doGround: boolean; scoreFile?: string; outDir?: string },
 ): Promise<{ result: ScoreResult; steps?: StepRec[] }> {
   let built: AppLike;
   let steps: StepRec[] | undefined;
+  const runner = provider === 'local' ? runOllama : undefined; // cli → default claude runner
   if (opts.scoreFile) {
     built = JSON.parse(await readFile(opts.scoreFile, 'utf8')) as AppLike; // score a captured build (browser/local) vs the golden
-  } else if (provider === 'cli' && opts.incremental) {
+  } else if ((provider === 'cli' || provider === 'local') && opts.incremental) {
     const res = await runCliIncremental(id, prompts, golden, {
       model: opts.model,
       outDir: opts.outDir,
       ground: opts.doGround ? makeGrounder() : undefined,
+      runner,
     });
     built = res.app;
     steps = res.steps;
-  } else if (provider === 'cli') {
-    built = await runCli(id, prompts, opts.model);
+  } else if (provider === 'cli' || provider === 'local') {
+    built = await runCli(id, prompts, opts.model, runner);
   } else {
     const res = await runFake(id, prompts, golden, opts.outDir);
     built = res.app;
@@ -272,7 +296,7 @@ async function main() {
     const i = argv.indexOf(name);
     return i >= 0 ? argv[i + 1] : undefined;
   };
-  const provider = (flag('--provider') ?? 'fake') as 'fake' | 'cli';
+  const provider = (flag('--provider') ?? 'fake') as 'fake' | 'cli' | 'local';
   const model = flag('--model');
   const asJson = argv.includes('--json');
   const incremental = argv.includes('--incremental'); // one model call PER prompt + per-rung snapshots

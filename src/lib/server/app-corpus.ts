@@ -336,7 +336,7 @@ export function rankPromotionCandidates(builds: BuildRecord[], golden: GoldenPai
 /** Load + rank golden pairs (the curated DB) AND the builds log, and render the combined
  *  few-shot grounding string. The one call the build pipeline uses. Golden is authoritative;
  *  raw builds are a fallback and are HYGIENE-FILTERED (isCleanBuild) so failures never teach. */
-export async function buildGrounding(prompt: string, k = 3, docType?: string): Promise<string> {
+export async function buildGrounding(prompt: string, k = 3, docType?: string, vector?: boolean): Promise<string> {
   const store = getCorpusStore();
   const [builds, golden] = await Promise.all([store.loadBuilds(), store.loadGolden()]);
   // docType-scoped (#49): ground on same-family CURATED goldens ONLY. Raw past builds carry no
@@ -349,7 +349,8 @@ export async function buildGrounding(prompt: string, k = 3, docType?: string): P
   // lexical ranker via the N≥3 eval gate before flipping the default. The dynamic import keeps
   // transformers.js/onnxruntime out of the module graph unless it's actually switched on; a vector
   // miss (or any embed failure) falls back to the lexical `golds` — retrieval never regresses.
-  if (vectorRetrievalOn()) {
+  const useVector = vector ?? vectorRetrievalOn(); // per-request override wins; else the env default
+  if (useVector) {
     try {
       const { rankGoldenVector } = await import('./vector-retrieval');
       const v = await rankGoldenVector(prompt, golden, k, docType);
