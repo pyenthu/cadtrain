@@ -43,7 +43,8 @@ log "deps up — Ollama + :3333. budget ${HOURS}h, ${RUNS} runs/config."
 score_of() { grep -oaE 'average( mean)?: [0-9.]+%' "$1" | tail -1 | grep -oE '[0-9.]+'; }
 
 run_config() {  # $1=name  $2=extra-flags  $3=env-assignment
-  local name="$1" flags="$2" envset="$3" out="$RUNDIR/last-$name.out"
+  local name="$1" flags="$2" envset="$3"
+  local out="$RUNDIR/last-$name.out"  # separate stmt: $name isn't set within its own `local` under set -u (bash 3.2)
   env $envset bun run scripts/eval-app-build.ts --provider local --incremental --runs "$RUNS" $flags > "$out" 2>&1
   local s; s=$(score_of "$out")
   echo "${s:-NA}"
