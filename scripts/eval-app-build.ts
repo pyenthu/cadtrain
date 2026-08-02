@@ -168,12 +168,13 @@ function pct(x: number): string {
  *  SAME retrieval the browser uses). Requires a running dev server; returns '' on any failure. */
 function makeGrounder(): (prompt: string, app: AppLike) => Promise<string> {
   const base = process.env.CADTRAIN_DEV_URL ?? 'http://localhost:3333';
-  return async (prompt) => {
+  return async (prompt, app) => {
     try {
       const r = await fetch(`${base}/api/app/ground`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        // pass docType so the headless eval exercises the SAME docType-scoped retrieval (#49) as the real path
+        body: JSON.stringify({ prompt, docType: (app as { docType?: string })?.docType }),
       });
       return r.ok ? (((await r.json()) as { grounding?: string }).grounding ?? '') : '';
     } catch {
