@@ -108,7 +108,15 @@ export const GUI_VERBS: Verb[] = [
   {
     name: 'definePanel',
     group: 'gui',
-    desc: 'Append a panel to the .app: { id, kind, source?, controls? }. Returns { ok }.',
+    desc:
+      'Add a TOP-LEVEL component (panel) to the app. panel = { id, kind, props?, source?, layout?, on? }: ' +
+      'id is a short unique slug; kind is one of the component kinds; props are the typed per-kind settings; ' +
+      'source is a data binding { verb, args }; layout is { col, row, w, h } on the 12-col grid. ' +
+      'Use this to place a component at the app root — to nest one INSIDE a container use addChildPanel. Returns { ok }.',
+    example: {
+      args: { panel: { id: 'tris', kind: 'chart', props: { type: 'bar', rowsVar: 'parts', xField: 'id', yField: 'tris' } } },
+      note: 'a bar chart reading the parts variable',
+    },
     params: { type: 'object', properties: { panel: { type: 'object' } }, required: ['panel'] },
     handler: (a: { panel: Record<string, unknown> }, ctx) => {
       const app = requireApp(ctx);
@@ -122,7 +130,13 @@ export const GUI_VERBS: Verb[] = [
   {
     name: 'addControl',
     group: 'gui',
-    desc: 'Add a control to a panel (by panelId). Returns { ok }.',
+    desc:
+      "Append an inline control (a button/input) to a panel's controls[] by panelId. For a full nested " +
+      'component prefer addChildPanel; use addControl for a panel-local control. Returns { ok }.',
+    example: {
+      args: { panelId: 'toolbar', control: { kind: 'button', label: 'Add row' } },
+      note: 'an Add-row button on the toolbar panel',
+    },
     params: {
       type: 'object',
       properties: { panelId: { type: 'string' }, control: { type: 'object' } },
@@ -139,7 +153,13 @@ export const GUI_VERBS: Verb[] = [
   {
     name: 'addChildPanel',
     group: 'gui',
-    desc: 'Append a child panel to a container/card/tabs/toolbar/div (by parentId). Returns { ok }. Nesting = HTML-style encapsulation.',
+    desc:
+      'Nest a component INSIDE a container by parentId (a container/card/tabs/toolbar/row/col/div). ' +
+      'The child appends to parent.children[] — HTML-style encapsulation; same panel shape as definePanel. Returns { ok }.',
+    example: {
+      args: { parentId: 'card', panel: { id: 'title', kind: 'heading', props: { text: 'Summary', level: 2 } } },
+      note: 'a heading nested inside the card',
+    },
     params: {
       type: 'object',
       properties: { parentId: { type: 'string' }, panel: { type: 'object' } },
@@ -243,7 +263,13 @@ export const GUI_VERBS: Verb[] = [
   {
     name: 'setPanelProp',
     group: 'gui',
-    desc: 'Set a property on a panel (e.g. title, text, kind).',
+    desc:
+      'Set a TOP-LEVEL field on a panel by id (kind, source, layout, title). For a component\'s typed ' +
+      'display props (text, label, columns, …) use setComponentProp, which writes panel.props. Returns { ok }.',
+    example: {
+      args: { panelId: 'chart', key: 'source', value: { verb: 'readVar', args: { name: 'parts' } } },
+      note: 'point a component at a data source',
+    },
     params: {
       type: 'object',
       properties: { panelId: { type: 'string' }, key: { type: 'string' }, value: {} },
@@ -261,8 +287,13 @@ export const GUI_VERBS: Verb[] = [
     name: 'setComponentProp',
     group: 'gui',
     desc:
-      "Set a typed PROP on a component (panel) by id — writes panel.props[name] (text, label, " +
-      'columns, align, slot, …). Finds nested children too. A null/undefined value deletes the prop.',
+      'Set a typed display PROP on a component by id — writes panel.props[name] (text, label, level, ' +
+      'columns, align, rowsVar, …; the per-kind props from the component catalog). Finds nested children too. ' +
+      'A null/undefined value DELETES the prop; a prop bound to $vars.<x> is written THROUGH to the store. Returns { ok }.',
+    example: {
+      args: { panelId: 'title', name: 'text', value: 'Parts Dashboard' },
+      note: 'set the heading text',
+    },
     params: {
       type: 'object',
       properties: { panelId: { type: 'string' }, name: { type: 'string' }, value: {} },
@@ -288,7 +319,10 @@ export const GUI_VERBS: Verb[] = [
   {
     name: 'setAppMeta',
     group: 'gui',
-    desc: 'Set the app title and/or docType.',
+    desc:
+      'Set the app-level title and/or docType (the app CATEGORY: "roadmap", "well", "dashboard", …). ' +
+      'docType steers RAG grounding + validation. Returns { ok }.',
+    example: { args: { title: 'Parts Dashboard', docType: 'dashboard' }, note: 'name and categorize the app' },
     params: { type: 'object', properties: { title: { type: 'string' }, docType: { type: 'string' } } },
     handler: (a: { title?: string; docType?: string }, ctx) => {
       const app = requireApp(ctx);
@@ -300,7 +334,14 @@ export const GUI_VERBS: Verb[] = [
   {
     name: 'bindAction',
     group: 'gui',
-    desc: 'Bind a control (by controlId) to a verb + args.',
+    desc:
+      'Bind a named control (by controlId) to an ACTION = a verb name + its args, so activating the control ' +
+      'dispatches that verb. (Most components instead carry an `on` event map, e.g. on.click — use that for a ' +
+      'component; bindAction targets a control added via addControl.) Returns { ok }.',
+    example: {
+      args: { controlId: 'saveBtn', verb: 'patchDoc', args: { id: '$active', op: 'set', path: 'name', value: 'X' } },
+      note: 'wire a button to a mutate verb',
+    },
     params: {
       type: 'object',
       properties: { controlId: { type: 'string' }, verb: { type: 'string' }, args: { type: 'object' } },
@@ -312,6 +353,10 @@ export const GUI_VERBS: Verb[] = [
     name: 'patchApp',
     group: 'gui',
     desc: 'Patch the .app JSON directly: op="set|push|remove", path (dotted), value. For app-level state the other verbs don\'t cover — SEED DATA: path "vars.<name>" (a scalar / list / list-of-records, read as $vars.<name>); DEFINE A STRUCTURE: path "structures.<name>" value [{name,type},…] (a record schema); theme: path "theme" value {mode,accent}; app id: path "app".',
+    example: {
+      args: { op: 'set', path: 'vars.parts', value: [{ id: 'g_cube', tris: 1200 }, { id: 'g_star', tris: 3400 }] },
+      note: 'seed a list-of-records variable read as $vars.parts',
+    },
     params: {
       type: 'object',
       properties: { op: { type: 'string' }, path: { type: 'string' }, value: {} },

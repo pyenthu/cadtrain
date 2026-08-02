@@ -75,6 +75,15 @@ export interface Ctx {
   slots?: Record<string, SlotValue>;
 }
 
+/** ONE canonical, SHORT example call for a verb. `args` is the exact args object the verb is
+ *  invoked with (matches `params`); `note` is a one-line "what this does". Projected into the AI
+ *  tool description AND API.md so the (esp. LOCAL) model sees a concrete args SHAPE, not just
+ *  prose. Keep it tiny — every example is tokens in the tool schema. */
+export interface VerbExample {
+  args: Record<string, unknown>;
+  note?: string;
+}
+
 export interface Verb<A = any, R = any> {
   name: string;
   group: VerbGroup;
@@ -83,7 +92,18 @@ export interface Verb<A = any, R = any> {
   /** Input schema (the params contract). */
   params: JSONSchema;
   returns?: JSONSchema;
+  /** ONE canonical example — rendered into the tool desc + API.md. See VerbExample. */
+  example?: VerbExample;
   handler: (args: A, ctx: Ctx) => Promise<R> | R;
+}
+
+/** The verb's example as a compact `{args} — note` string, or undefined if it has none. Both
+ *  projections (to-aisdk, to-apimd) render through this so the example is formatted identically
+ *  everywhere. */
+export function verbExample(v: Verb): string | undefined {
+  if (!v.example) return undefined;
+  const { args, note } = v.example;
+  return `${JSON.stringify(args)}${note ? ` — ${note}` : ''}`;
 }
 
 /** The assembled catalog. Every projection (schema / HTTP / API.md) reads from this. */

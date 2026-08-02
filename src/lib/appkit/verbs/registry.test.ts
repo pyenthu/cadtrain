@@ -1,8 +1,8 @@
 // Rung 1 — proves the SSOT → schema → dispatch loop headless (no browser, no deps).
 import { describe, it, expect } from 'vitest';
-import { VERBS, getVerb, verbsByGroup } from './registry';
+import { VERBS, getVerb, verbsByGroup, verbExample } from './registry';
 import { dispatch } from './dispatch';
-import { toAiSdkTools } from '../schema/to-aisdk';
+import { toAiSdkTools, verbDescription } from '../schema/to-aisdk';
 import { toApiMd } from '../schema/to-apimd';
 
 describe('appkit verb registry (rung 1 — SSOT → schema → dispatch)', () => {
@@ -19,9 +19,25 @@ describe('appkit verb registry (rung 1 — SSOT → schema → dispatch)', () =>
     expect(Object.keys(tools)).toHaveLength(VERBS.length);
     for (const v of VERBS) {
       expect(tools[v.name]).toBeTruthy();
-      expect(tools[v.name].description).toBe(v.desc);
+      expect(tools[v.name].description).toBe(verbDescription(v)); // desc + appended example
+      expect(tools[v.name].description).toContain(v.desc); // the prose is always present
       expect(tools[v.name].parameters).toBe(v.params);
     }
+  });
+
+  it('appends the canonical example to the description + API.md when a verb has one', () => {
+    const withEx = VERBS.filter((v) => v.example);
+    expect(withEx.length).toBeGreaterThan(0); // core verbs carry examples
+    const tools = toAiSdkTools(VERBS);
+    const md = toApiMd(VERBS);
+    for (const v of withEx) {
+      const ex = verbExample(v)!;
+      expect(tools[v.name].description).toContain(`Example: ${ex}`); // rides in the tool desc
+      expect(md).toContain(`e.g. \`${ex}\``); // and shows in the guide
+    }
+    // definePanel is a core build verb — its example must be present + concrete
+    const dp = getVerb('definePanel')!;
+    expect(dp.example?.args).toHaveProperty('panel');
   });
 
   it('generates the API.md guide from the registry', () => {

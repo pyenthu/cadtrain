@@ -194,41 +194,62 @@ Each card: what it is · when to reach for it · props · a concrete example cal
 
 ## data
 
-- `readVar(name)` — Read an app-level variable (app.vars[name]) — the seed-data bridge. Lets a data component (grid/list) SOURCE its rows from a seeded list<record> variable, e.g. source { verb:'readVar', args:{ name:'tasks' } }. Returns the value (often an array of records); an empty array if the variable is absent. No engine needed — reads the live .app.
-- `listDocs(docType)` — List available documents of a type. Returns [{id, title}].
-- `loadDoc(id)` — Load a document by id. Returns { id, params }.
-- `getParams(id)` — Get a document's params (name→value; list<record> for wells casings/completions/survey).
-- `bake(id, params)` — Bake a document with params → geometry stats { verts, tris }.
+- `readVar(name)` — Read an app-level variable (app.vars[name]) — the seed-data bridge. Lets a data component (grid/list/chart) SOURCE its rows from a seeded list<record> variable, e.g. source { verb:'readVar', args:{ name:'tasks' } }. Returns the value (often an array of records); an empty array if the variable is absent. No engine needed — reads the live .app.
+  - e.g. `{"name":"parts"} — source a grid/chart from the seeded $vars.parts rows`
+- `listDocs(docType)` — List the documents (CAD parts / wells) the engine can open, optionally filtered by docType. Wire a list component's source to it so the user can pick one. Returns [{id, title}].
+  - e.g. `{"docType":"well"} — list wells to populate a picker`
+- `loadDoc(id)` — Load one document by id → { id, params }. Typically wired to a list's onSelect so choosing a row loads that doc — use "$active" for the selected id. Returns { id, params }.
+  - e.g. `{"id":"$active"} — load the doc the list selected`
+- `getParams(id)` — Get a document's params as name→value (scalars + list<record> params like a well's casings/completions/survey). Wire a form's source to it (id:"$active") to edit them. Returns the params object.
+  - e.g. `{"id":"$active"} — feed a form the active doc params`
+- `bake(id, params)` — Bake a document with optional param overrides → geometry STATS only ({ verts, tris }). For the renderable mesh (a 3D viewer) use bakeGeo instead. Returns { verts, tris }.
+  - e.g. `{"id":"$active"} — vert/tri counts for the selected part`
 - `getSource(id)` — Get a document's TypeScript source.
 - `compile(id, params)` — Compile a document → the dep-inlined Manifold script + scriptHash.
 - `bakeGeo(partId, params, cutaway)` — Bake a CAD part by id → the SERIALIZED renderable MESH ({ full, cutVC } vertex-coloured geometry) for the interactive 3D viewer (the cad3d component sources its geometry from this). Unlike `bake` (which returns verts/tris STATS only), bakeGeo returns the geometry to draw. The engine + the part source stay SERVER-side (computeMode:server) — only mesh reaches the client. args: { partId, params?, cutaway? }.
+  - e.g. `{"partId":"$active","cutaway":true} — mesh + cutaway for the cad3d 3D viewer`
 - `listParts(category)` — List volume parts, optionally filtered by category. Returns [{id, meta}].
 - `loadData(slot, pick)` — Read the DATA a File component opened into a slot (§0.5 — the app is stateless; data lives in files). { slot, pick? } → the parsed content (or a nested path via pick). Wire a component's source to it: {verb:'loadData', args:{slot:'well'}}.
+  - e.g. `{"slot":"well","pick":"casings"} — read the casings rows from the opened well file`
 - `http(url, method, body, headers, pick)` — Call an HTTP endpoint declaratively: { url, method?, body?, headers?, pick? }. Returns the parsed JSON (or text). "pick" selects a nested path (e.g. "data.items") — use it to feed a list panel an array. Same-origin URLs like "/api/..." are typical. Wire it as a panel source or an on-event action.
+  - e.g. `{"url":"/api/primitives/list","pick":"items"} — GET a list and feed a grid its rows`
 
 ## mutate
 
-- `setParam(id, name, value)` — Set a scalar param (or a list<record> cell) on a document. Returns { ok }.
-- `addRow(id, list, row)` — Append a record to a list<record> param (e.g. a casing/completion row). Returns { ok, index }.
-- `removeRow(id, list, index)` — Remove a record from a list<record> param by index.
-- `reorderRow(id, list, from, to)` — Move a list<record> row from one index to another.
-- `patchDoc(id, op, path, value)` — Patch a document JSON: op="set|push|remove", path (dotted), value.
+- `setParam(id, name, value)` — Set a scalar param on a document (or one cell of a list<record> param). Use for edit forms + controls that write a single value back to the bound doc. Returns { ok }.
+  - e.g. `{"id":"$active","name":"length","value":120} — set the length param on the active doc`
+- `addRow(id, list, row)` — Append a record (row) to a list<record> param — e.g. add a casing/completion/survey row to a well. Wire an "Add row" button to it. Returns { ok, index }.
+  - e.g. `{"id":"$active","list":"casings","row":{"od":9.625,"top":0,"bottom":3500}} — add a casing row to the well`
+- `removeRow(id, list, index)` — Remove a row from a list<record> param by index. Returns { ok }.
+  - e.g. `{"id":"$active","list":"casings","index":2} — delete the 3rd casing row`
+- `reorderRow(id, list, from, to)` — Move a list<record> row from one index to another. Returns { ok }.
+  - e.g. `{"id":"$active","list":"casings","from":2,"to":0} — move a row to the top`
+- `patchDoc(id, op, path, value)` — Patch a bound document's JSON directly: op="set|push|remove", path (dotted), value — for doc edits the typed param verbs don't cover. Returns { ok }.
+  - e.g. `{"id":"$active","op":"set","path":"name","value":"Surface casing"} — rename the active doc`
 
 ## gui
 
 - `listPanelKinds()` — List the panel kinds the harness can render. Returns [{kind}].
-- `definePanel(panel)` — Append a panel to the .app: { id, kind, source?, controls? }. Returns { ok }.
-- `addControl(panelId, control)` — Add a control to a panel (by panelId). Returns { ok }.
-- `addChildPanel(parentId, panel)` — Append a child panel to a container/card/tabs/toolbar/div (by parentId). Returns { ok }. Nesting = HTML-style encapsulation.
+- `definePanel(panel)` — Add a TOP-LEVEL component (panel) to the app. panel = { id, kind, props?, source?, layout?, on? }: id is a short unique slug; kind is one of the component kinds; props are the typed per-kind settings; source is a data binding { verb, args }; layout is { col, row, w, h } on the 12-col grid. Use this to place a component at the app root — to nest one INSIDE a container use addChildPanel. Returns { ok }.
+  - e.g. `{"panel":{"id":"tris","kind":"chart","props":{"type":"bar","rowsVar":"parts","xField":"id","yField":"tris"}}} — a bar chart reading the parts variable`
+- `addControl(panelId, control)` — Append an inline control (a button/input) to a panel's controls[] by panelId. For a full nested component prefer addChildPanel; use addControl for a panel-local control. Returns { ok }.
+  - e.g. `{"panelId":"toolbar","control":{"kind":"button","label":"Add row"}} — an Add-row button on the toolbar panel`
+- `addChildPanel(parentId, panel)` — Nest a component INSIDE a container by parentId (a container/card/tabs/toolbar/row/col/div). The child appends to parent.children[] — HTML-style encapsulation; same panel shape as definePanel. Returns { ok }.
+  - e.g. `{"parentId":"card","panel":{"id":"title","kind":"heading","props":{"text":"Summary","level":2}}} — a heading nested inside the card`
 - `indentPanel(panelId)` — Demote a panel INTO its previous sibling (append to prevSibling.children). No-op if first in its list.
 - `outdentPanel(panelId)` — Promote a panel OUT of its parent (move it just after the parent in the parent's list). No-op at top level.
 - `insertTree(nodes, parentId)` — Insert a cloned subtree (a saved component/template) into the .app — at the root or into a parent by id. Re-ids on insert so nothing collides.
 - `removePanel(panelId)` — Remove a panel from the .app by id (anywhere in the tree — top-level or nested).
 - `movePanel(panelId, to)` — Reorder a panel within its siblings — "to" is the target index in its own list (top-level or nested).
-- `setPanelProp(panelId, key, value)` — Set a property on a panel (e.g. title, text, kind).
-- `setComponentProp(panelId, name, value)` — Set a typed PROP on a component (panel) by id — writes panel.props[name] (text, label, columns, align, slot, …). Finds nested children too. A null/undefined value deletes the prop.
-- `setAppMeta(title, docType)` — Set the app title and/or docType.
-- `bindAction(controlId, verb, args)` — Bind a control (by controlId) to a verb + args.
+- `setPanelProp(panelId, key, value)` — Set a TOP-LEVEL field on a panel by id (kind, source, layout, title). For a component's typed display props (text, label, columns, …) use setComponentProp, which writes panel.props. Returns { ok }.
+  - e.g. `{"panelId":"chart","key":"source","value":{"verb":"readVar","args":{"name":"parts"}}} — point a component at a data source`
+- `setComponentProp(panelId, name, value)` — Set a typed display PROP on a component by id — writes panel.props[name] (text, label, level, columns, align, rowsVar, …; the per-kind props from the component catalog). Finds nested children too. A null/undefined value DELETES the prop; a prop bound to $vars.<x> is written THROUGH to the store. Returns { ok }.
+  - e.g. `{"panelId":"title","name":"text","value":"Parts Dashboard"} — set the heading text`
+- `setAppMeta(title, docType)` — Set the app-level title and/or docType (the app CATEGORY: "roadmap", "well", "dashboard", …). docType steers RAG grounding + validation. Returns { ok }.
+  - e.g. `{"title":"Parts Dashboard","docType":"dashboard"} — name and categorize the app`
+- `bindAction(controlId, verb, args)` — Bind a named control (by controlId) to an ACTION = a verb name + its args, so activating the control dispatches that verb. (Most components instead carry an `on` event map, e.g. on.click — use that for a component; bindAction targets a control added via addControl.) Returns { ok }.
+  - e.g. `{"controlId":"saveBtn","verb":"patchDoc","args":{"id":"$active","op":"set","path":"name","value":"X"}} — wire a button to a mutate verb`
 - `patchApp(op, path, value)` — Patch the .app JSON directly: op="set|push|remove", path (dotted), value. For app-level state the other verbs don't cover — SEED DATA: path "vars.<name>" (a scalar / list / list-of-records, read as $vars.<name>); DEFINE A STRUCTURE: path "structures.<name>" value [{name,type},…] (a record schema); theme: path "theme" value {mode,accent}; app id: path "app".
+  - e.g. `{"op":"set","path":"vars.parts","value":[{"id":"g_cube","tris":1200},{"id":"g_star","tris":3400}]} — seed a list-of-records variable read as $vars.parts`
 
 

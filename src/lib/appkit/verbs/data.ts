@@ -20,9 +20,10 @@ export const DATA_VERBS: Verb[] = [
     group: 'data',
     desc:
       "Read an app-level variable (app.vars[name]) — the seed-data bridge. Lets a data component " +
-      "(grid/list) SOURCE its rows from a seeded list<record> variable, e.g. source " +
+      "(grid/list/chart) SOURCE its rows from a seeded list<record> variable, e.g. source " +
       "{ verb:'readVar', args:{ name:'tasks' } }. Returns the value (often an array of records); " +
       "an empty array if the variable is absent. No engine needed — reads the live .app.",
+    example: { args: { name: 'parts' }, note: 'source a grid/chart from the seeded $vars.parts rows' },
     params: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
     returns: { type: 'array' },
     handler: (a: { name: string }, ctx) => {
@@ -34,7 +35,10 @@ export const DATA_VERBS: Verb[] = [
   {
     name: 'listDocs',
     group: 'data',
-    desc: 'List available documents of a type. Returns [{id, title}].',
+    desc:
+      'List the documents (CAD parts / wells) the engine can open, optionally filtered by docType. ' +
+      "Wire a list component's source to it so the user can pick one. Returns [{id, title}].",
+    example: { args: { docType: 'well' }, note: 'list wells to populate a picker' },
     params: {
       type: 'object',
       properties: { docType: { type: 'string', description: 'Filter by doc type, e.g. "well".' } },
@@ -46,7 +50,10 @@ export const DATA_VERBS: Verb[] = [
   {
     name: 'loadDoc',
     group: 'data',
-    desc: 'Load a document by id. Returns { id, params }.',
+    desc:
+      "Load one document by id → { id, params }. Typically wired to a list's onSelect so choosing a row " +
+      'loads that doc — use "$active" for the selected id. Returns { id, params }.',
+    example: { args: { id: '$active' }, note: 'load the doc the list selected' },
     params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     handler: async (a: { id: string }, ctx) => {
       const d = (await engine(ctx).list()).find((x) => x.id === a.id);
@@ -57,7 +64,10 @@ export const DATA_VERBS: Verb[] = [
   {
     name: 'getParams',
     group: 'data',
-    desc: "Get a document's params (name→value; list<record> for wells casings/completions/survey).",
+    desc:
+      "Get a document's params as name→value (scalars + list<record> params like a well's " +
+      'casings/completions/survey). Wire a form\'s source to it (id:"$active") to edit them. Returns the params object.',
+    example: { args: { id: '$active' }, note: 'feed a form the active doc params' },
     params: { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] },
     handler: async (a: { id: string }, ctx) => {
       const d = (await engine(ctx).list()).find((x) => x.id === a.id);
@@ -68,7 +78,10 @@ export const DATA_VERBS: Verb[] = [
   {
     name: 'bake',
     group: 'data',
-    desc: 'Bake a document with params → geometry stats { verts, tris }.',
+    desc:
+      'Bake a document with optional param overrides → geometry STATS only ({ verts, tris }). For the ' +
+      'renderable mesh (a 3D viewer) use bakeGeo instead. Returns { verts, tris }.',
+    example: { args: { id: '$active' }, note: 'vert/tri counts for the selected part' },
     params: {
       type: 'object',
       properties: { id: { type: 'string' }, params: { type: 'object' } },
@@ -115,6 +128,7 @@ export const DATA_VERBS: Verb[] = [
       'Unlike `bake` (which returns verts/tris STATS only), bakeGeo returns the geometry to draw. ' +
       'The engine + the part source stay SERVER-side (computeMode:server) — only mesh reaches the ' +
       "client. args: { partId, params?, cutaway? }.",
+    example: { args: { partId: '$active', cutaway: true }, note: 'mesh + cutaway for the cad3d 3D viewer' },
     params: {
       type: 'object',
       properties: {
