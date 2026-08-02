@@ -1,0 +1,163 @@
+{
+  "app": "product-catalog",
+  "title": "Product Catalog",
+  "docType": "catalog",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "vars": {
+    "products": [
+      {
+        "sku": "SKU-1001",
+        "name": "Hex Bolt M12",
+        "category": "Fasteners",
+        "price": 2.4,
+        "stock": 1840
+      },
+      {
+        "sku": "SKU-1002",
+        "name": "Steel Flange 4in",
+        "category": "Fittings",
+        "price": 38.5,
+        "stock": 260
+      },
+      {
+        "sku": "SKU-1003",
+        "name": "O-Ring Nitrile 2-214",
+        "category": "Seals",
+        "price": 0.85,
+        "stock": 9400
+      },
+      {
+        "sku": "SKU-1004",
+        "name": "Ball Valve 2in",
+        "category": "Valves",
+        "price": 124,
+        "stock": 72
+      },
+      {
+        "sku": "SKU-1005",
+        "name": "Pressure Gauge 5000psi",
+        "category": "Instruments",
+        "price": 210,
+        "stock": 38
+      },
+      {
+        "sku": "SKU-1006",
+        "name": "Tubing Pup Joint 5ft",
+        "category": "Tubulars",
+        "price": 465,
+        "stock": 54
+      }
+    ]
+  },
+  "structures": {
+    "products": [
+      {
+        "name": "sku",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "category",
+        "type": "string"
+      },
+      {
+        "name": "price",
+        "type": "number"
+      },
+      {
+        "name": "stock",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Product Catalog",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Browse and search the full product list."
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "stat-skus",
+          "kind": "stat",
+          "props": {
+            "label": "SKUs",
+            "value": 6
+          }
+        },
+        {
+          "id": "stat-categories",
+          "kind": "stat",
+          "props": {
+            "label": "Categories",
+            "value": 6
+          }
+        },
+        {
+          "id": "stat-units",
+          "kind": "stat",
+          "props": {
+            "label": "Units in Stock",
+            "value": 11664
+          }
+        }
+      ]
+    },
+    {
+      "id": "catalog-table",
+      "kind": "datatable",
+      "props": {
+        "data": "$vars.products",
+        "search": true,
+        "sortable": true,
+        "pageSize": 10,
+        "columns": [
+          {
+            "key": "sku",
+            "label": "SKU"
+          },
+          {
+            "key": "name",
+            "label": "Product"
+          },
+          {
+            "key": "category",
+            "label": "Category"
+          },
+          {
+            "key": "price",
+            "label": "Price",
+            "format": "currency"
+          },
+          {
+            "key": "stock",
+            "label": "Stock",
+            "format": "number"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+RAG hill-climb leaderboard (qwen2.5:1.5b, overall mean across 5 apps)
+config         n    mean     sd   best

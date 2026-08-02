@@ -1,0 +1,47 @@
+
+=== plan  (fake, 8 prompts) ===
+  score: 100.0%
+  facets: panelKinds 100.0% · nesting 100.0% · vars 100.0% · structures 100.0% · theme 100.0% · meta 100.0%
+  built kinds:  [heading, text, gantt, grid]
+  golden kinds: [heading, text, gantt, grid]
+  per-rung score: 8.0% → 30.0% → 70.0% → 90.0% → 100.0% → 100.0% → 100.0% → 100.0%
+
+=== design  (fake, 13 prompts) ===
+  score: 100.0%
+  facets: panelKinds 100.0% · nesting 100.0% · vars 100.0% · structures 100.0% · theme 100.0% · meta 100.0%
+  built kinds:  [heading, text, tabs, nodetree, nodetree]
+  golden kinds: [heading, text, tabs, nodetree, nodetree]
+  per-rung score: 8.0% → 15.0% → 25.0% → 30.0% → 64.3% → 83.3% → 100.0% → 100.0% → 100.0% → 100.0% → 100.0% → 100.0% → 100.0%
+
+=== ewell  (fake, 13 prompts) ===
+  score: 100.0%
+  facets: panelKinds 100.0% · nesting 100.0% · vars 100.0% · structures 100.0% · theme 100.0% · meta 100.0%
+  built kinds:  [vtoolbar, iconbutton, popover, text, iconbutton, popover, text, text, text, iconbutton, iconbutton, popover, grid, iconbutton, popover, grid, iconbutton, popover, text, iconbutton, popover, text, col, heading, text, wellschematic]
+  golden kinds: [vtoolbar, iconbutton, popover, text, iconbutton, popover, text, text, text, iconbutton, iconbutton, popover, grid, iconbutton, popover, grid, iconbutton, popover, text, iconbutton, popover, text, col, heading, text, wellschematic]
+  per-rung score: 18.8% → 25.9% → 30.0% → 42.4% → 52.5% → 60.9% → 67.9% → 73.9% → 79.1% → 83.6% → 87.6% → 100.0% → 100.0%
+
+=== partsdash  (fake, 13 prompts) ===
+  score: 100.0%
+  facets: panelKinds 100.0% · nesting 100.0% · vars 100.0% · structures 100.0% · theme 100.0% · meta 100.0%
+  built kinds:  [heading, text, statgrid, stat, stat, stat, chart, datatable, cad3d]
+  golden kinds: [heading, text, statgrid, stat, stat, stat, chart, datatable, cad3d]
+  per-rung score: 8.0% → 30.0% → 51.8% → 66.9% → 78.0% → 86.5% → 100.0% → 100.0% → 100.0% → 100.0% → 100.0% → 100.0% → 100.0%
+
+=== opsdash  (fake, 11 prompts) ===
+  score: 100.0%
+  facets: panelKinds 100.0% · nesting 100.0% · vars 100.0% · structures 100.0% · theme 100.0% · meta 100.0%
+  built kinds:  [heading, text, statgrid, stat, stat, stat, chart, datatable]
+  golden kinds: [heading, text, statgrid, stat, stat, stat, chart, datatable]
+  per-rung score: 15.0% → 43.3% → 62.7% → 76.2% → 86.0% → 100.0% → 100.0% → 100.0% → 100.0% → 100.0% → 100.0%
+
+──────────────────────────────────────────────
+SUMMARY (fake):  plan 100.0%  ·  design 100.0%  ·  ewell 100.0%  ·  partsdash 100.0%  ·  opsdash 100.0%
+average: 100.0%
+
+── GATE (baseline scripts/overnight/runs/gate-baseline.json, tolerance 0.03) ──
+  PASS plan: mean 100.0% ≥ baseline 100.0% − 0.03 tol
+  PASS design: mean 100.0% ≥ baseline 100.0% − 0.03 tol
+  PASS ewell: mean 100.0% ≥ baseline 100.0% − 0.03 tol
+  PASS partsdash: mean 100.0% ≥ baseline 100.0% − 0.03 tol
+  PASS opsdash: mean 100.0% ≥ baseline 100.0% − 0.03 tol
+GATE: PASS

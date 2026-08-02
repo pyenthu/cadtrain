@@ -4,11 +4,13 @@
 # you triage + fix in the morning. Rotates through the RAG/app code we've been changing; time-bounded.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
+export PATH="$HOME/.bun/bin:/opt/homebrew/bin:$PATH"  # detached shells may lack claude/bun on PATH
 RUNDIR="scripts/overnight/runs"; mkdir -p "$RUNDIR"
 REPORT="$RUNDIR/harden-findings.md"; LOG="$RUNDIR/harden.log"; HOURS="${HARDEN_HOURS:-7}"
 log(){ echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
 [ -f "$REPORT" ] || echo "# Overnight code-hardening findings ($(date '+%Y-%m-%d'))" > "$REPORT"
-mapfile -t FILES < <(find src/lib/appkit src/lib/server src/routes/api/app -name '*.ts' ! -name '*.test.ts' | sort)
+# bash 3.2 (macOS default) has no `mapfile` — fill the array the portable way
+FILES=(); while IFS= read -r line; do FILES+=("$line"); done < <(find src/lib/appkit src/lib/server src/routes/api/app -name '*.ts' ! -name '*.test.ts' | sort)
 log "reviewing ${#FILES[@]} files"
 END=$(( $(date +%s) + HOURS*3600 )); i=0
 while [ "$(date +%s)" -lt "$END" ] && [ "${#FILES[@]}" -gt 0 ]; do

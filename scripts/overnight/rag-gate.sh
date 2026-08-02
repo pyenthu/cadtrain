@@ -5,6 +5,7 @@
 # contention-free (no Ollama, no claude), so it runs happily alongside A/B/D.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
+export PATH="$HOME/.bun/bin:/opt/homebrew/bin:$PATH"  # detached shells may lack bun on PATH
 RUNDIR="scripts/overnight/runs"; mkdir -p "$RUNDIR"
 BASE="$RUNDIR/gate-baseline.json"; LOG="$RUNDIR/gate.log"
 INTERVAL="${GATE_INTERVAL:-900}"; HOURS="${GATE_HOURS:-7}"

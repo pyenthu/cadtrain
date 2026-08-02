@@ -1,0 +1,107 @@
+{
+  "app": "kanban-board",
+  "title": "Kanban Board",
+  "docType": "board",
+  "theme": {
+    "mode": "light",
+    "accent": "#3b82f6"
+  },
+  "vars": {
+    "todo": [
+      {
+        "task": "Draft Q3 spec",
+        "owner": "Ana",
+        "points": 3
+      },
+      {
+        "task": "Fix bake cache",
+        "owner": "Rob",
+        "points": 5
+      }
+    ],
+    "doing": [
+      {
+        "task": "Wire cad3d viewer",
+        "owner": "Sam",
+        "points": 8
+      }
+    ],
+    "done": [
+      {
+        "task": "Ship verb registry",
+        "owner": "Ana",
+        "points": 5
+      },
+      {
+        "task": "Add datatable kind",
+        "owner": "Rob",
+        "points": 2
+      }
+    ]
+  },
+  "structures": {
+    "card": [
+      {
+        "name": "task",
+        "type": "string"
+      },
+      {
+        "name": "owner",
+        "type": "string"
+      },
+      {
+        "name": "points",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "board-title",
+      "kind": "heading",
+      "props": {
+        "text": "Sprint Board",
+        "level": 1
+      }
+    },
+    {
+      "id": "columns",
+      "kind": "tabs",
+      "props": {
+        "layout": "row"
+      },
+      "children": [
+        {
+          "id": "col-todo",
+          "kind": "list",
+          "props": {
+            "title": "To Do",
+            "data": "$vars.todo",
+            "primary": "task",
+            "secondary": "owner"
+          }
+        },
+        {
+          "id": "col-doing",
+          "kind": "list",
+          "props": {
+            "title": "In Progress",
+            "data": "$vars.doing",
+            "primary": "task",
+            "secondary": "owner"
+          }
+        },
+        {
+          "id": "col-done",
+          "kind": "list",
+          "props": {
+            "title": "Done",
+            "data": "$vars.done",
+            "primary": "task",
+            "secondary": "owner"
+          }
+        }
+      ]
+    }
+  ]
+}

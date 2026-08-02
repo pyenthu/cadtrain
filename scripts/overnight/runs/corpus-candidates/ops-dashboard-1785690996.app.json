@@ -1,0 +1,201 @@
+{
+  "app": "ops-dashboard",
+  "title": "Operations Dashboard",
+  "docType": "dashboard",
+  "theme": {
+    "mode": "dark",
+    "accent": "#38bdf8"
+  },
+  "vars": {
+    "throughput": [
+      {
+        "day": "Mon",
+        "runs": 42
+      },
+      {
+        "day": "Tue",
+        "runs": 58
+      },
+      {
+        "day": "Wed",
+        "runs": 51
+      },
+      {
+        "day": "Thu",
+        "runs": 67
+      },
+      {
+        "day": "Fri",
+        "runs": 73
+      },
+      {
+        "day": "Sat",
+        "runs": 39
+      },
+      {
+        "day": "Sun",
+        "runs": 31
+      }
+    ],
+    "jobs": [
+      {
+        "job": "bake-queue",
+        "status": "OK",
+        "duration": 128,
+        "owner": "pipeline"
+      },
+      {
+        "job": "vocab-sync",
+        "status": "OK",
+        "duration": 54,
+        "owner": "authoring"
+      },
+      {
+        "job": "rag-index",
+        "status": "WARN",
+        "duration": 312,
+        "owner": "ai"
+      },
+      {
+        "job": "volume-backup",
+        "status": "OK",
+        "duration": 97,
+        "owner": "infra"
+      },
+      {
+        "job": "e2e-suite",
+        "status": "FAIL",
+        "duration": 486,
+        "owner": "qa"
+      }
+    ]
+  },
+  "structures": {
+    "jobs": [
+      {
+        "name": "job",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      },
+      {
+        "name": "duration",
+        "type": "number"
+      },
+      {
+        "name": "owner",
+        "type": "string"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Operations Dashboard",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Live pipeline health for the last 7 days."
+      }
+    },
+    {
+      "id": "kpis",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "kpi-runs",
+          "kind": "stat",
+          "props": {
+            "label": "Total Runs",
+            "value": 361,
+            "delta": "+12%",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-uptime",
+          "kind": "stat",
+          "props": {
+            "label": "Uptime",
+            "value": "99.4%",
+            "delta": "+0.3%",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-failures",
+          "kind": "stat",
+          "props": {
+            "label": "Failures",
+            "value": 7,
+            "delta": "-3",
+            "trend": "down"
+          }
+        }
+      ]
+    },
+    {
+      "id": "trend",
+      "kind": "chart",
+      "props": {
+        "type": "line",
+        "title": "Runs per Day",
+        "x": "day",
+        "y": "runs",
+        "height": 260
+      },
+      "source": {
+        "verb": "vars.get",
+        "args": {
+          "name": "throughput"
+        }
+      }
+    },
+    {
+      "id": "jobs-table",
+      "kind": "datatable",
+      "props": {
+        "title": "Recent Jobs",
+        "columns": [
+          {
+            "key": "job",
+            "label": "Job"
+          },
+          {
+            "key": "status",
+            "label": "Status"
+          },
+          {
+            "key": "duration",
+            "label": "Duration (s)",
+            "align": "right"
+          },
+          {
+            "key": "owner",
+            "label": "Owner"
+          }
+        ],
+        "sortable": true,
+        "searchable": true,
+        "pageSize": 10
+      },
+      "source": {
+        "verb": "vars.get",
+        "args": {
+          "name": "jobs"
+        }
+      }
+    }
+  ]
+}

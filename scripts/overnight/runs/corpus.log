@@ -1,0 +1,5 @@
+[22:46:06] a contact form with name, email and message fields, docType form => OK 3p form -> scripts/overnight/runs/corpus-candidates/contact-form-1785690966.app.json
+[22:46:17] a kanban board with three columns of task cards, docType board => OK 2p board -> scripts/overnight/runs/corpus-candidates/kanban-board-1785690977.app.json
+[22:46:23] a settings page with labelled toggles and a save button, docType settings => OK 3p settings -> scripts/overnight/runs/corpus-candidates/settings-1785690983.app.json
+[22:46:36] an operations dashboard with three KPI stat tiles, a line chart and a data table, docType dashboard => OK 5p dashboard -> scripts/overnight/runs/corpus-candidates/ops-dashboard-1785690996.app.json
+[22:46:47] a product catalog with a searchable data table of products, docType catalog => OK 4p catalog -> scripts/overnight/runs/corpus-candidates/product-catalog-1785691007.app.json

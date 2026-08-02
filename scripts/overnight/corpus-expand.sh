@@ -5,6 +5,7 @@
 # /api/app/promote {atomic:true} flow decomposes them into per-component goldens). Grows the RAG DB.
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
+export PATH="$HOME/.bun/bin:/opt/homebrew/bin:$PATH"  # detached shells may lack claude/bun on PATH
 RUNDIR="scripts/overnight/runs"; CAND="$RUNDIR/corpus-candidates"; mkdir -p "$CAND"
 LOG="$RUNDIR/corpus.log"; HOURS="${CORPUS_HOURS:-7}"
 log(){ echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }

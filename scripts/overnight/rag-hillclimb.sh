@@ -15,6 +15,8 @@
 #   nohup bash scripts/overnight/rag-hillclimb.sh > scripts/overnight/runs/hillclimb.out 2>&1 &
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
+# pin the toolchain onto PATH — a detached/nohup shell may not inherit ~/.bun/bin or brew bins
+export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/opt/homebrew/opt/ollama/bin:$PATH"
 
 HOURS="${HILLCLIMB_HOURS:-7}"          # wall-clock budget
 RUNS="${HILLCLIMB_RUNS:-2}"            # eval runs per config per round (variance)
@@ -50,11 +52,13 @@ run_config() {  # $1=name  $2=extra-flags  $3=env-assignment
 END=$(( $(date +%s) + HOURS*3600 ))
 round=0
 while [ "$(date +%s)" -lt "$END" ]; do
-  round=$((round+1))
+  round=$((round+1)); rstart=$(date +%s)
   log "=== round $round ==="
   u=$(run_config ungrounded ""        "")                    ; echo "$round,ungrounded,$u,$(date +%s)" >> "$CSV"; log "  ungrounded -> $u%"
   l=$(run_config lexical    "--ground" "")                   ; echo "$round,lexical,$l,$(date +%s)"    >> "$CSV"; log "  lexical    -> $l%"
   v=$(run_config vector     "--ground" "APP_RAG_VECTOR=1")   ; echo "$round,vector,$v,$(date +%s)"     >> "$CSV"; log "  vector     -> $v%"
+  # runaway guard: a real round is minutes; <20s means the eval is failing fast (deps down) — back off
+  if [ $(( $(date +%s) - rstart )) -lt 20 ]; then log "WARN: round <20s — deps failing? backing off 60s"; sleep 60; fi
   # refresh the leaderboard (mean ± n per config) after every round
   python3 - "$CSV" > "$BOARD" <<'PY'
 import csv,sys,statistics
