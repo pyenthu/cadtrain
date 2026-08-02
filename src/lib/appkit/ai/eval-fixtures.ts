@@ -9,7 +9,7 @@
 // scripts/eval-fixtures/golden/<id>.app). Transcribed verbatim from the original
 // scripts/eval-fixtures/prompts.json (now superseded by this module).
 
-export const APP_IDS = ['plan', 'design', 'ewell'] as const;
+export const APP_IDS = ['plan', 'design', 'ewell', 'partsdash', 'opsdash'] as const;
 export type EvalAppId = (typeof APP_IDS)[number];
 
 /** Ordered build prompts per app — replayed one-at-a-time, mutating the .app in place.
@@ -60,5 +60,34 @@ export const EVAL_PROMPTS: Record<EvalAppId, string[]> = {
     'Wire the rail: Header shows the well header; Completions shows the completion strings table; Perforations shows the perforations table; Display and JSON show notes.',
     'In the centre, show the well name as a heading, a subtitle, and the well schematic sized 420×560 reading the seeded casings, holes, tubing, perforations, and cement.',
     'Add a right sidebar titled "Well Data" with tables for the casing strings, the tubing, and the perforations.',
+  ],
+  // Dashboards (2026-08) — exercise the new kit: stat · statgrid · chart · datatable · cad3d.
+  partsdash: [
+    'Create an app called partsdash titled "CAD Parts — Dashboard", docType dashboard.',
+    'Use a light theme with a teal accent (#0d9488).',
+    'Define a part structure with fields id, category, verts, tris.',
+    'Seed a "parts" variable with a few CAD part records (id, category, verts, tris).',
+    'Add an H1 heading "CAD Parts — Dashboard".',
+    'Add a muted subtitle about the parts library.',
+    'Add a stat grid.',
+    'Inside the stat grid add a KPI tile "Parts" with value 5.',
+    'Inside the stat grid add a KPI tile "Total tris" with value 5084 in compact format.',
+    'Inside the stat grid add a KPI tile "Avg verts" with value 518.',
+    'Add a bar chart titled "Triangles per part" reading the parts variable, x = id, y = tris.',
+    'Add a data table reading parts with columns id, category, verts, tris, with search, sorting, and totals.',
+    'Add a 3D CAD viewer of the g_shaft part.',
+  ],
+  opsdash: [
+    'Create an app called opsdash titled "Sales — Dashboard", docType dashboard.',
+    'Use a light theme with a blue accent (#2563eb).',
+    'Seed a "months" variable with monthly records (month, revenue, orders).',
+    'Add an H1 heading "Sales — Dashboard".',
+    'Add a muted subtitle about revenue and orders by month.',
+    'Add a stat grid.',
+    'Inside the stat grid add a KPI tile "Revenue" with value 128400 as currency, delta +12 up.',
+    'Inside the stat grid add a KPI tile "Orders" with value 1840.',
+    'Inside the stat grid add a KPI tile "Avg order" with value 69.8 as currency.',
+    'Add a line chart titled "Revenue by month" reading months, x = month, y = revenue.',
+    'Add a data table reading months with columns month, revenue, orders, sortable, with totals.',
   ],
 };
