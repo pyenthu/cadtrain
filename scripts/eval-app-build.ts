@@ -5,10 +5,19 @@
 // through `buildAppViaCli` (the same emit-verbs→parse→dispatch path the CLI + in-browser Phi use),
 // and prints `scoreApp(built, golden)` — a 0..1 structural similarity + per-facet breakdown.
 //
-//   bun run scripts/eval-app-build.ts                    # FAKE oracle runner, all 3 apps (CI-safe)
+//   bun run scripts/eval-app-build.ts                    # FAKE oracle runner, all apps (CI-safe)
 //   bun run scripts/eval-app-build.ts --app plan         # one app
 //   bun run scripts/eval-app-build.ts --json             # machine-readable output
 //   bun run scripts/eval-app-build.ts --provider cli --app plan   # ONE real `claude --print` run
+//
+// MEASUREMENT DISCIPLINE (2026-08) — a single small-model run is noise (the 1.5B model swings
+// partsdash 26↔49, opsdash 38↔28 run-to-run; Claude is tight, σ≈0.02). So the runner can REPEAT a
+// build and report the distribution, and CI can GATE a mean against a snapshotted baseline:
+//   --runs N                     # build each app N times; report mean · σ (population) · min · max + per-facet means
+//   --write-baseline <path.json> # dump the current per-app MEANS as a baseline: { "<appId>": <mean>, … }
+//   --gate <path.json>           # FAIL (exit 1) if any app's mean < baseline − 0.03 tolerance; else exit 0
+// `--runs 1` with no gate = the exact original behaviour. `--provider cli --runs N` costs N billed
+// calls per app — verify plumbing with the free deterministic `fake` provider (σ≈0 confirms it).
 //
 // The DEFAULT provider is a deterministic FAKE runner (no LLM, no network) so this is CI-safe: it
 // DECOMPILES the golden into a gui-verb list and replays it, distributed across the prompt steps —
@@ -19,7 +28,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildAppViaCli, type CliRunner } from '../src/lib/appkit/ai/build-cli';
-import { scoreApp, preorderKinds, type AppLike } from '../src/lib/appkit/ai/score-app';
+import { scoreApp, preorderKinds, type AppLike, type ScoreBreakdown, type ScoreResult } from '../src/lib/appkit/ai/score-app';
 import { APP_IDS, EVAL_PROMPTS, type EvalAppId } from '../src/lib/appkit/ai/eval-fixtures';
 import { runClaudeCli } from '../src/lib/server/claude-cli';
 
@@ -182,6 +191,80 @@ function makeGrounder(): (prompt: string, app: AppLike) => Promise<string> {
   };
 }
 
+// ── run-distribution stats (mirror the eval page's averaged/stdev; kept self-contained/headless) ─
+const FACETS: (keyof ScoreBreakdown)[] = ['panelKinds', 'nesting', 'vars', 'structures', 'theme', 'meta'];
+
+function mean(xs: number[]): number {
+  return xs.length ? xs.reduce((s, x) => s + x, 0) / xs.length : 0;
+}
+/** Population stdev (÷N, matching the eval page). <2 samples → 0. */
+function popStdev(xs: number[]): number {
+  if (xs.length < 2) return 0;
+  const m = mean(xs);
+  return Math.sqrt(xs.reduce((s, x) => s + (x - m) ** 2, 0) / xs.length);
+}
+/** Per-facet means across a set of run results. */
+function facetMeans(runs: ScoreResult[]): ScoreBreakdown {
+  const out = { panelKinds: 0, nesting: 0, vars: 0, structures: 0, theme: 0, meta: 0 } as ScoreBreakdown;
+  for (const f of FACETS) out[f] = mean(runs.map((r) => r.breakdown[f]));
+  return out;
+}
+
+/** One app's repeated-run distribution — the row of the runs table + the gate/baseline unit. */
+interface AppAgg {
+  id: string;
+  runs: ScoreResult[]; // one per run (score + breakdown)
+  scores: number[];
+  mean: number;
+  stdev: number;
+  min: number;
+  max: number;
+  facets: ScoreBreakdown;
+  last: ScoreResult; // the final run's full result (built/golden kinds for the detailed N===1 print)
+  lastSteps?: StepRec[]; // the final run's per-rung records (incremental)
+}
+
+/** Render a fixed-width table: header row + body; col 0 left-aligned, the rest right-aligned. */
+function renderTable(headers: string[], rows: string[][]): string {
+  const w = headers.map((h, i) => Math.max(h.length, ...rows.map((r) => (r[i] ?? '').length)));
+  const line = (cells: string[]) => cells.map((c, i) => (i === 0 ? (c ?? '').padEnd(w[i]) : (c ?? '').padStart(w[i]))).join('  ');
+  return [line(headers), ...rows.map(line)].join('\n');
+}
+
+const GATE_TOLERANCE = 0.03; // a mean may dip this far below baseline before it FAILs (small-model noise band)
+
+/** Build one app ONCE (whichever provider path) and score it vs the golden. The `--runs` loop
+ *  calls this N times; a deterministic path (fake / score-file) yields σ≈0, a real model yields
+ *  the run-to-run variance we're measuring. */
+async function buildOnce(
+  id: AppId,
+  prompts: string[],
+  golden: AppLike,
+  provider: 'fake' | 'cli',
+  opts: { model?: string; incremental: boolean; doGround: boolean; scoreFile?: string; outDir?: string },
+): Promise<{ result: ScoreResult; steps?: StepRec[] }> {
+  let built: AppLike;
+  let steps: StepRec[] | undefined;
+  if (opts.scoreFile) {
+    built = JSON.parse(await readFile(opts.scoreFile, 'utf8')) as AppLike; // score a captured build (browser/local) vs the golden
+  } else if (provider === 'cli' && opts.incremental) {
+    const res = await runCliIncremental(id, prompts, golden, {
+      model: opts.model,
+      outDir: opts.outDir,
+      ground: opts.doGround ? makeGrounder() : undefined,
+    });
+    built = res.app;
+    steps = res.steps;
+  } else if (provider === 'cli') {
+    built = await runCli(id, prompts, opts.model);
+  } else {
+    const res = await runFake(id, prompts, golden, opts.outDir);
+    built = res.app;
+    steps = res.steps;
+  }
+  return { result: scoreApp(built, golden), steps };
+}
+
 async function main() {
   const argv = process.argv.slice(2);
   const flag = (name: string) => {
@@ -195,38 +278,46 @@ async function main() {
   const doGround = argv.includes('--ground'); // fetch RAG grounding per prompt (needs a dev server)
   const only = flag('--app');
   const scoreFile = flag('--score-file'); // score an ALREADY-BUILT .app (e.g. a browser capture) vs the golden
+  const runs = Math.max(1, Math.floor(Number(flag('--runs') ?? '1')) || 1); // repeat each build N× → distribution
+  const gateFile = flag('--gate'); // baseline JSON { "<appId>": <minMean> } → FAIL any app below (minus tolerance)
+  const writeBaseline = flag('--write-baseline'); // dump the current per-app MEANS as a baseline snapshot
   const ids = (only && only !== 'all' ? [only] : APPS).filter((a): a is AppId => (APPS as readonly string[]).includes(a));
   if (!ids.length) {
     console.error(`unknown app "${only}" — choose one of: ${APPS.join(', ')} (or "all")`);
     process.exit(1);
   }
 
-  const results: Array<{ id: string; score: number; breakdown: Record<string, number>; steps?: StepRec[] }> = [];
+  const aggs: AppAgg[] = [];
 
   for (const id of ids) {
     const golden = await loadGolden(id);
     const prompts = EVAL_PROMPTS[id] ?? [];
     const outDir = incremental ? join(FIX, 'runs', `${id}-${provider}${doGround ? '-ground' : ''}`) : undefined;
 
-    let built: AppLike;
-    let stepRecs: StepRec[] | undefined;
-    if (scoreFile) {
-      built = JSON.parse(await readFile(scoreFile, 'utf8')) as AppLike; // score a captured build (browser/local) vs the golden
-    } else if (provider === 'cli' && incremental) {
-      const res = await runCliIncremental(id, prompts, golden, { model, outDir, ground: doGround ? makeGrounder() : undefined });
-      built = res.app;
-      stepRecs = res.steps;
-    } else if (provider === 'cli') {
-      built = await runCli(id, prompts, model);
-    } else {
-      const res = await runFake(id, prompts, golden, outDir);
-      built = res.app;
-      stepRecs = res.steps;
+    const runResults: ScoreResult[] = [];
+    let lastSteps: StepRec[] | undefined;
+    for (let k = 0; k < runs; k++) {
+      const { result, steps } = await buildOnce(id, prompts, golden, provider, { model, incremental, doGround, scoreFile, outDir });
+      runResults.push(result);
+      lastSteps = steps;
     }
-    const r = scoreApp(built, golden);
-    results.push({ id, score: r.score, breakdown: r.breakdown as unknown as Record<string, number>, steps: stepRecs });
+    const scores = runResults.map((r) => r.score);
+    aggs.push({
+      id,
+      runs: runResults,
+      scores,
+      mean: mean(scores),
+      stdev: popStdev(scores),
+      min: Math.min(...scores),
+      max: Math.max(...scores),
+      facets: facetMeans(runResults),
+      last: runResults[runResults.length - 1]!,
+      lastSteps,
+    });
 
-    if (!asJson) {
+    if (!asJson && runs === 1) {
+      // ── N===1: the ORIGINAL per-app detailed block (unchanged behaviour) ──
+      const r = runResults[0]!;
       const tag = incremental ? `${provider}, incremental` : provider;
       console.log(`\n=== ${id}  (${tag}, ${prompts.length} prompt${prompts.length === 1 ? '' : 's'}) ===`);
       console.log(`  score: ${pct(r.score)}`);
@@ -236,20 +327,90 @@ async function main() {
       );
       console.log(`  built kinds:  [${r.detail.builtKinds.join(', ')}]`);
       console.log(`  golden kinds: [${r.detail.goldenKinds.join(', ')}]`);
-      if (stepRecs) {
-        console.log(`  per-rung score: ${stepRecs.map((s) => pct(s.score)).join(' → ')}`);
+      if (lastSteps) {
+        console.log(`  per-rung score: ${lastSteps.map((s) => pct(s.score)).join(' → ')}`);
         if (outDir) console.log(`  snapshots → ${outDir}/`);
       }
+    } else if (!asJson) {
+      // ── N>1: the run-distribution block ──
+      const a = aggs[aggs.length - 1]!;
+      const tag = incremental ? `${provider}, incremental` : provider;
+      console.log(`\n=== ${id}  (${tag}, ${prompts.length} prompt${prompts.length === 1 ? '' : 's'}) — ${runs} runs ===`);
+      console.log(`  overall: mean ${pct(a.mean)}  σ ${(a.stdev * 100).toFixed(2)}pp  min ${pct(a.min)}  max ${pct(a.max)}`);
+      const b = a.facets;
+      console.log(
+        `  facet means: panelKinds ${pct(b.panelKinds)} · nesting ${pct(b.nesting)} · vars ${pct(b.vars)} · structures ${pct(b.structures)} · theme ${pct(b.theme)} · meta ${pct(b.meta)}`,
+      );
+      console.log(`  per-run: ${a.scores.map((s) => pct(s)).join(' · ')}`);
+      console.log(`  golden kinds: [${a.last.detail.goldenKinds.join(', ')}]`);
     }
   }
 
+  // ── output: JSON (machine) or the summary/runs table (human) ──
   if (asJson) {
-    console.log(JSON.stringify({ provider, results }, null, 2));
-  } else {
-    const avg = results.reduce((s, r) => s + r.score, 0) / Math.max(1, results.length);
+    if (runs === 1) {
+      // preserve the ORIGINAL json shape exactly for the default single-run path
+      const results = aggs.map((a) => ({ id: a.id, score: a.last.score, breakdown: a.last.breakdown, steps: a.lastSteps }));
+      console.log(JSON.stringify({ provider, results }, null, 2));
+    } else {
+      const results = aggs.map((a) => ({
+        id: a.id,
+        mean: a.mean,
+        stdev: a.stdev,
+        min: a.min,
+        max: a.max,
+        facetMeans: a.facets,
+        scores: a.scores,
+      }));
+      console.log(JSON.stringify({ provider, runs, results }, null, 2));
+    }
+  } else if (runs === 1) {
+    const avg = mean(aggs.map((a) => a.mean));
     console.log('\n──────────────────────────────────────────────');
-    console.log(`SUMMARY (${provider}):  ${results.map((r) => `${r.id} ${pct(r.score)}`).join('  ·  ')}`);
+    console.log(`SUMMARY (${provider}):  ${aggs.map((a) => `${a.id} ${pct(a.mean)}`).join('  ·  ')}`);
     console.log(`average: ${pct(avg)}`);
+  } else {
+    const rows = aggs.map((a) => [a.id, String(runs), pct(a.mean), (a.stdev * 100).toFixed(2), pct(a.min), pct(a.max)]);
+    console.log('\n──────────────────────────────────────────────');
+    console.log(`RUNS SUMMARY (${provider}, ${runs}× each):`);
+    console.log(renderTable(['app', 'runs', 'mean', 'σ(pp)', 'min', 'max'], rows));
+    console.log(`\naverage mean: ${pct(mean(aggs.map((a) => a.mean)))}`);
+  }
+
+  // ── snapshot the current means as a baseline (for future gating) ──
+  if (writeBaseline) {
+    const baseline: Record<string, number> = {};
+    for (const a of aggs) baseline[a.id] = Number(a.mean.toFixed(4));
+    await writeFile(writeBaseline, JSON.stringify(baseline, null, 2) + '\n');
+    console.log(`\nbaseline written → ${writeBaseline}  (${aggs.length} app${aggs.length === 1 ? '' : 's'}, ${runs}× means)`);
+  }
+
+  // ── regression gate: FAIL if any app's mean falls below its baseline (minus tolerance) ──
+  if (gateFile) {
+    let baseline: Record<string, number>;
+    try {
+      baseline = JSON.parse(await readFile(gateFile, 'utf8')) as Record<string, number>;
+    } catch (e) {
+      console.error(`\nGATE ERROR: cannot read baseline "${gateFile}": ${String((e as { message?: string })?.message ?? e)}`);
+      process.exit(1);
+    }
+    console.log(`\n── GATE (baseline ${gateFile}, tolerance ${GATE_TOLERANCE}) ──`);
+    let failed = false;
+    for (const a of aggs) {
+      const floor = baseline[a.id];
+      if (typeof floor !== 'number') {
+        console.log(`  SKIP ${a.id}: no baseline entry`);
+        continue;
+      }
+      if (a.mean < floor - GATE_TOLERANCE) {
+        console.log(`  FAIL ${a.id}: mean ${pct(a.mean)} < baseline ${pct(floor)} − ${GATE_TOLERANCE} tol`);
+        failed = true;
+      } else {
+        console.log(`  PASS ${a.id}: mean ${pct(a.mean)} ≥ baseline ${pct(floor)} − ${GATE_TOLERANCE} tol`);
+      }
+    }
+    console.log(failed ? 'GATE: FAIL' : 'GATE: PASS');
+    process.exit(failed ? 1 : 0);
   }
 }
 
