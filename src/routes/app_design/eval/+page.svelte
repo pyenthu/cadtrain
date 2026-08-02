@@ -37,7 +37,7 @@
   // with the incremental-discipline fix (scripts/eval-app-build.ts --provider cli --incremental).
   // Data facets are 100% across all three; residual gaps are panel-nesting only (design wraps each
   // nodetree in a container; ewell's interleaved rail + centre schematic). Qwen is measured vs these.
-  const CLAUDE_REF: Record<EvalAppId, number> = { plan: 1.0, design: 0.9, ewell: 0.687 };
+  const CLAUDE_REF: Record<EvalAppId, number> = { plan: 1.0, design: 0.9, ewell: 0.687, partsdash: 1.0, opsdash: 1.0 };
 
   interface RunResult {
     score: number;

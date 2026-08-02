@@ -73,6 +73,12 @@ describe('component dictionary (useWhen + example + synonym retrieval, end-to-en
     { prompt: 'a roadmap of the project schedule', kind: 'gantt', useWhenFrag: 'timeline of bars', exampleFrag: '"kind":"gantt"' },
     { prompt: 'an org chart of the team', kind: 'nodetree', useWhenFrag: 'nodes+edges graph', exampleFrag: '"kind":"nodetree"' },
     { prompt: 'a downhole completion diagram', kind: 'wellschematic', useWhenFrag: 'well cross-section', exampleFrag: '"kind":"wellschematic"' },
+    // The 2026-08 dashboard/Excel/3D kit — the local model must reach for these, not text/list/grid.
+    { prompt: 'add a dashboard KPI tile for revenue', kind: 'stat', useWhenFrag: 'headline metric', exampleFrag: '"kind":"stat"' },
+    { prompt: 'lay out the KPI tiles in a responsive grid', kind: 'statgrid', useWhenFrag: 'grid of equal tiles', exampleFrag: '"kind":"statgrid"' },
+    { prompt: 'add a bar chart of revenue by month', kind: 'chart', useWhenFrag: 'data chart from a list', exampleFrag: '"kind":"chart"' },
+    { prompt: 'a sortable searchable data table of results', kind: 'datatable', useWhenFrag: 'sort/search/totals', exampleFrag: '"kind":"datatable"' },
+    { prompt: 'embed an interactive 3D CAD viewer of a part', kind: 'cad3d', useWhenFrag: 'interactive 3D view', exampleFrag: '"kind":"cad3d"' },
   ];
   for (const c of cases) {
     it(`"${c.prompt}" → renderComponentKnowledge surfaces the ${c.kind} card with useWhen + example`, () => {
