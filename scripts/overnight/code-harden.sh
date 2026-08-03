@@ -5,6 +5,8 @@
 set -uo pipefail
 cd "$(dirname "$0")/../.." || exit 1
 export PATH="$HOME/.bun/bin:/opt/homebrew/bin:$PATH"  # detached shells may lack claude/bun on PATH
+. "$(dirname "$0")/limit-guard.sh"   # circuit-breaker: a rate-limited `claude --print` returns
+                                     # refusal prose instantly — without this the loop spins on it
 RUNDIR="scripts/overnight/runs"; mkdir -p "$RUNDIR"
 REPORT="$RUNDIR/harden-findings.md"; LOG="$RUNDIR/harden.log"; HOURS="${HARDEN_HOURS:-7}"
 log(){ echo "[$(date '+%H:%M:%S')] $*" >> "$LOG"; }
@@ -14,9 +16,13 @@ FILES=(); while IFS= read -r line; do FILES+=("$line"); done < <(find src/lib/ap
 log "reviewing ${#FILES[@]} files"
 END=$(( $(date +%s) + HOURS*3600 )); i=0
 while [ "$(date +%s)" -lt "$END" ] && [ "${#FILES[@]}" -gt 0 ]; do
-  f="${FILES[$(( i % ${#FILES[@]} ))]}"; i=$((i+1))
+  f="${FILES[$(( i % ${#FILES[@]} ))]}"
   out=$({ echo "Review this TypeScript file for CORRECTNESS bugs, race conditions, or unhandled edge cases only (not style). Be concrete: cite the line and why it fails. If you find nothing real, reply with exactly: CLEAN"; echo; echo "// FILE: $f"; cat "$f"; } | claude --print 2>/dev/null)
-  if [ -n "$out" ] && ! printf '%s' "$out" | grep -qx "CLEAN"; then
+  # Blocked → sleep it out and RETRY THE SAME FILE. Advancing `i` here would let the limit
+  # window silently skip files, so a "full pass" could report files it never reviewed.
+  if guard_blocked "$out"; then guard_backoff "$out" || break; continue; fi
+  guard_ok; i=$((i+1))
+  if ! printf '%s' "$out" | grep -qx "CLEAN"; then
     { echo; echo "## \`$f\` — $(date '+%H:%M')"; echo "$out"; } >> "$REPORT"; log "FINDINGS: $f"
   else
     log "clean: $f"
