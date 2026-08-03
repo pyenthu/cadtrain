@@ -6,47 +6,14 @@
     "mode": "light",
     "accent": "#3b82f6"
   },
-  "vars": {
-    "todo": [
-      {
-        "task": "Draft Q3 spec",
-        "owner": "Ana",
-        "points": 3
-      },
-      {
-        "task": "Fix bake cache",
-        "owner": "Rob",
-        "points": 5
-      }
-    ],
-    "doing": [
-      {
-        "task": "Wire cad3d viewer",
-        "owner": "Sam",
-        "points": 8
-      }
-    ],
-    "done": [
-      {
-        "task": "Ship verb registry",
-        "owner": "Ana",
-        "points": 5
-      },
-      {
-        "task": "Add datatable kind",
-        "owner": "Rob",
-        "points": 2
-      }
-    ]
-  },
   "structures": {
-    "card": [
+    "Task": [
       {
-        "name": "task",
+        "name": "title",
         "type": "string"
       },
       {
-        "name": "owner",
+        "name": "assignee",
         "type": "string"
       },
       {
@@ -55,17 +22,50 @@
       }
     ]
   },
+  "vars": {
+    "todo": [
+      {
+        "title": "Draft spec",
+        "assignee": "Ana",
+        "points": 3
+      },
+      {
+        "title": "Wire API",
+        "assignee": "Ben",
+        "points": 5
+      }
+    ],
+    "doing": [
+      {
+        "title": "Build editor",
+        "assignee": "Cy",
+        "points": 8
+      }
+    ],
+    "done": [
+      {
+        "title": "Set up repo",
+        "assignee": "Ana",
+        "points": 2
+      },
+      {
+        "title": "CI pipeline",
+        "assignee": "Ben",
+        "points": 3
+      }
+    ]
+  },
   "panels": [
     {
-      "id": "board-title",
+      "id": "header",
       "kind": "heading",
       "props": {
-        "text": "Sprint Board",
+        "text": "Kanban Board",
         "level": 1
       }
     },
     {
-      "id": "columns",
+      "id": "board",
       "kind": "tabs",
       "props": {
         "layout": "row"
@@ -76,9 +76,9 @@
           "kind": "list",
           "props": {
             "title": "To Do",
-            "data": "$vars.todo",
-            "primary": "task",
-            "secondary": "owner"
+            "items": "$vars.todo",
+            "itemTitle": "title",
+            "itemSubtitle": "assignee"
           }
         },
         {
@@ -86,9 +86,9 @@
           "kind": "list",
           "props": {
             "title": "In Progress",
-            "data": "$vars.doing",
-            "primary": "task",
-            "secondary": "owner"
+            "items": "$vars.doing",
+            "itemTitle": "title",
+            "itemSubtitle": "assignee"
           }
         },
         {
@@ -96,9 +96,9 @@
           "kind": "list",
           "props": {
             "title": "Done",
-            "data": "$vars.done",
-            "primary": "task",
-            "secondary": "owner"
+            "items": "$vars.done",
+            "itemTitle": "title",
+            "itemSubtitle": "assignee"
           }
         }
       ]

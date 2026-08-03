@@ -1,0 +1,92 @@
+{
+  "app": "survey-form",
+  "title": "Survey Form",
+  "docType": "form",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Customer Survey",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Help us improve — this takes about two minutes."
+      }
+    },
+    {
+      "id": "survey",
+      "kind": "form",
+      "props": {
+        "submitLabel": "Submit",
+        "fields": [
+          {
+            "name": "name",
+            "label": "Your name",
+            "type": "text",
+            "required": true
+          },
+          {
+            "name": "email",
+            "label": "Email",
+            "type": "email",
+            "required": true
+          },
+          {
+            "name": "role",
+            "label": "Role",
+            "type": "select",
+            "options": [
+              "Engineer",
+              "Operations",
+              "Management",
+              "Other"
+            ]
+          },
+          {
+            "name": "satisfaction",
+            "label": "How satisfied are you?",
+            "type": "select",
+            "options": [
+              "Very satisfied",
+              "Satisfied",
+              "Neutral",
+              "Dissatisfied",
+              "Very dissatisfied"
+            ],
+            "required": true
+          },
+          {
+            "name": "frequency",
+            "label": "How often do you use the product?",
+            "type": "select",
+            "options": [
+              "Daily",
+              "Weekly",
+              "Monthly",
+              "Rarely"
+            ]
+          },
+          {
+            "name": "recommend",
+            "label": "Would you recommend us?",
+            "type": "checkbox"
+          },
+          {
+            "name": "comments",
+            "label": "Additional comments",
+            "type": "textarea"
+          }
+        ]
+      }
+    }
+  ]
+}

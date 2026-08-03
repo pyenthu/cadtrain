@@ -1,0 +1,107 @@
+{
+  "app": "kanban-board",
+  "title": "Kanban Board",
+  "docType": "board",
+  "theme": {
+    "mode": "light",
+    "accent": "#3b82f6"
+  },
+  "structures": {
+    "task": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "assignee",
+        "type": "string"
+      },
+      {
+        "name": "points",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "todo": [
+      {
+        "title": "Draft API spec",
+        "assignee": "Ana",
+        "points": 3
+      },
+      {
+        "title": "Set up CI",
+        "assignee": "Ben",
+        "points": 2
+      }
+    ],
+    "doing": [
+      {
+        "title": "Build auth flow",
+        "assignee": "Cy",
+        "points": 5
+      }
+    ],
+    "done": [
+      {
+        "title": "Repo scaffold",
+        "assignee": "Ana",
+        "points": 1
+      },
+      {
+        "title": "Design tokens",
+        "assignee": "Dee",
+        "points": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Kanban Board",
+        "level": 1
+      }
+    },
+    {
+      "id": "board",
+      "kind": "tabs",
+      "props": {
+        "layout": "row"
+      },
+      "children": [
+        {
+          "id": "col-todo",
+          "kind": "list",
+          "props": {
+            "title": "To Do",
+            "items": "$vars.todo",
+            "itemTitle": "title",
+            "itemSubtitle": "assignee"
+          }
+        },
+        {
+          "id": "col-doing",
+          "kind": "list",
+          "props": {
+            "title": "In Progress",
+            "items": "$vars.doing",
+            "itemTitle": "title",
+            "itemSubtitle": "assignee"
+          }
+        },
+        {
+          "id": "col-done",
+          "kind": "list",
+          "props": {
+            "title": "Done",
+            "items": "$vars.done",
+            "itemTitle": "title",
+            "itemSubtitle": "assignee"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,65 @@
+{
+  "app": "settings",
+  "title": "Settings",
+  "docType": "settings",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Settings",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Manage notification and display preferences."
+      }
+    },
+    {
+      "id": "prefs",
+      "kind": "form",
+      "props": {
+        "submitLabel": "Save Settings",
+        "fields": [
+          {
+            "name": "email_alerts",
+            "label": "Email alerts",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "push_alerts",
+            "label": "Push notifications",
+            "type": "toggle",
+            "value": false
+          },
+          {
+            "name": "weekly_digest",
+            "label": "Weekly digest",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "dark_mode",
+            "label": "Dark mode",
+            "type": "toggle",
+            "value": false
+          },
+          {
+            "name": "auto_save",
+            "label": "Auto-save drafts",
+            "type": "toggle",
+            "value": true
+          }
+        ]
+      }
+    }
+  ]
+}

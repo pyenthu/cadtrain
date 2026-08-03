@@ -1,0 +1,102 @@
+{
+  "app": "user-profile",
+  "title": "User Profile",
+  "docType": "profile",
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "User Profile",
+        "level": 1
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "text",
+      "props": {
+        "text": "Account overview and recent activity."
+      }
+    },
+    {
+      "id": "stats",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "stat-posts",
+          "kind": "stat",
+          "props": {
+            "label": "Posts",
+            "value": 128
+          }
+        },
+        {
+          "id": "stat-followers",
+          "kind": "stat",
+          "props": {
+            "label": "Followers",
+            "value": 2450
+          }
+        },
+        {
+          "id": "stat-following",
+          "kind": "stat",
+          "props": {
+            "label": "Following",
+            "value": 312
+          }
+        }
+      ]
+    },
+    {
+      "id": "activity-heading",
+      "kind": "heading",
+      "props": {
+        "text": "Recent Activity",
+        "level": 2
+      }
+    },
+    {
+      "id": "activity",
+      "kind": "datatable",
+      "props": {
+        "columns": [
+          {
+            "key": "date",
+            "label": "Date"
+          },
+          {
+            "key": "action",
+            "label": "Action"
+          },
+          {
+            "key": "target",
+            "label": "Target"
+          }
+        ],
+        "rows": [
+          {
+            "date": "2026-08-01",
+            "action": "Commented",
+            "target": "Design review"
+          },
+          {
+            "date": "2026-07-30",
+            "action": "Published",
+            "target": "Q3 roadmap"
+          },
+          {
+            "date": "2026-07-28",
+            "action": "Updated",
+            "target": "Profile settings"
+          }
+        ],
+        "searchable": true,
+        "sortable": true
+      }
+    }
+  ]
+}

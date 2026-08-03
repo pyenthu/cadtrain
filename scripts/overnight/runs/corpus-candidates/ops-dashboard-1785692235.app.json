@@ -1,0 +1,187 @@
+{
+  "app": "ops-dashboard",
+  "title": "Operations Dashboard",
+  "docType": "dashboard",
+  "theme": {
+    "mode": "dark",
+    "accent": "#3b82f6"
+  },
+  "vars": {
+    "kpis": [
+      {
+        "label": "Active Wells",
+        "value": "128",
+        "delta": "+4"
+      },
+      {
+        "label": "Uptime",
+        "value": "99.2%",
+        "delta": "+0.3"
+      },
+      {
+        "label": "Open Alerts",
+        "value": "7",
+        "delta": "-2"
+      }
+    ],
+    "throughput": [
+      {
+        "month": "Jan",
+        "bbl": 420
+      },
+      {
+        "month": "Feb",
+        "bbl": 465
+      },
+      {
+        "month": "Mar",
+        "bbl": 512
+      },
+      {
+        "month": "Apr",
+        "bbl": 498
+      },
+      {
+        "month": "May",
+        "bbl": 560
+      },
+      {
+        "month": "Jun",
+        "bbl": 602
+      }
+    ],
+    "wells": [
+      {
+        "well": "A-12",
+        "status": "Running",
+        "rate": 312,
+        "alerts": 0
+      },
+      {
+        "well": "B-04",
+        "status": "Running",
+        "rate": 288,
+        "alerts": 1
+      },
+      {
+        "well": "C-21",
+        "status": "Maintenance",
+        "rate": 0,
+        "alerts": 3
+      },
+      {
+        "well": "D-09",
+        "status": "Running",
+        "rate": 401,
+        "alerts": 0
+      },
+      {
+        "well": "E-17",
+        "status": "Shut-in",
+        "rate": 0,
+        "alerts": 2
+      }
+    ]
+  },
+  "structures": {
+    "wells": [
+      {
+        "name": "well",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      },
+      {
+        "name": "rate",
+        "type": "number"
+      },
+      {
+        "name": "alerts",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Operations Dashboard",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Live field performance and alert summary."
+      }
+    },
+    {
+      "id": "kpi-row",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "kpi-wells",
+          "kind": "stat",
+          "props": {
+            "label": "Active Wells",
+            "value": "128",
+            "delta": "+4"
+          }
+        },
+        {
+          "id": "kpi-uptime",
+          "kind": "stat",
+          "props": {
+            "label": "Uptime",
+            "value": "99.2%",
+            "delta": "+0.3"
+          }
+        },
+        {
+          "id": "kpi-alerts",
+          "kind": "stat",
+          "props": {
+            "label": "Open Alerts",
+            "value": "7",
+            "delta": "-2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "throughput-chart",
+      "kind": "chart",
+      "props": {
+        "type": "line",
+        "title": "Monthly Throughput (kbbl)",
+        "data": "$vars.throughput",
+        "x": "month",
+        "y": "bbl"
+      }
+    },
+    {
+      "id": "wells-table",
+      "kind": "datatable",
+      "props": {
+        "title": "Well Status",
+        "data": "$vars.wells",
+        "columns": [
+          "well",
+          "status",
+          "rate",
+          "alerts"
+        ],
+        "sortable": true,
+        "searchable": true,
+        "pageSize": 10
+      }
+    }
+  ]
+}

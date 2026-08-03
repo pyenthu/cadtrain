@@ -1,0 +1,163 @@
+{
+  "app": "kanban-board",
+  "title": "Kanban Board",
+  "docType": "board",
+  "theme": {
+    "mode": "light",
+    "accent": "#4f7cff"
+  },
+  "structures": {
+    "task": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "owner",
+        "type": "string"
+      },
+      {
+        "name": "points",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "todo": [
+      {
+        "title": "Draft spec",
+        "owner": "Ana",
+        "points": 3
+      },
+      {
+        "title": "Wire API",
+        "owner": "Ben",
+        "points": 5
+      }
+    ],
+    "doing": [
+      {
+        "title": "Build tree view",
+        "owner": "Cara",
+        "points": 8
+      }
+    ],
+    "done": [
+      {
+        "title": "Set up repo",
+        "owner": "Dev",
+        "points": 2
+      },
+      {
+        "title": "Auth flow",
+        "owner": "Ana",
+        "points": 5
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "header",
+      "kind": "heading",
+      "props": {
+        "text": "Kanban Board",
+        "level": 1
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "s-todo",
+          "kind": "stat",
+          "props": {
+            "label": "To Do",
+            "value": 2
+          }
+        },
+        {
+          "id": "s-doing",
+          "kind": "stat",
+          "props": {
+            "label": "In Progress",
+            "value": 1
+          }
+        },
+        {
+          "id": "s-done",
+          "kind": "stat",
+          "props": {
+            "label": "Done",
+            "value": 2
+          }
+        }
+      ]
+    },
+    {
+      "id": "col-todo",
+      "kind": "list",
+      "props": {
+        "title": "To Do",
+        "items": "$vars.todo",
+        "itemTitle": "title",
+        "itemSubtitle": "owner"
+      }
+    },
+    {
+      "id": "col-doing",
+      "kind": "list",
+      "props": {
+        "title": "In Progress",
+        "items": "$vars.doing",
+        "itemTitle": "title",
+        "itemSubtitle": "owner"
+      }
+    },
+    {
+      "id": "col-done",
+      "kind": "list",
+      "props": {
+        "title": "Done",
+        "items": "$vars.done",
+        "itemTitle": "title",
+        "itemSubtitle": "owner"
+      }
+    },
+    {
+      "id": "add-task",
+      "kind": "form",
+      "props": {
+        "title": "Add Task",
+        "fields": [
+          {
+            "name": "title",
+            "label": "Title",
+            "type": "text"
+          },
+          {
+            "name": "owner",
+            "label": "Owner",
+            "type": "text"
+          },
+          {
+            "name": "points",
+            "label": "Points",
+            "type": "number"
+          },
+          {
+            "name": "column",
+            "label": "Column",
+            "type": "select",
+            "options": [
+              "To Do",
+              "In Progress",
+              "Done"
+            ]
+          }
+        ],
+        "submitLabel": "Add"
+      }
+    }
+  ]
+}

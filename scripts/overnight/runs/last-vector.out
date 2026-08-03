@@ -1,0 +1,41 @@
+
+=== plan  (local, incremental, 8 prompts) — 2 runs ===
+  overall: mean 69.0%  σ 0.00pp  min 69.0%  max 69.0%
+  facet means: panelKinds 66.7% · nesting 66.7% · vars 100.0% · structures 0.0% · theme 100.0% · meta 50.0%
+  per-run: 69.0% · 69.0%
+  golden kinds: [heading, text, gantt, grid]
+
+=== design  (local, incremental, 13 prompts) — 2 runs ===
+  overall: mean 32.2%  σ 0.91pp  min 31.3%  max 33.1%
+  facet means: panelKinds 34.8% · nesting 34.8% · vars 75.0% · structures 0.0% · theme 0.0% · meta 0.0%
+  per-run: 31.3% · 33.1%
+  golden kinds: [heading, text, tabs, nodetree, nodetree]
+
+=== ewell  (local, incremental, 13 prompts) — 2 runs ===
+  overall: mean 44.2%  σ 0.00pp  min 44.2%  max 44.2%
+  facet means: panelKinds 13.3% · nesting 0.0% · vars 92.3% · structures 100.0% · theme 100.0% · meta 100.0%
+  per-run: 44.2% · 44.2%
+  golden kinds: [vtoolbar, iconbutton, popover, text, iconbutton, popover, text, text, text, iconbutton, iconbutton, popover, grid, iconbutton, popover, grid, iconbutton, popover, text, iconbutton, popover, text, col, heading, text, wellschematic]
+
+=== partsdash  (local, incremental, 13 prompts) — 2 runs ===
+  overall: mean 38.1%  σ 0.00pp  min 38.1%  max 38.1%
+  facet means: panelKinds 23.5% · nesting 23.5% · vars 100.0% · structures 0.0% · theme 50.0% · meta 50.0%
+  per-run: 38.1% · 38.1%
+  golden kinds: [heading, text, statgrid, stat, stat, stat, chart, datatable, cad3d]
+
+=== opsdash  (local, incremental, 11 prompts) — 2 runs ===
+  overall: mean 42.0%  σ 0.96pp  min 41.1%  max 43.0%
+  facet means: panelKinds 13.8% · nesting 13.8% · vars 58.3% · structures 100.0% · theme 100.0% · meta 100.0%
+  per-run: 43.0% · 41.1%
+  golden kinds: [heading, text, statgrid, stat, stat, stat, chart, datatable]
+
+──────────────────────────────────────────────
+RUNS SUMMARY (local, 2× each):
+app        runs   mean  σ(pp)    min    max
+plan          2  69.0%   0.00  69.0%  69.0%
+design        2  32.2%   0.91  31.3%  33.1%
+ewell         2  44.2%   0.00  44.2%  44.2%
+partsdash     2  38.1%   0.00  38.1%  38.1%
+opsdash       2  42.0%   0.96  41.1%  43.0%
+
+average mean: 45.1%

@@ -1,0 +1,196 @@
+{
+  "app": "product-catalog",
+  "title": "Product Catalog",
+  "docType": "catalog",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "vars": {
+    "products": [
+      {
+        "sku": "PC-1001",
+        "name": "Widget Pro",
+        "category": "Widgets",
+        "price": 49.99,
+        "stock": 128,
+        "status": "Active"
+      },
+      {
+        "sku": "PC-1002",
+        "name": "Widget Mini",
+        "category": "Widgets",
+        "price": 19.99,
+        "stock": 432,
+        "status": "Active"
+      },
+      {
+        "sku": "PC-2001",
+        "name": "Gadget X",
+        "category": "Gadgets",
+        "price": 129,
+        "stock": 37,
+        "status": "Active"
+      },
+      {
+        "sku": "PC-2002",
+        "name": "Gadget Air",
+        "category": "Gadgets",
+        "price": 89.5,
+        "stock": 0,
+        "status": "Backorder"
+      },
+      {
+        "sku": "PC-3001",
+        "name": "Sprocket 20mm",
+        "category": "Parts",
+        "price": 4.25,
+        "stock": 1560,
+        "status": "Active"
+      },
+      {
+        "sku": "PC-3002",
+        "name": "Sprocket 40mm",
+        "category": "Parts",
+        "price": 6.75,
+        "stock": 940,
+        "status": "Active"
+      },
+      {
+        "sku": "PC-4001",
+        "name": "Bundle Starter",
+        "category": "Bundles",
+        "price": 199,
+        "stock": 54,
+        "status": "Active"
+      },
+      {
+        "sku": "PC-4002",
+        "name": "Bundle Deluxe",
+        "category": "Bundles",
+        "price": 349,
+        "stock": 12,
+        "status": "Low"
+      }
+    ]
+  },
+  "structures": {
+    "products": [
+      {
+        "name": "sku",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "category",
+        "type": "string"
+      },
+      {
+        "name": "price",
+        "type": "number"
+      },
+      {
+        "name": "stock",
+        "type": "number"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Product Catalog",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Search and browse the full product list."
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "stat-skus",
+          "kind": "stat",
+          "props": {
+            "label": "SKUs",
+            "value": 8
+          }
+        },
+        {
+          "id": "stat-categories",
+          "kind": "stat",
+          "props": {
+            "label": "Categories",
+            "value": 4
+          }
+        },
+        {
+          "id": "stat-units",
+          "kind": "stat",
+          "props": {
+            "label": "Units in Stock",
+            "value": 3163
+          }
+        }
+      ]
+    },
+    {
+      "id": "catalog-table",
+      "kind": "datatable",
+      "props": {
+        "title": "Products",
+        "rows": "$vars.products",
+        "search": true,
+        "searchPlaceholder": "Search products…",
+        "sortable": true,
+        "pageSize": 10,
+        "columns": [
+          {
+            "key": "sku",
+            "label": "SKU"
+          },
+          {
+            "key": "name",
+            "label": "Product"
+          },
+          {
+            "key": "category",
+            "label": "Category"
+          },
+          {
+            "key": "price",
+            "label": "Price",
+            "align": "right",
+            "format": "currency"
+          },
+          {
+            "key": "stock",
+            "label": "Stock",
+            "align": "right"
+          },
+          {
+            "key": "status",
+            "label": "Status"
+          }
+        ]
+      }
+    }
+  ]
+}

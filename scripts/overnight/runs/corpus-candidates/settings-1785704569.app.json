@@ -1,0 +1,83 @@
+{
+  "app": "settings",
+  "title": "Settings",
+  "docType": "settings",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "vars": {
+    "prefs": [
+      {
+        "key": "notifications",
+        "label": "Email notifications",
+        "enabled": true
+      },
+      {
+        "key": "digest",
+        "label": "Weekly digest",
+        "enabled": false
+      },
+      {
+        "key": "autosave",
+        "label": "Autosave drafts",
+        "enabled": true
+      },
+      {
+        "key": "telemetry",
+        "label": "Share usage analytics",
+        "enabled": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Settings",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Manage your account preferences."
+      }
+    },
+    {
+      "id": "prefs-form",
+      "kind": "form",
+      "props": {
+        "submitLabel": "Save changes",
+        "fields": [
+          {
+            "name": "notifications",
+            "label": "Email notifications",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "digest",
+            "label": "Weekly digest",
+            "type": "toggle",
+            "value": false
+          },
+          {
+            "name": "autosave",
+            "label": "Autosave drafts",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "telemetry",
+            "label": "Share usage analytics",
+            "type": "toggle",
+            "value": false
+          }
+        ]
+      }
+    }
+  ]
+}

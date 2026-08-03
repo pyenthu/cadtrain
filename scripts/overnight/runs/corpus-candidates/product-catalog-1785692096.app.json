@@ -1,0 +1,135 @@
+{
+  "app": "product-catalog",
+  "title": "Product Catalog",
+  "docType": "catalog",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "structures": {
+    "Product": [
+      {
+        "name": "sku",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "category",
+        "type": "string"
+      },
+      {
+        "name": "price",
+        "type": "number"
+      },
+      {
+        "name": "stock",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "products": [
+      {
+        "sku": "PC-1001",
+        "name": "Casing Centralizer",
+        "category": "Completions",
+        "price": 248,
+        "stock": 64
+      },
+      {
+        "sku": "PC-1002",
+        "name": "Float Collar",
+        "category": "Completions",
+        "price": 515,
+        "stock": 22
+      },
+      {
+        "sku": "PC-1003",
+        "name": "Landing Nipple",
+        "category": "Completions",
+        "price": 389,
+        "stock": 41
+      },
+      {
+        "sku": "PC-1004",
+        "name": "Pup Joint 4ft",
+        "category": "Tubing",
+        "price": 176,
+        "stock": 130
+      },
+      {
+        "sku": "PC-1005",
+        "name": "Mule Shoe Guide",
+        "category": "Tubing",
+        "price": 204,
+        "stock": 57
+      },
+      {
+        "sku": "PC-1006",
+        "name": "Packer Assembly",
+        "category": "Packers",
+        "price": 1840,
+        "stock": 9
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Product Catalog",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Browse and search the full product list."
+      }
+    },
+    {
+      "id": "catalog-table",
+      "kind": "datatable",
+      "props": {
+        "searchable": true,
+        "sortable": true,
+        "pageSize": 10,
+        "columns": [
+          {
+            "key": "sku",
+            "label": "SKU"
+          },
+          {
+            "key": "name",
+            "label": "Product"
+          },
+          {
+            "key": "category",
+            "label": "Category"
+          },
+          {
+            "key": "price",
+            "label": "Price",
+            "format": "currency"
+          },
+          {
+            "key": "stock",
+            "label": "In Stock",
+            "format": "number"
+          }
+        ]
+      },
+      "source": {
+        "verb": "data.get",
+        "args": {
+          "var": "products"
+        }
+      }
+    }
+  ]
+}

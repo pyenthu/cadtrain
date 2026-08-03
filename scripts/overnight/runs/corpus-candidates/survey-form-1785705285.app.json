@@ -1,0 +1,76 @@
+{
+  "app": "survey-form",
+  "title": "Customer Survey",
+  "docType": "form",
+  "theme": {
+    "mode": "light",
+    "accent": "#3b6fd4"
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Customer Survey",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Tell us about your experience. All questions are optional."
+      }
+    },
+    {
+      "id": "survey",
+      "kind": "form",
+      "props": {
+        "submitLabel": "Submit",
+        "fields": [
+          {
+            "name": "name",
+            "label": "Your name",
+            "type": "text"
+          },
+          {
+            "name": "email",
+            "label": "Email",
+            "type": "email"
+          },
+          {
+            "name": "role",
+            "label": "Role",
+            "type": "select",
+            "options": [
+              "Engineer",
+              "Manager",
+              "Operator",
+              "Other"
+            ]
+          },
+          {
+            "name": "rating",
+            "label": "How would you rate us? (1-5)",
+            "type": "number"
+          },
+          {
+            "name": "recommend",
+            "label": "Would you recommend us?",
+            "type": "select",
+            "options": [
+              "Yes",
+              "No",
+              "Maybe"
+            ]
+          },
+          {
+            "name": "comments",
+            "label": "Additional comments",
+            "type": "textarea"
+          }
+        ]
+      }
+    }
+  ]
+}

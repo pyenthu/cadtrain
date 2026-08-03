@@ -1,0 +1,100 @@
+{
+  "app": "user-profile",
+  "title": "User Profile",
+  "docType": "profile",
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "User Profile",
+        "level": 1
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "text",
+      "props": {
+        "text": "Account overview and recent activity."
+      }
+    },
+    {
+      "id": "stats",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "stat-posts",
+          "kind": "stat",
+          "props": {
+            "label": "Posts",
+            "value": 128
+          }
+        },
+        {
+          "id": "stat-followers",
+          "kind": "stat",
+          "props": {
+            "label": "Followers",
+            "value": 2410
+          }
+        },
+        {
+          "id": "stat-following",
+          "kind": "stat",
+          "props": {
+            "label": "Following",
+            "value": 312
+          }
+        }
+      ]
+    },
+    {
+      "id": "activity-heading",
+      "kind": "heading",
+      "props": {
+        "text": "Recent Activity",
+        "level": 2
+      }
+    },
+    {
+      "id": "activity",
+      "kind": "datatable",
+      "props": {
+        "rows": "$vars.activity",
+        "columns": [
+          {
+            "key": "date",
+            "label": "Date"
+          },
+          {
+            "key": "action",
+            "label": "Action"
+          },
+          {
+            "key": "detail",
+            "label": "Detail"
+          }
+        ]
+      }
+    }
+  ],
+  "vars": {
+    "activity": [
+      {
+        "date": "2026-07-28",
+        "action": "Comment",
+        "detail": "Replied to thread #412"
+      },
+      {
+        "date": "2026-07-30",
+        "action": "Post",
+        "detail": "Published \"Field Notes\""
+      },
+      {
+        "date": "2026-08-01",
+        "action": "Login",
+        "detail": "Signed in from macOS"
+      }
+    ]
+  }
+}

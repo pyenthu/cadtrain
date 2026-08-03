@@ -1,0 +1,138 @@
+{
+  "app": "invoice",
+  "title": "Invoice",
+  "docType": "invoice",
+  "structures": {
+    "lineItems": [
+      {
+        "name": "description",
+        "type": "string"
+      },
+      {
+        "name": "qty",
+        "type": "number"
+      },
+      {
+        "name": "unitPrice",
+        "type": "number"
+      },
+      {
+        "name": "amount",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "lineItems": [
+      {
+        "description": "Drill collar, 6-1/4 in",
+        "qty": 2,
+        "unitPrice": 4200,
+        "amount": 8400
+      },
+      {
+        "description": "Crossover sub, 4-1/2 IF",
+        "qty": 1,
+        "unitPrice": 1150,
+        "amount": 1150
+      },
+      {
+        "description": "Machining labor (hrs)",
+        "qty": 16,
+        "unitPrice": 95,
+        "amount": 1520
+      },
+      {
+        "description": "Inspection + certification",
+        "qty": 1,
+        "unitPrice": 640,
+        "amount": 640
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Invoice INV-1042",
+        "level": 1
+      }
+    },
+    {
+      "id": "meta",
+      "kind": "text",
+      "props": {
+        "text": "Billed to: Northfield Drilling Co. — Issued 2026-08-03, net 30."
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "stat-subtotal",
+          "kind": "stat",
+          "props": {
+            "label": "Subtotal",
+            "value": 11710,
+            "format": "currency"
+          }
+        },
+        {
+          "id": "stat-tax",
+          "kind": "stat",
+          "props": {
+            "label": "Tax (8.5%)",
+            "value": 995.35,
+            "format": "currency"
+          }
+        },
+        {
+          "id": "stat-total",
+          "kind": "stat",
+          "props": {
+            "label": "Total Due",
+            "value": 12705.35,
+            "format": "currency"
+          }
+        }
+      ]
+    },
+    {
+      "id": "items",
+      "kind": "datatable",
+      "props": {
+        "title": "Line Items",
+        "rows": "$vars.lineItems",
+        "columns": [
+          {
+            "key": "description",
+            "label": "Description"
+          },
+          {
+            "key": "qty",
+            "label": "Qty",
+            "align": "right"
+          },
+          {
+            "key": "unitPrice",
+            "label": "Unit Price",
+            "align": "right",
+            "format": "currency"
+          },
+          {
+            "key": "amount",
+            "label": "Amount",
+            "align": "right",
+            "format": "currency"
+          }
+        ],
+        "totalsRow": true,
+        "totalColumns": [
+          "amount"
+        ]
+      }
+    }
+  ]
+}

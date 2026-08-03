@@ -1,0 +1,121 @@
+{
+  "app": "user-profile",
+  "title": "User Profile",
+  "docType": "profile",
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "User Profile",
+        "level": 1
+      }
+    },
+    {
+      "id": "bio",
+      "kind": "text",
+      "props": {
+        "text": "Account overview and recent activity."
+      }
+    },
+    {
+      "id": "stats",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "stat-posts",
+          "kind": "stat",
+          "props": {
+            "label": "Posts",
+            "value": 128
+          }
+        },
+        {
+          "id": "stat-followers",
+          "kind": "stat",
+          "props": {
+            "label": "Followers",
+            "value": 2430
+          }
+        },
+        {
+          "id": "stat-following",
+          "kind": "stat",
+          "props": {
+            "label": "Following",
+            "value": 312
+          }
+        }
+      ]
+    },
+    {
+      "id": "activity-title",
+      "kind": "heading",
+      "props": {
+        "text": "Recent Activity",
+        "level": 2
+      }
+    },
+    {
+      "id": "activity",
+      "kind": "datatable",
+      "props": {
+        "rows": "$vars.activity",
+        "columns": [
+          {
+            "key": "date",
+            "label": "Date"
+          },
+          {
+            "key": "action",
+            "label": "Action"
+          },
+          {
+            "key": "target",
+            "label": "Target"
+          }
+        ],
+        "search": true,
+        "pageSize": 10
+      }
+    }
+  ],
+  "structures": {
+    "activity": [
+      {
+        "name": "date",
+        "type": "string"
+      },
+      {
+        "name": "action",
+        "type": "string"
+      },
+      {
+        "name": "target",
+        "type": "string"
+      }
+    ]
+  },
+  "vars": {
+    "activity": [
+      {
+        "date": "2026-08-01",
+        "action": "Commented",
+        "target": "Design review"
+      },
+      {
+        "date": "2026-07-29",
+        "action": "Published",
+        "target": "Q3 roadmap"
+      },
+      {
+        "date": "2026-07-24",
+        "action": "Joined",
+        "target": "Platform team"
+      }
+    ]
+  }
+}

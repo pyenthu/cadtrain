@@ -1,0 +1,122 @@
+{
+  "app": "invoice",
+  "title": "Invoice",
+  "docType": "invoice",
+  "structures": {
+    "lines": [
+      {
+        "name": "item",
+        "type": "string"
+      },
+      {
+        "name": "qty",
+        "type": "number"
+      },
+      {
+        "name": "rate",
+        "type": "number"
+      },
+      {
+        "name": "amount",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "lines": [
+      {
+        "item": "Design review",
+        "qty": 8,
+        "rate": 150,
+        "amount": 1200
+      },
+      {
+        "item": "Machining",
+        "qty": 12,
+        "rate": 95,
+        "amount": 1140
+      },
+      {
+        "item": "Materials",
+        "qty": 1,
+        "rate": 460,
+        "amount": 460
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Invoice INV-1042",
+        "level": 1
+      }
+    },
+    {
+      "id": "meta",
+      "kind": "text",
+      "props": {
+        "text": "Billed to Acme Downhole Ltd — due 2026-09-01"
+      }
+    },
+    {
+      "id": "totals",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "subtotal",
+          "kind": "stat",
+          "props": {
+            "label": "Subtotal",
+            "value": 2800
+          }
+        },
+        {
+          "id": "tax",
+          "kind": "stat",
+          "props": {
+            "label": "Tax (8%)",
+            "value": 224
+          }
+        },
+        {
+          "id": "total",
+          "kind": "stat",
+          "props": {
+            "label": "Total Due",
+            "value": 3024
+          }
+        }
+      ]
+    },
+    {
+      "id": "items",
+      "kind": "datatable",
+      "props": {
+        "title": "Line Items",
+        "rows": "$vars.lines",
+        "columns": [
+          {
+            "key": "item",
+            "label": "Item"
+          },
+          {
+            "key": "qty",
+            "label": "Qty"
+          },
+          {
+            "key": "rate",
+            "label": "Rate"
+          },
+          {
+            "key": "amount",
+            "label": "Amount",
+            "total": true
+          }
+        ],
+        "showTotals": true
+      }
+    }
+  ]
+}

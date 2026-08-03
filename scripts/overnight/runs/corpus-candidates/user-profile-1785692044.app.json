@@ -1,0 +1,143 @@
+{
+  "app": "user-profile",
+  "title": "User Profile",
+  "docType": "profile",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "vars": {
+    "activity": [
+      {
+        "date": "2026-07-28",
+        "action": "Signed in",
+        "detail": "Chrome on macOS",
+        "status": "ok"
+      },
+      {
+        "date": "2026-07-29",
+        "action": "Updated profile",
+        "detail": "Changed display name",
+        "status": "ok"
+      },
+      {
+        "date": "2026-07-30",
+        "action": "Created app",
+        "detail": "ops-dashboard",
+        "status": "ok"
+      },
+      {
+        "date": "2026-08-01",
+        "action": "Password reset",
+        "detail": "Email link",
+        "status": "pending"
+      }
+    ]
+  },
+  "structures": {
+    "activity": [
+      {
+        "name": "date",
+        "type": "string"
+      },
+      {
+        "name": "action",
+        "type": "string"
+      },
+      {
+        "name": "detail",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Jane Doe",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Product Engineer · Member since 2024"
+      }
+    },
+    {
+      "id": "stats",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "stat-apps",
+          "kind": "stat",
+          "props": {
+            "label": "Apps",
+            "value": 12
+          }
+        },
+        {
+          "id": "stat-sessions",
+          "kind": "stat",
+          "props": {
+            "label": "Sessions",
+            "value": 348
+          }
+        },
+        {
+          "id": "stat-streak",
+          "kind": "stat",
+          "props": {
+            "label": "Day Streak",
+            "value": 27
+          }
+        }
+      ]
+    },
+    {
+      "id": "activity-heading",
+      "kind": "heading",
+      "props": {
+        "text": "Recent Activity",
+        "level": 2
+      }
+    },
+    {
+      "id": "activity-table",
+      "kind": "datatable",
+      "props": {
+        "data": "$activity",
+        "columns": [
+          {
+            "key": "date",
+            "label": "Date"
+          },
+          {
+            "key": "action",
+            "label": "Action"
+          },
+          {
+            "key": "detail",
+            "label": "Detail"
+          },
+          {
+            "key": "status",
+            "label": "Status"
+          }
+        ],
+        "sortable": true,
+        "searchable": true,
+        "pageSize": 10
+      }
+    }
+  ]
+}

@@ -1,0 +1,224 @@
+{
+  "app": "ops-dashboard",
+  "title": "Operations Dashboard",
+  "docType": "dashboard",
+  "theme": {
+    "mode": "dark",
+    "accent": "#4f8ff7"
+  },
+  "vars": {
+    "throughput": [
+      {
+        "month": "Jan",
+        "runs": 420,
+        "failures": 18
+      },
+      {
+        "month": "Feb",
+        "runs": 486,
+        "failures": 15
+      },
+      {
+        "month": "Mar",
+        "runs": 512,
+        "failures": 22
+      },
+      {
+        "month": "Apr",
+        "runs": 578,
+        "failures": 11
+      },
+      {
+        "month": "May",
+        "runs": 641,
+        "failures": 9
+      },
+      {
+        "month": "Jun",
+        "runs": 703,
+        "failures": 13
+      }
+    ],
+    "jobs": [
+      {
+        "job": "bake-queue",
+        "owner": "Ops",
+        "status": "Healthy",
+        "duration": 42,
+        "runs": 703
+      },
+      {
+        "job": "corpus-sync",
+        "owner": "Data",
+        "status": "Degraded",
+        "duration": 118,
+        "runs": 264
+      },
+      {
+        "job": "vector-index",
+        "owner": "Data",
+        "status": "Healthy",
+        "duration": 67,
+        "runs": 189
+      },
+      {
+        "job": "nightly-eval",
+        "owner": "ML",
+        "status": "Failing",
+        "duration": 301,
+        "runs": 58
+      },
+      {
+        "job": "volume-backup",
+        "owner": "Ops",
+        "status": "Healthy",
+        "duration": 95,
+        "runs": 31
+      }
+    ]
+  },
+  "structures": {
+    "throughput": [
+      {
+        "name": "month",
+        "type": "string"
+      },
+      {
+        "name": "runs",
+        "type": "number"
+      },
+      {
+        "name": "failures",
+        "type": "number"
+      }
+    ],
+    "jobs": [
+      {
+        "name": "job",
+        "type": "string"
+      },
+      {
+        "name": "owner",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      },
+      {
+        "name": "duration",
+        "type": "number"
+      },
+      {
+        "name": "runs",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Operations Dashboard",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Pipeline health and job throughput for the last six months."
+      }
+    },
+    {
+      "id": "kpis",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "kpi-runs",
+          "kind": "stat",
+          "props": {
+            "label": "Total Runs",
+            "value": "3,340",
+            "delta": "+9.7%",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-uptime",
+          "kind": "stat",
+          "props": {
+            "label": "Uptime",
+            "value": "99.4%",
+            "delta": "+0.3%",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-failures",
+          "kind": "stat",
+          "props": {
+            "label": "Failures",
+            "value": "88",
+            "delta": "-12.5%",
+            "trend": "down"
+          }
+        }
+      ]
+    },
+    {
+      "id": "trend",
+      "kind": "chart",
+      "props": {
+        "type": "line",
+        "title": "Runs vs Failures",
+        "data": "$throughput",
+        "x": "month",
+        "y": [
+          "runs",
+          "failures"
+        ],
+        "height": 260
+      }
+    },
+    {
+      "id": "jobs-table",
+      "kind": "datatable",
+      "props": {
+        "title": "Job Status",
+        "data": "$jobs",
+        "columns": [
+          {
+            "key": "job",
+            "label": "Job"
+          },
+          {
+            "key": "owner",
+            "label": "Owner"
+          },
+          {
+            "key": "status",
+            "label": "Status"
+          },
+          {
+            "key": "duration",
+            "label": "Avg Duration (s)",
+            "align": "right"
+          },
+          {
+            "key": "runs",
+            "label": "Runs",
+            "align": "right"
+          }
+        ],
+        "sortable": true,
+        "search": true,
+        "pageSize": 10
+      }
+    }
+  ]
+}

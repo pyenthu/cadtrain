@@ -1,0 +1,125 @@
+{
+  "app": "product-catalog",
+  "title": "Product Catalog",
+  "docType": "catalog",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "vars": {
+    "products": [
+      {
+        "sku": "PC-1001",
+        "name": "Widget A",
+        "category": "Widgets",
+        "price": 24.5,
+        "stock": 142
+      },
+      {
+        "sku": "PC-1002",
+        "name": "Widget B",
+        "category": "Widgets",
+        "price": 31,
+        "stock": 88
+      },
+      {
+        "sku": "PC-2001",
+        "name": "Gadget X",
+        "category": "Gadgets",
+        "price": 112.75,
+        "stock": 24
+      },
+      {
+        "sku": "PC-2002",
+        "name": "Gadget Y",
+        "category": "Gadgets",
+        "price": 98.2,
+        "stock": 0
+      },
+      {
+        "sku": "PC-3001",
+        "name": "Bracket M",
+        "category": "Hardware",
+        "price": 8.99,
+        "stock": 530
+      }
+    ]
+  },
+  "structures": {
+    "products": [
+      {
+        "name": "sku",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "category",
+        "type": "string"
+      },
+      {
+        "name": "price",
+        "type": "number"
+      },
+      {
+        "name": "stock",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Product Catalog",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Browse and search the full product list."
+      }
+    },
+    {
+      "id": "catalog-table",
+      "kind": "datatable",
+      "props": {
+        "title": "Products",
+        "rows": "$products",
+        "search": true,
+        "sortable": true,
+        "pageSize": 10,
+        "columns": [
+          {
+            "key": "sku",
+            "label": "SKU"
+          },
+          {
+            "key": "name",
+            "label": "Name"
+          },
+          {
+            "key": "category",
+            "label": "Category"
+          },
+          {
+            "key": "price",
+            "label": "Price",
+            "align": "right",
+            "format": "currency"
+          },
+          {
+            "key": "stock",
+            "label": "Stock",
+            "align": "right"
+          }
+        ]
+      }
+    }
+  ]
+}

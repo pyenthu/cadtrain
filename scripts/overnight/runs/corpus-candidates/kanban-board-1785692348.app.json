@@ -1,0 +1,104 @@
+{
+  "app": "kanban-board",
+  "title": "Kanban Board",
+  "docType": "board",
+  "theme": {
+    "mode": "light",
+    "accent": "#3b82f6"
+  },
+  "structures": {
+    "Task": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "assignee",
+        "type": "string"
+      },
+      {
+        "name": "points",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "todo": [
+      {
+        "title": "Draft spec",
+        "assignee": "Ana",
+        "points": 3
+      },
+      {
+        "title": "Wire API",
+        "assignee": "Ben",
+        "points": 5
+      }
+    ],
+    "doing": [
+      {
+        "title": "Build editor",
+        "assignee": "Cy",
+        "points": 8
+      }
+    ],
+    "done": [
+      {
+        "title": "Set up repo",
+        "assignee": "Ana",
+        "points": 2
+      },
+      {
+        "title": "Add CI",
+        "assignee": "Ben",
+        "points": 1
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "header",
+      "kind": "heading",
+      "props": {
+        "text": "Kanban Board",
+        "level": 1
+      }
+    },
+    {
+      "id": "board",
+      "kind": "tabs",
+      "props": {
+        "layout": "row"
+      },
+      "children": [
+        {
+          "id": "col-todo",
+          "kind": "list",
+          "props": {
+            "title": "To Do",
+            "items": "$vars.todo",
+            "itemLabel": "{title} — {assignee} ({points})"
+          }
+        },
+        {
+          "id": "col-doing",
+          "kind": "list",
+          "props": {
+            "title": "In Progress",
+            "items": "$vars.doing",
+            "itemLabel": "{title} — {assignee} ({points})"
+          }
+        },
+        {
+          "id": "col-done",
+          "kind": "list",
+          "props": {
+            "title": "Done",
+            "items": "$vars.done",
+            "itemLabel": "{title} — {assignee} ({points})"
+          }
+        }
+      ]
+    }
+  ]
+}

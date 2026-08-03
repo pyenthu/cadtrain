@@ -1,0 +1,134 @@
+{
+  "app": "invoice",
+  "title": "Invoice",
+  "docType": "invoice",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "structures": {
+    "lineItems": [
+      {
+        "name": "description",
+        "type": "string"
+      },
+      {
+        "name": "qty",
+        "type": "number"
+      },
+      {
+        "name": "unitPrice",
+        "type": "number"
+      },
+      {
+        "name": "amount",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "lineItems": [
+      {
+        "description": "Design consultation",
+        "qty": 10,
+        "unitPrice": 150,
+        "amount": 1500
+      },
+      {
+        "description": "Implementation",
+        "qty": 24,
+        "unitPrice": 125,
+        "amount": 3000
+      },
+      {
+        "description": "Support retainer",
+        "qty": 3,
+        "unitPrice": 400,
+        "amount": 1200
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Invoice #1042",
+        "level": 1
+      }
+    },
+    {
+      "id": "meta",
+      "kind": "text",
+      "props": {
+        "text": "Issued 2026-08-03 · Due 2026-09-02 · Bill to: Acme Corp"
+      }
+    },
+    {
+      "id": "items",
+      "kind": "datatable",
+      "props": {
+        "columns": [
+          {
+            "key": "description",
+            "label": "Description"
+          },
+          {
+            "key": "qty",
+            "label": "Qty",
+            "align": "right"
+          },
+          {
+            "key": "unitPrice",
+            "label": "Unit Price",
+            "align": "right",
+            "format": "currency"
+          },
+          {
+            "key": "amount",
+            "label": "Amount",
+            "align": "right",
+            "format": "currency"
+          }
+        ],
+        "rows": "$vars.lineItems",
+        "totals": [
+          "amount"
+        ]
+      }
+    },
+    {
+      "id": "totals",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "subtotal",
+          "kind": "stat",
+          "props": {
+            "label": "Subtotal",
+            "value": 5700,
+            "format": "currency"
+          }
+        },
+        {
+          "id": "tax",
+          "kind": "stat",
+          "props": {
+            "label": "Tax (8%)",
+            "value": 456,
+            "format": "currency"
+          }
+        },
+        {
+          "id": "total",
+          "kind": "stat",
+          "props": {
+            "label": "Total Due",
+            "value": 6156,
+            "format": "currency"
+          }
+        }
+      ]
+    }
+  ]
+}

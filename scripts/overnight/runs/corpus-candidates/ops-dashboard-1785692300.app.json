@@ -1,0 +1,169 @@
+{
+  "app": "ops-dashboard",
+  "title": "Operations Dashboard",
+  "docType": "dashboard",
+  "theme": {
+    "mode": "dark",
+    "accent": "#4f8ef7"
+  },
+  "vars": {
+    "throughput": [
+      {
+        "month": "Jan",
+        "runs": 420
+      },
+      {
+        "month": "Feb",
+        "runs": 465
+      },
+      {
+        "month": "Mar",
+        "runs": 510
+      },
+      {
+        "month": "Apr",
+        "runs": 488
+      },
+      {
+        "month": "May",
+        "runs": 552
+      },
+      {
+        "month": "Jun",
+        "runs": 601
+      }
+    ],
+    "incidents": [
+      {
+        "id": "INC-1042",
+        "service": "bake-api",
+        "severity": "high",
+        "status": "open",
+        "age": "2h"
+      },
+      {
+        "id": "INC-1039",
+        "service": "volume-proxy",
+        "severity": "medium",
+        "status": "mitigated",
+        "age": "9h"
+      },
+      {
+        "id": "INC-1035",
+        "service": "web",
+        "severity": "low",
+        "status": "closed",
+        "age": "1d"
+      },
+      {
+        "id": "INC-1031",
+        "service": "bake-api",
+        "severity": "medium",
+        "status": "closed",
+        "age": "2d"
+      }
+    ]
+  },
+  "structures": {
+    "incident": [
+      {
+        "name": "id",
+        "type": "string"
+      },
+      {
+        "name": "service",
+        "type": "string"
+      },
+      {
+        "name": "severity",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      },
+      {
+        "name": "age",
+        "type": "string"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Operations Dashboard",
+        "level": 1
+      }
+    },
+    {
+      "id": "kpis",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "kpi-uptime",
+          "kind": "stat",
+          "props": {
+            "label": "Uptime",
+            "value": "99.92%",
+            "delta": "+0.04%",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-latency",
+          "kind": "stat",
+          "props": {
+            "label": "P95 Latency",
+            "value": "312 ms",
+            "delta": "-18 ms",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-incidents",
+          "kind": "stat",
+          "props": {
+            "label": "Open Incidents",
+            "value": "1",
+            "delta": "-2",
+            "trend": "up"
+          }
+        }
+      ]
+    },
+    {
+      "id": "throughput-chart",
+      "kind": "chart",
+      "props": {
+        "type": "line",
+        "title": "Bake Runs per Month",
+        "data": "$throughput",
+        "x": "month",
+        "y": "runs"
+      }
+    },
+    {
+      "id": "incident-table",
+      "kind": "datatable",
+      "props": {
+        "title": "Recent Incidents",
+        "data": "$incidents",
+        "columns": [
+          "id",
+          "service",
+          "severity",
+          "status",
+          "age"
+        ],
+        "sortable": true,
+        "searchable": true,
+        "pageSize": 10
+      }
+    }
+  ]
+}

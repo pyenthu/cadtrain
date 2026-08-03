@@ -1,0 +1,122 @@
+{
+  "app": "kanban-board",
+  "title": "Kanban Board",
+  "docType": "board",
+  "theme": {
+    "mode": "light",
+    "accent": "#3b6ef2"
+  },
+  "structures": {
+    "Task": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "owner",
+        "type": "string"
+      },
+      {
+        "name": "points",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "todo": [
+      {
+        "title": "Draft spec",
+        "owner": "Ana",
+        "points": 3
+      },
+      {
+        "title": "Wire API",
+        "owner": "Ben",
+        "points": 5
+      }
+    ],
+    "doing": [
+      {
+        "title": "Build tree view",
+        "owner": "Cy",
+        "points": 8
+      }
+    ],
+    "done": [
+      {
+        "title": "Set up repo",
+        "owner": "Ana",
+        "points": 2
+      },
+      {
+        "title": "Auth flow",
+        "owner": "Ben",
+        "points": 5
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "header",
+      "kind": "heading",
+      "props": {
+        "text": "Kanban Board",
+        "level": 1
+      }
+    },
+    {
+      "id": "board",
+      "kind": "tabs",
+      "props": {
+        "layout": "row"
+      },
+      "children": [
+        {
+          "id": "col-todo",
+          "kind": "list",
+          "props": {
+            "title": "To Do",
+            "itemTitle": "title",
+            "itemSubtitle": "owner"
+          },
+          "source": {
+            "verb": "var.read",
+            "args": {
+              "name": "todo"
+            }
+          }
+        },
+        {
+          "id": "col-doing",
+          "kind": "list",
+          "props": {
+            "title": "In Progress",
+            "itemTitle": "title",
+            "itemSubtitle": "owner"
+          },
+          "source": {
+            "verb": "var.read",
+            "args": {
+              "name": "doing"
+            }
+          }
+        },
+        {
+          "id": "col-done",
+          "kind": "list",
+          "props": {
+            "title": "Done",
+            "itemTitle": "title",
+            "itemSubtitle": "owner"
+          },
+          "source": {
+            "verb": "var.read",
+            "args": {
+              "name": "done"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

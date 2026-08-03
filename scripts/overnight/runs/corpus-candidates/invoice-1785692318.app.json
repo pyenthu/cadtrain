@@ -1,0 +1,107 @@
+{
+  "app": "invoice",
+  "title": "Invoice",
+  "docType": "invoice",
+  "vars": {
+    "lines": [
+      {
+        "item": "Drill collar",
+        "qty": 2,
+        "rate": 1450,
+        "amount": 2900
+      },
+      {
+        "item": "Crossover sub",
+        "qty": 1,
+        "rate": 620,
+        "amount": 620
+      },
+      {
+        "item": "Stabilizer",
+        "qty": 3,
+        "rate": 880,
+        "amount": 2640
+      }
+    ]
+  },
+  "structures": {
+    "lines": [
+      {
+        "name": "item",
+        "type": "string"
+      },
+      {
+        "name": "qty",
+        "type": "number"
+      },
+      {
+        "name": "rate",
+        "type": "number"
+      },
+      {
+        "name": "amount",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Invoice INV-1042",
+        "level": 1
+      }
+    },
+    {
+      "id": "meta",
+      "kind": "text",
+      "props": {
+        "text": "Bill to: Acme Drilling Co. — Due 2026-09-01"
+      }
+    },
+    {
+      "id": "items",
+      "kind": "datatable",
+      "props": {
+        "rows": "$lines",
+        "columns": [
+          {
+            "key": "item",
+            "label": "Item"
+          },
+          {
+            "key": "qty",
+            "label": "Qty",
+            "align": "right"
+          },
+          {
+            "key": "rate",
+            "label": "Rate",
+            "align": "right",
+            "format": "currency"
+          },
+          {
+            "key": "amount",
+            "label": "Amount",
+            "align": "right",
+            "format": "currency"
+          }
+        ],
+        "totals": [
+          "amount"
+        ],
+        "showTotalsRow": true
+      }
+    },
+    {
+      "id": "total",
+      "kind": "stat",
+      "props": {
+        "label": "Total Due",
+        "value": 6160,
+        "format": "currency"
+      }
+    }
+  ]
+}

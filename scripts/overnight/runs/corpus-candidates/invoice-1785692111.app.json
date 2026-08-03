@@ -1,0 +1,116 @@
+{
+  "app": "invoice",
+  "title": "Invoice INV-1042",
+  "docType": "invoice",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "structures": {
+    "LineItem": [
+      {
+        "name": "description",
+        "type": "string"
+      },
+      {
+        "name": "qty",
+        "type": "number"
+      },
+      {
+        "name": "unitPrice",
+        "type": "number"
+      },
+      {
+        "name": "amount",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "lineItems": [
+      {
+        "description": "Drill collar machining",
+        "qty": 4,
+        "unitPrice": 1250,
+        "amount": 5000
+      },
+      {
+        "description": "Thread inspection",
+        "qty": 8,
+        "unitPrice": 180,
+        "amount": 1440
+      },
+      {
+        "description": "Surface coating",
+        "qty": 2,
+        "unitPrice": 760,
+        "amount": 1520
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Invoice INV-1042",
+        "level": 1
+      }
+    },
+    {
+      "id": "meta",
+      "kind": "text",
+      "props": {
+        "text": "Bill to: Northfield Drilling Co. — Due 2026-09-01"
+      }
+    },
+    {
+      "id": "items",
+      "kind": "datatable",
+      "source": {
+        "verb": "readVar",
+        "args": {
+          "name": "lineItems"
+        }
+      },
+      "props": {
+        "columns": "description:Description,qty:Qty,unitPrice:Unit Price,amount:Amount",
+        "search": false,
+        "sortable": true,
+        "showTotals": true,
+        "numberAlign": true,
+        "zebra": true
+      }
+    },
+    {
+      "id": "totals",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "subtotal",
+          "kind": "stat",
+          "props": {
+            "label": "Subtotal",
+            "value": "$7,960.00"
+          }
+        },
+        {
+          "id": "tax",
+          "kind": "stat",
+          "props": {
+            "label": "Tax (8%)",
+            "value": "$636.80"
+          }
+        },
+        {
+          "id": "total",
+          "kind": "stat",
+          "props": {
+            "label": "Total Due",
+            "value": "$8,596.80"
+          }
+        }
+      ]
+    }
+  ]
+}

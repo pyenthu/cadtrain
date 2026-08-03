@@ -1,0 +1,150 @@
+{
+  "app": "user-profile",
+  "title": "User Profile",
+  "docType": "profile",
+  "theme": {
+    "mode": "light",
+    "accent": "#3b82f6"
+  },
+  "vars": {
+    "activity": [
+      {
+        "date": "2026-07-28",
+        "action": "Signed in",
+        "detail": "Chrome / macOS",
+        "status": "ok"
+      },
+      {
+        "date": "2026-07-29",
+        "action": "Updated profile",
+        "detail": "Changed display name",
+        "status": "ok"
+      },
+      {
+        "date": "2026-07-30",
+        "action": "Created app",
+        "detail": "ops-dashboard",
+        "status": "ok"
+      },
+      {
+        "date": "2026-08-01",
+        "action": "Password reset",
+        "detail": "Email link",
+        "status": "pending"
+      },
+      {
+        "date": "2026-08-02",
+        "action": "Signed in",
+        "detail": "Safari / iOS",
+        "status": "ok"
+      }
+    ]
+  },
+  "structures": {
+    "activity": [
+      {
+        "name": "date",
+        "type": "string"
+      },
+      {
+        "name": "action",
+        "type": "string"
+      },
+      {
+        "name": "detail",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Jane Cooper",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Product Engineer · Joined March 2024"
+      }
+    },
+    {
+      "id": "stats",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "stat-apps",
+          "kind": "stat",
+          "props": {
+            "label": "Apps Built",
+            "value": 12
+          }
+        },
+        {
+          "id": "stat-sessions",
+          "kind": "stat",
+          "props": {
+            "label": "Sessions",
+            "value": 348,
+            "delta": "+8%"
+          }
+        },
+        {
+          "id": "stat-streak",
+          "kind": "stat",
+          "props": {
+            "label": "Day Streak",
+            "value": 27
+          }
+        }
+      ]
+    },
+    {
+      "id": "activity-heading",
+      "kind": "heading",
+      "props": {
+        "text": "Recent Activity",
+        "level": 2
+      }
+    },
+    {
+      "id": "activity-table",
+      "kind": "datatable",
+      "props": {
+        "var": "activity",
+        "columns": [
+          {
+            "key": "date",
+            "label": "Date"
+          },
+          {
+            "key": "action",
+            "label": "Action"
+          },
+          {
+            "key": "detail",
+            "label": "Detail"
+          },
+          {
+            "key": "status",
+            "label": "Status"
+          }
+        ],
+        "search": true,
+        "sortable": true,
+        "pageSize": 10
+      }
+    }
+  ]
+}

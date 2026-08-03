@@ -1,0 +1,98 @@
+{
+  "app": "kanban-board",
+  "title": "Kanban Board",
+  "docType": "board",
+  "theme": {
+    "mode": "light",
+    "accent": "#4f46e5"
+  },
+  "structures": {
+    "task": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "assignee",
+        "type": "string"
+      },
+      {
+        "name": "points",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "todo": [
+      {
+        "title": "Draft spec",
+        "assignee": "Ana",
+        "points": 3
+      },
+      {
+        "title": "Wire API",
+        "assignee": "Ben",
+        "points": 5
+      }
+    ],
+    "doing": [
+      {
+        "title": "Build parser",
+        "assignee": "Cy",
+        "points": 8
+      }
+    ],
+    "done": [
+      {
+        "title": "Set up repo",
+        "assignee": "Ana",
+        "points": 1
+      },
+      {
+        "title": "Add CI",
+        "assignee": "Ben",
+        "points": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "board-title",
+      "kind": "heading",
+      "props": {
+        "text": "Sprint Board",
+        "level": 1
+      }
+    },
+    {
+      "id": "col-todo",
+      "kind": "list",
+      "props": {
+        "title": "To Do",
+        "items": "$vars.todo",
+        "primary": "title",
+        "secondary": "assignee"
+      }
+    },
+    {
+      "id": "col-doing",
+      "kind": "list",
+      "props": {
+        "title": "In Progress",
+        "items": "$vars.doing",
+        "primary": "title",
+        "secondary": "assignee"
+      }
+    },
+    {
+      "id": "col-done",
+      "kind": "list",
+      "props": {
+        "title": "Done",
+        "items": "$vars.done",
+        "primary": "title",
+        "secondary": "assignee"
+      }
+    }
+  ]
+}

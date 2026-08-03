@@ -4,76 +4,91 @@
   "docType": "dashboard",
   "theme": {
     "mode": "dark",
-    "accent": "#38bdf8"
+    "accent": "#4f8ef7"
   },
   "vars": {
+    "kpis": [
+      {
+        "label": "Active Wells",
+        "value": 128,
+        "delta": "+4"
+      },
+      {
+        "label": "Uptime",
+        "value": "99.2%",
+        "delta": "+0.3"
+      },
+      {
+        "label": "Open Alerts",
+        "value": 7,
+        "delta": "-2"
+      }
+    ],
     "throughput": [
       {
         "day": "Mon",
-        "runs": 42
+        "bbl": 1420
       },
       {
         "day": "Tue",
-        "runs": 58
+        "bbl": 1580
       },
       {
         "day": "Wed",
-        "runs": 51
+        "bbl": 1490
       },
       {
         "day": "Thu",
-        "runs": 67
+        "bbl": 1735
       },
       {
         "day": "Fri",
-        "runs": 73
+        "bbl": 1810
       },
       {
         "day": "Sat",
-        "runs": 39
+        "bbl": 1655
       },
       {
         "day": "Sun",
-        "runs": 31
+        "bbl": 1720
       }
     ],
     "jobs": [
       {
-        "job": "bake-queue",
-        "status": "OK",
-        "duration": 128,
-        "owner": "pipeline"
+        "id": "JOB-1041",
+        "rig": "Rig 7",
+        "status": "Running",
+        "progress": 72
       },
       {
-        "job": "vocab-sync",
-        "status": "OK",
-        "duration": 54,
-        "owner": "authoring"
+        "id": "JOB-1042",
+        "rig": "Rig 3",
+        "status": "Queued",
+        "progress": 0
       },
       {
-        "job": "rag-index",
-        "status": "WARN",
-        "duration": 312,
-        "owner": "ai"
+        "id": "JOB-1043",
+        "rig": "Rig 11",
+        "status": "Complete",
+        "progress": 100
       },
       {
-        "job": "volume-backup",
-        "status": "OK",
-        "duration": 97,
-        "owner": "infra"
-      },
-      {
-        "job": "e2e-suite",
-        "status": "FAIL",
-        "duration": 486,
-        "owner": "qa"
+        "id": "JOB-1044",
+        "rig": "Rig 5",
+        "status": "Running",
+        "progress": 38
       }
     ]
   },
   "structures": {
     "jobs": [
       {
-        "name": "job",
+        "name": "id",
+        "type": "string"
+      },
+      {
+        "name": "rig",
         "type": "string"
       },
       {
@@ -81,12 +96,8 @@
         "type": "string"
       },
       {
-        "name": "duration",
+        "name": "progress",
         "type": "number"
-      },
-      {
-        "name": "owner",
-        "type": "string"
       }
     ]
   },
@@ -103,23 +114,23 @@
       "id": "subtitle",
       "kind": "text",
       "props": {
-        "text": "Live pipeline health for the last 7 days."
+        "text": "Live field operations overview — last 7 days."
       }
     },
     {
-      "id": "kpis",
+      "id": "kpi-row",
       "kind": "statgrid",
       "props": {
         "columns": 3
       },
       "children": [
         {
-          "id": "kpi-runs",
+          "id": "kpi-wells",
           "kind": "stat",
           "props": {
-            "label": "Total Runs",
-            "value": 361,
-            "delta": "+12%",
+            "label": "Active Wells",
+            "value": 128,
+            "delta": "+4",
             "trend": "up"
           }
         },
@@ -128,73 +139,61 @@
           "kind": "stat",
           "props": {
             "label": "Uptime",
-            "value": "99.4%",
-            "delta": "+0.3%",
+            "value": "99.2%",
+            "delta": "+0.3",
             "trend": "up"
           }
         },
         {
-          "id": "kpi-failures",
+          "id": "kpi-alerts",
           "kind": "stat",
           "props": {
-            "label": "Failures",
+            "label": "Open Alerts",
             "value": 7,
-            "delta": "-3",
+            "delta": "-2",
             "trend": "down"
           }
         }
       ]
     },
     {
-      "id": "trend",
+      "id": "throughput-chart",
       "kind": "chart",
       "props": {
         "type": "line",
-        "title": "Runs per Day",
+        "title": "Daily Throughput (bbl)",
         "x": "day",
-        "y": "runs",
-        "height": 260
-      },
-      "source": {
-        "verb": "vars.get",
-        "args": {
-          "name": "throughput"
-        }
+        "y": "bbl",
+        "data": "$vars.throughput"
       }
     },
     {
       "id": "jobs-table",
       "kind": "datatable",
       "props": {
-        "title": "Recent Jobs",
+        "title": "Active Jobs",
+        "data": "$vars.jobs",
         "columns": [
           {
-            "key": "job",
+            "key": "id",
             "label": "Job"
+          },
+          {
+            "key": "rig",
+            "label": "Rig"
           },
           {
             "key": "status",
             "label": "Status"
           },
           {
-            "key": "duration",
-            "label": "Duration (s)",
-            "align": "right"
-          },
-          {
-            "key": "owner",
-            "label": "Owner"
+            "key": "progress",
+            "label": "Progress %"
           }
         ],
         "sortable": true,
         "searchable": true,
         "pageSize": 10
-      },
-      "source": {
-        "verb": "vars.get",
-        "args": {
-          "name": "jobs"
-        }
       }
     }
   ]

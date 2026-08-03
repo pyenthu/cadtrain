@@ -1,0 +1,94 @@
+{
+  "app": "customer-survey",
+  "title": "Customer Survey",
+  "docType": "form",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Customer Survey",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Help us improve — this takes about two minutes."
+      }
+    },
+    {
+      "id": "survey",
+      "kind": "form",
+      "props": {
+        "submitLabel": "Submit Survey",
+        "fields": [
+          {
+            "name": "name",
+            "label": "Your name",
+            "type": "text",
+            "required": true
+          },
+          {
+            "name": "email",
+            "label": "Email",
+            "type": "email",
+            "required": true
+          },
+          {
+            "name": "role",
+            "label": "Role",
+            "type": "select",
+            "options": [
+              "Engineer",
+              "Operations",
+              "Management",
+              "Other"
+            ]
+          },
+          {
+            "name": "satisfaction",
+            "label": "Overall satisfaction",
+            "type": "select",
+            "options": [
+              "Very satisfied",
+              "Satisfied",
+              "Neutral",
+              "Dissatisfied",
+              "Very dissatisfied"
+            ],
+            "required": true
+          },
+          {
+            "name": "frequency",
+            "label": "How often do you use the product?",
+            "type": "select",
+            "options": [
+              "Daily",
+              "Weekly",
+              "Monthly",
+              "Rarely"
+            ]
+          },
+          {
+            "name": "recommend",
+            "label": "How likely are you to recommend us? (0-10)",
+            "type": "number",
+            "min": 0,
+            "max": 10
+          },
+          {
+            "name": "comments",
+            "label": "Additional comments",
+            "type": "textarea"
+          }
+        ]
+      }
+    }
+  ]
+}

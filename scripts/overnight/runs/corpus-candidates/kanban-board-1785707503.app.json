@@ -1,0 +1,110 @@
+{
+  "app": "kanban-board",
+  "title": "Kanban Board",
+  "docType": "board",
+  "theme": {
+    "mode": "light",
+    "accent": "#4f46e5"
+  },
+  "vars": {
+    "todo": [
+      {
+        "task": "Draft spec",
+        "owner": "Ana",
+        "points": 3
+      },
+      {
+        "task": "Wire API",
+        "owner": "Ben",
+        "points": 5
+      }
+    ],
+    "doing": [
+      {
+        "task": "Build editor",
+        "owner": "Cy",
+        "points": 8
+      }
+    ],
+    "done": [
+      {
+        "task": "Set up repo",
+        "owner": "Ana",
+        "points": 2
+      },
+      {
+        "task": "CI pipeline",
+        "owner": "Ben",
+        "points": 3
+      }
+    ]
+  },
+  "structures": {
+    "card": [
+      {
+        "name": "task",
+        "type": "string"
+      },
+      {
+        "name": "owner",
+        "type": "string"
+      },
+      {
+        "name": "points",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "header",
+      "kind": "heading",
+      "props": {
+        "text": "Kanban Board",
+        "level": 1
+      }
+    },
+    {
+      "id": "board",
+      "kind": "tabs",
+      "props": {
+        "layout": "columns"
+      },
+      "children": [
+        {
+          "id": "col-todo",
+          "kind": "list",
+          "props": {
+            "title": "To Do",
+            "items": "$vars.todo",
+            "titleField": "task",
+            "subtitleField": "owner",
+            "badgeField": "points"
+          }
+        },
+        {
+          "id": "col-doing",
+          "kind": "list",
+          "props": {
+            "title": "In Progress",
+            "items": "$vars.doing",
+            "titleField": "task",
+            "subtitleField": "owner",
+            "badgeField": "points"
+          }
+        },
+        {
+          "id": "col-done",
+          "kind": "list",
+          "props": {
+            "title": "Done",
+            "items": "$vars.done",
+            "titleField": "task",
+            "subtitleField": "owner",
+            "badgeField": "points"
+          }
+        }
+      ]
+    }
+  ]
+}

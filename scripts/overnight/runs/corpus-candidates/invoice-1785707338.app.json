@@ -1,0 +1,132 @@
+{
+  "app": "invoice",
+  "title": "Invoice",
+  "docType": "invoice",
+  "vars": {
+    "lines": [
+      {
+        "item": "Design services",
+        "qty": 12,
+        "rate": 150,
+        "amount": 1800
+      },
+      {
+        "item": "Fabrication",
+        "qty": 4,
+        "rate": 425,
+        "amount": 1700
+      },
+      {
+        "item": "Assembly labor",
+        "qty": 8,
+        "rate": 95,
+        "amount": 760
+      }
+    ]
+  },
+  "structures": {
+    "lines": [
+      {
+        "name": "item",
+        "type": "string"
+      },
+      {
+        "name": "qty",
+        "type": "number"
+      },
+      {
+        "name": "rate",
+        "type": "number"
+      },
+      {
+        "name": "amount",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Invoice #1042",
+        "level": 1
+      }
+    },
+    {
+      "id": "meta",
+      "kind": "text",
+      "props": {
+        "text": "Billed to: Acme Downhole Ltd — Due 2026-09-01"
+      }
+    },
+    {
+      "id": "totals",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "subtotal",
+          "kind": "stat",
+          "props": {
+            "label": "Subtotal",
+            "value": 4260,
+            "format": "currency"
+          }
+        },
+        {
+          "id": "tax",
+          "kind": "stat",
+          "props": {
+            "label": "Tax (8%)",
+            "value": 340.8,
+            "format": "currency"
+          }
+        },
+        {
+          "id": "total",
+          "kind": "stat",
+          "props": {
+            "label": "Total Due",
+            "value": 4600.8,
+            "format": "currency"
+          }
+        }
+      ]
+    },
+    {
+      "id": "items",
+      "kind": "datatable",
+      "props": {
+        "title": "Line Items",
+        "rows": "$vars.lines",
+        "columns": [
+          {
+            "key": "item",
+            "label": "Description"
+          },
+          {
+            "key": "qty",
+            "label": "Qty",
+            "align": "right"
+          },
+          {
+            "key": "rate",
+            "label": "Rate",
+            "align": "right",
+            "format": "currency"
+          },
+          {
+            "key": "amount",
+            "label": "Amount",
+            "align": "right",
+            "format": "currency"
+          }
+        ],
+        "totals": [
+          "amount"
+        ],
+        "sortable": true
+      }
+    }
+  ]
+}

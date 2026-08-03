@@ -1,0 +1,153 @@
+{
+  "app": "product-catalog",
+  "title": "Product Catalog",
+  "docType": "catalog",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "vars": {
+    "products": [
+      {
+        "sku": "PC-1001",
+        "name": "Widget Pro",
+        "category": "Widgets",
+        "price": 49.99,
+        "stock": 128
+      },
+      {
+        "sku": "PC-1002",
+        "name": "Widget Mini",
+        "category": "Widgets",
+        "price": 19.99,
+        "stock": 342
+      },
+      {
+        "sku": "PC-2001",
+        "name": "Gadget X",
+        "category": "Gadgets",
+        "price": 129.5,
+        "stock": 54
+      },
+      {
+        "sku": "PC-2002",
+        "name": "Gadget Air",
+        "category": "Gadgets",
+        "price": 89,
+        "stock": 0
+      },
+      {
+        "sku": "PC-3001",
+        "name": "Bracket Kit",
+        "category": "Hardware",
+        "price": 12.75,
+        "stock": 610
+      }
+    ]
+  },
+  "structures": {
+    "products": [
+      {
+        "name": "sku",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "category",
+        "type": "string"
+      },
+      {
+        "name": "price",
+        "type": "number"
+      },
+      {
+        "name": "stock",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Product Catalog",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Browse and search the full product list."
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "stat-skus",
+          "kind": "stat",
+          "props": {
+            "label": "SKUs",
+            "value": 5
+          }
+        },
+        {
+          "id": "stat-cats",
+          "kind": "stat",
+          "props": {
+            "label": "Categories",
+            "value": 3
+          }
+        },
+        {
+          "id": "stat-oos",
+          "kind": "stat",
+          "props": {
+            "label": "Out of Stock",
+            "value": 1
+          }
+        }
+      ]
+    },
+    {
+      "id": "catalog-table",
+      "kind": "datatable",
+      "props": {
+        "data": "$vars.products",
+        "search": true,
+        "sortable": true,
+        "pageSize": 10,
+        "columns": [
+          {
+            "key": "sku",
+            "label": "SKU"
+          },
+          {
+            "key": "name",
+            "label": "Product"
+          },
+          {
+            "key": "category",
+            "label": "Category"
+          },
+          {
+            "key": "price",
+            "label": "Price",
+            "format": "currency"
+          },
+          {
+            "key": "stock",
+            "label": "Stock",
+            "format": "number"
+          }
+        ]
+      }
+    }
+  ]
+}

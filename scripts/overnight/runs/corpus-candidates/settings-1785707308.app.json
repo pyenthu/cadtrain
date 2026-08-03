@@ -1,0 +1,55 @@
+{
+  "app": "settings",
+  "title": "Settings",
+  "docType": "settings",
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Settings",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Manage your preferences."
+      }
+    },
+    {
+      "id": "prefs",
+      "kind": "form",
+      "props": {
+        "submitLabel": "Save",
+        "fields": [
+          {
+            "name": "notifications",
+            "label": "Email notifications",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "darkMode",
+            "label": "Dark mode",
+            "type": "toggle",
+            "value": false
+          },
+          {
+            "name": "autosave",
+            "label": "Autosave",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "analytics",
+            "label": "Usage analytics",
+            "type": "toggle",
+            "value": false
+          }
+        ]
+      }
+    }
+  ]
+}

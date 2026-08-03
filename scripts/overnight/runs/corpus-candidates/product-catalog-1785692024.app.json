@@ -6,54 +6,8 @@
     "mode": "light",
     "accent": "#2563eb"
   },
-  "vars": {
-    "products": [
-      {
-        "sku": "SKU-1001",
-        "name": "Hex Bolt M12",
-        "category": "Fasteners",
-        "price": 2.4,
-        "stock": 1840
-      },
-      {
-        "sku": "SKU-1002",
-        "name": "Steel Flange 4in",
-        "category": "Fittings",
-        "price": 38.5,
-        "stock": 260
-      },
-      {
-        "sku": "SKU-1003",
-        "name": "O-Ring Nitrile 2-214",
-        "category": "Seals",
-        "price": 0.85,
-        "stock": 9400
-      },
-      {
-        "sku": "SKU-1004",
-        "name": "Ball Valve 2in",
-        "category": "Valves",
-        "price": 124,
-        "stock": 72
-      },
-      {
-        "sku": "SKU-1005",
-        "name": "Pressure Gauge 5000psi",
-        "category": "Instruments",
-        "price": 210,
-        "stock": 38
-      },
-      {
-        "sku": "SKU-1006",
-        "name": "Tubing Pup Joint 5ft",
-        "category": "Tubulars",
-        "price": 465,
-        "stock": 54
-      }
-    ]
-  },
   "structures": {
-    "products": [
+    "Product": [
       {
         "name": "sku",
         "type": "string"
@@ -76,6 +30,52 @@
       }
     ]
   },
+  "vars": {
+    "products": [
+      {
+        "sku": "PC-1001",
+        "name": "Casing Centralizer",
+        "category": "Completions",
+        "price": 184.5,
+        "stock": 42
+      },
+      {
+        "sku": "PC-1002",
+        "name": "Float Collar",
+        "category": "Completions",
+        "price": 612,
+        "stock": 15
+      },
+      {
+        "sku": "PC-1003",
+        "name": "Drill Pipe Pup Joint",
+        "category": "Drilling",
+        "price": 975.25,
+        "stock": 8
+      },
+      {
+        "sku": "PC-1004",
+        "name": "Mule Shoe Guide",
+        "category": "Completions",
+        "price": 238,
+        "stock": 27
+      },
+      {
+        "sku": "PC-1005",
+        "name": "Landing Nipple",
+        "category": "Completions",
+        "price": 430.75,
+        "stock": 19
+      },
+      {
+        "sku": "PC-1006",
+        "name": "Stabilizer Sleeve",
+        "category": "Drilling",
+        "price": 1290,
+        "stock": 5
+      }
+    ]
+  },
   "panels": [
     {
       "id": "title",
@@ -89,7 +89,7 @@
       "id": "intro",
       "kind": "text",
       "props": {
-        "text": "Browse and search the full product list."
+        "text": "Search and browse the full product line."
       }
     },
     {
@@ -112,15 +112,15 @@
           "kind": "stat",
           "props": {
             "label": "Categories",
-            "value": 6
+            "value": 2
           }
         },
         {
-          "id": "stat-units",
+          "id": "stat-stock",
           "kind": "stat",
           "props": {
-            "label": "Units in Stock",
-            "value": 11664
+            "label": "Units In Stock",
+            "value": 116
           }
         }
       ]

@@ -1,0 +1,163 @@
+{
+  "app": "product-catalog",
+  "title": "Product Catalog",
+  "docType": "catalog",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "vars": {
+    "products": [
+      {
+        "sku": "PC-1001",
+        "name": "Wireless Mouse",
+        "category": "Accessories",
+        "price": 24.99,
+        "stock": 142
+      },
+      {
+        "sku": "PC-1002",
+        "name": "Mechanical Keyboard",
+        "category": "Accessories",
+        "price": 89.5,
+        "stock": 63
+      },
+      {
+        "sku": "PC-1003",
+        "name": "27\" 4K Monitor",
+        "category": "Displays",
+        "price": 349,
+        "stock": 21
+      },
+      {
+        "sku": "PC-1004",
+        "name": "USB-C Dock",
+        "category": "Adapters",
+        "price": 129.95,
+        "stock": 57
+      },
+      {
+        "sku": "PC-1005",
+        "name": "Laptop Stand",
+        "category": "Accessories",
+        "price": 45,
+        "stock": 88
+      },
+      {
+        "sku": "PC-1006",
+        "name": "Webcam 1080p",
+        "category": "Video",
+        "price": 69.99,
+        "stock": 34
+      }
+    ]
+  },
+  "structures": {
+    "products": [
+      {
+        "name": "sku",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "category",
+        "type": "string"
+      },
+      {
+        "name": "price",
+        "type": "number"
+      },
+      {
+        "name": "stock",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Product Catalog",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Browse and search the full product list."
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "stat-skus",
+          "kind": "stat",
+          "props": {
+            "label": "SKUs",
+            "value": 6
+          }
+        },
+        {
+          "id": "stat-categories",
+          "kind": "stat",
+          "props": {
+            "label": "Categories",
+            "value": 4
+          }
+        },
+        {
+          "id": "stat-units",
+          "kind": "stat",
+          "props": {
+            "label": "Units In Stock",
+            "value": 405
+          }
+        }
+      ]
+    },
+    {
+      "id": "catalog-table",
+      "kind": "datatable",
+      "props": {
+        "rows": "$vars.products",
+        "searchable": true,
+        "sortable": true,
+        "pageSize": 10,
+        "columns": [
+          {
+            "key": "sku",
+            "label": "SKU"
+          },
+          {
+            "key": "name",
+            "label": "Product"
+          },
+          {
+            "key": "category",
+            "label": "Category"
+          },
+          {
+            "key": "price",
+            "label": "Price",
+            "format": "currency"
+          },
+          {
+            "key": "stock",
+            "label": "Stock",
+            "format": "number"
+          }
+        ]
+      }
+    }
+  ]
+}

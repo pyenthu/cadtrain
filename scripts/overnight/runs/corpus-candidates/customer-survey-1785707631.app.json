@@ -1,0 +1,80 @@
+{
+  "app": "customer-survey",
+  "title": "Customer Survey",
+  "docType": "form",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Customer Survey",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Tell us about your experience. It takes about two minutes."
+      }
+    },
+    {
+      "id": "survey",
+      "kind": "form",
+      "props": {
+        "submitLabel": "Submit",
+        "fields": [
+          {
+            "name": "name",
+            "label": "Name",
+            "type": "text",
+            "required": true
+          },
+          {
+            "name": "email",
+            "label": "Email",
+            "type": "email",
+            "required": true
+          },
+          {
+            "name": "rating",
+            "label": "Overall satisfaction",
+            "type": "select",
+            "required": true,
+            "options": [
+              "Very satisfied",
+              "Satisfied",
+              "Neutral",
+              "Dissatisfied",
+              "Very dissatisfied"
+            ]
+          },
+          {
+            "name": "recommend",
+            "label": "Would you recommend us?",
+            "type": "select",
+            "options": [
+              "Yes",
+              "No",
+              "Maybe"
+            ]
+          },
+          {
+            "name": "used_for",
+            "label": "What do you use the product for?",
+            "type": "text"
+          },
+          {
+            "name": "comments",
+            "label": "Additional comments",
+            "type": "textarea"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,153 @@
+{
+  "app": "product-catalog",
+  "title": "Product Catalog",
+  "docType": "catalog",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "structures": {
+    "Product": [
+      {
+        "name": "sku",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "category",
+        "type": "string"
+      },
+      {
+        "name": "price",
+        "type": "number"
+      },
+      {
+        "name": "stock",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "products": [
+      {
+        "sku": "PC-1001",
+        "name": "Casing Centralizer",
+        "category": "Completions",
+        "price": 184.5,
+        "stock": 42
+      },
+      {
+        "sku": "PC-1002",
+        "name": "Float Collar",
+        "category": "Completions",
+        "price": 320,
+        "stock": 18
+      },
+      {
+        "sku": "PC-1003",
+        "name": "Drill Pipe Pup Joint",
+        "category": "Tubulars",
+        "price": 950,
+        "stock": 7
+      },
+      {
+        "sku": "PC-1004",
+        "name": "Packer Assembly",
+        "category": "Completions",
+        "price": 2450,
+        "stock": 3
+      },
+      {
+        "sku": "PC-1005",
+        "name": "Crossover Sub",
+        "category": "Tubulars",
+        "price": 610,
+        "stock": 25
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Product Catalog",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Search and browse the full product list."
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "stat-skus",
+          "kind": "stat",
+          "props": {
+            "label": "SKUs",
+            "value": 5
+          }
+        },
+        {
+          "id": "stat-stock",
+          "kind": "stat",
+          "props": {
+            "label": "Units in Stock",
+            "value": 95
+          }
+        },
+        {
+          "id": "stat-value",
+          "kind": "stat",
+          "props": {
+            "label": "Avg Price",
+            "value": "$902.90"
+          }
+        }
+      ]
+    },
+    {
+      "id": "catalog-table",
+      "kind": "datatable",
+      "props": {
+        "data": "$vars.products",
+        "searchable": true,
+        "sortable": true,
+        "pageSize": 10,
+        "columns": [
+          {
+            "key": "sku",
+            "label": "SKU"
+          },
+          {
+            "key": "name",
+            "label": "Product"
+          },
+          {
+            "key": "category",
+            "label": "Category"
+          },
+          {
+            "key": "price",
+            "label": "Price",
+            "format": "currency"
+          },
+          {
+            "key": "stock",
+            "label": "Stock",
+            "format": "number"
+          }
+        ]
+      }
+    }
+  ]
+}

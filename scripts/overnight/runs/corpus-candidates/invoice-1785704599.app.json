@@ -1,0 +1,114 @@
+{
+  "app": "invoice",
+  "title": "Invoice",
+  "docType": "invoice",
+  "vars": {
+    "lines": [
+      {
+        "item": "Cementing head rental",
+        "qty": 2,
+        "rate": 450,
+        "amount": 900
+      },
+      {
+        "item": "Float collar 5-1/2\"",
+        "qty": 4,
+        "rate": 275,
+        "amount": 1100
+      },
+      {
+        "item": "Centralizer set",
+        "qty": 12,
+        "rate": 85,
+        "amount": 1020
+      },
+      {
+        "item": "Field service day rate",
+        "qty": 3,
+        "rate": 1200,
+        "amount": 3600
+      }
+    ]
+  },
+  "structures": {
+    "lines": [
+      {
+        "name": "item",
+        "type": "string"
+      },
+      {
+        "name": "qty",
+        "type": "number"
+      },
+      {
+        "name": "rate",
+        "type": "number"
+      },
+      {
+        "name": "amount",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Invoice INV-1042",
+        "level": 1
+      }
+    },
+    {
+      "id": "meta",
+      "kind": "text",
+      "props": {
+        "text": "Billed to: Northfield Energy — Due 2026-09-01"
+      }
+    },
+    {
+      "id": "items",
+      "kind": "datatable",
+      "props": {
+        "data": "$vars.lines",
+        "columns": [
+          {
+            "key": "item",
+            "label": "Description"
+          },
+          {
+            "key": "qty",
+            "label": "Qty",
+            "align": "right"
+          },
+          {
+            "key": "rate",
+            "label": "Rate",
+            "align": "right",
+            "format": "currency"
+          },
+          {
+            "key": "amount",
+            "label": "Amount",
+            "align": "right",
+            "format": "currency"
+          }
+        ],
+        "totals": [
+          "amount"
+        ],
+        "search": false,
+        "paging": false
+      }
+    },
+    {
+      "id": "total",
+      "kind": "stat",
+      "props": {
+        "label": "Total Due",
+        "value": "$vars.lines.sum(amount)",
+        "format": "currency"
+      }
+    }
+  ]
+}

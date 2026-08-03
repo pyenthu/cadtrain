@@ -1,0 +1,186 @@
+{
+  "app": "ops-dashboard",
+  "title": "Operations Dashboard",
+  "docType": "dashboard",
+  "theme": {
+    "mode": "dark",
+    "accent": "#4f8cff"
+  },
+  "vars": {
+    "throughput": [
+      {
+        "month": "Jan",
+        "runs": 420
+      },
+      {
+        "month": "Feb",
+        "runs": 515
+      },
+      {
+        "month": "Mar",
+        "runs": 488
+      },
+      {
+        "month": "Apr",
+        "runs": 602
+      },
+      {
+        "month": "May",
+        "runs": 674
+      },
+      {
+        "month": "Jun",
+        "runs": 731
+      }
+    ],
+    "jobs": [
+      {
+        "job": "bake-queue",
+        "owner": "platform",
+        "status": "healthy",
+        "runs": 731,
+        "p95_ms": 842
+      },
+      {
+        "job": "corpus-sync",
+        "owner": "data",
+        "status": "degraded",
+        "runs": 214,
+        "p95_ms": 3120
+      },
+      {
+        "job": "vector-index",
+        "owner": "data",
+        "status": "healthy",
+        "runs": 96,
+        "p95_ms": 1180
+      },
+      {
+        "job": "volume-backup",
+        "owner": "infra",
+        "status": "healthy",
+        "runs": 30,
+        "p95_ms": 540
+      }
+    ]
+  },
+  "structures": {
+    "jobRow": [
+      {
+        "name": "job",
+        "type": "string"
+      },
+      {
+        "name": "owner",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      },
+      {
+        "name": "runs",
+        "type": "number"
+      },
+      {
+        "name": "p95_ms",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Operations Dashboard",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Pipeline health and throughput for the last six months."
+      }
+    },
+    {
+      "id": "kpis",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "kpi-runs",
+          "kind": "stat",
+          "props": {
+            "label": "Total Runs",
+            "value": "3,430",
+            "delta": "+8.5%",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-p95",
+          "kind": "stat",
+          "props": {
+            "label": "p95 Latency",
+            "value": "842 ms",
+            "delta": "-12%",
+            "trend": "down"
+          }
+        },
+        {
+          "id": "kpi-uptime",
+          "kind": "stat",
+          "props": {
+            "label": "Uptime",
+            "value": "99.4%",
+            "delta": "+0.2%",
+            "trend": "up"
+          }
+        }
+      ]
+    },
+    {
+      "id": "throughput-chart",
+      "kind": "chart",
+      "props": {
+        "type": "line",
+        "x": "month",
+        "y": "runs",
+        "title": "Monthly Runs"
+      },
+      "source": {
+        "verb": "var.read",
+        "args": {
+          "name": "throughput"
+        }
+      }
+    },
+    {
+      "id": "jobs-table",
+      "kind": "datatable",
+      "props": {
+        "title": "Jobs",
+        "columns": [
+          "job",
+          "owner",
+          "status",
+          "runs",
+          "p95_ms"
+        ],
+        "sortable": true,
+        "searchable": true,
+        "pageSize": 10
+      },
+      "source": {
+        "verb": "var.read",
+        "args": {
+          "name": "jobs"
+        }
+      }
+    }
+  ]
+}

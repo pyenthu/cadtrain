@@ -1,0 +1,133 @@
+{
+  "app": "invoice",
+  "title": "Invoice",
+  "docType": "invoice",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "vars": {
+    "lines": [
+      {
+        "item": "Design consultation",
+        "qty": 12,
+        "rate": 150,
+        "amount": 1800
+      },
+      {
+        "item": "Prototype build",
+        "qty": 40,
+        "rate": 125,
+        "amount": 5000
+      },
+      {
+        "item": "Materials",
+        "qty": 1,
+        "rate": 740,
+        "amount": 740
+      }
+    ]
+  },
+  "structures": {
+    "lines": [
+      {
+        "name": "item",
+        "type": "string"
+      },
+      {
+        "name": "qty",
+        "type": "number"
+      },
+      {
+        "name": "rate",
+        "type": "number"
+      },
+      {
+        "name": "amount",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Invoice #1042",
+        "level": 1
+      }
+    },
+    {
+      "id": "meta",
+      "kind": "text",
+      "props": {
+        "text": "Billed to Acme Drilling Co. — due 2026-09-01"
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "stat-subtotal",
+          "kind": "stat",
+          "props": {
+            "label": "Subtotal",
+            "value": "$7,540.00"
+          }
+        },
+        {
+          "id": "stat-tax",
+          "kind": "stat",
+          "props": {
+            "label": "Tax (8%)",
+            "value": "$603.20"
+          }
+        },
+        {
+          "id": "stat-total",
+          "kind": "stat",
+          "props": {
+            "label": "Total Due",
+            "value": "$8,143.20"
+          }
+        }
+      ]
+    },
+    {
+      "id": "lines",
+      "kind": "datatable",
+      "props": {
+        "title": "Line Items",
+        "rows": "$vars.lines",
+        "columns": [
+          {
+            "key": "item",
+            "label": "Description"
+          },
+          {
+            "key": "qty",
+            "label": "Qty",
+            "align": "right"
+          },
+          {
+            "key": "rate",
+            "label": "Rate",
+            "align": "right",
+            "format": "currency"
+          },
+          {
+            "key": "amount",
+            "label": "Amount",
+            "align": "right",
+            "format": "currency"
+          }
+        ],
+        "totals": [
+          "amount"
+        ],
+        "sortable": true
+      }
+    }
+  ]
+}

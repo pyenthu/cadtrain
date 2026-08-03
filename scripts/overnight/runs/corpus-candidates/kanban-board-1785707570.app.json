@@ -1,0 +1,106 @@
+{
+  "app": "kanban-board",
+  "title": "Kanban Board",
+  "docType": "board",
+  "theme": {
+    "mode": "light",
+    "accent": "#4f46e5"
+  },
+  "vars": {
+    "todo": [
+      {
+        "title": "Draft spec",
+        "owner": "Ava",
+        "points": 3
+      },
+      {
+        "title": "Collect requirements",
+        "owner": "Ben",
+        "points": 2
+      }
+    ],
+    "doing": [
+      {
+        "title": "Build API",
+        "owner": "Cara",
+        "points": 5
+      },
+      {
+        "title": "Wire auth",
+        "owner": "Dan",
+        "points": 3
+      }
+    ],
+    "done": [
+      {
+        "title": "Set up repo",
+        "owner": "Ava",
+        "points": 1
+      },
+      {
+        "title": "CI pipeline",
+        "owner": "Ben",
+        "points": 2
+      }
+    ]
+  },
+  "structures": {
+    "task": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "owner",
+        "type": "string"
+      },
+      {
+        "name": "points",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Kanban Board",
+        "level": 1
+      }
+    },
+    {
+      "id": "todo",
+      "kind": "list",
+      "props": {
+        "title": "To Do",
+        "items": "$vars.todo",
+        "titleField": "title",
+        "subtitleField": "owner",
+        "badgeField": "points"
+      }
+    },
+    {
+      "id": "doing",
+      "kind": "list",
+      "props": {
+        "title": "In Progress",
+        "items": "$vars.doing",
+        "titleField": "title",
+        "subtitleField": "owner",
+        "badgeField": "points"
+      }
+    },
+    {
+      "id": "done",
+      "kind": "list",
+      "props": {
+        "title": "Done",
+        "items": "$vars.done",
+        "titleField": "title",
+        "subtitleField": "owner",
+        "badgeField": "points"
+      }
+    }
+  ]
+}

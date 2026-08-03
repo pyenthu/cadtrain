@@ -1,0 +1,98 @@
+{
+  "app": "invoice",
+  "title": "Invoice",
+  "docType": "invoice",
+  "structures": {
+    "lineItems": [
+      {
+        "name": "item",
+        "type": "string"
+      },
+      {
+        "name": "qty",
+        "type": "number"
+      },
+      {
+        "name": "rate",
+        "type": "number"
+      },
+      {
+        "name": "amount",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "lineItems": [
+      {
+        "item": "Design services",
+        "qty": 12,
+        "rate": 150,
+        "amount": 1800
+      },
+      {
+        "item": "Engineering",
+        "qty": 30,
+        "rate": 175,
+        "amount": 5250
+      },
+      {
+        "item": "Project management",
+        "qty": 8,
+        "rate": 120,
+        "amount": 960
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Invoice #1042",
+        "level": 1
+      }
+    },
+    {
+      "id": "meta",
+      "kind": "text",
+      "props": {
+        "text": "Billed to Acme Corp — due 2026-09-01"
+      }
+    },
+    {
+      "id": "items",
+      "kind": "datatable",
+      "props": {
+        "columns": [
+          {
+            "key": "item",
+            "label": "Item"
+          },
+          {
+            "key": "qty",
+            "label": "Qty",
+            "align": "right"
+          },
+          {
+            "key": "rate",
+            "label": "Rate",
+            "align": "right",
+            "format": "currency"
+          },
+          {
+            "key": "amount",
+            "label": "Amount",
+            "align": "right",
+            "format": "currency"
+          }
+        ],
+        "rows": "$vars.lineItems",
+        "totals": [
+          "amount"
+        ],
+        "totalsLabel": "Total"
+      }
+    }
+  ]
+}

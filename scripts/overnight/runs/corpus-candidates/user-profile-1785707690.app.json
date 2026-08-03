@@ -1,0 +1,90 @@
+{
+  "app": "user-profile",
+  "title": "User Profile",
+  "docType": "profile",
+  "panels": [
+    {
+      "id": "header",
+      "kind": "heading",
+      "props": {
+        "text": "User Profile",
+        "level": 1
+      }
+    },
+    {
+      "id": "stats",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "stat-posts",
+          "kind": "stat",
+          "props": {
+            "label": "Posts",
+            "value": 128
+          }
+        },
+        {
+          "id": "stat-followers",
+          "kind": "stat",
+          "props": {
+            "label": "Followers",
+            "value": 2450
+          }
+        },
+        {
+          "id": "stat-following",
+          "kind": "stat",
+          "props": {
+            "label": "Following",
+            "value": 312
+          }
+        }
+      ]
+    },
+    {
+      "id": "activity-title",
+      "kind": "heading",
+      "props": {
+        "text": "Recent Activity",
+        "level": 2
+      }
+    },
+    {
+      "id": "activity",
+      "kind": "datatable",
+      "props": {
+        "columns": [
+          {
+            "key": "date",
+            "label": "Date"
+          },
+          {
+            "key": "action",
+            "label": "Action"
+          },
+          {
+            "key": "detail",
+            "label": "Detail"
+          }
+        ],
+        "rows": [
+          {
+            "date": "2026-08-01",
+            "action": "Comment",
+            "detail": "Replied to a thread"
+          },
+          {
+            "date": "2026-07-29",
+            "action": "Post",
+            "detail": "Published an update"
+          },
+          {
+            "date": "2026-07-24",
+            "action": "Follow",
+            "detail": "Followed a new user"
+          }
+        ]
+      }
+    }
+  ]
+}

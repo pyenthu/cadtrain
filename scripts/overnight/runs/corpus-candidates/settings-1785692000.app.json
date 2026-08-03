@@ -1,0 +1,61 @@
+{
+  "app": "settings",
+  "title": "Settings",
+  "docType": "settings",
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Settings",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Manage your notification and privacy preferences."
+      }
+    },
+    {
+      "id": "prefs",
+      "kind": "form",
+      "props": {
+        "submitLabel": "Save",
+        "fields": [
+          {
+            "name": "email_notifications",
+            "label": "Email notifications",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "push_notifications",
+            "label": "Push notifications",
+            "type": "toggle",
+            "value": false
+          },
+          {
+            "name": "weekly_digest",
+            "label": "Weekly digest",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "public_profile",
+            "label": "Public profile",
+            "type": "toggle",
+            "value": false
+          },
+          {
+            "name": "dark_mode",
+            "label": "Dark mode",
+            "type": "toggle",
+            "value": false
+          }
+        ]
+      }
+    }
+  ]
+}

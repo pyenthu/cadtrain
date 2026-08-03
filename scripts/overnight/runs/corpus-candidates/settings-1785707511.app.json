@@ -1,0 +1,60 @@
+{
+  "app": "settings",
+  "title": "Settings",
+  "docType": "settings",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Settings",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Manage your workspace preferences."
+      }
+    },
+    {
+      "id": "prefs",
+      "kind": "form",
+      "props": {
+        "title": "Preferences",
+        "submitLabel": "Save",
+        "fields": [
+          {
+            "name": "notifications",
+            "label": "Email notifications",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "darkMode",
+            "label": "Dark mode",
+            "type": "toggle",
+            "value": false
+          },
+          {
+            "name": "autosave",
+            "label": "Autosave drafts",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "analytics",
+            "label": "Share usage analytics",
+            "type": "toggle",
+            "value": false
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "app": "user-profile",
+  "title": "User Profile",
+  "docType": "profile",
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "User Profile",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Account overview and recent activity."
+      }
+    },
+    {
+      "id": "stats",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "stat-projects",
+          "kind": "stat",
+          "props": {
+            "label": "Projects",
+            "value": 12
+          }
+        },
+        {
+          "id": "stat-activity",
+          "kind": "stat",
+          "props": {
+            "label": "Actions (30d)",
+            "value": 248
+          }
+        },
+        {
+          "id": "stat-member",
+          "kind": "stat",
+          "props": {
+            "label": "Member Since",
+            "value": "2024"
+          }
+        }
+      ]
+    },
+    {
+      "id": "activity-heading",
+      "kind": "heading",
+      "props": {
+        "text": "Recent Activity",
+        "level": 2
+      }
+    },
+    {
+      "id": "activity-table",
+      "kind": "datatable",
+      "props": {
+        "rows": "$vars.activity",
+        "columns": [
+          {
+            "key": "date",
+            "label": "Date"
+          },
+          {
+            "key": "action",
+            "label": "Action"
+          },
+          {
+            "key": "target",
+            "label": "Target"
+          },
+          {
+            "key": "status",
+            "label": "Status"
+          }
+        ],
+        "search": true,
+        "sortable": true,
+        "pageSize": 10
+      }
+    }
+  ],
+  "vars": {
+    "activity": [
+      {
+        "date": "2026-08-01",
+        "action": "Updated",
+        "target": "g_shaft",
+        "status": "Done"
+      },
+      {
+        "date": "2026-07-30",
+        "action": "Created",
+        "target": "ops-dashboard",
+        "status": "Done"
+      },
+      {
+        "date": "2026-07-28",
+        "action": "Commented",
+        "target": "well-schematic",
+        "status": "Open"
+      },
+      {
+        "date": "2026-07-25",
+        "action": "Archived",
+        "target": "old-profile",
+        "status": "Done"
+      }
+    ]
+  }
+}

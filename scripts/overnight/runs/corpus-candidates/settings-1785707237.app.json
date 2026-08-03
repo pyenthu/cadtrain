@@ -1,0 +1,84 @@
+{
+  "app": "settings",
+  "title": "Settings",
+  "docType": "settings",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "vars": {
+    "prefs": [
+      {
+        "key": "notifications",
+        "label": "Email notifications",
+        "enabled": true
+      },
+      {
+        "key": "darkmode",
+        "label": "Dark mode",
+        "enabled": false
+      },
+      {
+        "key": "autosave",
+        "label": "Auto-save drafts",
+        "enabled": true
+      },
+      {
+        "key": "telemetry",
+        "label": "Share usage data",
+        "enabled": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Settings",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Manage your account preferences. Changes apply after saving."
+      }
+    },
+    {
+      "id": "prefs-form",
+      "kind": "form",
+      "props": {
+        "title": "Preferences",
+        "submitLabel": "Save changes",
+        "fields": [
+          {
+            "name": "notifications",
+            "label": "Email notifications",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "darkmode",
+            "label": "Dark mode",
+            "type": "toggle",
+            "value": false
+          },
+          {
+            "name": "autosave",
+            "label": "Auto-save drafts",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "telemetry",
+            "label": "Share usage data",
+            "type": "toggle",
+            "value": false
+          }
+        ]
+      }
+    }
+  ]
+}

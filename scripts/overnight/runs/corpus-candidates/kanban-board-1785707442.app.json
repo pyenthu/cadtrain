@@ -1,0 +1,127 @@
+{
+  "app": "kanban-board",
+  "title": "Kanban Board",
+  "docType": "board",
+  "theme": {
+    "mode": "light",
+    "accent": "#3b82f6"
+  },
+  "vars": {
+    "todo": [
+      {
+        "task": "Draft spec",
+        "owner": "Ana",
+        "priority": "High"
+      },
+      {
+        "task": "Collect requirements",
+        "owner": "Ben",
+        "priority": "Medium"
+      },
+      {
+        "task": "Schedule kickoff",
+        "owner": "Cara",
+        "priority": "Low"
+      }
+    ],
+    "doing": [
+      {
+        "task": "Build API",
+        "owner": "Dev",
+        "priority": "High"
+      },
+      {
+        "task": "Wire auth",
+        "owner": "Eli",
+        "priority": "Medium"
+      }
+    ],
+    "done": [
+      {
+        "task": "Repo setup",
+        "owner": "Ana",
+        "priority": "Low"
+      },
+      {
+        "task": "Design review",
+        "owner": "Cara",
+        "priority": "Medium"
+      }
+    ]
+  },
+  "structures": {
+    "card": [
+      {
+        "name": "task",
+        "type": "string"
+      },
+      {
+        "name": "owner",
+        "type": "string"
+      },
+      {
+        "name": "priority",
+        "type": "string"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Kanban Board",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Task cards across three workflow columns."
+      }
+    },
+    {
+      "id": "columns",
+      "kind": "tabs",
+      "props": {
+        "layout": "row"
+      },
+      "children": [
+        {
+          "id": "col-todo",
+          "kind": "list",
+          "props": {
+            "title": "To Do",
+            "items": "$vars.todo",
+            "titleField": "task",
+            "subtitleField": "owner",
+            "badgeField": "priority"
+          }
+        },
+        {
+          "id": "col-doing",
+          "kind": "list",
+          "props": {
+            "title": "In Progress",
+            "items": "$vars.doing",
+            "titleField": "task",
+            "subtitleField": "owner",
+            "badgeField": "priority"
+          }
+        },
+        {
+          "id": "col-done",
+          "kind": "list",
+          "props": {
+            "title": "Done",
+            "items": "$vars.done",
+            "titleField": "task",
+            "subtitleField": "owner",
+            "badgeField": "priority"
+          }
+        }
+      ]
+    }
+  ]
+}

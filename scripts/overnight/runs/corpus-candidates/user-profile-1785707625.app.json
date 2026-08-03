@@ -1,0 +1,121 @@
+{
+  "app": "user-profile",
+  "title": "User Profile",
+  "docType": "profile",
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "User Profile",
+        "level": 1
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "text",
+      "props": {
+        "text": "Account overview and recent activity."
+      }
+    },
+    {
+      "id": "stats",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "stat-projects",
+          "kind": "stat",
+          "props": {
+            "label": "Projects",
+            "value": 12
+          }
+        },
+        {
+          "id": "stat-sessions",
+          "kind": "stat",
+          "props": {
+            "label": "Sessions",
+            "value": 248
+          }
+        },
+        {
+          "id": "stat-streak",
+          "kind": "stat",
+          "props": {
+            "label": "Day Streak",
+            "value": 7
+          }
+        }
+      ]
+    },
+    {
+      "id": "activity-heading",
+      "kind": "heading",
+      "props": {
+        "text": "Recent Activity",
+        "level": 2
+      }
+    },
+    {
+      "id": "activity",
+      "kind": "datatable",
+      "props": {
+        "rows": "$vars.activity",
+        "columns": [
+          {
+            "key": "date",
+            "label": "Date"
+          },
+          {
+            "key": "action",
+            "label": "Action"
+          },
+          {
+            "key": "target",
+            "label": "Target"
+          }
+        ],
+        "search": true,
+        "pageSize": 10
+      }
+    }
+  ],
+  "vars": {
+    "activity": [
+      {
+        "date": "2026-08-01",
+        "action": "Created",
+        "target": "Pump Housing"
+      },
+      {
+        "date": "2026-07-30",
+        "action": "Edited",
+        "target": "Collar Sub"
+      },
+      {
+        "date": "2026-07-28",
+        "action": "Shared",
+        "target": "Well Schematic"
+      }
+    ]
+  },
+  "structures": {
+    "activity": [
+      {
+        "name": "date",
+        "type": "string"
+      },
+      {
+        "name": "action",
+        "type": "string"
+      },
+      {
+        "name": "target",
+        "type": "string"
+      }
+    ]
+  }
+}

@@ -2,34 +2,6 @@
   "app": "settings",
   "title": "Settings",
   "docType": "settings",
-  "theme": {
-    "mode": "light",
-    "accent": "#2563eb"
-  },
-  "vars": {
-    "prefs": [
-      {
-        "key": "notifications",
-        "label": "Email notifications",
-        "value": true
-      },
-      {
-        "key": "darkMode",
-        "label": "Dark mode",
-        "value": false
-      },
-      {
-        "key": "autosave",
-        "label": "Autosave documents",
-        "value": true
-      },
-      {
-        "key": "telemetry",
-        "label": "Share usage analytics",
-        "value": false
-      }
-    ]
-  },
   "panels": [
     {
       "id": "title",
@@ -43,14 +15,14 @@
       "id": "intro",
       "kind": "text",
       "props": {
-        "text": "Manage your preferences. Changes apply after saving."
+        "text": "Manage your preferences."
       }
     },
     {
-      "id": "prefs-form",
+      "id": "prefs",
       "kind": "form",
       "props": {
-        "title": "Preferences",
+        "submitLabel": "Save",
         "fields": [
           {
             "name": "notifications",
@@ -66,18 +38,17 @@
           },
           {
             "name": "autosave",
-            "label": "Autosave documents",
+            "label": "Autosave drafts",
             "type": "toggle",
             "value": true
           },
           {
-            "name": "telemetry",
+            "name": "analytics",
             "label": "Share usage analytics",
             "type": "toggle",
             "value": false
           }
-        ],
-        "submitLabel": "Save settings"
+        ]
       }
     }
   ]

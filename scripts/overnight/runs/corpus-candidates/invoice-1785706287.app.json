@@ -1,0 +1,114 @@
+{
+  "app": "invoice",
+  "title": "Invoice",
+  "docType": "invoice",
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Invoice",
+        "level": 1
+      }
+    },
+    {
+      "id": "totals",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "subtotal",
+          "kind": "stat",
+          "props": {
+            "label": "Subtotal",
+            "value": "$4,200.00"
+          }
+        },
+        {
+          "id": "tax",
+          "kind": "stat",
+          "props": {
+            "label": "Tax (8%)",
+            "value": "$336.00"
+          }
+        },
+        {
+          "id": "total",
+          "kind": "stat",
+          "props": {
+            "label": "Total Due",
+            "value": "$4,536.00"
+          }
+        }
+      ]
+    },
+    {
+      "id": "lines",
+      "kind": "datatable",
+      "props": {
+        "columns": [
+          {
+            "key": "item",
+            "label": "Item"
+          },
+          {
+            "key": "qty",
+            "label": "Qty"
+          },
+          {
+            "key": "rate",
+            "label": "Rate"
+          },
+          {
+            "key": "amount",
+            "label": "Amount",
+            "total": true
+          }
+        ],
+        "rows": "$lineItems",
+        "showTotals": true
+      }
+    }
+  ],
+  "vars": {
+    "lineItems": [
+      {
+        "item": "Design services",
+        "qty": 10,
+        "rate": 150,
+        "amount": 1500
+      },
+      {
+        "item": "Engineering hours",
+        "qty": 18,
+        "rate": 125,
+        "amount": 2250
+      },
+      {
+        "item": "Project management",
+        "qty": 6,
+        "rate": 75,
+        "amount": 450
+      }
+    ]
+  },
+  "structures": {
+    "lineItems": [
+      {
+        "name": "item",
+        "type": "string"
+      },
+      {
+        "name": "qty",
+        "type": "number"
+      },
+      {
+        "name": "rate",
+        "type": "number"
+      },
+      {
+        "name": "amount",
+        "type": "number"
+      }
+    ]
+  }
+}

@@ -1,0 +1,163 @@
+{
+  "app": "product-catalog",
+  "title": "Product Catalog",
+  "docType": "catalog",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "vars": {
+    "products": [
+      {
+        "sku": "PC-1001",
+        "name": "Hydraulic Packer",
+        "category": "Completions",
+        "price": 4850,
+        "stock": 12
+      },
+      {
+        "sku": "PC-1002",
+        "name": "Landing Nipple",
+        "category": "Completions",
+        "price": 720,
+        "stock": 48
+      },
+      {
+        "sku": "PC-1003",
+        "name": "Drill Collar 6in",
+        "category": "Drilling",
+        "price": 3100,
+        "stock": 7
+      },
+      {
+        "sku": "PC-1004",
+        "name": "Centralizer Bow",
+        "category": "Casing",
+        "price": 145,
+        "stock": 230
+      },
+      {
+        "sku": "PC-1005",
+        "name": "Float Shoe",
+        "category": "Casing",
+        "price": 890,
+        "stock": 34
+      },
+      {
+        "sku": "PC-1006",
+        "name": "Sliding Sleeve",
+        "category": "Completions",
+        "price": 2650,
+        "stock": 19
+      }
+    ]
+  },
+  "structures": {
+    "products": [
+      {
+        "name": "sku",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "category",
+        "type": "string"
+      },
+      {
+        "name": "price",
+        "type": "number"
+      },
+      {
+        "name": "stock",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Product Catalog",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Browse and search the full product catalog."
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "stat-skus",
+          "kind": "stat",
+          "props": {
+            "label": "SKUs",
+            "value": 6
+          }
+        },
+        {
+          "id": "stat-categories",
+          "kind": "stat",
+          "props": {
+            "label": "Categories",
+            "value": 3
+          }
+        },
+        {
+          "id": "stat-units",
+          "kind": "stat",
+          "props": {
+            "label": "Units In Stock",
+            "value": 350
+          }
+        }
+      ]
+    },
+    {
+      "id": "catalog-table",
+      "kind": "datatable",
+      "props": {
+        "data": "$products",
+        "searchable": true,
+        "sortable": true,
+        "pageSize": 10,
+        "columns": [
+          {
+            "key": "sku",
+            "label": "SKU"
+          },
+          {
+            "key": "name",
+            "label": "Product"
+          },
+          {
+            "key": "category",
+            "label": "Category"
+          },
+          {
+            "key": "price",
+            "label": "Price",
+            "format": "currency"
+          },
+          {
+            "key": "stock",
+            "label": "Stock",
+            "format": "number"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,173 @@
+{
+  "app": "ops-dashboard",
+  "title": "Operations Dashboard",
+  "docType": "dashboard",
+  "theme": {
+    "mode": "dark",
+    "accent": "#4f9cf9"
+  },
+  "vars": {
+    "throughput": [
+      {
+        "month": "Jan",
+        "runs": 420
+      },
+      {
+        "month": "Feb",
+        "runs": 468
+      },
+      {
+        "month": "Mar",
+        "runs": 512
+      },
+      {
+        "month": "Apr",
+        "runs": 495
+      },
+      {
+        "month": "May",
+        "runs": 574
+      },
+      {
+        "month": "Jun",
+        "runs": 631
+      }
+    ],
+    "jobs": [
+      {
+        "job": "bake-queue",
+        "owner": "pipeline",
+        "status": "healthy",
+        "duration": 42
+      },
+      {
+        "job": "corpus-sync",
+        "owner": "data",
+        "status": "healthy",
+        "duration": 118
+      },
+      {
+        "job": "index-rebuild",
+        "owner": "search",
+        "status": "degraded",
+        "duration": 264
+      },
+      {
+        "job": "nightly-eval",
+        "owner": "ml",
+        "status": "healthy",
+        "duration": 903
+      },
+      {
+        "job": "archive-prune",
+        "owner": "ops",
+        "status": "failed",
+        "duration": 17
+      }
+    ]
+  },
+  "structures": {
+    "jobs": [
+      {
+        "name": "job",
+        "type": "string"
+      },
+      {
+        "name": "owner",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      },
+      {
+        "name": "duration",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Operations Dashboard",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Live service health and job throughput."
+      }
+    },
+    {
+      "id": "kpis",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "kpi-uptime",
+          "kind": "stat",
+          "props": {
+            "label": "Uptime",
+            "value": "99.82%",
+            "delta": "+0.04%",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-runs",
+          "kind": "stat",
+          "props": {
+            "label": "Runs Today",
+            "value": "631",
+            "delta": "+9.9%",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-latency",
+          "kind": "stat",
+          "props": {
+            "label": "P95 Latency",
+            "value": "264 ms",
+            "delta": "-12 ms",
+            "trend": "down"
+          }
+        }
+      ]
+    },
+    {
+      "id": "throughput-chart",
+      "kind": "chart",
+      "props": {
+        "type": "line",
+        "title": "Monthly Runs",
+        "data": "$vars.throughput",
+        "x": "month",
+        "y": "runs"
+      }
+    },
+    {
+      "id": "jobs-table",
+      "kind": "datatable",
+      "props": {
+        "title": "Scheduled Jobs",
+        "data": "$vars.jobs",
+        "columns": [
+          "job",
+          "owner",
+          "status",
+          "duration"
+        ],
+        "sortable": true,
+        "searchable": true,
+        "pageSize": 10
+      }
+    }
+  ]
+}

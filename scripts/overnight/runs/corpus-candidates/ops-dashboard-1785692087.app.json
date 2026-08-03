@@ -1,0 +1,177 @@
+{
+  "app": "ops-dashboard",
+  "title": "Operations Dashboard",
+  "docType": "dashboard",
+  "theme": {
+    "mode": "dark",
+    "accent": "#4f9cf9"
+  },
+  "vars": {
+    "throughput": [
+      {
+        "day": "Mon",
+        "runs": 184
+      },
+      {
+        "day": "Tue",
+        "runs": 212
+      },
+      {
+        "day": "Wed",
+        "runs": 198
+      },
+      {
+        "day": "Thu",
+        "runs": 245
+      },
+      {
+        "day": "Fri",
+        "runs": 231
+      },
+      {
+        "day": "Sat",
+        "runs": 140
+      },
+      {
+        "day": "Sun",
+        "runs": 118
+      }
+    ],
+    "jobs": [
+      {
+        "id": "JOB-1041",
+        "pipeline": "bake-nightly",
+        "status": "ok",
+        "duration": 42
+      },
+      {
+        "id": "JOB-1042",
+        "pipeline": "corpus-sync",
+        "status": "ok",
+        "duration": 118
+      },
+      {
+        "id": "JOB-1043",
+        "pipeline": "eval-sweep",
+        "status": "failed",
+        "duration": 76
+      },
+      {
+        "id": "JOB-1044",
+        "pipeline": "bake-nightly",
+        "status": "ok",
+        "duration": 39
+      },
+      {
+        "id": "JOB-1045",
+        "pipeline": "index-rebuild",
+        "status": "running",
+        "duration": 15
+      }
+    ]
+  },
+  "structures": {
+    "jobs": [
+      {
+        "name": "id",
+        "type": "string"
+      },
+      {
+        "name": "pipeline",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      },
+      {
+        "name": "duration",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Operations Dashboard",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Pipeline health and throughput for the last 7 days."
+      }
+    },
+    {
+      "id": "kpis",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "kpi-runs",
+          "kind": "stat",
+          "props": {
+            "label": "Runs (7d)",
+            "value": "1,328",
+            "delta": "+8.4%",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-success",
+          "kind": "stat",
+          "props": {
+            "label": "Success Rate",
+            "value": "96.2%",
+            "delta": "+1.1%",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-duration",
+          "kind": "stat",
+          "props": {
+            "label": "Avg Duration",
+            "value": "58s",
+            "delta": "-6s",
+            "trend": "down"
+          }
+        }
+      ]
+    },
+    {
+      "id": "throughput-chart",
+      "kind": "chart",
+      "props": {
+        "type": "line",
+        "title": "Daily Runs",
+        "x": "day",
+        "y": "runs",
+        "data": "$vars.throughput"
+      }
+    },
+    {
+      "id": "jobs-table",
+      "kind": "datatable",
+      "props": {
+        "title": "Recent Jobs",
+        "data": "$vars.jobs",
+        "columns": [
+          "id",
+          "pipeline",
+          "status",
+          "duration"
+        ],
+        "sortable": true,
+        "searchable": true,
+        "pageSize": 10
+      }
+    }
+  ]
+}

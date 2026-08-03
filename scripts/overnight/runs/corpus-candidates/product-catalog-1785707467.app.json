@@ -1,0 +1,123 @@
+{
+  "app": "product-catalog",
+  "title": "Product Catalog",
+  "docType": "catalog",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "structures": {
+    "product": [
+      {
+        "name": "sku",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "category",
+        "type": "string"
+      },
+      {
+        "name": "price",
+        "type": "number"
+      },
+      {
+        "name": "stock",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "products": [
+      {
+        "sku": "PC-1001",
+        "name": "Drill Collar 6.5in",
+        "category": "Downhole",
+        "price": 4200,
+        "stock": 12
+      },
+      {
+        "sku": "PC-1002",
+        "name": "Float Sub 4.5in",
+        "category": "Downhole",
+        "price": 1850,
+        "stock": 34
+      },
+      {
+        "sku": "PC-1003",
+        "name": "Casing Centralizer",
+        "category": "Completions",
+        "price": 320,
+        "stock": 180
+      },
+      {
+        "sku": "PC-1004",
+        "name": "Mule Shoe Guide",
+        "category": "Completions",
+        "price": 540,
+        "stock": 76
+      },
+      {
+        "sku": "PC-1005",
+        "name": "Crossover Pup Joint",
+        "category": "Tubulars",
+        "price": 960,
+        "stock": 48
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Product Catalog",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Search and browse the full product list."
+      }
+    },
+    {
+      "id": "catalog-table",
+      "kind": "datatable",
+      "props": {
+        "rows": "$vars.products",
+        "columns": [
+          {
+            "key": "sku",
+            "label": "SKU"
+          },
+          {
+            "key": "name",
+            "label": "Product"
+          },
+          {
+            "key": "category",
+            "label": "Category"
+          },
+          {
+            "key": "price",
+            "label": "Price",
+            "format": "currency"
+          },
+          {
+            "key": "stock",
+            "label": "In Stock",
+            "format": "number"
+          }
+        ],
+        "search": true,
+        "sortable": true,
+        "pageSize": 10
+      }
+    }
+  ]
+}

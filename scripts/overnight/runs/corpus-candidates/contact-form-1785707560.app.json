@@ -1,0 +1,53 @@
+{
+  "app": "contact-form",
+  "title": "Contact Form",
+  "docType": "form",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Contact Us",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Send us a message and we'll get back to you shortly."
+      }
+    },
+    {
+      "id": "contact",
+      "kind": "form",
+      "props": {
+        "submitLabel": "Send Message",
+        "fields": [
+          {
+            "name": "name",
+            "label": "Name",
+            "type": "text",
+            "required": true
+          },
+          {
+            "name": "email",
+            "label": "Email",
+            "type": "email",
+            "required": true
+          },
+          {
+            "name": "message",
+            "label": "Message",
+            "type": "textarea",
+            "required": true
+          }
+        ]
+      }
+    }
+  ]
+}

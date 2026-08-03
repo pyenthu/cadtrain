@@ -1,0 +1,107 @@
+{
+  "app": "kanban-board",
+  "title": "Kanban Board",
+  "docType": "board",
+  "theme": {
+    "mode": "light",
+    "accent": "#4f46e5"
+  },
+  "structures": {
+    "tasks": [
+      {
+        "name": "title",
+        "type": "string"
+      },
+      {
+        "name": "assignee",
+        "type": "string"
+      },
+      {
+        "name": "points",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "todo": [
+      {
+        "title": "Draft spec",
+        "assignee": "Ana",
+        "points": 3
+      },
+      {
+        "title": "Wire API",
+        "assignee": "Bo",
+        "points": 5
+      }
+    ],
+    "doing": [
+      {
+        "title": "Build editor",
+        "assignee": "Cy",
+        "points": 8
+      }
+    ],
+    "done": [
+      {
+        "title": "Set up repo",
+        "assignee": "Ana",
+        "points": 2
+      },
+      {
+        "title": "CI pipeline",
+        "assignee": "Bo",
+        "points": 3
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "header",
+      "kind": "heading",
+      "props": {
+        "text": "Kanban Board",
+        "level": 1
+      }
+    },
+    {
+      "id": "columns",
+      "kind": "tabs",
+      "props": {
+        "layout": "row"
+      },
+      "children": [
+        {
+          "id": "col-todo",
+          "kind": "list",
+          "props": {
+            "title": "To Do",
+            "items": "$vars.todo",
+            "itemTitle": "title",
+            "itemSubtitle": "assignee"
+          }
+        },
+        {
+          "id": "col-doing",
+          "kind": "list",
+          "props": {
+            "title": "In Progress",
+            "items": "$vars.doing",
+            "itemTitle": "title",
+            "itemSubtitle": "assignee"
+          }
+        },
+        {
+          "id": "col-done",
+          "kind": "list",
+          "props": {
+            "title": "Done",
+            "items": "$vars.done",
+            "itemTitle": "title",
+            "itemSubtitle": "assignee"
+          }
+        }
+      ]
+    }
+  ]
+}

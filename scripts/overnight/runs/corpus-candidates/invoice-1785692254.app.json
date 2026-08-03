@@ -1,0 +1,138 @@
+{
+  "app": "invoice",
+  "title": "Invoice",
+  "docType": "invoice",
+  "vars": {
+    "lines": [
+      {
+        "item": "Drill collar 6-1/4\"",
+        "qty": 4,
+        "rate": 1250,
+        "amount": 5000
+      },
+      {
+        "item": "Crossover sub",
+        "qty": 2,
+        "rate": 480,
+        "amount": 960
+      },
+      {
+        "item": "Float valve",
+        "qty": 1,
+        "rate": 310,
+        "amount": 310
+      },
+      {
+        "item": "Field service day rate",
+        "qty": 3,
+        "rate": 1400,
+        "amount": 4200
+      }
+    ]
+  },
+  "structures": {
+    "lines": [
+      {
+        "name": "item",
+        "type": "string"
+      },
+      {
+        "name": "qty",
+        "type": "number"
+      },
+      {
+        "name": "rate",
+        "type": "number"
+      },
+      {
+        "name": "amount",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Invoice INV-1042",
+        "level": 1
+      }
+    },
+    {
+      "id": "meta",
+      "kind": "text",
+      "props": {
+        "text": "Billed to: Northfield Drilling Co. — Issued 2026-08-02, net 30."
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "statgrid",
+      "children": [
+        {
+          "id": "stat-subtotal",
+          "kind": "stat",
+          "props": {
+            "label": "Subtotal",
+            "value": 10470,
+            "format": "currency"
+          }
+        },
+        {
+          "id": "stat-tax",
+          "kind": "stat",
+          "props": {
+            "label": "Tax (8%)",
+            "value": 837.6,
+            "format": "currency"
+          }
+        },
+        {
+          "id": "stat-total",
+          "kind": "stat",
+          "props": {
+            "label": "Total Due",
+            "value": 11307.6,
+            "format": "currency"
+          }
+        }
+      ]
+    },
+    {
+      "id": "line-items",
+      "kind": "datatable",
+      "props": {
+        "title": "Line Items",
+        "rows": "$vars.lines",
+        "columns": [
+          {
+            "key": "item",
+            "label": "Item"
+          },
+          {
+            "key": "qty",
+            "label": "Qty",
+            "align": "right"
+          },
+          {
+            "key": "rate",
+            "label": "Rate",
+            "align": "right",
+            "format": "currency"
+          },
+          {
+            "key": "amount",
+            "label": "Amount",
+            "align": "right",
+            "format": "currency"
+          }
+        ],
+        "totalsRow": true,
+        "totals": [
+          "amount"
+        ]
+      }
+    }
+  ]
+}

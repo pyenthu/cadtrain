@@ -1,0 +1,181 @@
+{
+  "app": "ops-dashboard",
+  "title": "Operations Dashboard",
+  "docType": "dashboard",
+  "theme": {
+    "mode": "dark",
+    "accent": "#3b82f6"
+  },
+  "vars": {
+    "kpis": [
+      {
+        "label": "Active Wells",
+        "value": 128,
+        "delta": "+4"
+      },
+      {
+        "label": "Uptime",
+        "value": "99.2%",
+        "delta": "+0.3"
+      },
+      {
+        "label": "Open Alerts",
+        "value": 7,
+        "delta": "-2"
+      }
+    ],
+    "throughput": [
+      {
+        "month": "Jan",
+        "bbl": 1200
+      },
+      {
+        "month": "Feb",
+        "bbl": 1340
+      },
+      {
+        "month": "Mar",
+        "bbl": 1280
+      },
+      {
+        "month": "Apr",
+        "bbl": 1490
+      },
+      {
+        "month": "May",
+        "bbl": 1610
+      },
+      {
+        "month": "Jun",
+        "bbl": 1725
+      }
+    ],
+    "jobs": [
+      {
+        "job": "J-1041",
+        "rig": "Rig 3",
+        "status": "Running",
+        "hours": 36
+      },
+      {
+        "job": "J-1042",
+        "rig": "Rig 1",
+        "status": "Complete",
+        "hours": 18
+      },
+      {
+        "job": "J-1043",
+        "rig": "Rig 7",
+        "status": "Delayed",
+        "hours": 52
+      },
+      {
+        "job": "J-1044",
+        "rig": "Rig 2",
+        "status": "Running",
+        "hours": 11
+      }
+    ]
+  },
+  "structures": {
+    "jobs": [
+      {
+        "name": "job",
+        "type": "string"
+      },
+      {
+        "name": "rig",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      },
+      {
+        "name": "hours",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Operations Dashboard",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Live field operations summary"
+      }
+    },
+    {
+      "id": "kpi-row",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "kpi-wells",
+          "kind": "stat",
+          "props": {
+            "label": "Active Wells",
+            "value": "128",
+            "delta": "+4"
+          }
+        },
+        {
+          "id": "kpi-uptime",
+          "kind": "stat",
+          "props": {
+            "label": "Uptime",
+            "value": "99.2%",
+            "delta": "+0.3"
+          }
+        },
+        {
+          "id": "kpi-alerts",
+          "kind": "stat",
+          "props": {
+            "label": "Open Alerts",
+            "value": "7",
+            "delta": "-2"
+          }
+        }
+      ]
+    },
+    {
+      "id": "throughput-chart",
+      "kind": "chart",
+      "props": {
+        "type": "line",
+        "title": "Monthly Throughput (bbl)",
+        "data": "$vars.throughput",
+        "x": "month",
+        "y": "bbl"
+      }
+    },
+    {
+      "id": "jobs-table",
+      "kind": "datatable",
+      "props": {
+        "title": "Active Jobs",
+        "data": "$vars.jobs",
+        "columns": [
+          "job",
+          "rig",
+          "status",
+          "hours"
+        ],
+        "sortable": true,
+        "searchable": true,
+        "pageSize": 10
+      }
+    }
+  ]
+}

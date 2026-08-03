@@ -1,0 +1,157 @@
+{
+  "app": "user-profile",
+  "title": "User Profile",
+  "docType": "profile",
+  "theme": {
+    "mode": "light",
+    "accent": "#3b6ea5"
+  },
+  "vars": {
+    "activity": [
+      {
+        "date": "2026-07-28",
+        "action": "Signed in",
+        "detail": "Chrome / macOS",
+        "status": "ok"
+      },
+      {
+        "date": "2026-07-29",
+        "action": "Updated profile",
+        "detail": "Changed display name",
+        "status": "ok"
+      },
+      {
+        "date": "2026-07-30",
+        "action": "Created project",
+        "detail": "Downhole tool set",
+        "status": "ok"
+      },
+      {
+        "date": "2026-08-01",
+        "action": "Password reset",
+        "detail": "Email link",
+        "status": "pending"
+      },
+      {
+        "date": "2026-08-02",
+        "action": "Exported data",
+        "detail": "CSV, 1.2 MB",
+        "status": "ok"
+      }
+    ]
+  },
+  "structures": {
+    "activity": [
+      {
+        "name": "date",
+        "type": "string"
+      },
+      {
+        "name": "action",
+        "type": "string"
+      },
+      {
+        "name": "detail",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Jane Doe",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Senior Engineer · Joined March 2024 · jane.doe@example.com"
+      }
+    },
+    {
+      "id": "stats",
+      "kind": "statgrid",
+      "props": {
+        "columns": 4
+      },
+      "children": [
+        {
+          "id": "stat-projects",
+          "kind": "stat",
+          "props": {
+            "label": "Projects",
+            "value": 12
+          }
+        },
+        {
+          "id": "stat-parts",
+          "kind": "stat",
+          "props": {
+            "label": "Parts Authored",
+            "value": 148
+          }
+        },
+        {
+          "id": "stat-sessions",
+          "kind": "stat",
+          "props": {
+            "label": "Sessions (30d)",
+            "value": 37
+          }
+        },
+        {
+          "id": "stat-storage",
+          "kind": "stat",
+          "props": {
+            "label": "Storage Used",
+            "value": "2.4 GB"
+          }
+        }
+      ]
+    },
+    {
+      "id": "activity-heading",
+      "kind": "heading",
+      "props": {
+        "text": "Recent Activity",
+        "level": 2
+      }
+    },
+    {
+      "id": "activity-table",
+      "kind": "datatable",
+      "props": {
+        "var": "activity",
+        "columns": [
+          {
+            "key": "date",
+            "label": "Date"
+          },
+          {
+            "key": "action",
+            "label": "Action"
+          },
+          {
+            "key": "detail",
+            "label": "Detail"
+          },
+          {
+            "key": "status",
+            "label": "Status"
+          }
+        ],
+        "search": true,
+        "sortable": true,
+        "pageSize": 10
+      }
+    }
+  ]
+}

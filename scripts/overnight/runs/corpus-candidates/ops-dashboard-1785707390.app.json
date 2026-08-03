@@ -1,0 +1,179 @@
+{
+  "app": "ops-dashboard",
+  "title": "Operations Dashboard",
+  "docType": "dashboard",
+  "theme": {
+    "mode": "dark",
+    "accent": "#3b82f6"
+  },
+  "vars": {
+    "trend": [
+      {
+        "day": "Mon",
+        "jobs": 142
+      },
+      {
+        "day": "Tue",
+        "jobs": 168
+      },
+      {
+        "day": "Wed",
+        "jobs": 155
+      },
+      {
+        "day": "Thu",
+        "jobs": 191
+      },
+      {
+        "day": "Fri",
+        "jobs": 174
+      },
+      {
+        "day": "Sat",
+        "jobs": 98
+      },
+      {
+        "day": "Sun",
+        "jobs": 83
+      }
+    ],
+    "jobs": [
+      {
+        "id": "J-1041",
+        "site": "Rig A",
+        "status": "Running",
+        "duration": 42
+      },
+      {
+        "id": "J-1042",
+        "site": "Rig B",
+        "status": "Queued",
+        "duration": 0
+      },
+      {
+        "id": "J-1043",
+        "site": "Rig C",
+        "status": "Complete",
+        "duration": 118
+      },
+      {
+        "id": "J-1044",
+        "site": "Rig A",
+        "status": "Failed",
+        "duration": 37
+      }
+    ]
+  },
+  "structures": {
+    "jobs": [
+      {
+        "name": "id",
+        "type": "string"
+      },
+      {
+        "name": "site",
+        "type": "string"
+      },
+      {
+        "name": "status",
+        "type": "string"
+      },
+      {
+        "name": "duration",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Operations Dashboard",
+        "level": 1
+      }
+    },
+    {
+      "id": "kpis",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "kpi-uptime",
+          "kind": "stat",
+          "props": {
+            "label": "Uptime",
+            "value": "99.4%",
+            "delta": "+0.3%",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-jobs",
+          "kind": "stat",
+          "props": {
+            "label": "Active Jobs",
+            "value": "1,011",
+            "delta": "+12",
+            "trend": "up"
+          }
+        },
+        {
+          "id": "kpi-mttr",
+          "kind": "stat",
+          "props": {
+            "label": "Mean Time To Repair",
+            "value": "38m",
+            "delta": "-6m",
+            "trend": "down"
+          }
+        }
+      ]
+    },
+    {
+      "id": "trend-chart",
+      "kind": "chart",
+      "props": {
+        "type": "line",
+        "title": "Jobs Completed (7 days)",
+        "data": "$vars.trend",
+        "x": "day",
+        "y": [
+          "jobs"
+        ]
+      }
+    },
+    {
+      "id": "jobs-table",
+      "kind": "datatable",
+      "props": {
+        "title": "Recent Jobs",
+        "data": "$vars.jobs",
+        "columns": [
+          {
+            "key": "id",
+            "label": "Job"
+          },
+          {
+            "key": "site",
+            "label": "Site"
+          },
+          {
+            "key": "status",
+            "label": "Status"
+          },
+          {
+            "key": "duration",
+            "label": "Minutes",
+            "align": "right"
+          }
+        ],
+        "sortable": true,
+        "search": true,
+        "pageSize": 10
+      }
+    }
+  ]
+}

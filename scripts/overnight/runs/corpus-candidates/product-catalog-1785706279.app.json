@@ -1,0 +1,165 @@
+{
+  "app": "product-catalog",
+  "title": "Product Catalog",
+  "docType": "catalog",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "structures": {
+    "product": [
+      {
+        "name": "sku",
+        "type": "string"
+      },
+      {
+        "name": "name",
+        "type": "string"
+      },
+      {
+        "name": "category",
+        "type": "string"
+      },
+      {
+        "name": "price",
+        "type": "number"
+      },
+      {
+        "name": "stock",
+        "type": "number"
+      }
+    ]
+  },
+  "vars": {
+    "products": [
+      {
+        "sku": "PC-1001",
+        "name": "Casing Centralizer",
+        "category": "Completions",
+        "price": 420,
+        "stock": 18
+      },
+      {
+        "sku": "PC-1002",
+        "name": "Float Collar",
+        "category": "Completions",
+        "price": 860,
+        "stock": 7
+      },
+      {
+        "sku": "PC-1003",
+        "name": "Landing Nipple",
+        "category": "Completions",
+        "price": 315,
+        "stock": 32
+      },
+      {
+        "sku": "PC-1004",
+        "name": "Tubing Pup Joint",
+        "category": "Tubulars",
+        "price": 190,
+        "stock": 54
+      },
+      {
+        "sku": "PC-1005",
+        "name": "Packer Assembly",
+        "category": "Completions",
+        "price": 2450,
+        "stock": 4
+      },
+      {
+        "sku": "PC-1006",
+        "name": "Mule Shoe Guide",
+        "category": "Tubulars",
+        "price": 275,
+        "stock": 21
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Product Catalog",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Search and browse the full product list."
+      }
+    },
+    {
+      "id": "summary",
+      "kind": "statgrid",
+      "props": {
+        "columns": 3
+      },
+      "children": [
+        {
+          "id": "stat-skus",
+          "kind": "stat",
+          "props": {
+            "label": "SKUs",
+            "value": 6
+          }
+        },
+        {
+          "id": "stat-units",
+          "kind": "stat",
+          "props": {
+            "label": "Units in Stock",
+            "value": 136
+          }
+        },
+        {
+          "id": "stat-value",
+          "kind": "stat",
+          "props": {
+            "label": "Avg Price",
+            "value": "$752"
+          }
+        }
+      ]
+    },
+    {
+      "id": "catalog-table",
+      "kind": "datatable",
+      "props": {
+        "title": "Products",
+        "rows": "$vars.products",
+        "search": true,
+        "sortable": true,
+        "pageSize": 10,
+        "columns": [
+          {
+            "key": "sku",
+            "label": "SKU"
+          },
+          {
+            "key": "name",
+            "label": "Product"
+          },
+          {
+            "key": "category",
+            "label": "Category"
+          },
+          {
+            "key": "price",
+            "label": "Price",
+            "format": "currency",
+            "align": "right"
+          },
+          {
+            "key": "stock",
+            "label": "Stock",
+            "align": "right"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "app": "settings",
+  "title": "Settings",
+  "docType": "settings",
+  "theme": {
+    "mode": "light",
+    "accent": "#2563eb"
+  },
+  "vars": {
+    "prefs": [
+      {
+        "key": "notifications",
+        "label": "Email notifications",
+        "value": true
+      },
+      {
+        "key": "darkMode",
+        "label": "Dark mode",
+        "value": false
+      },
+      {
+        "key": "autosave",
+        "label": "Autosave drafts",
+        "value": true
+      },
+      {
+        "key": "analytics",
+        "label": "Usage analytics",
+        "value": false
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "title",
+      "kind": "heading",
+      "props": {
+        "text": "Settings",
+        "level": 1
+      }
+    },
+    {
+      "id": "intro",
+      "kind": "text",
+      "props": {
+        "text": "Manage your account preferences."
+      }
+    },
+    {
+      "id": "prefs-form",
+      "kind": "form",
+      "props": {
+        "fields": [
+          {
+            "name": "notifications",
+            "label": "Email notifications",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "darkMode",
+            "label": "Dark mode",
+            "type": "toggle",
+            "value": false
+          },
+          {
+            "name": "autosave",
+            "label": "Autosave drafts",
+            "type": "toggle",
+            "value": true
+          },
+          {
+            "name": "analytics",
+            "label": "Usage analytics",
+            "type": "toggle",
+            "value": false
+          }
+        ],
+        "submitLabel": "Save changes"
+      }
+    }
+  ]
+}

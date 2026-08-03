@@ -1,0 +1,124 @@
+{
+  "app": "kanban-board",
+  "title": "Kanban Board",
+  "docType": "board",
+  "theme": {
+    "mode": "light",
+    "accent": "#4f46e5"
+  },
+  "vars": {
+    "todo": [
+      {
+        "task": "Draft Q3 roadmap",
+        "owner": "Ada",
+        "points": 3
+      },
+      {
+        "task": "Fix login redirect",
+        "owner": "Lin",
+        "points": 2
+      },
+      {
+        "task": "Audit API logs",
+        "owner": "Sam",
+        "points": 5
+      }
+    ],
+    "doing": [
+      {
+        "task": "Rebuild search index",
+        "owner": "Ada",
+        "points": 8
+      },
+      {
+        "task": "Migrate billing tests",
+        "owner": "Kai",
+        "points": 3
+      }
+    ],
+    "done": [
+      {
+        "task": "Ship dark mode",
+        "owner": "Lin",
+        "points": 5
+      },
+      {
+        "task": "Upgrade deps",
+        "owner": "Sam",
+        "points": 1
+      }
+    ]
+  },
+  "structures": {
+    "card": [
+      {
+        "name": "task",
+        "type": "string"
+      },
+      {
+        "name": "owner",
+        "type": "string"
+      },
+      {
+        "name": "points",
+        "type": "number"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": "header",
+      "kind": "heading",
+      "props": {
+        "text": "Kanban Board",
+        "level": 1
+      }
+    },
+    {
+      "id": "subtitle",
+      "kind": "text",
+      "props": {
+        "text": "Team task flow across three stages."
+      }
+    },
+    {
+      "id": "columns",
+      "kind": "tabs",
+      "props": {
+        "layout": "row"
+      },
+      "children": [
+        {
+          "id": "col-todo",
+          "kind": "list",
+          "props": {
+            "title": "To Do",
+            "data": "$vars.todo",
+            "itemTitle": "task",
+            "itemSubtitle": "owner"
+          }
+        },
+        {
+          "id": "col-doing",
+          "kind": "list",
+          "props": {
+            "title": "In Progress",
+            "data": "$vars.doing",
+            "itemTitle": "task",
+            "itemSubtitle": "owner"
+          }
+        },
+        {
+          "id": "col-done",
+          "kind": "list",
+          "props": {
+            "title": "Done",
+            "data": "$vars.done",
+            "itemTitle": "task",
+            "itemSubtitle": "owner"
+          }
+        }
+      ]
+    }
+  ]
+}
