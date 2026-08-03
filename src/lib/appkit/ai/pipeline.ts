@@ -62,12 +62,16 @@ export async function buildApp(opts: BuildOpts): Promise<BuildResult> {
       description: verbDescription(v),
       inputSchema: jsonSchema(v.params as any),
       execute: async (args: unknown) => {
+        // Snapshot BEFORE dispatch — the gui verbs mutate args in place and sanitizeApp()
+        // deletes through the same alias, so a stored reference records post-mutation state
+        // rather than what the model emitted. Args arrive JSON-parsed ⇒ cloneable.
+        const emitted = structuredClone(args);
         try {
           const out = await dispatch(v.name, args, ctx);
-          trace.push({ verb: v.name, args, ok: true });
+          trace.push({ verb: v.name, args: emitted, ok: true });
           return out;
         } catch (e) {
-          trace.push({ verb: v.name, args, ok: false, error: String((e as any)?.message ?? e) });
+          trace.push({ verb: v.name, args: emitted, ok: false, error: String((e as any)?.message ?? e) });
           throw e;
         }
       },

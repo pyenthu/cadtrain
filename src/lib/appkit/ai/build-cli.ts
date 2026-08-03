@@ -29,15 +29,20 @@ export async function buildAppViaCli(opts: BuildOpts, run: CliRunner): Promise<B
   const ctx: Ctx = { appStore: app };
   const trace: VerbCall[] = [];
   for (const c of calls) {
+    // Snapshot BEFORE dispatch. The gui verbs mutate c.args IN PLACE (definePanel pushes
+    // a.panel itself into app.panels, then promote() rewrites its props to $vars refs) and
+    // sanitizeApp() below deletes through that same alias — so storing the reference would
+    // record post-mutation state, not what the model emitted. Args are JSON ⇒ cloneable.
+    const emitted = structuredClone(c.args);
     if (!guiNames.includes(c.verb)) {
-      trace.push({ verb: c.verb, args: c.args, ok: false, error: 'not a callable gui verb' });
+      trace.push({ verb: c.verb, args: emitted, ok: false, error: 'not a callable gui verb' });
       continue;
     }
     try {
       await dispatch(c.verb, c.args, ctx);
-      trace.push({ verb: c.verb, args: c.args, ok: true });
+      trace.push({ verb: c.verb, args: emitted, ok: true });
     } catch (e) {
-      trace.push({ verb: c.verb, args: c.args, ok: false, error: String((e as { message?: string })?.message ?? e) });
+      trace.push({ verb: c.verb, args: emitted, ok: false, error: String((e as { message?: string })?.message ?? e) });
     }
   }
   sanitizeApp(app); // parity with the AI-SDK path — drop any hallucinated-verb bindings
