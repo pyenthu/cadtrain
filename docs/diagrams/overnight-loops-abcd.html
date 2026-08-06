@@ -1,0 +1,1198 @@
+<title>Overnight loops A/B/C/D — run report + plan</title>
+
+<style>
+  :root {
+    --paper:      #EDF1F1;
+    --surface:    #F8FBFB;
+    --surface-2:  #E1E8E8;
+    --ink:        #0F1719;
+    --ink-2:      #35474A;
+    --muted:      #63767A;
+    --line:       #C9D5D5;
+    --line-soft:  #DCE5E5;
+    --accent:     #0E6E78;
+    --accent-ink: #0A555D;
+    --accent-bg:  rgba(14,110,120,.10);
+    --good:       #2E7D4F;
+    --good-bg:    rgba(46,125,79,.12);
+    --warn:       #9C6410;
+    --warn-bg:    rgba(156,100,16,.13);
+    --crit:       #AE3A38;
+    --crit-bg:    rgba(174,58,56,.12);
+    --shadow:     0 1px 2px rgba(15,23,25,.05), 0 8px 24px -12px rgba(15,23,25,.18);
+
+    --f-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    --f-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:      #0C1214;
+      --surface:    #131D1F;
+      --surface-2:  #1C282B;
+      --ink:        #E2EBEC;
+      --ink-2:      #B6C6C8;
+      --muted:      #7E9296;
+      --line:       #26363A;
+      --line-soft:  #1D2A2D;
+      --accent:     #45BCC6;
+      --accent-ink: #6FD2DA;
+      --accent-bg:  rgba(69,188,198,.13);
+      --good:       #5CBE85;
+      --good-bg:    rgba(92,190,133,.14);
+      --warn:       #D9A24C;
+      --warn-bg:    rgba(217,162,76,.14);
+      --crit:       #E9736E;
+      --crit-bg:    rgba(233,115,110,.14);
+      --shadow:     0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper:#EDF1F1; --surface:#F8FBFB; --surface-2:#E1E8E8;
+    --ink:#0F1719; --ink-2:#35474A; --muted:#63767A;
+    --line:#C9D5D5; --line-soft:#DCE5E5;
+    --accent:#0E6E78; --accent-ink:#0A555D; --accent-bg:rgba(14,110,120,.10);
+    --good:#2E7D4F; --good-bg:rgba(46,125,79,.12);
+    --warn:#9C6410; --warn-bg:rgba(156,100,16,.13);
+    --crit:#AE3A38; --crit-bg:rgba(174,58,56,.12);
+    --shadow:0 1px 2px rgba(15,23,25,.05), 0 8px 24px -12px rgba(15,23,25,.18);
+  }
+  :root[data-theme="dark"] {
+    --paper:#0C1214; --surface:#131D1F; --surface-2:#1C282B;
+    --ink:#E2EBEC; --ink-2:#B6C6C8; --muted:#7E9296;
+    --line:#26363A; --line-soft:#1D2A2D;
+    --accent:#45BCC6; --accent-ink:#6FD2DA; --accent-bg:rgba(69,188,198,.13);
+    --good:#5CBE85; --good-bg:rgba(92,190,133,.14);
+    --warn:#D9A24C; --warn-bg:rgba(217,162,76,.14);
+    --crit:#E9736E; --crit-bg:rgba(233,115,110,.14);
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -12px rgba(0,0,0,.6);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--f-body);
+    font-size: 16.5px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .wrap {
+    max-width: 1080px;
+    margin: 0 auto;
+    padding: 56px 28px 96px;
+  }
+  .prose { max-width: 68ch; }
+
+  /* ---------- type ---------- */
+  h1, h2, h3, .mono, .eyebrow, .num { font-family: var(--f-mono); }
+
+  h1 {
+    font-size: clamp(30px, 5.2vw, 50px);
+    line-height: 1.05;
+    letter-spacing: -.035em;
+    font-weight: 700;
+    margin: 0 0 18px;
+    text-wrap: balance;
+  }
+  h2 {
+    font-size: clamp(20px, 2.8vw, 26px);
+    letter-spacing: -.025em;
+    font-weight: 700;
+    margin: 0 0 6px;
+    text-wrap: balance;
+  }
+  h3 {
+    font-size: 15px;
+    letter-spacing: -.01em;
+    font-weight: 700;
+    margin: 0;
+  }
+  p { margin: 0 0 15px; }
+  a { color: var(--accent-ink); }
+  a:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+
+  .eyebrow {
+    font-size: 11.5px;
+    font-weight: 700;
+    letter-spacing: .16em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+  .standfirst {
+    font-size: clamp(17px, 2.1vw, 19.5px);
+    line-height: 1.5;
+    color: var(--ink-2);
+    max-width: 62ch;
+    margin: 0 0 26px;
+  }
+  code, .mono { font-family: var(--f-mono); }
+  p code, li code, td code, .tbl code {
+    font-size: .875em;
+    background: var(--surface-2);
+    padding: .1em .38em;
+    border-radius: 3px;
+    white-space: nowrap;
+  }
+  strong { font-weight: 650; }
+
+  /* ---------- structure ---------- */
+  section { margin-top: 68px; }
+  .sec-head { margin-bottom: 26px; }
+  .sec-head .lede {
+    color: var(--ink-2);
+    max-width: 66ch;
+    margin: 10px 0 0;
+  }
+  hr.rule {
+    border: 0;
+    border-top: 1px solid var(--line);
+    margin: 0;
+  }
+
+  /* ---------- run meta ---------- */
+  .runmeta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+    font-family: var(--f-mono);
+    font-size: 12.5px;
+    color: var(--muted);
+    padding-bottom: 26px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 30px;
+  }
+  .runmeta b { color: var(--ink-2); font-weight: 600; }
+
+  /* ---------- metric strip ---------- */
+  .metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(148px, 1fr));
+    gap: 1px;
+    background: var(--line);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+  }
+  .metric {
+    background: var(--surface);
+    padding: 18px 18px 16px;
+  }
+  .metric .num {
+    font-size: 27px;
+    font-weight: 700;
+    letter-spacing: -.04em;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    display: block;
+  }
+  .metric .cap {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin-top: 7px;
+    display: block;
+  }
+  .metric.is-crit .num { color: var(--crit); }
+  .metric.is-good .num { color: var(--good); }
+  .metric.is-warn .num { color: var(--warn); }
+  .metric.is-accent .num { color: var(--accent); }
+
+  /* ---------- timeline ---------- */
+  .scroller { overflow-x: auto; padding-bottom: 6px; }
+  .tl { min-width: 720px; }
+
+  .tl-axis {
+    position: relative;
+    height: 20px;
+    margin-left: 96px;
+    border-bottom: 1px solid var(--line);
+  }
+  .tl-tick {
+    position: absolute;
+    top: 0;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    transform: translateX(-50%);
+    font-variant-numeric: tabular-nums;
+  }
+  .tl-body { position: relative; }
+  .tl-guides {
+    position: absolute;
+    inset: 0 0 0 96px;
+    pointer-events: none;
+  }
+  .tl-guide {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: var(--line);
+  }
+  .tl-guide.is-crit { background: var(--crit); opacity: .5; }
+  .tl-guide.is-good { background: var(--good); opacity: .5; }
+
+  .tl-lane {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    height: 40px;
+  }
+  .tl-name {
+    width: 96px;
+    flex: none;
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    color: var(--ink-2);
+    padding-right: 12px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .tl-track {
+    position: relative;
+    flex: 1;
+    height: 100%;
+  }
+  .seg {
+    position: absolute;
+    top: 9px;
+    height: 22px;
+    border-radius: 3px;
+  }
+  .seg.run  { background: var(--accent); }
+  .seg.ok   { background: var(--good); }
+  .seg.spin {
+    background: repeating-linear-gradient(
+      -45deg, var(--crit) 0 5px, transparent 5px 10px
+    );
+    border: 1px solid var(--crit);
+    opacity: .85;
+  }
+  .seg-lbl {
+    position: absolute;
+    top: 36px;
+    font-family: var(--f-mono);
+    font-size: 10px;
+    color: var(--muted);
+    white-space: nowrap;
+  }
+
+  .tl-events {
+    position: relative;
+    margin-left: 96px;
+    height: 54px;
+    margin-top: 4px;
+  }
+  .tl-ev {
+    position: absolute;
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    line-height: 1.35;
+    white-space: nowrap;
+    color: var(--ink-2);
+  }
+  .tl-ev b { display: block; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .tl-ev.c-crit { color: var(--crit); }
+  .tl-ev.c-good { color: var(--good); }
+  .tl-ev.row2 { top: 26px; }
+
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 22px;
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: 18px;
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 22px; height: 10px; border-radius: 2px; flex: none; }
+  .swatch.run { background: var(--accent); }
+  .swatch.ok  { background: var(--good); }
+  .swatch.spin {
+    background: repeating-linear-gradient(-45deg, var(--crit) 0 5px, transparent 5px 10px);
+    border: 1px solid var(--crit);
+  }
+
+  /* ---------- loop cards ---------- */
+  .loops { display: grid; gap: 18px; }
+  .loop {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    box-shadow: var(--shadow);
+    overflow: hidden;
+  }
+  .loop-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--line-soft);
+    flex-wrap: wrap;
+  }
+  .badge {
+    font-family: var(--f-mono);
+    font-size: 17px;
+    font-weight: 700;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border-radius: 5px;
+    color: #fff;
+  }
+  .b-a { background: var(--accent); }
+  .b-b { background: var(--crit); }
+  .b-c { background: var(--good); }
+  .b-d { background: var(--warn); }
+
+  .loop-id { flex: 1 1 220px; min-width: 0; }
+  .loop-id .file {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    margin-top: 3px;
+    display: block;
+  }
+  .pill {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+    padding: 4px 9px;
+    border-radius: 100px;
+    white-space: nowrap;
+    align-self: center;
+  }
+  .p-live { background: var(--accent-bg); color: var(--accent-ink); }
+  .p-good { background: var(--good-bg); color: var(--good); }
+  .p-warn { background: var(--warn-bg); color: var(--warn); }
+  .p-crit { background: var(--crit-bg); color: var(--crit); }
+
+  .loop-body { padding: 18px 20px 20px; }
+  .purpose { color: var(--ink-2); margin: 0 0 18px; max-width: 70ch; }
+
+  /* pipeline */
+  .pipe {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: stretch;
+    gap: 7px;
+    margin-bottom: 6px;
+  }
+  .step {
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    line-height: 1.3;
+    padding: 8px 11px;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    color: var(--ink-2);
+    display: flex;
+    align-items: center;
+  }
+  .step.hot {
+    background: var(--accent-bg);
+    border-color: var(--accent);
+    color: var(--accent-ink);
+    font-weight: 600;
+  }
+  .step.fail {
+    background: var(--crit-bg);
+    border-color: var(--crit);
+    color: var(--crit);
+    font-weight: 600;
+  }
+  .step.guard {
+    background: var(--good-bg);
+    border-color: var(--good);
+    color: var(--good);
+    font-weight: 600;
+  }
+  .arrow {
+    display: flex;
+    align-items: center;
+    color: var(--muted);
+    font-family: var(--f-mono);
+    font-size: 13px;
+    user-select: none;
+  }
+  .loopback {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    color: var(--muted);
+    margin: 0 0 16px;
+    padding-left: 2px;
+  }
+  .pipe-note {
+    font-size: 13.5px;
+    color: var(--ink-2);
+    border-left: 2px solid var(--crit);
+    padding: 2px 0 2px 12px;
+    margin: 14px 0 16px;
+    max-width: 70ch;
+  }
+  .pipe-note.ok { border-left-color: var(--good); }
+
+  /* stats row */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    gap: 1px;
+    background: var(--line-soft);
+    border: 1px solid var(--line-soft);
+    border-radius: 5px;
+    overflow: hidden;
+    margin-top: 4px;
+  }
+  .stat { background: var(--surface); padding: 11px 13px; }
+  .stat b {
+    font-family: var(--f-mono);
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -.03em;
+    font-variant-numeric: tabular-nums;
+    display: block;
+    line-height: 1.2;
+  }
+  .stat span {
+    font-family: var(--f-mono);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: block;
+    margin-top: 4px;
+  }
+  .stat.c-crit b { color: var(--crit); }
+  .stat.c-good b { color: var(--good); }
+  .stat.c-warn b { color: var(--warn); }
+
+  /* ---------- token bar ---------- */
+  .tokbar {
+    display: flex;
+    height: 46px;
+    border-radius: 5px;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    margin: 4px 0 14px;
+  }
+  .tokbar div {
+    display: grid;
+    place-items: center;
+    font-family: var(--f-mono);
+    font-size: 11px;
+    font-weight: 700;
+    color: #fff;
+    min-width: 3px;
+    overflow: hidden;
+    white-space: nowrap;
+  }
+  .t-cw { background: var(--crit); }
+  .t-cr { background: var(--warn); }
+  .t-out { background: var(--good); }
+  .tokkey {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+    gap: 10px 22px;
+    font-family: var(--f-mono);
+    font-size: 12px;
+    color: var(--ink-2);
+  }
+  .tokkey div { display: flex; align-items: baseline; gap: 8px; }
+  .tokkey i {
+    width: 10px; height: 10px; border-radius: 2px;
+    flex: none; transform: translateY(1px);
+  }
+  .tokkey b { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .tokkey em { font-style: normal; color: var(--muted); }
+
+  /* ---------- tables ---------- */
+  .tbl-wrap { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+    min-width: 540px;
+  }
+  th, td {
+    text-align: left;
+    padding: 11px 14px;
+    border-bottom: 1px solid var(--line-soft);
+    vertical-align: top;
+  }
+  th {
+    font-family: var(--f-mono);
+    font-size: 10.5px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    font-weight: 700;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  td.n {
+    font-family: var(--f-mono);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  tr.total td {
+    border-top: 1px solid var(--line);
+    font-weight: 700;
+    background: var(--surface-2);
+  }
+  .tbl {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+  }
+
+  /* ---------- guard flow ---------- */
+  .guard {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(232px, 1fr));
+    gap: 14px;
+  }
+  .gcard {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-left: 3px solid var(--accent);
+    border-radius: 6px;
+    padding: 15px 17px;
+  }
+  .gcard.g-good { border-left-color: var(--good); }
+  .gcard.g-warn { border-left-color: var(--warn); }
+  .gcard.g-crit { border-left-color: var(--crit); }
+  .gcard h3 { margin-bottom: 7px; font-size: 13px; }
+  .gcard p { font-size: 13.5px; color: var(--ink-2); margin: 0; }
+
+  /* ---------- code ---------- */
+  pre.code {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 15px 17px;
+    overflow-x: auto;
+    font-family: var(--f-mono);
+    font-size: 12.5px;
+    line-height: 1.62;
+    margin: 0 0 16px;
+    color: var(--ink-2);
+  }
+  pre.code b { color: var(--good); font-weight: 700; }
+  pre.code s { color: var(--crit); text-decoration-color: var(--crit); }
+  pre.code i { color: var(--muted); font-style: normal; }
+
+  /* ---------- callout ---------- */
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 18px 20px;
+    box-shadow: var(--shadow);
+  }
+  .callout.warn { border-color: var(--warn); background: var(--warn-bg); }
+  .callout p:last-child { margin-bottom: 0; }
+  .callout .eyebrow { color: var(--warn); }
+
+  ul.tight { margin: 0 0 15px; padding-left: 20px; }
+  ul.tight li { margin-bottom: 6px; }
+
+  footer {
+    margin-top: 72px;
+    padding-top: 22px;
+    border-top: 1px solid var(--line);
+    font-family: var(--f-mono);
+    font-size: 11.5px;
+    color: var(--muted);
+    line-height: 1.7;
+  }
+
+  @media (max-width: 620px) {
+    .wrap { padding: 40px 18px 72px; }
+    body { font-size: 16px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+</style>
+
+<div class="wrap">
+
+  <p class="eyebrow">cadtrain · overnight run · 2 aug 23:03 → 3 aug 07:15 IST</p>
+  <h1>Four loops ran overnight.<br>Three died at the usage limit.</h1>
+  <p class="standfirst">
+    A/B/C/D were launched detached to grow the RAG corpus, hill-climb the local model, guard against
+    regressions, and hunt bugs. Six minutes in, the session limit hit — and two of the four loops
+    kept calling a model that had stopped answering, for the next seven hours.
+  </p>
+
+  <div class="runmeta">
+    <span><b>Launched</b> 2 Aug 23:03:00 IST</span>
+    <span><b>PIDs</b> A=56463 B=56464 C=56465 D=56466</span>
+    <span><b>Budget</b> 7 h each</span>
+    <span><b>Staging</b> scripts/overnight/runs/</span>
+  </div>
+
+  <div class="metrics">
+    <div class="metric is-accent"><span class="num">4</span><span class="cap">loops launched</span></div>
+    <div class="metric is-crit"><span class="num">3</span><span class="cap">dead by 07:15</span></div>
+    <div class="metric is-crit"><span class="num">8,079</span><span class="cap">wasted calls</span></div>
+    <div class="metric is-good"><span class="num">121</span><span class="cap">corpus candidates</span></div>
+    <div class="metric is-warn"><span class="num">1</span><span class="cap">real bug found</span></div>
+  </div>
+
+  <!-- ============ THE NIGHT ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">the night</p>
+      <h2>Two productive windows, totalling 80 minutes</h2>
+      <p class="lede">
+        The axis is linear wall-clock. That's the point: the slivers where real work happened are
+        genuinely that small next to the hours of spinning. Hatched red is a loop still firing calls
+        into a model returning refusal prose.
+      </p>
+    </div>
+
+    <div class="scroller">
+      <div class="tl">
+
+        <div class="tl-axis">
+          <span class="tl-tick" style="left:0.59%">23:00</span>
+          <span class="tl-tick" style="left:12.35%">00:00</span>
+          <span class="tl-tick" style="left:24.12%">01:00</span>
+          <span class="tl-tick" style="left:35.88%">02:00</span>
+          <span class="tl-tick" style="left:47.65%">03:00</span>
+          <span class="tl-tick" style="left:59.41%">04:00</span>
+          <span class="tl-tick" style="left:71.18%">05:00</span>
+          <span class="tl-tick" style="left:82.94%">06:00</span>
+          <span class="tl-tick" style="left:94.71%">07:00</span>
+        </div>
+
+        <div class="tl-body">
+          <div class="tl-guides" aria-hidden="true">
+            <div class="tl-guide is-crit" style="left:1.76%"></div>
+            <div class="tl-guide is-good" style="left:37.25%"></div>
+            <div class="tl-guide is-crit" style="left:51.76%"></div>
+            <div class="tl-guide" style="left:91.18%"></div>
+            <div class="tl-guide" style="left:94.90%"></div>
+          </div>
+
+          <div class="tl-lane">
+            <div class="tl-name"><span class="badge b-a" style="width:20px;height:20px;font-size:11px">A</span> hillclimb</div>
+            <div class="tl-track">
+              <div class="seg run" style="left:0.59%; right:0" title="Loop A ran continuously — local Ollama, no cloud calls"></div>
+            </div>
+          </div>
+
+          <div class="tl-lane">
+            <div class="tl-name"><span class="badge b-b" style="width:20px;height:20px;font-size:11px">B</span> corpus</div>
+            <div class="tl-track">
+              <div class="seg run"  style="left:0.59%; width:1.17%"></div>
+              <div class="seg spin" style="left:1.76%; width:35.49%"></div>
+              <div class="seg run"  style="left:37.25%; width:14.51%"></div>
+              <div class="seg spin" style="left:51.76%; width:39.42%"></div>
+            </div>
+          </div>
+
+          <div class="tl-lane">
+            <div class="tl-name"><span class="badge b-c" style="width:20px;height:20px;font-size:11px">C</span> gate</div>
+            <div class="tl-track">
+              <div class="seg ok" style="left:0.59%; width:94.31%"></div>
+            </div>
+          </div>
+
+          <div class="tl-lane">
+            <div class="tl-name"><span class="badge b-d" style="width:20px;height:20px;font-size:11px">D</span> harden</div>
+            <div class="tl-track">
+              <div class="seg run"  style="left:0.59%; width:1.17%"></div>
+              <div class="seg spin" style="left:1.76%; width:35.49%"></div>
+              <div class="seg run"  style="left:37.25%; width:14.51%"></div>
+              <div class="seg spin" style="left:51.76%; width:39.42%"></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="tl-events">
+          <div class="tl-ev c-crit" style="left:0"><b>23:09</b>session limit<br>resets 2:10am</div>
+          <div class="tl-ev c-good" style="left:37.25%; transform:translateX(-50%)"><b>02:10</b>session resets</div>
+          <div class="tl-ev c-crit" style="left:51.76%; transform:translateX(-50%)"><b>03:24</b>weekly limit<br>resets 9:30pm</div>
+          <div class="tl-ev" style="left:91.18%; transform:translateX(-88%)"><b>06:45</b>B + D exit</div>
+          <div class="tl-ev row2" style="left:94.90%; transform:translateX(-50%)"><b>07:04</b>C exits</div>
+        </div>
+
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><i class="swatch run"></i> productive (cloud or local)</span>
+      <span><i class="swatch ok"></i> healthy, zero-cost</span>
+      <span><i class="swatch spin"></i> spinning on refusal prose</span>
+    </div>
+  </section>
+
+  <hr class="rule" style="margin-top:60px">
+
+  <!-- ============ THE LOOPS ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">the four loops</p>
+      <h2>What each one does, and where it broke</h2>
+      <p class="lede">
+        Each pipeline is one iteration of the loop. The red step is where the failure surfaced —
+        note that in both B and D the failure surfaced somewhere <em>downstream</em> of the actual
+        cause, which is why neither loop noticed anything was wrong.
+      </p>
+    </div>
+
+    <div class="loops">
+
+      <!-- LOOP A -->
+      <div class="loop">
+        <div class="loop-top">
+          <div class="badge b-a">A</div>
+          <div class="loop-id">
+            <h3>RAG hill-climb</h3>
+            <span class="file">scripts/overnight/rag-hillclimb.sh · qwen2.5:1.5b via Ollama</span>
+          </div>
+          <span class="pill p-live">still running</span>
+        </div>
+        <div class="loop-body">
+          <p class="purpose">
+            Measures whether retrieval actually lifts the local small model. Each round evaluates the
+            app-builder eval under three configs — no grounding, lexical (BM25), and vector — and
+            appends the score to a leaderboard. Entirely local: <strong>zero cloud tokens, zero cost</strong>,
+            which is why the usage limit never touched it.
+          </p>
+
+          <div class="pipe">
+            <span class="step">rotate app</span><span class="arrow">→</span>
+            <span class="step hot">eval ×3 configs<br>ungrounded · lexical · vector</span><span class="arrow">→</span>
+            <span class="step fail">score_of()<br>grep "average mean:"</span><span class="arrow">→</span>
+            <span class="step">append hillclimb.csv</span><span class="arrow">→</span>
+            <span class="step">rebuild leaderboard</span>
+          </div>
+          <p class="loopback">└─ repeat until 7 h budget expires</p>
+
+          <p class="pipe-note">
+            <strong>20 of 21 rows logged <code>NA</code>.</strong> The eval intermittently dies mid-run with a
+            <code>DOMException TimeoutError</code>, so <code>average mean:</code> is never printed and
+            <code>score_of</code> returns empty. The last-captured output shows it dying right after
+            <code>design</code>, on <code>ewell</code>. The leaderboard then crashed on
+            <code>statistics.mean</code> with no data points.
+          </p>
+
+          <div class="stats">
+            <div class="stat"><b>7</b><span>rounds</span></div>
+            <div class="stat c-crit"><b>20/21</b><span>rows NA</span></div>
+            <div class="stat c-good"><b>46.1%</b><span>lexical</span></div>
+            <div class="stat"><b>45.1%</b><span>vector</span></div>
+            <div class="stat"><b>$0</b><span>cost</span></div>
+          </div>
+
+          <p class="pipe-note ok" style="margin-bottom:0">
+            <strong>The fix is already written and sitting uncommitted.</strong> The working-tree copy
+            switches to one app per round, drops <code>ewell</code> (<em>"destabilizes the tiny local
+            model"</em>), and adds an <code>app</code> column. But its mtime is 23:11 — eight minutes
+            <em>after</em> launch — so the running process never picked it up and is still writing
+            4-column rows.
+          </p>
+        </div>
+      </div>
+
+      <!-- LOOP B -->
+      <div class="loop">
+        <div class="loop-top">
+          <div class="badge b-b">B</div>
+          <div class="loop-id">
+            <h3>Corpus expansion</h3>
+            <span class="file">scripts/overnight/corpus-expand.sh · claude --print</span>
+          </div>
+          <span class="pill p-crit">4,017 wasted</span>
+        </div>
+        <div class="loop-body">
+          <p class="purpose">
+            Asks the model for a minimal <code>.app</code> manifest for each of eight archetypes,
+            validates the JSON, and stages it to <code>corpus-candidates/</code> for morning review.
+            Never writes to the shared volume. A single-turn text transform — it needs no tools, no
+            repo context, no memory.
+          </p>
+
+          <div class="pipe">
+            <span class="step">pick archetype<br><em>8 in rotation</em></span><span class="arrow">→</span>
+            <span class="step hot">claude --print<br><em>~8 s / call</em></span><span class="arrow">→</span>
+            <span class="step">strip ``` fences</span><span class="arrow">→</span>
+            <span class="step fail">JSON.parse + shape check</span><span class="arrow">→</span>
+            <span class="step">stage .app.json</span>
+          </div>
+          <p class="loopback">└─ repeat until 7 h budget expires — <strong>no count cap, no back-off</strong></p>
+
+          <p class="pipe-note">
+            <strong>4,017 of 4,138 attempts logged the identical error:</strong>
+            <code>SKIP JSON Parse error: Unexpected identifier "You"</code>. That "You" is the first word of
+            <em>"You've hit your session limit."</em> A rate-limited <code>claude --print</code> returns its
+            refusal as ordinary prose with exit code 0, so the loop read it as a normal response, failed
+            to parse it, logged a plausible-looking failure, and immediately tried again — roughly every
+            eight seconds, for hours.
+          </p>
+
+          <div class="stats">
+            <div class="stat"><b>4,138</b><span>attempts</span></div>
+            <div class="stat c-good"><b>121</b><span>staged OK</span></div>
+            <div class="stat c-crit"><b>4,017</b><span>skipped</span></div>
+            <div class="stat"><b>2.9%</b><span>yield</span></div>
+            <div class="stat"><b>8 s</b><span>median</span></div>
+          </div>
+
+          <p class="pipe-note ok" style="margin-bottom:0">
+            The 121 survivors all come from the two productive windows — 46 in the 23:00 hour, 75 between
+            02:10 and 03:24. They cover 8 archetypes repeated about 15× each, so most are near-duplicates.
+            Useful, but they need de-duplicating before they go anywhere near the RAG corpus.
+          </p>
+        </div>
+      </div>
+
+      <!-- LOOP C -->
+      <div class="loop">
+        <div class="loop-top">
+          <div class="badge b-c">C</div>
+          <div class="loop-id">
+            <h3>Regression gate</h3>
+            <span class="file">scripts/overnight/rag-gate.sh · --provider fake</span>
+          </div>
+          <span class="pill p-good">clean · 13/13 pass</span>
+        </div>
+        <div class="loop-body">
+          <p class="purpose">
+            The cheap deterministic guard. Runs the eval with the <strong>fake provider</strong> — no model,
+            no network — to measure the score <em>ceiling</em>, and compares it against a baseline. A drop
+            means a corpus or code change broke the build plumbing. Free and contention-free, so it runs
+            happily alongside the other three.
+          </p>
+
+          <div class="pipe">
+            <span class="step">eval --provider fake</span><span class="arrow">→</span>
+            <span class="step hot">--gate gate-baseline.json</span><span class="arrow">→</span>
+            <span class="step guard">PASS / FAIL</span><span class="arrow">→</span>
+            <span class="step">sleep 900</span>
+          </div>
+          <p class="loopback">└─ repeat every 15 min until 7 h budget expires</p>
+
+          <p class="pipe-note ok">
+            <strong>Worked exactly as designed.</strong> Baseline established at launch across all five apps
+            (plan · design · ewell · partsdash · opsdash), 13 checks run, every one PASS, clean exit at
+            07:04. The only caveat is that it was guarding a tree nothing ever merged into — so it proved
+            the plumbing was stable, not that the night produced anything.
+          </p>
+
+          <div class="stats">
+            <div class="stat c-good"><b>13</b><span>checks</span></div>
+            <div class="stat c-good"><b>0</b><span>failures</span></div>
+            <div class="stat"><b>5</b><span>apps guarded</span></div>
+            <div class="stat"><b>$0</b><span>cost</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- LOOP D -->
+      <div class="loop">
+        <div class="loop-top">
+          <div class="badge b-d">D</div>
+          <div class="loop-id">
+            <h3>Code hardening</h3>
+            <span class="file">scripts/overnight/code-harden.sh · claude --print, read-only</span>
+          </div>
+          <span class="pill p-warn">1 real find · 4,062 junk</span>
+        </div>
+        <div class="loop-body">
+          <p class="purpose">
+            Walks 72 TypeScript files under <code>appkit/</code>, <code>server/</code>, and
+            <code>routes/api/app/</code>, asking for correctness bugs only — no edits, findings appended to
+            a report for morning triage. Unlike B, this loop genuinely needs the agentic harness: real
+            reviews took 100–145 s because the model read dependency files and ran repros.
+          </p>
+
+          <div class="pipe">
+            <span class="step">next file<br><em>72 in rotation</em></span><span class="arrow">→</span>
+            <span class="step hot">cat file + prompt<br>│ claude --print</span><span class="arrow">→</span>
+            <span class="step fail">grep -qx "CLEAN"</span><span class="arrow">→</span>
+            <span class="step">append harden-findings.md</span>
+          </div>
+          <p class="loopback">└─ repeat until 7 h budget expires — <strong>index advances even on failure</strong></p>
+
+          <p class="pipe-note">
+            <strong>4,062 of 4,070 report sections are just the limit message</strong> — 2,653 reading
+            <em>"session limit"</em> and 1,409 <em>"weekly limit"</em>. Because the refusal prose is
+            non-empty and isn't the literal string <code>CLEAN</code>, the loop classified every one as a
+            finding and wrote it to the report. It also advanced its file index each time, which is how it
+            logged <code>completed a full pass (2664 files reviewed)</code> over a set of 72 files.
+          </p>
+
+          <div class="stats">
+            <div class="stat"><b>4,068</b><span>reviews</span></div>
+            <div class="stat c-crit"><b>4,062</b><span>junk sections</span></div>
+            <div class="stat c-good"><b>1</b><span>real bug</span></div>
+            <div class="stat"><b>467 KB</b><span>report size</span></div>
+            <div class="stat"><b>~100 s</b><span>real review</span></div>
+          </div>
+
+          <p class="pipe-note ok" style="margin-bottom:0">
+            <strong>The one finding was worth the whole loop.</strong> At 23:07 — two minutes before the
+            limit — it found that <code>trace.push({ args: c.args })</code> stores a <em>live reference</em>:
+            the gui verbs mutate that same object and <code>sanitizeApp</code> deletes through the alias, so
+            the trace recorded post-mutation state instead of what the model emitted. It confirmed this with
+            a real <code>bun -e</code> repro rather than inferring it. Fixed in <code>10cef8a</code>.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <hr class="rule" style="margin-top:60px">
+
+  <!-- ============ THE BURN ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">anatomy of the burn</p>
+      <h2>One corpus call costs 41,292 tokens to emit 221</h2>
+      <p class="lede">
+        Measured, not estimated — a single pilot call through
+        <code>claude --print --output-format json</code>. Every invocation boots the entire Claude Code
+        harness: system prompt, all tool schemas, both CLAUDE.md files, MEMORY.md. That fixed overhead is
+        paid in full whether the task needs it or not.
+      </p>
+    </div>
+
+    <div class="tokbar" role="img" aria-label="Token breakdown: 62.5% cache write, 37% cache read, 0.5% output">
+      <div class="t-cw" style="width:62.47%">cache write · 25,796</div>
+      <div class="t-cr" style="width:36.99%">cache read · 15,273</div>
+      <div class="t-out" style="width:0.54%"></div>
+    </div>
+
+    <div class="tokkey">
+      <div><i style="background:var(--crit)"></i><b>25,796</b> <em>cache write — harness prefix</em></div>
+      <div><i style="background:var(--warn)"></i><b>15,273</b> <em>cache read — harness prefix</em></div>
+      <div><i style="background:var(--good)"></i><b>221</b> <em>output — the actual JSON</em></div>
+      <div><i style="background:var(--muted)"></i><b>2</b> <em>input — the prompt itself</em></div>
+    </div>
+
+    <p style="margin-top:22px; max-width:68ch">
+      <strong>99.5% of that call was overhead.</strong> Reported cost: <code>$0.271</code> for 4.9 seconds
+      of work. Loop B is the more expensive of the two precisely <em>because</em> it's cheap and fast —
+      at 8 seconds per attempt it simply fires far more often than D can.
+    </p>
+
+    <h3 style="margin:34px 0 14px; font-size:15px">Projected cost of relaunching as-is, 7 hours</h3>
+    <div class="tbl tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Loop</th><th>Per call</th><th>Cadence</th><th class="n">7 h volume</th><th class="n">Cost</th><th>Basis</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>A</strong> hill-climb</td><td>—</td><td>local Ollama</td>
+            <td class="n">—</td><td class="n">$0</td><td>no cloud calls</td>
+          </tr>
+          <tr>
+            <td><strong>B</strong> corpus</td><td class="n">41,292 tok · $0.27</td><td>8 s</td>
+            <td class="n">~3,150</td><td class="n">~$850</td><td>measured pilot</td>
+          </tr>
+          <tr>
+            <td><strong>C</strong> gate</td><td>—</td><td>fake provider</td>
+            <td class="n">—</td><td class="n">$0</td><td>no model</td>
+          </tr>
+          <tr>
+            <td><strong>D</strong> harden</td><td class="n">~300–600k tok</td><td>100–145 s</td>
+            <td class="n">~250</td><td class="n">~$400–1,000</td><td><em>estimated</em></td>
+          </tr>
+          <tr class="total">
+            <td>Total</td><td></td><td></td><td class="n">~3,400</td><td class="n">~$1,250–1,850</td><td></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="margin-top:14px; font-size:13.5px; color:var(--muted); max-width:68ch">
+      D's figure is extrapolated from measured wall-clock durations and the agentic turn count implied by
+      its one real finding — the confirming pilot was skipped. On a subscription this reads not as a
+      dollar bill but as "the weekly limit is gone in about an hour," which is exactly what happened.
+    </p>
+  </section>
+
+  <hr class="rule" style="margin-top:60px">
+
+  <!-- ============ THE FIX ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">shipped</p>
+      <h2>A circuit breaker, and the bug the night actually found</h2>
+    </div>
+
+    <div class="tbl tbl-wrap" style="margin-bottom:30px">
+      <table>
+        <thead><tr><th>Commit</th><th>Change</th><th>Verification</th></tr></thead>
+        <tbody>
+          <tr>
+            <td class="n">10cef8a</td>
+            <td><code>structuredClone</code> the args before dispatch in <code>build-cli.ts</code> and
+                <code>pipeline.ts</code>, so the trace records what the model emitted</td>
+            <td>Regression test added; fails without the fix, 101 appkit tests + build green</td>
+          </tr>
+          <tr>
+            <td class="n">8bd8382</td>
+            <td><code>limit-guard.sh</code> — shared circuit breaker sourced by loops B and D</td>
+            <td>All 5 refusal shapes detected, 3 real shapes pass, abort fires, counter resets</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin:0 0 14px; font-size:15px">How the guard changes one iteration</h3>
+    <div class="pipe">
+      <span class="step hot">claude --print</span><span class="arrow">→</span>
+      <span class="step guard">guard_blocked?</span><span class="arrow">→</span>
+      <span class="step guard">guard_backoff</span><span class="arrow">→</span>
+      <span class="step">sleep toward reset</span><span class="arrow">→</span>
+      <span class="step guard">retry <em>same</em> item</span>
+    </div>
+    <p class="loopback">└─ or, on the Nth consecutive block: <strong>abort the loop entirely</strong></p>
+
+    <div class="guard" style="margin-top:22px">
+      <div class="gcard">
+        <h3>guard_blocked "$out"</h3>
+        <p>True when the output is empty, a session/weekly/rate limit, a transport error
+        (<code>ENOTFOUND</code>), or expired auth — rather than real work.</p>
+      </div>
+      <div class="gcard g-warn">
+        <h3>guard_backoff "$out"</h3>
+        <p>Parses <em>"resets 9:30pm"</em> out of the refusal and sleeps toward it, capped at
+        <code>GUARD_MAX_SLEEP</code>. With no parseable time, backs off 1 → 2 → 4 → 8 → 16 min.</p>
+      </div>
+      <div class="gcard g-crit">
+        <h3>abort</h3>
+        <p>After <code>GUARD_MAX_FAILS</code> consecutive blocks (default 5) the loop stops and logs why.
+        Slept through the reset five times means something else is wrong.</p>
+      </div>
+      <div class="gcard g-good">
+        <h3>guard_ok</h3>
+        <p>Clears the consecutive-failure counter on any real response, so a single transient blip can't
+        accumulate toward the abort.</p>
+      </div>
+    </div>
+
+    <h3 style="margin:34px 0 14px; font-size:15px">The second half of the fix: don't advance the index</h3>
+    <pre class="code"><s>  f="${FILES[$(( i % ${#FILES[@]} ))]}"; i=$((i+1))</s>
+<b>  f="${FILES[$(( i % ${#FILES[@]} ))]}"</b>
+  out=$( ... | claude --print 2>/dev/null)
+<b>  if guard_blocked "$out"; then guard_backoff "$out" || break; continue; fi</b>
+<b>  guard_ok; i=$((i+1))</b>
+<i>  # Advancing i on a block would let the limit window silently skip files,
+  # which is how a "full pass" reported 2,664 files over a set of 72.</i></pre>
+
+    <div class="callout" style="margin-top:8px">
+      <p class="eyebrow" style="color:var(--muted)">verified with fakes — no API calls</p>
+      <p style="margin:0">
+        Detection: session limit ✓ · weekly limit ✓ · <code>API Error … ENOTFOUND</code> ✓ · empty ✓ ·
+        whitespace ✓ — while <code>CLEAN</code>, a real findings paragraph, and real JSON all pass through
+        untouched. Reset parsing: <em>9:30pm</em> → 50,563 s, <em>2:10am</em> → 67,363 s, unparseable →
+        exponential. Abort fired on the 4th consecutive block with <code>GUARD_MAX_FAILS=4</code>, and
+        <code>guard_ok</code> reset the counter to zero.
+      </p>
+    </div>
+  </section>
+
+  <hr class="rule" style="margin-top:60px">
+
+  <!-- ============ TONIGHT ============ -->
+  <section>
+    <div class="sec-head">
+      <p class="eyebrow">proposed — not yet run</p>
+      <h2>What to change before the next run</h2>
+      <p class="lede">
+        The circuit breaker stops the bleeding but doesn't fix the economics. Two loops need structural
+        changes; two are fine as they are.
+      </p>
+    </div>
+
+    <div class="tbl tbl-wrap">
+      <table>
+        <thead>
+          <tr><th>Loop</th><th>Change</th><th>Why</th><th class="n">Projected</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>A</strong></td>
+            <td>Commit the working-tree script, then relaunch — one app per round, <code>ewell</code>
+                dropped, <code>app</code> column in the CSV</td>
+            <td>The fix exists but post-dates the launch, so the live process never loaded it. Its
+                <code>NA</code> rows are unusable as a leaderboard.</td>
+            <td class="n">$0</td>
+          </tr>
+          <tr>
+            <td><strong>B</strong></td>
+            <td>Add <code>--bare</code>, and bound by <em>candidate count</em> rather than hours —
+                about 5 per archetype</td>
+            <td><code>--bare</code> skips CLAUDE.md discovery and auto-memory, and switches auth to
+                <code>ANTHROPIC_API_KEY</code> — cutting the 41k overhead <em>and</em> moving the spend
+                onto API credits. 40 calls gets the corpus; 3,150 gets 15 copies of each.</td>
+            <td class="n">unmeasured</td>
+          </tr>
+          <tr>
+            <td><strong>C</strong></td>
+            <td>Unchanged</td>
+            <td>It did its job for free. Worth pointing at a branch that actually receives merges.</td>
+            <td class="n">$0</td>
+          </tr>
+          <tr>
+            <td><strong>D</strong></td>
+            <td>Keep the agentic harness, but run <em>one pass</em> over 72 files and stop; skip files
+                whose content hash is unchanged</td>
+            <td>The agentic behaviour is the value — it read six dependency files and ran a repro to
+                confirm the aliasing bug. What it doesn't need is to review the same 72 files 3½ times
+                a night.</td>
+            <td class="n">~2 h / pass</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="callout warn" style="margin-top:26px">
+      <p class="eyebrow">open question</p>
+      <p style="margin-bottom:0">
+        The <code>--bare</code> saving is <strong>projected, not measured</strong>. One pilot call would
+        settle it — and would also confirm the API key in <code>.env</code> works before tonight's run
+        depends on it. If <code>--bare</code> lands the corpus call in the low thousands of tokens, loop B
+        needs a one-flag edit rather than a rewrite into a standalone generator.
+      </p>
+    </div>
+  </section>
+
+  <footer>
+    Sources: scripts/overnight/runs/{orchestrator,corpus,harden,gate}.log · hillclimb.csv ·
+    harden-findings.md · 121 staged .app.json candidates · one pilot call via
+    <span class="mono">claude --print --output-format json</span>.<br>
+    All figures measured from the run artifacts except loop D's projected cost, which is extrapolated and
+    marked as such.
+  </footer>
+
+</div>

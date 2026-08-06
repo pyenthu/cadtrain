@@ -1,0 +1,516 @@
+<title>What we're building and why — the local model plan</title>
+
+<style>
+  :root {
+    --paper:      #F4F3F0;
+    --surface:    #FDFDFC;
+    --surface-2:  #E8E6E1;
+    --ink:        #171614;
+    --ink-2:      #423F39;
+    --muted:      #726D63;
+    --line:       #D2CEC5;
+    --line-soft:  #E3E0D9;
+    --brass:      #96701A;
+    --brass-ink:  #7A5B12;
+    --brass-bg:   rgba(150,112,26,.12);
+    --gain:       #2C7A4B;
+    --gain-bg:    rgba(44,122,75,.13);
+    --gap:        #A6402F;
+    --gap-bg:     rgba(166,64,47,.11);
+    --shadow:     0 1px 2px rgba(23,22,20,.05), 0 12px 30px -16px rgba(23,22,20,.25);
+    --f-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    --f-body: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper:#100F0D; --surface:#1A1917; --surface-2:#252320;
+      --ink:#EFEDE8; --ink-2:#C2BEB5; --muted:#8B857A;
+      --line:#33302B; --line-soft:#252320;
+      --brass:#D4A83C; --brass-ink:#E0B95A; --brass-bg:rgba(212,168,60,.14);
+      --gain:#5CC287; --gain-bg:rgba(92,194,135,.14);
+      --gap:#E0796A; --gap-bg:rgba(224,121,106,.13);
+      --shadow:0 1px 2px rgba(0,0,0,.5), 0 12px 30px -16px rgba(0,0,0,.75);
+    }
+  }
+  :root[data-theme="light"] {
+    --paper:#F4F3F0; --surface:#FDFDFC; --surface-2:#E8E6E1;
+    --ink:#171614; --ink-2:#423F39; --muted:#726D63; --line:#D2CEC5; --line-soft:#E3E0D9;
+    --brass:#96701A; --brass-ink:#7A5B12; --brass-bg:rgba(150,112,26,.12);
+    --gain:#2C7A4B; --gain-bg:rgba(44,122,75,.13);
+    --gap:#A6402F; --gap-bg:rgba(166,64,47,.11);
+    --shadow:0 1px 2px rgba(23,22,20,.05), 0 12px 30px -16px rgba(23,22,20,.25);
+  }
+  :root[data-theme="dark"] {
+    --paper:#100F0D; --surface:#1A1917; --surface-2:#252320;
+    --ink:#EFEDE8; --ink-2:#C2BEB5; --muted:#8B857A; --line:#33302B; --line-soft:#252320;
+    --brass:#D4A83C; --brass-ink:#E0B95A; --brass-bg:rgba(212,168,60,.14);
+    --gain:#5CC287; --gain-bg:rgba(92,194,135,.14);
+    --gap:#E0796A; --gap-bg:rgba(224,121,106,.13);
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 12px 30px -16px rgba(0,0,0,.75);
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--paper); color: var(--ink);
+    font-family: var(--f-body); font-size: 17px; line-height: 1.65;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 56px 26px 96px; }
+
+  h1 {
+    font-size: clamp(30px, 5.4vw, 48px); line-height: 1.06;
+    letter-spacing: -.04em; font-weight: 800; margin: 0 0 18px; text-wrap: balance;
+  }
+  h2 {
+    font-size: clamp(23px, 3.4vw, 31px); line-height: 1.15;
+    letter-spacing: -.03em; font-weight: 750; margin: 0 0 10px; text-wrap: balance;
+  }
+  h3 { font-size: 17px; font-weight: 700; letter-spacing: -.015em; margin: 0 0 7px; }
+  p { margin: 0 0 16px; }
+  .lede { font-size: clamp(17.5px, 2.2vw, 20px); line-height: 1.55; color: var(--ink-2); max-width: 60ch; }
+  code {
+    font-family: var(--f-mono); font-size: .855em;
+    background: var(--surface-2); padding: .12em .4em; border-radius: 3px;
+  }
+  strong { font-weight: 680; }
+  .mono { font-family: var(--f-mono); }
+
+  .stamp {
+    font-family: var(--f-mono); font-size: 11px; font-weight: 700;
+    letter-spacing: .2em; text-transform: uppercase; color: var(--brass-ink);
+    margin: 0 0 14px;
+  }
+  .chapter {
+    display: flex; align-items: baseline; gap: 16px;
+    margin: 0 0 6px;
+  }
+  .chapter .idx {
+    font-family: var(--f-mono); font-size: 13px; font-weight: 700;
+    color: var(--brass); letter-spacing: .1em; flex: none;
+    padding-top: 4px;
+  }
+  section { margin-top: 78px; }
+  hr.rule { border: 0; border-top: 1px solid var(--line); margin: 0; }
+  .scroller { overflow-x: auto; }
+
+  /* ---------- the gap chart ---------- */
+  .gapbox {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 26px 28px 22px; box-shadow: var(--shadow);
+  }
+  .rowset { display: grid; gap: 15px; min-width: 420px; }
+  .row { display: grid; grid-template-columns: 92px 1fr; gap: 14px; align-items: center; }
+  .row .name {
+    font-family: var(--f-mono); font-size: 12.5px; color: var(--ink-2);
+    text-align: right; white-space: nowrap;
+  }
+  .bars { position: relative; height: 34px; }
+  .bar {
+    position: absolute; left: 0; height: 14px; border-radius: 2px;
+    display: flex; align-items: center;
+  }
+  .bar.claude { top: 0; background: var(--surface-2); border: 1px solid var(--line); }
+  .bar.qwen   { top: 18px; background: var(--brass); }
+  .bar span {
+    position: absolute; left: calc(100% + 8px);
+    font-family: var(--f-mono); font-size: 11px; font-variant-numeric: tabular-nums;
+    white-space: nowrap; line-height: 14px;
+  }
+  .bar.claude span { color: var(--muted); }
+  .bar.qwen span   { color: var(--brass-ink); font-weight: 700; }
+  .gapkey {
+    display: flex; flex-wrap: wrap; gap: 10px 26px; margin-top: 22px;
+    padding-top: 18px; border-top: 1px solid var(--line-soft);
+    font-family: var(--f-mono); font-size: 12px; color: var(--muted);
+  }
+  .gapkey span { display: inline-flex; align-items: center; gap: 8px; }
+  .sw { width: 22px; height: 11px; border-radius: 2px; flex: none; }
+  .sw.claude { background: var(--surface-2); border: 1px solid var(--line); }
+  .sw.qwen { background: var(--brass); }
+
+  /* ---------- big statement ---------- */
+  .statement {
+    background: var(--surface); border: 1px solid var(--line);
+    border-left: 4px solid var(--brass); border-radius: 8px;
+    padding: 24px 28px; box-shadow: var(--shadow); margin: 26px 0;
+  }
+  .statement p { margin: 0; font-size: 18.5px; line-height: 1.55; color: var(--ink-2); }
+  .statement p + p { margin-top: 13px; }
+  .statement q {
+    quotes: none; font-style: italic; color: var(--ink);
+  }
+
+  /* ---------- the cycle ---------- */
+  .cycle { display: grid; gap: 12px; }
+  .step {
+    display: grid; grid-template-columns: 46px 1fr; gap: 18px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 9px; padding: 17px 20px 17px 16px; box-shadow: var(--shadow);
+    align-items: start;
+  }
+  .step .dot {
+    width: 34px; height: 34px; border-radius: 50%;
+    background: var(--brass); color: var(--paper);
+    display: grid; place-items: center; font-family: var(--f-mono);
+    font-size: 15px; font-weight: 700; flex: none;
+  }
+  .step.is-gate .dot { background: var(--gain); }
+  .step h3 { margin-bottom: 4px; }
+  .step p { margin: 0; font-size: 15.5px; color: var(--ink-2); line-height: 1.5; }
+  .step .tag {
+    display: inline-block; font-family: var(--f-mono); font-size: 10.5px;
+    font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+    padding: 3px 8px; border-radius: 3px; margin-top: 9px;
+    background: var(--surface-2); color: var(--muted);
+  }
+  .step .tag.free { background: var(--gain-bg); color: var(--gain); }
+  .loopmark {
+    display: flex; align-items: center; gap: 12px;
+    font-family: var(--f-mono); font-size: 12.5px; color: var(--brass-ink);
+    padding: 4px 0 4px 64px; font-weight: 600;
+  }
+  .loopmark::before {
+    content: "↻"; font-size: 19px; line-height: 1;
+  }
+
+  /* ---------- three outcomes ---------- */
+  .outcomes { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 15px; }
+  .oc {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 9px; padding: 20px; box-shadow: var(--shadow);
+  }
+  .oc .when {
+    font-family: var(--f-mono); font-size: 10.5px; font-weight: 700;
+    letter-spacing: .12em; text-transform: uppercase; color: var(--brass);
+    display: block; margin-bottom: 9px;
+  }
+  .oc p { font-size: 15px; color: var(--ink-2); margin: 0; line-height: 1.5; }
+
+  /* ---------- ladder / where we are ---------- */
+  .ladder {
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 10px; padding: 24px 28px; box-shadow: var(--shadow);
+  }
+  .rung {
+    display: grid; grid-template-columns: 84px 1fr auto; gap: 16px;
+    align-items: baseline; padding: 12px 0;
+    border-bottom: 1px dashed var(--line-soft);
+  }
+  .rung:last-child { border-bottom: 0; }
+  .rung .score {
+    font-family: var(--f-mono); font-size: 19px; font-weight: 700;
+    font-variant-numeric: tabular-nums; letter-spacing: -.03em;
+  }
+  .rung .what { font-size: 15px; color: var(--ink-2); }
+  .rung .st {
+    font-family: var(--f-mono); font-size: 10.5px; font-weight: 700;
+    letter-spacing: .08em; text-transform: uppercase; white-space: nowrap;
+    padding: 4px 9px; border-radius: 100px;
+  }
+  .rung.done .score { color: var(--gain); }
+  .rung.done .st { background: var(--gain-bg); color: var(--gain); }
+  .rung.now { background: var(--brass-bg); margin: 0 -14px; padding-left: 14px; padding-right: 14px; border-radius: 6px; }
+  .rung.now .score { color: var(--brass-ink); }
+  .rung.now .st { background: var(--brass); color: var(--paper); }
+  .rung.todo .score { color: var(--muted); }
+  .rung.todo .st { background: var(--surface-2); color: var(--muted); }
+
+  /* ---------- misc ---------- */
+  .note {
+    font-size: 14.5px; color: var(--muted); max-width: 64ch;
+    border-left: 2px solid var(--line); padding-left: 15px; margin: 22px 0 0;
+  }
+  .twocol { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 26px; }
+
+  footer {
+    margin-top: 76px; padding-top: 22px; border-top: 1px solid var(--line);
+    font-family: var(--f-mono); font-size: 11.5px; color: var(--muted); line-height: 1.75;
+  }
+  @media (max-width: 620px) {
+    .wrap { padding: 40px 18px 70px; }
+    body { font-size: 16.5px; }
+    .row { grid-template-columns: 74px 1fr; }
+    .rung { grid-template-columns: 66px 1fr; }
+    .rung .st { grid-column: 2; justify-self: start; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<div class="wrap">
+
+  <p class="stamp">cadtrain · the local-model plan</p>
+  <h1>Teach a small model on your laptop<br>to build apps as well as Claude does.</h1>
+  <p class="lede">
+    That's the whole project. Everything else — the loops, the corpus, the gate — is machinery in service
+    of that one sentence.
+  </p>
+
+  <hr class="rule" style="margin-top:52px">
+
+  <!-- ============ 1 · OBJECTIVE ============ -->
+  <section>
+    <div class="chapter">
+      <span class="idx">01</span>
+      <div><h2>The objective</h2></div>
+    </div>
+    <p class="lede" style="margin-left:0; margin-bottom:28px">
+      Your rule is that the AI which runs inside the product must run <strong>locally</strong> — user data
+      never leaves the machine. Cloud Claude is for building the tool, not for running it. So the app-builder
+      has to work on a small local model. Right now it doesn't.
+    </p>
+
+    <div class="gapbox">
+      <div class="scroller"><div class="rowset">
+        <div class="row">
+          <div class="name">plan</div>
+          <div class="bars">
+            <div class="bar claude" style="width:100%"><span>100%</span></div>
+            <div class="bar qwen"   style="width:69%"><span>69%</span></div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="name">design</div>
+          <div class="bars">
+            <div class="bar claude" style="width:90%"><span>90%</span></div>
+            <div class="bar qwen"   style="width:33.1%"><span>33%</span></div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="name">ewell</div>
+          <div class="bars">
+            <div class="bar claude" style="width:69%"><span>69%</span></div>
+            <div class="bar qwen"   style="width:43.5%"><span>44%</span></div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="name">partsdash</div>
+          <div class="bars">
+            <div class="bar claude" style="width:100%"><span>100%</span></div>
+            <div class="bar qwen"   style="width:40.2%"><span>40%</span></div>
+          </div>
+        </div>
+        <div class="row">
+          <div class="name">opsdash</div>
+          <div class="bars">
+            <div class="bar claude" style="width:100%"><span>100%</span></div>
+            <div class="bar qwen"   style="width:44.5%"><span>45%</span></div>
+          </div>
+        </div>
+      </div></div>
+      <div class="gapkey">
+        <span><i class="sw claude"></i> Claude in the cloud — the target</span>
+        <span><i class="sw qwen"></i> Qwen2.5-1.5B on your machine — today</span>
+      </div>
+    </div>
+
+    <p class="note">
+      Five test apps. The score measures how close the built app is to a known-good version — panel types,
+      nesting, variables, theme, title. Claude averages about <strong>92%</strong>. The local model averages
+      about <strong>46%</strong>. That 46-point gap is the thing we're trying to close.
+    </p>
+  </section>
+
+  <!-- ============ 2 · THE IDEA ============ -->
+  <section>
+    <div class="chapter">
+      <span class="idx">02</span>
+      <div><h2>The idea: don't retrain it — show it better examples</h2></div>
+    </div>
+
+    <div class="twocol" style="margin-top:20px">
+      <div>
+        <h3>What we are not doing</h3>
+        <p style="color:var(--ink-2); font-size:16px">
+          We're not fine-tuning the model or training new weights. That's slow, expensive, and has to be
+          redone every time the app format changes.
+        </p>
+      </div>
+      <div>
+        <h3>What we are doing</h3>
+        <p style="color:var(--ink-2); font-size:16px">
+          Every time the model builds something, we first hand it a few worked examples to look at. Better
+          examples produce better output — immediately, with no training.
+        </p>
+      </div>
+    </div>
+
+    <div class="statement">
+      <p>So the real product isn't the model. It's <strong>the library of examples</strong> — and a machine
+      that keeps making that library better.</p>
+      <p style="font-size:16px; color:var(--muted)">
+        In your words from the project notes: <q>a self-improving RAG DB so the local small model gets
+        better — better function definitions, better semantics.</q>
+      </p>
+    </div>
+
+    <p class="note" style="border-left-color:var(--brass)">
+      The nice property: it compounds. A good build can become tomorrow's example. The library gets better,
+      which makes builds better, which makes better examples. That's the flywheel.
+    </p>
+  </section>
+
+  <!-- ============ 3 · METHOD ============ -->
+  <section>
+    <div class="chapter">
+      <span class="idx">03</span>
+      <div><h2>The method: a factory that only keeps what works</h2></div>
+    </div>
+    <p class="lede" style="margin-bottom:26px">
+      Adding examples doesn't automatically help — some make things worse. So every batch has to earn its
+      place by measurement. One turn of the loop:
+    </p>
+
+    <div class="cycle">
+      <div class="step">
+        <div class="dot">1</div>
+        <div>
+          <h3>Measure where we are</h3>
+          <p>Have the local model build all the test apps and score them. This is the "before" number.</p>
+          <span class="tag free">local · free</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="dot">2</div>
+        <div>
+          <h3>Find what's missing</h3>
+          <p>Look at what it got wrong — a chart it never draws, a variable it keeps dropping — and write a
+             few new examples aimed at exactly that.</p>
+          <span class="tag free">generated locally by Ollama</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="dot">3</div>
+        <div>
+          <h3>Add them to a trial library</h3>
+          <p>Kept in a sandbox copy, never the real shared one. Nothing that hasn't proven itself gets near
+             production.</p>
+          <span class="tag">quarantined</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="dot">4</div>
+        <div>
+          <h3>Measure again</h3>
+          <p>Same tests, same model, only the library changed. This is the "after" number.</p>
+          <span class="tag free">local · free</span>
+        </div>
+      </div>
+      <div class="step is-gate">
+        <div class="dot">5</div>
+        <div>
+          <h3>Judge honestly — the gate</h3>
+          <p>Did it really get better? <strong>Keep</strong> if yes, <strong>throw away</strong> if worse,
+             and <strong>say "don't know"</strong> if the change is too small to tell apart from random
+             variation. That third answer is the one we just added.</p>
+          <span class="tag free">now free — reads existing results</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="loopmark">repeat — each turn should leave the library a little better</div>
+
+    <div class="statement" style="border-left-color:var(--gap)">
+      <p style="font-size:17px">
+        <strong>Why step 5 needed fixing.</strong> The small model gives a different score every time you
+        run it, even with nothing changed — swings of 5 to 20 points. The old gate ran the test
+        <em>once</em> before and <em>once</em> after, so it was reading that randomness as if it were
+        progress or damage.
+      </p>
+      <p style="font-size:17px">
+        On 3 August it threw away a batch of examples for "making things worse." Those exact numbers
+        — 48.0 then 41.1 — had been recorded that same morning from two runs with
+        <strong>no change at all</strong>. It was measuring the dice.
+      </p>
+      <p style="font-size:16px; color:var(--muted)">
+        Fix: run each measurement three times, and only believe a change bigger than the model's own
+        random wobble. Otherwise report "don't know" instead of guessing.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============ 4 · OUTCOME ============ -->
+  <section>
+    <div class="chapter">
+      <span class="idx">04</span>
+      <div><h2>What success looks like</h2></div>
+    </div>
+
+    <div class="outcomes" style="margin-top:22px">
+      <div class="oc">
+        <span class="when">near term</span>
+        <h3>Every gain is real</h3>
+        <p>The score only moves when something genuinely improved. No more throwing away good work
+           because of a bad roll, or keeping bad work because of a lucky one.</p>
+      </div>
+      <div class="oc">
+        <span class="when">middle</span>
+        <h3>The library improves itself</h3>
+        <p>The loop runs unattended overnight, costs nothing, and each morning the library is measurably
+           better than the night before.</p>
+      </div>
+      <div class="oc">
+        <span class="when">the goal</span>
+        <h3>Ship without the cloud</h3>
+        <p>The local model builds apps well enough to be the product's real engine — so nothing a user
+           types ever leaves their machine.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 5 · WHERE WE ARE ============ -->
+  <section>
+    <div class="chapter">
+      <span class="idx">05</span>
+      <div><h2>Where we actually are</h2></div>
+    </div>
+    <p class="lede" style="margin-bottom:24px">
+      The local model's average score across the five test apps, over time.
+    </p>
+
+    <div class="ladder">
+      <div class="rung done">
+        <div class="score">~25%</div>
+        <div class="what">Starting point — the small model barely produced usable apps</div>
+        <div class="st">passed</div>
+      </div>
+      <div class="rung done">
+        <div class="score">44.9%</div>
+        <div class="what">After four fixes: build one piece at a time, a worked example it can't just copy,
+                          examples wired in, bigger context window</div>
+        <div class="st">passed</div>
+      </div>
+      <div class="rung now">
+        <div class="score">46.1%</div>
+        <div class="what"><strong>Here now.</strong> The factory is built and running, and the gate has just
+                          been made trustworthy. Retrieval settings are being compared head to head.</div>
+        <div class="st">current</div>
+      </div>
+      <div class="rung todo">
+        <div class="score">60%+</div>
+        <div class="what">Next milestone — reachable by fixing the known weak spots: components it never
+                          reaches for, titles it gets wrong, variables it drops</div>
+        <div class="st">next</div>
+      </div>
+      <div class="rung todo">
+        <div class="score">~90%</div>
+        <div class="what">Parity with Claude — the point where the cloud is no longer needed at runtime</div>
+        <div class="st">the goal</div>
+      </div>
+    </div>
+
+    <p class="note">
+      Also worth knowing: a bigger local model (Qwen 3B instead of 1.5B) is untested and might close a
+      chunk of this on its own. The factory is what tells us whether any given change actually helped —
+      which is why getting its judgement right had to come first.
+    </p>
+  </section>
+
+  <footer>
+    Scores: five eval apps via <span class="mono">scripts/eval-app-build.ts --incremental</span>.
+    Claude reference measured through the CLI; local figures from Qwen2.5-1.5B.
+    The factory is <span class="mono">scripts/overnight/rag-factory.sh</span> — entirely local, no API cost.<br>
+    A re-run at three measurements per number is in progress; it will return keep, discard, or don't-know
+    for the current batch of examples.
+  </footer>
+
+</div>

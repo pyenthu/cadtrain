@@ -85,6 +85,12 @@ archive/  # tracked, dormant legacy src (see archive/CADTRAIN_CLEANUP.md)
 Dockerfile + docker-entrypoint.sh + railway.toml
 ```
 
+## Diagrams
+
+Published explainer pages — the plan for getting the app-builder onto a **local** small model, and how
+its measurement loop works. Index + URLs: **[`docs/DIAGRAMS.md`](docs/DIAGRAMS.md)**; sources in
+`docs/diagrams/`.
+
 ## History
 
 The original product (image → component identification via pHash/CLIP + a training cache,
