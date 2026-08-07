@@ -159,7 +159,19 @@ const runOllama: CliRunner = async (full, o) => {
   const r = await fetch(`${base}/api/generate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ model, prompt: full, stream: false, options: { temperature: 0 } }),
+    // num_ctx is NOT optional here. Ollama defaults to a 4096-token context (`llama-server -c 4096`),
+    // while systemPrompt() alone is ~18.5K chars ≈ 5K tokens before any grounding is appended. The
+    // overflow is truncated SILENTLY — and because grounding sits near the top of the system prompt,
+    // it is the first thing discarded. Measured 2026-08-07: with the default context, `--ground` and
+    // no-`--ground` produced byte-identical builds (same 13 per-rung scores, same final.app), i.e.
+    // every headless RAG measurement to date compared a prompt the model never actually received.
+    // The browser path took this same fix on 2026-08-02 (WEBLLM_CONTEXT_WINDOW 4096→8192).
+    body: JSON.stringify({
+      model,
+      prompt: full,
+      stream: false,
+      options: { temperature: 0, num_ctx: Number(process.env.OLLAMA_NUM_CTX ?? 8192) },
+    }),
   });
   if (!r.ok) throw new Error(`ollama ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return ((await r.json()) as { response?: string }).response ?? '';
