@@ -217,6 +217,12 @@ function makeGrounder(): (prompt: string, app: AppLike) => Promise<string> {
           prompt,
           docType: (app as { docType?: string })?.docType,
           vector: process.env.APP_RAG_VECTOR ? process.env.APP_RAG_VECTOR !== '0' && process.env.APP_RAG_VECTOR.toLowerCase() !== 'false' : undefined,
+          // APP_RAG_K sweeps how many goldens reach the prompt (endpoint default 3 = rankGolden's).
+          // That cap is a code constant, not a context limit: at num_ctx 8192 the system prompt is
+          // ~4.7K tokens with ~3.4K spare, and grounding measured +4.3pp (partsdash) / +14.5pp
+          // (opsdash) — so how much of it we send is a free variable worth A/B-ing. Mirrors
+          // APP_RAG_VECTOR so a sweep needs no server restart.
+          k: process.env.APP_RAG_K ? Number(process.env.APP_RAG_K) : undefined,
         }),
       });
       return r.ok ? (((await r.json()) as { grounding?: string }).grounding ?? '') : '';
