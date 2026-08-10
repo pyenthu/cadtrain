@@ -43,6 +43,14 @@ export interface PropSpec {
   default?: unknown;
   /** For type:'select'. */
   options?: string[];
+  /** Auto-promote this prop into `app.vars[panelId]` (promote-props.ts)? Default TRUE.
+   *  The STYLE props opt OUT: they are presentation, not app state, and promoting ~9 of them on
+   *  every panel of every app would bloat `vars` (and therefore the RAG grounding, which renders
+   *  each panel's props) with noise the model must then read past. */
+  promote?: boolean;
+  /** Presentation-only: rendered as CSS by the harness rather than passed to the component.
+   *  Grouped under the ⚙ Style tab instead of Props. */
+  style?: boolean;
 }
 
 export type ComponentGroup = 'layout' | 'data' | 'input' | 'display' | '3d' | 'ai';
@@ -89,8 +97,77 @@ export interface ComponentMeta {
   example?: Record<string, unknown>;
 }
 
+// ── Shared STYLE props — every component gets these ───────────────────────────
+// `props.class` / `props.style` were ALREADY honoured by HarnessView, but no component declared
+// them, so they were invisible to the ⚙ editor, the AI tool schema, API.md and the RAG dictionary
+// — an escape hatch nobody could discover. These declare the common ones properly, once, for all
+// kinds (merged in COMPONENT_CATALOG below) rather than editing 29 meta.ts files.
+//
+// All are `promote: false` (presentation, not app state — see PropSpec.promote) and
+// `style: true` (the harness turns them into CSS; they are never passed to the component).
+// `css` is the escape hatch: any declarations at all, appended last so it can override.
+export const STYLE_PROPS: PropSpec[] = [
+  { name: 'width', type: 'string', label: 'Width', promote: false, style: true },
+  { name: 'height', type: 'string', label: 'Height', promote: false, style: true },
+  { name: 'background', type: 'color', label: 'Background', promote: false, style: true },
+  { name: 'color', type: 'color', label: 'Text colour', promote: false, style: true },
+  { name: 'padding', type: 'string', label: 'Padding', promote: false, style: true },
+  { name: 'radius', type: 'string', label: 'Corner radius', promote: false, style: true },
+  { name: 'border', type: 'string', label: 'Border', promote: false, style: true },
+  { name: 'align', type: 'select', label: 'Text align', options: ['', 'left', 'center', 'right'], promote: false, style: true },
+  { name: 'class', type: 'string', label: 'CSS class', promote: false, style: true },
+  { name: 'css', type: 'string', label: 'Custom CSS', promote: false, style: true },
+];
+
+const STYLE_PROP_NAMES = new Set(STYLE_PROPS.map((p) => p.name));
+
+/** Is this prop name one of the shared style props (not a component-specific prop)? */
+export function isStyleProp(name: string): boolean {
+  return STYLE_PROP_NAMES.has(name);
+}
+
+/** A bare number means px; anything else (%, rem, calc(…), 100vh) passes through verbatim. */
+function len(v: unknown): string {
+  const s = String(v).trim();
+  return s !== '' && Number.isFinite(Number(s)) ? `${s}px` : s;
+}
+
+/** Build the inline CSS for a panel's shared style props. Pure + SSR-safe, so the server-render
+ *  path and the client harness produce byte-identical output (no hydration mismatch).
+ *  `css` is appended LAST so a hand-written declaration always wins over the typed props. */
+export function styleFromProps(props: Record<string, unknown> | undefined): string {
+  if (!props) return '';
+  const out: string[] = [];
+  const put = (decl: string, v: unknown) => {
+    if (v === undefined || v === null || String(v).trim() === '') return;
+    out.push(`${decl}:${decl === 'width' || decl === 'height' || decl === 'padding' || decl === 'border-radius' ? len(v) : String(v).trim()}`);
+  };
+  put('width', props.width);
+  put('height', props.height);
+  put('background', props.background);
+  put('color', props.color);
+  put('padding', props.padding);
+  put('border-radius', props.radius);
+  put('border', props.border);
+  put('text-align', props.align);
+  // Escape hatch, last → highest priority. Tolerates a trailing ';' or none.
+  const css = props.css ?? props.style; // `style` kept as a back-compat alias (pre-existing apps)
+  if (css !== undefined && String(css).trim() !== '') out.push(String(css).trim().replace(/;\s*$/, ''));
+  return out.join(';');
+}
+
+/** Does this panel carry ANY shared style prop? Used to skip the wrapper entirely when it
+ *  doesn't — an unstyled panel must render exactly as it did before this feature existed. */
+export function hasStyleProps(props: Record<string, unknown> | undefined): boolean {
+  if (!props) return false;
+  return STYLE_PROPS.some((s) => {
+    const v = props[s.name];
+    return v !== undefined && v !== null && String(v).trim() !== '';
+  }) || (props.style !== undefined && String(props.style).trim() !== '');
+}
+
 /** Aggregated from the bundle metas — data · layout · input · display · ai. */
-export const COMPONENT_CATALOG: ComponentMeta[] = [
+const RAW_CATALOG: ComponentMeta[] = [
   ...listMetas,
   ...formMetas,
   ...dataGridMetas,
@@ -122,6 +199,16 @@ export const COMPONENT_CATALOG: ComponentMeta[] = [
   ...chatMetas,
 ];
 
+/** Every component gains the shared STYLE props (width/height/background/… + the `css` escape
+ *  hatch) — declared ONCE here rather than repeated across 29 meta.ts files. A component that
+ *  declares its own prop of the same name WINS (its spec is kept, the shared one dropped), so a
+ *  kind with e.g. a bespoke `height` semantic is never clobbered. */
+export const COMPONENT_CATALOG: ComponentMeta[] = RAW_CATALOG.map((m) => {
+  const own = new Set((m.props ?? []).map((p) => p.name));
+  return { ...m, props: [...(m.props ?? []), ...STYLE_PROPS.filter((s) => !own.has(s.name))] };
+});
+
 export function getComponentMeta(kind: string): ComponentMeta | undefined {
   return COMPONENT_CATALOG.find((c) => c.kind === kind);
 }
+

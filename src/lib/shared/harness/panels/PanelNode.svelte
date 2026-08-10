@@ -7,6 +7,7 @@
   // it to THIS node (parent) and shows it floating on parent CLICK (popover) / HOVER (tooltip).
   import type { Panel, Binding, EventMap, SlotValue, SlotApi } from '$lib/appkit/manifest/types';
   import { panelComponent } from './registry';
+  import { styleFromProps, hasStyleProps } from '$lib/appkit/catalog/components';
   import PanelNode from './PanelNode.svelte';
 
   let {
@@ -22,6 +23,7 @@
     dataRev,
     preloaded,
     onBuild,
+    applyStyle = true,
   }: {
     node: Panel;
     run: (b?: Binding, item?: unknown) => Promise<unknown>;
@@ -35,10 +37,22 @@
     dataRev?: number;
     preloaded?: Record<string, unknown>;
     onBuild?: (p: string) => Promise<void>;
+    /** False for a TOP-LEVEL panel: HarnessView's grid cell already carries the style props, so
+     *  styling here too would double the padding/border. Nested panels default to true. */
+    applyStyle?: boolean;
   } = $props();
 
   const Comp = $derived(panelComponent(node.kind));
   const pre = $derived(preloaded?.[node.id]);
+
+  // Shared STYLE props (width/height/background/css/…). A NESTED panel never reaches HarnessView's
+  // grid cell — its parent component renders it — so the wrapper has to live here too.
+  // It is emitted ONLY when the panel actually carries style props: an unstyled panel must produce
+  // exactly the markup it did before this existed, or we'd insert a div between (say) statgrid and
+  // its stat children and break their CSS grid parent-child relationship on every existing app.
+  const styled = $derived(applyStyle && hasStyleProps(node.props as Record<string, unknown>));
+  const inlineStyle = $derived(styleFromProps(node.props as Record<string, unknown>));
+  const cssClass = $derived(String((node.props as Record<string, unknown>)?.class ?? ''));
 
   // Split behavior children (popover/tooltip → attach to this node) from regular (render inline).
   const regular = $derived((node.children ?? []).filter((c) => c.kind !== 'popover' && c.kind !== 'tooltip'));
@@ -66,8 +80,16 @@
   <PanelNode node={child} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {preloaded} {onBuild} />
 {/snippet}
 
-{#snippet comp()}
+{#snippet bare()}
   <Comp panel={node} {run} {fire} {select} {active} {params} {vars} {slots} {slotApi} {dataRev} {onBuild} {kids} {renderChild} preloaded={pre} />
+{/snippet}
+
+{#snippet comp()}
+  {#if styled}
+    <div class="pn-style {cssClass}" style={inlineStyle}>{@render bare()}</div>
+  {:else}
+    {@render bare()}
+  {/if}
 {/snippet}
 
 {#if popover || tooltip}
@@ -95,6 +117,10 @@
 {/if}
 
 <style>
+  /* The style-props wrapper. min-width:0 so a styled panel inside a grid/flex parent can still
+     shrink (without it, a wide table would blow out its track). No other opinions — everything
+     visible comes from the panel's own style props. */
+  .pn-style { min-width: 0; }
   .pn-anchor { position: relative; }
   .pn-backdrop { position: fixed; inset: 0; z-index: 999; }
   .pn-popover { position: absolute; z-index: 1000; top: 100%; left: 0; margin-top: 4px; background: var(--h-surface, #fff); border: 1px solid var(--h-border, #e5e7eb); border-radius: 8px; box-shadow: 0 10px 30px rgba(2, 6, 23, 0.16); padding: 10px; }

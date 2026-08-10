@@ -49,6 +49,10 @@ export function promoteComponentProps(app: AppManifest, panel: Panel): void {
   const fields: Array<{ name: string; type?: string }> = [];
 
   for (const spec of meta.props) {
+    // Presentation-only props (the shared STYLE set: width/height/background/css/…) opt out of
+    // promotion. They are CSS, not app state — promoting ~9 per panel would swamp `app.vars` and
+    // the RAG grounding (which renders each panel's props) with noise.
+    if (spec.promote === false) continue;
     const key = spec.name;
     fields.push({ name: key, type: structFieldType(spec.type) });
     const cur = panel.props[key];
