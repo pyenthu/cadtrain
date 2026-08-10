@@ -154,6 +154,41 @@
   const setProp = (id: string, name: string, value: unknown) =>
     dispatch('setComponentProp', { panelId: id, name, value }, store());
 
+  // ── Undeclared props ──────────────────────────────────────────────────────────────────────
+  // `panel.props` is a free-form record and setComponentProp does NOT validate against the
+  // catalog, so the AI (or a hand-edited .app) can set any key. The typed form above only
+  // iterates meta.props, which left those keys LIVE IN THE DOCUMENT BUT INVISIBLE HERE — you
+  // couldn't see or clear something the AI had set. (That opacity is how a self-referential
+  // `$vars.x: "$vars.x"` shipped unnoticed on 2026-08-10.) These surface the remainder.
+  //
+  // `source`/`on` are excluded: they have their own wiring UI below, and rendering them as raw
+  // text would invite editing a binding object as a string.
+  const RESERVED = new Set(['source', 'on']);
+  function extraProps(p: any, meta: any): string[] {
+    const declared = new Set(((meta?.props ?? []) as Array<{ name: string }>).map((s) => s.name));
+    return Object.keys(p?.props ?? {})
+      .filter((k) => !declared.has(k) && !RESERVED.has(k))
+      .sort();
+  }
+  /** Show objects/arrays as JSON so a binding-ish value is at least legible (and editable). */
+  const rawVal = (v: unknown) => (v !== null && typeof v === 'object' ? JSON.stringify(v) : String(v ?? ''));
+  /** Parse back: valid JSON → the parsed value; otherwise keep it a plain string. */
+  function parseRaw(s: string): unknown {
+    const t = s.trim();
+    if (t === '') return '';
+    if (/^[[{]|^-?\d|^(true|false|null)$/.test(t)) {
+      try { return JSON.parse(t); } catch { /* not JSON → fall through to string */ }
+    }
+    return s;
+  }
+  let newPropName = $state('');
+  function addExtraProp(id: string) {
+    const name = newPropName.trim();
+    if (!name) return;
+    setProp(id, name, '');
+    newPropName = '';
+  }
+
   // ── Wiring (source + events) — bind a component to a verb without hand-editing JSON ──
   const SOURCE_KINDS = new Set(['list', 'form', 'table', 'grid', 'edittable', 'bake3d', 'svg']);
   const DATA_VERBS = ['listDocs', 'listParts', 'loadData', 'getParams', 'bake', 'loadDoc', 'http', 'compile', 'getSource'];
@@ -219,6 +254,38 @@
         {/if}
       </label>
     {/each}
+
+    <!-- Anything on the panel the catalog doesn't declare — set by the AI, an import, or hand-
+         edited JSON. Shown so the document can't hold state the editor hides. -->
+    <div class="extra-h">
+      Other props
+      <span class="extra-sub">not in this component's catalog — set by AI or by hand</span>
+    </div>
+    {#each extraProps(p, meta) as name (name)}
+      <label class="prop">
+        <span class="pl" title="undeclared prop">◆ {name}</span>
+        <span class="extra-row">
+          <input
+            type="text"
+            value={rawVal(p.props?.[name])}
+            onchange={(e) => setProp(p.id, name, parseRaw((e.currentTarget as HTMLInputElement).value))}
+          />
+          <button class="x" title="remove {name}" onclick={() => setProp(p.id, name, null)}>×</button>
+        </span>
+      </label>
+    {/each}
+    <label class="prop">
+      <span class="pl">＋ add</span>
+      <span class="extra-row">
+        <input
+          type="text"
+          bind:value={newPropName}
+          placeholder="prop name"
+          onkeydown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addExtraProp(p.id); } }}
+        />
+        <button class="x" title="add prop" onclick={() => addExtraProp(p.id)}>+</button>
+      </span>
+    </label>
   </div>
 {/snippet}
 
@@ -467,6 +534,15 @@
   .sp-tabs button.on { color: #0369a1; border-bottom-color: #0369a1; }
   .sp-body { display: flex; flex-direction: column; gap: 8px; }
   .wire-h { font: 600 9px system-ui; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; }
+
+  /* Undeclared props — visually subordinate to the typed form above (they're an escape hatch,
+     not the main surface), but present so the document can't hide state from the editor. */
+  .extra-h { margin-top: 6px; padding-top: 6px; border-top: 1px dashed #e2e8f0; font: 600 9px system-ui; text-transform: uppercase; letter-spacing: .3px; color: #94a3b8; display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+  .extra-sub { font: 400 9px system-ui; text-transform: none; letter-spacing: 0; color: #cbd5e1; }
+  .extra-row { display: flex; align-items: center; gap: 4px; flex: 1; min-width: 0; max-width: 62%; justify-content: flex-end; }
+  .extra-row input { max-width: none !important; }
+  .x { flex: none; width: 18px; height: 18px; padding: 0; line-height: 1; border: 1px solid #e2e8f0; border-radius: 4px; background: #fff; color: #94a3b8; cursor: pointer; font-size: 12px; }
+  .x:hover { color: #334155; border-color: #cbd5e1; }
   .sp-empty { display: flex; flex-direction: column; gap: 3px; padding: 8px; border: 1px dashed #e5e7eb; border-radius: 7px; color: #64748b; font-size: 12px; }
   .sp-empty b { color: #0f172a; }
   .sp-note { color: #94a3b8; font-size: 10.5px; font-style: italic; }
