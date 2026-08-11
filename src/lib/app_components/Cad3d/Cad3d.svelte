@@ -57,21 +57,46 @@
 
   // Lazy-loaded client modules (Threlte Canvas + the trimmed scene + the mesh deserializer). Null
   // until onMount resolves them → the SSR pass + the first client paint show the placeholder.
-  let mod = $state<{ Canvas: any; Scene: any; deserialize: (s: any) => any } | null>(null);
+  let mod = $state<{ Canvas: any; Scene: any; deserialize: (s: any) => any; WebGLRenderer: any } | null>(null);
   let geo = $state<any>(null);
   let status = $state<'idle' | 'loading' | 'ready' | 'error'>('idle');
   let errMsg = $state('');
   const ready = $derived(!!mod && !!geo && status === 'ready');
 
+  // Own the renderer so the clear colour is set IMPERATIVELY — same fix as the primitives viewer
+  // (PrimitiveDualCanvas.createRenderer). Cad3dScene sets the background via a Threlte
+  // `<T.Color attach="background">`, which resolves through the DYNAMIC `T.<Name>` proxy and can be
+  // dropped by a production bundle; three's WebGLRenderer then defaults to alpha:false, so the
+  // canvas is opaque and clears to BLACK over the .cad3d CSS background. That is exactly how the
+  // graph-editor 3D pane shipped black to Railway while being white in dev (49debe6).
+  // alpha:true additionally makes the CSS background a real fallback.
+  let renderer: any = null;
+  function createRenderer(canvas: HTMLCanvasElement) {
+    renderer = new mod!.WebGLRenderer({ canvas, antialias: true, alpha: true });
+    renderer.setClearColor(background, 1);
+    return renderer;
+  }
+  // `background` is a prop ($vars/$params-resolvable), so it can change after the renderer exists —
+  // and the T.Color that would normally track it may not be there. Keep the clear colour in sync.
+  $effect(() => {
+    if (renderer) renderer.setClearColor(background, 1);
+  });
+
   onMount(async () => {
     if (!browser) return;
     try {
-      const [core, sceneMod, serial] = await Promise.all([
+      const [core, sceneMod, serial, three] = await Promise.all([
         import('@threlte/core'),
         import('./Cad3dScene.svelte'),
         import('$lib/engines/manifold/mesh-serial'),
+        import('three'),
       ]);
-      mod = { Canvas: core.Canvas, Scene: sceneMod.default, deserialize: serial.deserializeComponentResult };
+      mod = {
+        Canvas: core.Canvas,
+        Scene: sceneMod.default,
+        deserialize: serial.deserializeComponentResult,
+        WebGLRenderer: three.WebGLRenderer,
+      };
     } catch (e: any) {
       errMsg = `viewer failed to load: ${e?.message ?? e}`;
       status = 'error';
@@ -129,7 +154,7 @@
   {#if ready}
     {@const C = mod!.Canvas}
     {@const S = mod!.Scene}
-    <C frameloop={autoRotate ? 'always' : 'demand'}>
+    <C frameloop={autoRotate ? 'always' : 'demand'} {createRenderer}>
       <S {geo} {cutaway} {background} {autoRotate} />
     </C>
   {:else if status === 'error'}
