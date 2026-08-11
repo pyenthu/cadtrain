@@ -144,3 +144,11 @@ _builds.jsonl
 
 # app-build eval per-run snapshots (diagnostic, regenerated)
 scripts/eval-fixtures/runs/
+
+# Overnight-loop runtime noise: a dev server's pid/log churn on every run and pin local paths.
+# The measurement OUTPUTS (*.out, *.log from the loops themselves) stay tracked as evidence.
+scripts/overnight/runs/dev-server-*.pid
+scripts/overnight/runs/dev-server-*.log
+# The factory's SANDBOX corpus — reseeded from scripts/eval-fixtures by `SEED=1 rag-factory.sh`
+# and never promoted to the volume. Regenerable; committing it just churns.
+scripts/overnight/runs/trial-corpus/
