@@ -172,6 +172,12 @@ const runOllama: CliRunner = async (full, o) => {
       stream: false,
       options: { temperature: 0, num_ctx: Number(process.env.OLLAMA_NUM_CTX ?? 8192) },
     }),
+    // An explicit, generous deadline. Without one the runtime's DEFAULT fetch timeout applies and
+    // a slow generate dies with a bare `DOMException TimeoutError` — which is what killed `design`
+    // (13 prompts, the longest scripts) on every attempt, and is the same error behind the 20-of-21
+    // `NA` rows in the hill-climb leaderboard. Raising num_ctx to 8192 made calls ~10x slower, so
+    // the default became easy to hit. Tune with OLLAMA_TIMEOUT_MS.
+    signal: AbortSignal.timeout(Number(process.env.OLLAMA_TIMEOUT_MS ?? 15 * 60_000)),
   });
   if (!r.ok) throw new Error(`ollama ${r.status}: ${(await r.text()).slice(0, 200)}`);
   return ((await r.json()) as { response?: string }).response ?? '';

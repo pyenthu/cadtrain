@@ -5,9 +5,16 @@
 // kinds this prompt actually needs) instead of the full rulebook every call.
 import { COMPONENT_CATALOG, type ComponentMeta } from '../catalog/components';
 
-/** "text:string=Text, size:select(xs|sm|md|lg|xl|2xl)=md, color:color, muted:boolean" */
+/** "text:string=Text, size:select(xs|sm|md|lg|xl|2xl)=md, color:color, muted:boolean"
+ *
+ *  SHARED style props are excluded. They are identical on all 34 kinds, so listing them per-card
+ *  spent the same ~10 entries 34 times: it grew the cards 6084→7927 chars and the system prompt
+ *  by ~500 tokens, which measurably MOVED build behaviour (opsdash k=12 70.0→50.0 on an otherwise
+ *  unchanged corpus — this path is temperature-0 deterministic, so any score change is a prompt
+ *  change). They're documented ONCE in the prompt preamble instead — see styleNote(). */
 function propSummary(meta: ComponentMeta): string {
   return (meta.props ?? [])
+    .filter((p) => p.style !== true)
     .map((p) => {
       const t = p.type === 'select' && p.options?.length ? `select(${p.options.join('|')})` : p.type;
       const dflt = p.default !== undefined && p.default !== '' ? `=${p.default}` : '';
@@ -76,7 +83,16 @@ export function renderComponentKnowledge(prompt: string, appKinds: string[] = []
   const cards = metas.filter((m) => rel.has(m.kind)).map(componentCard);
   return [
     `Component kinds — ${componentIndex(metas)}.`,
+    styleNote(),
     'Details for the kinds relevant here (set any prop with setComponentProp; a kind that HOLDS children nests panels via children[]):',
     ...cards,
   ].join('\n');
+}
+
+/** The shared style props, stated ONCE. Every kind accepts them, so per-card repetition is pure
+ *  redundancy — one line here costs ~40 tokens where 34 cards cost ~500. */
+function styleNote(): string {
+  const names = (COMPONENT_CATALOG[0]?.props ?? []).filter((p) => p.style === true).map((p) => p.name);
+  if (!names.length) return '';
+  return `EVERY kind also accepts these presentation props: ${names.join(', ')} — plain CSS (a bare number means px; "css" takes any declarations, e.g. css:"box-shadow:0 2px 8px #0003"). Use them only when the prompt asks for a look.`;
 }

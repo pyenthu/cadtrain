@@ -1,0 +1,38 @@
+### 5-APP RE-BASELINE — first correct measurement of plan/design/ewell since the num_ctx fix
+### grounded · num_ctx=8192 · temp 0 (deterministic → runs=1 is exact, not a sample)
+### corpus: runs/trial-corpus  ·  started 2026-08-11 11:26:43
+--- plan  k=3 ---
+  score: 20.0%
+  facets: panelKinds 20.0% · nesting 20.0% · vars 0.0% · structures 0.0% · theme 0.0% · meta 100.0%
+  built kinds:  [gantt, card, gantt, table, table, gantt]
+--- design  k=3 ---
+--- ewell  k=3 ---
+  score: 17.4%
+  facets: panelKinds 17.6% · nesting 0.0% · vars 22.2% · structures 100.0% · theme 0.0% · meta 0.0%
+  built kinds:  [grid, heading, grid, datatable, datatable, chart, chart, heading]
+--- partsdash  k=3 ---
+  score: 45.5%
+  facets: panelKinds 37.5% · nesting 37.5% · vars 100.0% · structures 0.0% · theme 0.0% · meta 100.0%
+  built kinds:  [card, card, card, card, statgrid, chart, cad3d]
+--- opsdash  k=3 ---
+  score: 51.2%
+  facets: panelKinds 35.3% · nesting 35.3% · vars 100.0% · structures 100.0% · theme 0.0% · meta 100.0%
+  built kinds:  [dashboard, heading, statgrid, chart, dashboard, chart, chart, row, statgrid]
+--- plan  k=12 ---
+  score: 21.3%
+  facets: panelKinds 22.2% · nesting 22.2% · vars 0.0% · structures 0.0% · theme 0.0% · meta 100.0%
+  built kinds:  [gantt, container, container, gantt, container]
+--- design  k=12 ---
+--- ewell  k=12 ---
+  score: 24.1%
+  facets: panelKinds 5.6% · nesting 0.0% · vars 72.7% · structures 100.0% · theme 0.0% · meta 50.0%
+  built kinds:  [heading, heading, heading, chart, chart, heading, heading, chart, chart, sidebar]
+--- partsdash  k=12 ---
+  score: 65.0%
+  facets: panelKinds 53.3% · nesting 53.3% · vars 100.0% · structures 0.0% · theme 100.0% · meta 100.0%
+  built kinds:  [dashboard, dashboard, statgrid, chart, datatable, cad3d]
+--- opsdash  k=12 ---
+  score: 50.0%
+  facets: panelKinds 33.3% · nesting 33.3% · vars 100.0% · structures 100.0% · theme 0.0% · meta 100.0%
+  built kinds:  [dashboard, dashboard, chart, datatable]
+### done 2026-08-11 12:00:51
