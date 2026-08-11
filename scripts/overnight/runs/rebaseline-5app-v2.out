@@ -1,0 +1,13 @@
+### 5-APP RE-BASELINE — first correct measurement of plan/design/ewell since the num_ctx fix
+### grounded · num_ctx=8192 · temp 0 (deterministic → runs=1 is exact, not a sample)
+### corpus: runs/trial-corpus  ·  started 2026-08-11 12:13:13
+--- plan  k=3 ---
+  score: 48.0%
+  facets: panelKinds 66.7% · nesting 66.7% · vars 0.0% · structures 0.0% · theme 0.0% · meta 100.0%
+  built kinds:  [heading, container, grid, gantt, grid]
+--- design  k=3 ---
+--- ewell  k=3 ---
+  score: 24.5%
+  facets: panelKinds 15.0% · nesting 0.0% · vars 50.0% · structures 100.0% · theme 0.0% · meta 50.0%
+  built kinds:  [heading, grid, heading, grid, grid, grid, grid, heading, heading, grid, heading, chart, heading, card]
+--- partsdash  k=3 ---
