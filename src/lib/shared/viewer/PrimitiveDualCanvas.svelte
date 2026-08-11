@@ -268,7 +268,20 @@
 
   let renderer: WebGLRenderer | null = null;
   function createRenderer(canvas: HTMLCanvasElement) {
-    renderer = new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    // alpha:true + an explicit WHITE clear colour. Neither is optional:
+    //
+    //  • The scene's `<T.Color args={['#ffffff']} attach="background" />` (PrimitiveDualScene) is
+    //    resolved through Threlte's DYNAMIC `T.<Name>` proxy, so a production bundle can drop it —
+    //    exactly what f444f88 hedged against ("consistent whether the Color attaches (dev) or the
+    //    build drops it and falls back to the CSS"). On Railway it evidently doesn't attach.
+    //  • That CSS fallback could never actually fire: WebGLRenderer defaults to alpha:false, so the
+    //    canvas is OPAQUE and clears to black — painting over the white .pd-stage behind it.
+    //
+    // Result: a black canvas with the dark-on-light overlay styling (deep-red title) on top.
+    // setClearColor is imperative and bundler-proof; alpha:true additionally makes .pd-stage a real
+    // fallback. If the scene background does attach, it simply wins — and it's the same white.
+    renderer = new WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true, alpha: true });
+    renderer.setClearColor(0xffffff, 1);
     return renderer;
   }
 
