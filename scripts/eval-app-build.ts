@@ -157,6 +157,7 @@ const runOllama: CliRunner = async (full, o) => {
   const base = process.env.OLLAMA_URL ?? 'http://localhost:11434';
   const model = o.model ?? process.env.OLLAMA_MODEL ?? 'qwen2.5:1.5b';
   const t0 = Date.now();
+  if (process.env.OLLAMA_TRACE) process.stderr.write(`    [ollama] → call, prompt ${full.length}ch\n`);
   const r = await fetch(`${base}/api/generate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -171,7 +172,18 @@ const runOllama: CliRunner = async (full, o) => {
       model,
       prompt: full,
       stream: false,
-      options: { temperature: 0, num_ctx: Number(process.env.OLLAMA_NUM_CTX ?? 8192) },
+      options: {
+        temperature: 0,
+        num_ctx: Number(process.env.OLLAMA_NUM_CTX ?? 8192),
+        // BOUND THE GENERATION. Unset, num_predict is unlimited — and Ollama's llama-server runs
+        // with `--context-shift`, so a model that falls into a repetition loop never hits a natural
+        // stop and generates FOREVER. That is what `design` did: its first prompt ran past 10
+        // minutes on a single call (vs 11s / 137 tokens for a well-behaved one) and had never once
+        // completed a headless run. A cap converts an unbounded hang into a truncated answer, which
+        // the scorer can at least measure. 2048 is ~15x a healthy response, so it only ever fires
+        // on a runaway. Tune with OLLAMA_NUM_PREDICT.
+        num_predict: Number(process.env.OLLAMA_NUM_PREDICT ?? 2048),
+      },
     }),
     // A slow generate must not be killed mid-run. TWO things are needed, and the second is the
     // one that actually bit:

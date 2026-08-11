@@ -1,0 +1,38 @@
+    [ollama] → call, prompt 21098ch
+    [ollama] 46.7s · prompt 21098ch ≈5702tok · out 2048tok · length
+    [ollama] → call, prompt 20409ch
+    [ollama] 15.6s · prompt 20409ch ≈5516tok · out 184tok · stop
+    [ollama] → call, prompt 21375ch
+    [ollama] 16.4s · prompt 21375ch ≈5777tok · out 212tok · stop
+    [ollama] → call, prompt 21368ch
+    [ollama] 4.1s · prompt 21368ch ≈5775tok · out 111tok · stop
+    [ollama] → call, prompt 24109ch
+    [ollama] 15.3s · prompt 24109ch ≈6516tok · out 87tok · stop
+    [ollama] → call, prompt 22724ch
+    [ollama] 14.6s · prompt 22724ch ≈6142tok · out 108tok · stop
+    [ollama] → call, prompt 24077ch
+    [ollama] 2.9s · prompt 24077ch ≈6507tok · out 54tok · stop
+    [ollama] → call, prompt 21505ch
+    [ollama] 24.8s · prompt 21505ch ≈5812tok · out 783tok · stop
+    [ollama] → call, prompt 24146ch
+    [ollama] 16.7s · prompt 24146ch ≈6526tok · out 81tok · stop
+    [ollama] → call, prompt 24306ch
+    [ollama] 56.8s · prompt 24306ch ≈6569tok · out 2048tok · length
+    [ollama] → call, prompt 24029ch
+    [ollama] 16.7s · prompt 24029ch ≈6494tok · out 127tok · stop
+    [ollama] → call, prompt 23283ch
+    [ollama] 15.1s · prompt 23283ch ≈6293tok · out 94tok · stop
+    [ollama] → call, prompt 23311ch
+    [ollama] 4.1s · prompt 23311ch ≈6300tok · out 108tok · stop
+
+=== design  (local, incremental, 13 prompts) ===
+  score: 19.6%
+  facets: panelKinds 11.1% · nesting 5.6% · vars 66.7% · structures 0.0% · theme 0.0% · meta 50.0%
+  built kinds:  [heading, grid, statgrid, chart, grid, grid, grid, grid, grid, grid, grid, grid, grid, heading, container, container, container, statgrid, chart, grid, grid, grid, grid, grid, grid, grid, grid, grid, heading, heading, nodetree]
+  golden kinds: [heading, text, tabs, nodetree, nodetree]
+  per-rung score: 14.7% → 10.3% → 10.0% → 9.7% → 9.7% → 9.7% → 15.7% → 17.5% → 17.5% → 17.5% → 17.4% → 19.6% → 19.6%
+  snapshots → /Users/neerajsethi/code/cadtrain/scripts/eval-fixtures/runs/design-local-ground/
+
+──────────────────────────────────────────────
+SUMMARY (local):  design 19.6%
+average: 19.6%
