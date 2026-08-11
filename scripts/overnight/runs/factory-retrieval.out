@@ -1,0 +1,16 @@
+[retrieval-check] 38 retrievable goldens in scripts/overnight/runs/trial-corpus/golden
+[retrieval-check] probing 6 prompts @ http://localhost:3334  docType=dashboard  match="trial-"
+  HIT  Create an app called opsdash titled "Sales — Dashboa…
+       retrieved: trial-dashopsales-meta · trial-operations-sales-meta
+  miss Seed a "months" variable with monthly records (month…
+       retrieved: atom-dash-chart-line · atom-dash-var-parts · atom-dash-var-months
+  miss Add a stat grid.
+       retrieved: atom-dash-cad3d · atom-dash-statgrid · atom-dash-stat
+  miss Inside the stat grid add a KPI tile "Revenue" with v…
+       retrieved: atom-dash-chart-line · atom-dash-statgrid · atom-dash-stat
+  miss Add a line chart titled "Revenue by month" reading m…
+       retrieved: atom-dash-chart-line · atom-dash-var-months · atom-dash-chart-bar
+  miss Add a data table reading months with columns month, …
+       retrieved: atom-dash-chart-line · atom-dash-var-months · atom-dash-datatable
+
+RETRIEVAL_CHECK hits=1/6 files=2

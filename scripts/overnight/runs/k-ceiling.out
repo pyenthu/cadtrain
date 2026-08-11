@@ -1,0 +1,33 @@
+### k ceiling sweep — grounded, num_ctx=8192, temp 0 (deterministic → runs=1 exact)
+### started 2026-08-10 21:00:00
+--- partsdash  k=12 ---
+  grounding: 2896 chars ≈ 783 tok, 12 examples
+  score: 63.0%
+  facets: panelKinds 50.0% · nesting 50.0% · vars 100.0% · structures 0.0% · theme 100.0% · meta 100.0%
+  built kinds:  [dashboard, structure, dashboard, statgrid, chart, datatable, cad3d]
+--- partsdash  k=15 ---
+  grounding: 3504 chars ≈ 947 tok, 15 examples
+  score: 46.0%
+  facets: panelKinds 53.3% · nesting 53.3% · vars 0.0% · structures 0.0% · theme 100.0% · meta 50.0%
+  built kinds:  [chart, structure, statgrid, chart, datatable, cad3d]
+--- partsdash  k=20 ---
+  grounding: 4719 chars ≈ 1275 tok, 20 examples
+  score: 34.7%
+  facets: panelKinds 44.4% · nesting 44.4% · vars 0.0% · structures 0.0% · theme 0.0% · meta 100.0%
+  built kinds:  [chart, statgrid, statgrid, statgrid, statgrid, statgrid, chart, datatable, cad3d]
+--- opsdash  k=12 ---
+  grounding: 2896 chars ≈ 783 tok, 12 examples
+  score: 70.0%
+  facets: panelKinds 50.0% · nesting 50.0% · vars 100.0% · structures 100.0% · theme 100.0% · meta 100.0%
+  built kinds:  [dashboard, statgrid, chart, datatable]
+--- opsdash  k=15 ---
+  grounding: 3504 chars ≈ 947 tok, 15 examples
+  score: 62.9%
+  facets: panelKinds 42.9% · nesting 28.6% · vars 100.0% · structures 100.0% · theme 100.0% · meta 100.0%
+  built kinds:  [dashboard, statgrid, statgrid, dashboard, chart, datatable]
+--- opsdash  k=20 ---
+  grounding: 4719 chars ≈ 1275 tok, 20 examples
+  score: 60.0%
+  facets: panelKinds 50.0% · nesting 50.0% · vars 100.0% · structures 100.0% · theme 0.0% · meta 100.0%
+  built kinds:  [dashboard, statgrid, chart, datatable]
+### done 2026-08-10 21:25:10

@@ -1,0 +1,14 @@
+### A/B at n=3, num_ctx=8192 — does RAG hold up? 2026-08-10 20:11:28
+=== partsdash WITH grounding ===
+  overall: mean 38.0%  σ 0.00pp  min 38.0%  max 38.0%
+  per-run: 38.0% · 38.0% · 38.0%
+=== partsdash WITHOUT grounding ===
+  overall: mean 33.7%  σ 0.00pp  min 33.7%  max 33.7%
+  per-run: 33.7% · 33.7% · 33.7%
+=== opsdash WITH grounding ===
+  overall: mean 60.0%  σ 0.00pp  min 60.0%  max 60.0%
+  per-run: 60.0% · 60.0% · 60.0%
+=== opsdash WITHOUT grounding ===
+  overall: mean 45.5%  σ 0.00pp  min 45.5%  max 45.5%
+  per-run: 45.5% · 45.5% · 45.5%
+### done 2026-08-10 20:24:14

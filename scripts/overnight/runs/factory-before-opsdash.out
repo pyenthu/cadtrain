@@ -1,0 +1,13 @@
+
+=== opsdash  (local, incremental, 11 prompts) — 3 runs ===
+  overall: mean 43.4%  σ 3.27pp  min 41.1%  max 48.0%
+  facet means: panelKinds 14.0% · nesting 14.0% · vars 66.7% · structures 100.0% · theme 100.0% · meta 100.0%
+  per-run: 48.0% · 41.1% · 41.1%
+  golden kinds: [heading, text, statgrid, stat, stat, stat, chart, datatable]
+
+──────────────────────────────────────────────
+RUNS SUMMARY (local, 3× each):
+app      runs   mean  σ(pp)    min    max
+opsdash     3  43.4%   3.27  41.1%  48.0%
+
+average mean: 43.4%

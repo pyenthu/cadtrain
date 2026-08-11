@@ -1,0 +1,13 @@
+
+=== partsdash  (local, incremental, 13 prompts) — 3 runs ===
+  overall: mean 39.5%  σ 1.99pp  min 38.1%  max 42.3%
+  facet means: panelKinds 23.1% · nesting 23.1% · vars 100.0% · structures 0.0% · theme 66.7% · meta 50.0%
+  per-run: 42.3% · 38.1% · 38.1%
+  golden kinds: [heading, text, statgrid, stat, stat, stat, chart, datatable, cad3d]
+
+──────────────────────────────────────────────
+RUNS SUMMARY (local, 3× each):
+app        runs   mean  σ(pp)    min    max
+partsdash     3  39.5%   1.99  38.1%  42.3%
+
+average mean: 39.5%

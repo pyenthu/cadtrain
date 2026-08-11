@@ -1,0 +1,26 @@
+[22:28:54] deps up. apps=partsdash opsdash max_gap=3 runs=3 out=scripts/overnight/runs/trial-corpus url=http://localhost:3334
+[22:28:54] === BASELINE (local + ground, runs=3) ===
+[22:30:49]   before partsdash -> 39.5%
+[22:32:46]   before opsdash -> 43.4%
+scripts/overnight/runs/factory-baseline.json {'partsdash': 0.395, 'opsdash': 0.434}
+[22:32:46] === GAP-FILL (Ollama, max=3) ===
+[gap-fill] model=qwen2.5:1.5b docType=dashboard max=3 out=scripts/overnight/runs/trial-corpus
+[gap-fill] existing golden sigs: 12
+[gap-fill] SKIP invalid: .app missing "panels" (array)
+[gap-fill] SKIP near-dup dashboard|cad3d
+[gap-fill] SKIP invalid: .app missing "panels" (array)
+[gap-fill] OK 1/3 operations-sales-dashboard-1786035781512 → 12 atoms  (dashboard|chart,chart,chart,datatable,heading)
+[gap-fill] SKIP invalid: panel[1] is not an object
+[gap-fill] OK 2/3 operations_sales_dashboard-1786035802775 → 9 atoms  (dashboard|chart,datatable,list,statgrid)
+[gap-fill] SKIP invalid: .app missing "panels" (array)
+[gap-fill] OK 3/3 operations_sales_dashboard-1786035813523 → 12 atoms  (dashboard|chart,datatable,datatable,heading,statgrid,statgrid)
+[gap-fill] DONE kept=3 attempts=8
+[22:33:33] === AFTER (local + ground, runs=3) ===
+[22:33:33] (trial server already on CADTRAIN_APP_CORPUS)
+[22:34:48]   after  partsdash -> 38.1%
+[22:35:55]   after  opsdash -> 41.1%
+[22:35:55] === GATE (before vs after, noise-aware) ===
+[22:35:55]   INCONCLUSIVE partsdash — before 39.5% (σ1.98, n=3)  after 38.1% (σ0.00, n=3)  Δ-1.4pp  band ±3.0pp  → delta inside noise; raise RUNS or keep quarantined
+[22:35:55]   INCONCLUSIVE opsdash — before 43.4% (σ3.25, n=3)  after 41.1% (σ0.00, n=3)  Δ-2.3pp  band ±4.6pp  → delta inside noise; raise RUNS or keep quarantined
+[22:35:55] DONE. before=partsdash:39.5 opsdash:43.4  candidates=5  goldens=63
+[22:35:55] Review atoms in scripts/overnight/runs/trial-corpus/golden (trial-*); promote to prod volume ONLY after a clear win.

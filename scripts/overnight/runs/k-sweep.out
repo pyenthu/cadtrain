@@ -1,0 +1,28 @@
+### k sweep — grounded, num_ctx=8192, temp 0 (deterministic → runs=1 is exact)
+### corpus: scripts/overnight/runs/trial-corpus (atomic keys only + gap-fill atoms)
+### started 2026-08-10 20:41:24
+--- partsdash  k=3 ---
+  score: 38.0%
+  facets: panelKinds 50.0% · nesting 50.0% · vars 0.0% · structures 0.0% · theme 0.0% · meta 100.0%
+  built kinds:  [heading, statgrid, cad3d]
+--- partsdash  k=6 ---
+  score: 54.3%
+  facets: panelKinds 58.8% · nesting 58.8% · vars 100.0% · structures 0.0% · theme 0.0% · meta 50.0%
+  built kinds:  [heading, card, card, card, statgrid, chart, datatable, cad3d]
+--- partsdash  k=9 ---
+  score: 69.0%
+  facets: panelKinds 66.7% · nesting 66.7% · vars 100.0% · structures 0.0% · theme 100.0% · meta 50.0%
+  built kinds:  [heading, heading, statgrid, chart, datatable, cad3d]
+--- opsdash  k=3 ---
+  score: 60.0%
+  facets: panelKinds 50.0% · nesting 50.0% · vars 100.0% · structures 100.0% · theme 0.0% · meta 100.0%
+  built kinds:  [dashboard, statgrid, chart, datatable]
+--- opsdash  k=6 ---
+  score: 52.5%
+  facets: panelKinds 37.5% · nesting 37.5% · vars 100.0% · structures 100.0% · theme 0.0% · meta 100.0%
+  built kinds:  [dashboard, statgrid, chart, ?, dashboard, statgrid, chart, datatable]
+--- opsdash  k=9 ---
+  score: 60.0%
+  facets: panelKinds 50.0% · nesting 50.0% · vars 100.0% · structures 100.0% · theme 0.0% · meta 100.0%
+  built kinds:  [dashboard, statgrid, chart, datatable]
+### done 2026-08-10 20:59:48

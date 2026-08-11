@@ -1,0 +1,27 @@
+[00:30:40] seeding scripts/overnight/runs/trial-corpus/golden from scripts/eval-fixtures/golden (atomic keys)
+[00:30:40] starting :3334 with CADTRAIN_APP_CORPUS=scripts/overnight/runs/trial-corpus
+[00:30:42] deps up. apps=partsdash opsdash max_gap=3 runs=3 out=scripts/overnight/runs/trial-corpus url=http://localhost:3334
+[00:30:42] === BASELINE (local + ground, runs=3) ===
+[00:32:37]   before partsdash -> 39.5%
+[00:34:44]   before opsdash -> 43.4%
+scripts/overnight/runs/factory-baseline.json {'partsdash': 0.395, 'opsdash': 0.434}
+[00:34:44] === GAP-FILL (Ollama, max=3) ===
+[gap-fill] model=qwen2.5:1.5b docType=dashboard max=3 out=scripts/overnight/runs/trial-corpus
+[gap-fill] existing golden sigs: 12
+[gap-fill] OK 1/3 dashopsales-1786043090388 → 11 atoms  (dashboard|chart,datatable,heading)
+[gap-fill] OK 2/3 operations_sales_dashboard-1786043097548 → 9 atoms  (dashboard|chart,datatable,heading,list,statgrid)
+[gap-fill] SKIP invalid: .app missing "panels" (array)
+[gap-fill] SKIP parse: JSON Parse error: Unexpected EOF
+[gap-fill] OK 3/3 operations-sales-1786043129450 → 9 atoms  (dashboard|statgrid,tabs)
+[gap-fill] DONE kept=3 attempts=5
+[00:35:29] === REACHABILITY (do the new atoms get retrieved?) ===
+[00:35:29]   RETRIEVAL_CHECK hits=1/6 files=2
+[00:35:29] === AFTER (local + ground, runs=3) ===
+[00:35:29] (trial server already on CADTRAIN_APP_CORPUS)
+[00:36:53]   after  partsdash -> 38.1%
+[00:38:15]   after  opsdash -> 41.1%
+[00:38:15] === GATE (before vs after, noise-aware) ===
+[00:38:15]   INCONCLUSIVE partsdash — before 39.5% (σ1.98, n=3)  after 38.1% (σ0.00, n=3)  Δ-1.4pp  band ±3.0pp  → delta inside noise; raise RUNS or keep quarantined
+[00:38:16]   INCONCLUSIVE opsdash — before 43.4% (σ3.25, n=3)  after 41.1% (σ0.00, n=3)  Δ-2.3pp  band ±4.6pp  → delta inside noise; raise RUNS or keep quarantined
+[00:38:16] DONE. before=partsdash:39.5 opsdash:43.4  candidates=3  goldens=47
+[00:38:16] Review atoms in scripts/overnight/runs/trial-corpus/golden (trial-*); promote to prod volume ONLY after a clear win.

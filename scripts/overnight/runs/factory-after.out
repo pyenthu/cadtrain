@@ -1,0 +1,26 @@
+
+=== partsdash  (local, incremental, 13 prompts) — 3 runs ===
+  overall: mean 38.1%  σ 0.00pp  min 38.1%  max 38.1%
+  facet means: panelKinds 23.5% · nesting 23.5% · vars 100.0% · structures 0.0% · theme 50.0% · meta 50.0%
+  per-run: 38.1% · 38.1% · 38.1%
+  golden kinds: [heading, text, statgrid, stat, stat, stat, chart, datatable, cad3d]
+
+──────────────────────────────────────────────
+RUNS SUMMARY (local, 3× each):
+app        runs   mean  σ(pp)    min    max
+partsdash     3  38.1%   0.00  38.1%  38.1%
+
+average mean: 38.1%
+
+=== opsdash  (local, incremental, 11 prompts) — 3 runs ===
+  overall: mean 41.1%  σ 0.00pp  min 41.1%  max 41.1%
+  facet means: panelKinds 14.3% · nesting 14.3% · vars 50.0% · structures 100.0% · theme 100.0% · meta 100.0%
+  per-run: 41.1% · 41.1% · 41.1%
+  golden kinds: [heading, text, statgrid, stat, stat, stat, chart, datatable]
+
+──────────────────────────────────────────────
+RUNS SUMMARY (local, 3× each):
+app      runs   mean  σ(pp)    min    max
+opsdash     3  41.1%   0.00  41.1%  41.1%
+
+average mean: 41.1%
