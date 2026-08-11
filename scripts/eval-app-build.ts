@@ -156,6 +156,7 @@ const claudeRunner: CliRunner = (full, o) => runClaudeCli(full, { model: o.model
 const runOllama: CliRunner = async (full, o) => {
   const base = process.env.OLLAMA_URL ?? 'http://localhost:11434';
   const model = o.model ?? process.env.OLLAMA_MODEL ?? 'qwen2.5:1.5b';
+  const t0 = Date.now();
   const r = await fetch(`${base}/api/generate`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -172,15 +173,31 @@ const runOllama: CliRunner = async (full, o) => {
       stream: false,
       options: { temperature: 0, num_ctx: Number(process.env.OLLAMA_NUM_CTX ?? 8192) },
     }),
-    // An explicit, generous deadline. Without one the runtime's DEFAULT fetch timeout applies and
-    // a slow generate dies with a bare `DOMException TimeoutError` — which is what killed `design`
-    // (13 prompts, the longest scripts) on every attempt, and is the same error behind the 20-of-21
-    // `NA` rows in the hill-climb leaderboard. Raising num_ctx to 8192 made calls ~10x slower, so
-    // the default became easy to hit. Tune with OLLAMA_TIMEOUT_MS.
+    // A slow generate must not be killed mid-run. TWO things are needed, and the second is the
+    // one that actually bit:
+    //   • signal — our own deadline (OLLAMA_TIMEOUT_MS, default 15 min).
+    //   • timeout:false — BUN'S OWN default fetch timeout is 300s and an AbortSignal does NOT
+    //     override it. `design` (13 prompts, the longest script) died at EXACTLY 300s with a bare
+    //     `DOMException TimeoutError` even after the signal was added — measured 2026-08-11, with
+    //     grounding timed at 13ms and the golden loaded from a local fixture, so no other fetch
+    //     could account for it. This is also the error behind the 20-of-21 `NA` rows in the
+    //     hill-climb leaderboard. num_ctx 8192 made calls ~10x slower, which is why a 5-minute
+    //     ceiling that never mattered before started truncating whole runs.
     signal: AbortSignal.timeout(Number(process.env.OLLAMA_TIMEOUT_MS ?? 15 * 60_000)),
-  });
+    timeout: false,
+  } as RequestInit & { timeout: false });
   if (!r.ok) throw new Error(`ollama ${r.status}: ${(await r.text()).slice(0, 200)}`);
-  return ((await r.json()) as { response?: string }).response ?? '';
+  const j = (await r.json()) as { response?: string; eval_count?: number; done_reason?: string };
+  // Per-call timing on stderr (OLLAMA_TRACE=1). A run that dies mid-way tells you nothing about
+  // WHICH rung was slow — and the incremental path grows the prompt every rung (the built app is
+  // serialised into systemPrompt), so cost is not uniform across a script. Cheap, off by default.
+  if (process.env.OLLAMA_TRACE) {
+    const secs = ((Date.now() - t0) / 1000).toFixed(1);
+    process.stderr.write(
+      `    [ollama] ${secs}s · prompt ${full.length}ch ≈${Math.round(full.length / 3.7)}tok · out ${j.eval_count ?? '?'}tok · ${j.done_reason ?? '?'}\n`,
+    );
+  }
+  return j.response ?? '';
 };
 
 /** ONE real turn (claude `--print` or local Ollama): the whole script is concatenated into a single
