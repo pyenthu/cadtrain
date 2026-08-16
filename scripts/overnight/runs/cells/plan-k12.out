@@ -1,0 +1,12 @@
+
+=== plan  (local, incremental, 8 prompts) ===
+  score: 31.3%
+  facets: panelKinds 33.3% · nesting 50.0% · vars 0.0% · structures 0.0% · theme 0.0% · meta 100.0%
+  built kinds:  [heading, grid, chart, gantt, gantt, table, heading, table]
+  golden kinds: [heading, text, gantt, grid]
+  per-rung score: 43.0% → 43.0% → 43.0% → 43.0% → 43.0% → 39.1% → 36.0% → 31.3%
+  snapshots → /Users/neerajsethi/code/cadtrain/scripts/eval-fixtures/runs/plan-local-ground/
+
+──────────────────────────────────────────────
+SUMMARY (local):  plan 31.3%
+average: 31.3%

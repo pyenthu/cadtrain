@@ -1,0 +1,12 @@
+
+=== ewell  (local, incremental, 13 prompts) ===
+  score: 17.3%
+  facets: panelKinds 16.7% · nesting 0.0% · vars 44.4% · structures 0.0% · theme 0.0% · meta 50.0%
+  built kinds:  [heading, heading, grid, grid, grid, heading, heading, heading, heading, sidebar]
+  golden kinds: [vtoolbar, iconbutton, popover, text, iconbutton, popover, text, text, text, iconbutton, iconbutton, popover, grid, iconbutton, popover, grid, iconbutton, popover, text, iconbutton, popover, text, col, heading, text, wellschematic]
+  per-rung score: 18.0% → 13.9% → 13.9% → 13.9% → 13.9% → 10.5% → 10.5% → 10.5% → 13.4% → 13.4% → 13.2% → 13.2% → 17.3%
+  snapshots → /Users/neerajsethi/code/cadtrain/scripts/eval-fixtures/runs/ewell-local-ground/
+
+──────────────────────────────────────────────
+SUMMARY (local):  ewell 17.3%
+average: 17.3%

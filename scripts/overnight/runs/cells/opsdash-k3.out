@@ -1,0 +1,12 @@
+
+=== opsdash  (local, incremental, 11 prompts) ===
+  score: 72.7%
+  facets: panelKinds 54.5% · nesting 54.5% · vars 100.0% · structures 100.0% · theme 100.0% · meta 100.0%
+  built kinds:  [statgrid, chart, datatable]
+  golden kinds: [heading, text, statgrid, stat, stat, stat, chart, datatable]
+  per-rung score: 15.0% → 25.0% → 40.0% → 40.0% → 40.0% → 53.3% → 53.3% → 53.3% → 53.3% → 64.0% → 72.7%
+  snapshots → /Users/neerajsethi/code/cadtrain/scripts/eval-fixtures/runs/opsdash-local-ground/
+
+──────────────────────────────────────────────
+SUMMARY (local):  opsdash 72.7%
+average: 72.7%

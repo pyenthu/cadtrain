@@ -1,0 +1,12 @@
+
+=== partsdash  (local, incremental, 13 prompts) ===
+  score: 53.3%
+  facets: panelKinds 57.1% · nesting 57.1% · vars 100.0% · structures 0.0% · theme 0.0% · meta 50.0%
+  built kinds:  [heading, heading, statgrid, chart, cad3d]
+  golden kinds: [heading, text, statgrid, stat, stat, stat, chart, datatable, cad3d]
+  per-rung score: 16.0% → 16.0% → 16.0% → 29.9% → 29.9% → 29.9% → 39.0% → 39.0% → 39.0% → 39.0% → 46.7% → 46.7% → 53.3%
+  snapshots → /Users/neerajsethi/code/cadtrain/scripts/eval-fixtures/runs/partsdash-local-ground/
+
+──────────────────────────────────────────────
+SUMMARY (local):  partsdash 53.3%
+average: 53.3%
