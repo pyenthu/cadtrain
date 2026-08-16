@@ -8,6 +8,22 @@ Design: `docs/architecture/app-harness.md` · research `docs/research/cursor-sdk
   - ⚠️ The "8192 context window" above was the **browser** fix only (`WEBLLM_CONTEXT_WINDOW`, 08-02). The **headless Ollama** path never got it until `ab5f4ae` (08-10) — see the RAG-factory retraction below.
   - **Some of REMAINING may already be closed for free.** The context fix alone moved partsdash `meta` 50%→**100%** and doubled `panelKinds`/`nesting` (23.5→50.0), with the model finally emitting real kinds (`statgrid`, `cad3d`) instead of junk (`toolbar`, `?`, bare `grid`). So "`meta` 0% on design/ewell" is plausibly the SAME artifact. **Re-baseline before working any of these.**
   - **Read facets, not the headline score.** Pre- and post-fix both scored ~38% on partsdash while being COMPLETELY different builds (the gains above offset by vars 100→0, theme 50→0). Equal scores were never equal builds.
+  - ✅ **FIRST TRUSTWORTHY 5-APP BASELINE (2026-08-16, `runs/baseline-5app.md`)** — measured after all four harness bugs (`/plan` #1029). Supersedes the 44.9% / 46.1% averages quoted above, which are **void**.
+
+    | app | k=3 | k=12 | | app | k=3 | k=12 |
+    |---|---|---|---|---|---|---|
+    | plan | **8.0%** | 31.3% | | partsdash | 53.3% | 52.3% |
+    | design | 19.6% | 25.0% | | opsdash | **72.7%** | 57.7% |
+    | ewell | 20.7% | 17.3% | | **mean** | 34.9% | 36.7% |
+
+    **k=12 helps the weak apps and HURTS the strong ones** (opsdash −15.0pp), so the earlier
+    "+17.5pp, make 12 the default" — two dashboards, inflated prompt, runaways silently dropped —
+    does not survive. **`rankGolden`'s default stays at 3.** The real lever is the GROUNDING GAP:
+    plan/design/ewell have no retrievable goldens at all (every atomic golden is `atom-dash-*`), so
+    plan at k=3 builds a single `[container]`. Raising k only helps them by dragging in wrong-domain
+    dashboard atoms that teach shape — the mirror image of the 08-02 contamination finding. → `/plan` #1028.
+    Provisional: this is the THIRD reversal as the harness got more honest (noise → truncation →
+    runaways); re-run the grid after the goldens land.
 - **Persistent data + data files** (in-flight) — a `.app` runs from a local DATA file + colocated sibling files (DLIS/LAS). SVTC model: ONE `showDirectoryPicker` handle in IndexedDB + refs (`{name,path,type}`, not handles) + resolve-on-load re-link; two studio tabs. Plan: `docs/plans/app-data-files.md`.
 - **RAG factory (replaces overnight Claude spray, 2026-08-03):** `bash scripts/overnight/rag-factory.sh` — measure → Ollama gap-fill (capped) → local atomic stage → re-measure → gate. Old hour-bounded `claude --print` B/D firehose retired.
   - ⚠️ **RETRACTED (2026-08-10): the "42.3/48.0 → 38.1/41.1 GATE FAIL, do not promote" result was a MEASUREMENT ARTIFACT, not a finding.** The headless Ollama runner sent no `num_ctx`, so Ollama used its 4096-token default while `systemPrompt()` alone is ~4.7K tokens — every headless build ran on a SILENTLY TRUNCATED prompt, and grounding sits near the top of the system prompt, so it was the first thing cut. Fixed `ab5f4ae` (`OLLAMA_NUM_CTX`, default 8192). **Every headless number predating that commit is void**: the 46.1% hill-climb average, the lexical-vs-vector comparison, and both factory trials. (The BROWSER path's 44.9% stands — it took the 8192 fix on 2026-08-02.)
